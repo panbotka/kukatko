@@ -39,7 +39,8 @@ func TestTagInB_isAnnouncedOnlyInB(t *testing.T) {
 		sql  string
 		args []any
 	}{
-		{"UPDATE users SET subject_uid = $2 WHERE uid = $1", []any{member, f.B.SubjectUID}},
+		{"UPDATE project_members SET subject_uid = $3 WHERE user_uid = $1 AND project_uid = $2",
+			[]any{member, f.B.ProjectUID, f.B.SubjectUID}},
 		{`INSERT INTO notification_prefs (user_uid, kind, channel, enabled) VALUES ($1, 'tagged', 'in_app', true)`,
 			[]any{member}},
 		{`INSERT INTO photos (uid, project_id, file_hash, file_path, taken_at) VALUES ($1, $2, $3, $4, now())`,

@@ -27,6 +27,7 @@ func TestMigrate_usersRoleCollapsesToInstanceRole(t *testing.T) {
 	if _, err := db.Migrate(ctx); err != nil {
 		t.Fatalf("migrating a fresh schema: %v", err)
 	}
+	undoUsersColumnDrop(t, db)
 	if _, err := db.Pool().Exec(ctx, `
 		ALTER TABLE users DROP CONSTRAINT users_role_check;
 		ALTER TABLE users ADD CONSTRAINT users_role_check

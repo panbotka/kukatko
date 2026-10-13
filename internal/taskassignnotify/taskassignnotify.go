@@ -98,8 +98,9 @@ func TaskPath(uid string) string {
 type account struct {
 	// Disabled is whether the account was switched off.
 	Disabled bool
-	// Approved is whether the account may sign in at all; one still waiting
-	// for approval could not open the task.
+	// Approved is whether the account may enter the task's project — an
+	// approved member there, or a maintainer; one still waiting for approval
+	// could not open the task.
 	Approved bool
 }
 
@@ -130,7 +131,9 @@ func wanted(a phototask.Assignment, acct account) bool {
 const contextSQL = `
 SELECT t.project_id, t.title,
        COALESCE(NULLIF(a.display_name, ''), a.username, ''),
-       u.disabled, u.approved_at IS NOT NULL
+       u.disabled,
+       u.role = 'maintainer' OR EXISTS (SELECT 1 FROM project_members pm
+           WHERE pm.user_uid = u.uid AND pm.project_uid = t.project_id AND pm.approved_at IS NOT NULL)
 FROM photo_tasks t
 JOIN users u ON u.uid = $2
 LEFT JOIN users a ON a.uid = $3

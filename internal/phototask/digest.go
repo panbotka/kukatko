@@ -180,7 +180,7 @@ func (s *Store) digests(ctx context.Context, projectUID, userUID string) ([]Dige
 }
 
 // markDigestedSQL stamps when a person's digest of one project was scheduled,
-// on their membership (the users column is a transition copy nobody writes).
+// on their membership — the only place the watermark lives.
 const markDigestedSQL = `UPDATE project_members SET task_digest_at = $3 WHERE project_uid = $1 AND user_uid = $2`
 
 // MarkDigested records that a digest of the project projectUID was scheduled

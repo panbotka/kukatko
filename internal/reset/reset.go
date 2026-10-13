@@ -604,16 +604,15 @@ func (s *Service) clearThumbCache(hashes []string, opts Options, result *Storage
 
 // The wipe's one piece of surgery, in three steps around the truncation.
 //
-// users.subject_uid and project_members.subject_uid are the only pointers
-// preserved tables hold into the library: the person an account says it is
-// (instance-wide today, per project in the membership that replaces it).
-// Postgres refuses to TRUNCATE a table that an unlisted table references —
-// structurally, whatever the rows say — so those foreign keys would make the
-// whole wipe fail, and TRUNCATE … CASCADE, which would take the accounts with it,
-// is the one escape this command must never use.
+// project_members.subject_uid is the only pointer a preserved table holds into
+// the library: the person an account says it is in one project. Postgres
+// refuses to TRUNCATE a table that an unlisted table references —
+// structurally, whatever the rows say — so that foreign key would make the
+// whole wipe fail, and TRUNCATE … CASCADE, which would take the memberships
+// with it, is the one escape this command must never use.
 //
-// So each constraint is dropped, its column is nulled, the catalogue is
-// truncated and the constraints go straight back, all inside the transaction
+// So the constraint is dropped, its column is nulled, the catalogue is
+// truncated and the constraint goes straight back, all inside the transaction
 // that also writes the audit entry. Postgres makes DDL transactional, so a
 // failure anywhere in that sequence rolls the constraints back into place along
 // with everything else; there is no window in which the database is left without
@@ -624,8 +623,9 @@ func (s *Service) clearThumbCache(hashes []string, opts Options, result *Storage
 // that makes an account an account — credentials, role, note, its history, its
 // memberships and their roles — survives untouched.
 //
-// The constraints are named in migrations 0060 and 0101; renaming one there
-// without renaming it here breaks the reset.
+// The constraint is named in migration 0101; renaming it there without
+// renaming it here breaks the reset. (users.subject_uid, the account-wide link
+// that preceded it, was dropped by 0110 and needs nothing any more.)
 
 // subjectLink is one preserved table's foreign key into subjects, which the wipe
 // lifts, clears and restores.
@@ -638,7 +638,6 @@ type subjectLink struct {
 
 // subjectLinks are every preserved table's links into subjects.
 var subjectLinks = []subjectLink{
-	{table: "users", constraint: "users_subject_uid_fkey"},
 	{table: "project_members", constraint: "project_members_subject_uid_fkey"},
 }
 
@@ -661,8 +660,8 @@ func (l subjectLink) restoreSQL() string {
 		" FOREIGN KEY (subject_uid) REFERENCES subjects (uid) ON DELETE SET NULL"
 }
 
-// unlinkAccounts clears the accounts' and memberships' links to people and
-// lifts the foreign keys that would otherwise refuse the truncation, on tx so it
+// unlinkAccounts clears the memberships' links to people and lifts the
+// foreign keys that would otherwise refuse the truncation, on tx so it
 // commits or rolls back with the wipe itself.
 func unlinkAccounts(ctx context.Context, tx pgx.Tx) error {
 	for _, link := range subjectLinks {

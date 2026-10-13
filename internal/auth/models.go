@@ -39,7 +39,7 @@ var (
 	// ErrUserDisabled indicates the account is disabled.
 	ErrUserDisabled = errors.New("auth: user is disabled")
 	// ErrNotApproved indicates the credentials were right but nobody has let
-	// this account in yet (approved_at is NULL). It is deliberately its own
+	// this account in yet (no membership is approved). It is deliberately its own
 	// outcome: telling somebody who registered and is waiting that their
 	// password is wrong would send them round in circles, and it is not the same
 	// as ErrUserDisabled either — one account has never been let in, the other
@@ -69,7 +69,8 @@ var (
 	// message names the offending field so it can be surfaced verbatim in a 400.
 	ErrNoteTooLong = errors.New("auth: note must be at most 1000 characters")
 	// ErrSubjectNotFound indicates the subject_uid a create or update carried
-	// names no person in the library. It is a rejected input rather than a
+	// names no person of the project the link is made in (a person of another
+	// project is nobody there). It is a rejected input rather than a
 	// missing account, so callers answer it with 400 and not 404.
 	ErrSubjectNotFound = errors.New("auth: no such person in the library")
 	// ErrUsernameTooLong indicates the username exceeds MaxUsernameLen
@@ -135,7 +136,10 @@ type User struct {
 	// adminUserResponse.
 	Note string `json:"-"`
 	// SubjectUID names the person of the library this account belongs to, or is
-	// nil when nobody has said. Several accounts may name the same subject (a
+	// nil when nobody has said. It is read off a membership — who you are is a
+	// fact about one project's people: the bootstrap project's on an account
+	// read (transition, like ProjectRole), the request's project on GET
+	// /auth/me and on the account page's own write. Several accounts may name the same subject (a
 	// shared family login and a personal one are both that person), and deleting
 	// the subject clears it back to nil, so every reader has to survive an absent
 	// link — which is also the common case.
@@ -150,9 +154,12 @@ type User struct {
 	// may be seen of that person is decided by the people endpoints, not here.
 	SubjectUID *string `json:"subject_uid"`
 	// ApprovedAt is when an administrator let this account in, or nil when
-	// nobody has yet — "registered, waiting". Every account that exists today was
-	// created by an administrator, and creating it *is* the approval, so nil is
-	// currently reserved for the accounts self-service registration will make.
+	// nobody has yet — "registered, waiting". Approval lives on the membership;
+	// this is derived from them: the earliest approved membership, or the
+	// account's creation for a maintainer (who enters every project anyway) and
+	// for an account in no project (waiting for nobody). An
+	// account an administrator creates is approved with its membership, so nil
+	// is what self-service registration makes until a project admin approves it.
 	//
 	// It is not the inverse of Disabled and must never be read as one. "Never
 	// approved" is an account that has not been let in; "approved and later

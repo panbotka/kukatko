@@ -376,7 +376,7 @@ func TestProject_registrationCreatesAPendingMembership(t *testing.T) {
 	}
 	user, err := env.store.GetUserByUID(t.Context(), waiting.UID)
 	if err != nil || user.ApprovedAt == nil {
-		t.Errorf("users.approved_at after approval = %v (%v), want stamped during the transition", user.ApprovedAt, err)
+		t.Errorf("account approval after the membership's = %v (%v), want derived from it", user.ApprovedAt, err)
 	}
 }
 

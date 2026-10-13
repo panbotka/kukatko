@@ -20,7 +20,7 @@ const foreignKeyViolation = "23503"
 const memberColumns = `m.project_uid, m.user_uid, m.role, m.approved_at, m.subject_uid,
 	m.last_seen_at, m.visit_reference_at, m.task_digest_at, m.created_at,
 	u.username, u.display_name, u.last_login_at,
-	(u.subject_uid IS NOT NULL OR EXISTS (SELECT 1 FROM user_pictures up WHERE up.user_uid = u.uid))`
+	(m.subject_uid IS NOT NULL OR EXISTS (SELECT 1 FROM user_pictures up WHERE up.user_uid = u.uid))`
 
 // memberFrom joins a membership with its account.
 const memberFrom = ` FROM project_members m JOIN users u ON u.uid = m.user_uid`
@@ -155,11 +155,6 @@ func (s *Store) AddMember(
 		if err != nil {
 			return fmt.Errorf("inserting membership: %w", err)
 		}
-		if approved {
-			if err := stampAccountApproved(ctx, tx, userUID); err != nil {
-				return err
-			}
-		}
 		added, err = lockMember(ctx, tx, projectUID, userUID)
 		return err
 	})
@@ -216,8 +211,9 @@ type ApproveHook func(ctx context.Context, tx pgx.Tx, member *Member) error
 // ApproveWith approves the member userUID of the project projectUID like
 // Approve and, when the approval really changes something, runs hook (nil: no
 // hook) on the same transaction. Approving an already approved member runs no
-// hook. During the transition the account's own approval (users.approved_at,
-// which sign-in still reads) is stamped too when it is missing.
+// hook. The account's own approval is derived from its memberships (sign-in
+// lets an account in once any membership is approved), so nothing else is
+// stamped.
 func (s *Store) ApproveWith(
 	ctx context.Context, meta audit.Meta, projectUID, userUID string, hook ApproveHook,
 ) (*Member, error) {
@@ -232,9 +228,6 @@ func (s *Store) ApproveWith(
 		if err := execMember(ctx, tx,
 			`UPDATE project_members SET approved_at = now() WHERE project_uid = $1 AND user_uid = $2`,
 			projectUID, userUID); err != nil {
-			return false, err
-		}
-		if err := stampAccountApproved(ctx, tx, userUID); err != nil {
 			return false, err
 		}
 		if hook == nil {
@@ -351,19 +344,6 @@ func (s *Store) mutateMember(
 		return nil, wrapMemberErr("changing", projectUID, userUID, err)
 	}
 	return result, nil
-}
-
-// stampAccountApproved stamps the account's own approval (users.approved_at)
-// when it is still missing, inside tx. Transition: sign-in still reads the
-// account's column, so a membership approved by a project admin must let the
-// account sign in; an account already approved keeps its original time.
-func stampAccountApproved(ctx context.Context, tx pgx.Tx, userUID string) error {
-	if _, err := tx.Exec(ctx,
-		`UPDATE users SET approved_at = now(), updated_at = now() WHERE uid = $1 AND approved_at IS NULL`,
-		userUID); err != nil {
-		return fmt.Errorf("approving account %s: %w", userUID, err)
-	}
-	return nil
 }
 
 // execMember runs one membership write inside tx, wrapping its failure.

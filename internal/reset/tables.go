@@ -82,15 +82,14 @@ var catalogueTables = []string{
 //
 // The accounts and their credentials (users, sessions, api_tokens) stay, because
 // a wipe that locks the operator out of the instance they just wiped is not a
-// reset but an outage. The one thing a preserved account does lose is the person
-// it said it was: users.subject_uid points into the subjects table that is about
-// to be emptied, so the wipe nulls it in the same transaction (see
-// subjectLinks). Everything that makes the account an account —
+// reset but an outage. Everything that makes the account an account —
 // credentials, role, note, its history — is untouched.
 // project_members stays with the accounts and the projects it joins: who belongs
 // to which library, in what role, is a decision about people, not about the
-// photographs. It too names the person a member is in the project
-// (project_members.subject_uid), and the wipe nulls that link the same way.
+// photographs. The one thing a membership does lose is the person it said the
+// account is in the project: project_members.subject_uid points into the
+// subjects table that is about to be emptied, so the wipe nulls it in the same
+// transaction (see subjectLinks).
 // schema_migrations stays, because the schema is not being
 // rebuilt — dropping it would make the next start re-apply every migration.
 // announcements stays, because the banner describes the instance, not the

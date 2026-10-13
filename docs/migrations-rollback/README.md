@@ -22,3 +22,11 @@ admin changed after the deploy survives the rollback.
 
 Proven on a copy of production data: up → down → inventory equal to the pre-deploy inventory,
 zero differences. See [`docs/MIGRATION_SAFETY.md`](../MIGRATION_SAFETY.md).
+
+**`0110_down.sql`** (later than the chain above) puts back the five per-library `users` columns
+migration 0110 dropped — `approved_at`, `subject_uid`, `last_seen_at`, `visit_reference_at`,
+`task_digest_at` — filled from the memberships the way the releases that still read them kept them
+in step: approved once any membership is (a maintainer, or an account in no project, always), the
+rest from the bootstrap-project
+membership. Run it first when going back to a release older than 0110; 0105–0109 have no down
+scripts of their own.

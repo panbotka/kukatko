@@ -36,7 +36,9 @@ const (
 // version 0099 (the last release before multi-tenancy) and still exists after
 // the tenancy migrations; project_id, last_project_uid and anything else those
 // migrations add are left out on purpose, so a before/after digest pair is
-// equal exactly when the pre-existing data is.
+// equal exactly when the pre-existing data is. The same goes for the five
+// per-library users columns 0101 copied onto project_members and 0110 drops
+// (approved_at, subject_uid, last_seen_at, visit_reference_at, task_digest_at).
 type digestSpec struct {
 	table   string
 	orderBy []string
@@ -149,8 +151,7 @@ var digestSpecs = []digestSpec{
 	}},
 	{"users", []string{"uid"}, []string{
 		"uid", "username", "display_name", "email", "password_hash", "disabled", "created_at",
-		"updated_at", "last_login_at", "note", "last_seen_at", "visit_reference_at", "subject_uid",
-		"approved_at", "welcome_seen_at", "task_digest_at",
+		"updated_at", "last_login_at", "note", "welcome_seen_at",
 	}},
 }
 

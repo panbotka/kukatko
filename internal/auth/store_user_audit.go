@@ -34,15 +34,8 @@ func (s *Store) CreateUserAuditedWith(
 		entry.TargetUID = u.UID
 	}
 	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, insertUserQuery, insertUserArgs(u)...)
-		if err != nil {
-			if isUniqueViolation(err) {
-				return ErrUsernameTaken
-			}
-			if isForeignKeyViolation(err) {
-				return ErrSubjectNotFound
-			}
-			return fmt.Errorf("auth: inserting user: %w", err)
+		if err := insertUser(ctx, tx, u); err != nil {
+			return err
 		}
 		if alongside == nil {
 			return nil
@@ -65,12 +58,7 @@ func (s *Store) UpdateUserProfileAudited(
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
-	user, err := s.updateUserReturningAudited(ctx, entry, updateUserProfileQuery, updateUserProfileArgs(uid, in)...)
-	if err != nil {
-		return User{}, err
-	}
-	_, inProject := in.Role.Split()
-	return withProjectRole(user, inProject), nil
+	return s.updateUserAudited(ctx, entry, profileUpdate(ctx, uid, in))
 }
 
 // SetUserDisabledAudited flips the disabled flag for the user identified by uid,
@@ -85,7 +73,9 @@ func (s *Store) SetUserDisabledAudited(
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
-	return s.updateUserReturningAudited(ctx, entry, setUserDisabledQuery, uid, disabled)
+	return s.updateUserAudited(ctx, entry, func(tx pgx.Tx) (User, error) {
+		return scanUpdatedUser(ctx, tx, setUserDisabledQuery, uid, disabled)
+	})
 }
 
 // setInstanceRoleQuery replaces one account's instance role.
@@ -109,7 +99,9 @@ func (s *Store) SetInstanceRoleAudited(ctx context.Context, uid string, role Rol
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
-	return s.updateUserReturningAudited(ctx, entry, setInstanceRoleQuery, uid, string(role))
+	return s.updateUserAudited(ctx, entry, func(tx pgx.Tx) (User, error) {
+		return scanUpdatedUser(ctx, tx, setInstanceRoleQuery, uid, string(role))
+	})
 }
 
 // SetPasswordHashAudited replaces the password hash for the user identified by
@@ -134,22 +126,21 @@ func (s *Store) SetPasswordHashAudited(ctx context.Context, uid, hash string, en
 	})
 }
 
-// updateUserReturningAudited runs an "UPDATE ... RETURNING userColumns" statement
-// inside an audited transaction, under the last-maintainer guard, and returns the
-// refreshed user. A missing user (pgx.ErrNoRows) becomes ErrUserNotFound and a
-// change that would strand the instance becomes ErrLastMaintainer; either rolls
-// the transaction back, so neither the change nor its audit row is written. It is
-// shared by the profile-update and disable audited writes, which differ only in
-// their SQL and arguments.
-func (s *Store) updateUserReturningAudited(
-	ctx context.Context, entry audit.Entry, query string, args ...any,
+// updateUserAudited runs update — one account write that returns the refreshed
+// user — inside an audited transaction, under the last-maintainer guard. A
+// missing user becomes ErrUserNotFound and a change that would strand the
+// instance becomes ErrLastMaintainer; either rolls the transaction back, so
+// neither the change nor its audit row is written. It is shared by the
+// profile-update, instance-role and disable audited writes.
+func (s *Store) updateUserAudited(
+	ctx context.Context, entry audit.Entry, update func(pgx.Tx) (User, error),
 ) (User, error) {
 	var user User
 	err := s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
 		return withMaintainerGuard(ctx, tx, func(tx pgx.Tx) error {
-			u, scanErr := scanUpdatedUser(ctx, tx, query, args...)
-			if scanErr != nil {
-				return scanErr
+			u, updateErr := update(tx)
+			if updateErr != nil {
+				return updateErr
 			}
 			user = u
 			return nil

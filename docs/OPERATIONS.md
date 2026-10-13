@@ -2277,7 +2277,7 @@ other type; values ≤ 0 are ignored and a type
   `hour` (**default 7**) is the **UTC** hour of the day (0–23; anything else → `ErrInvalidTaskDigestHour` at
   startup, checked even while disabled) at which the `task_digest` job is enqueued; the worker then sends
   **one mail per person and only when something changed** since that person's previous digest
-  (`users.task_digest_at`, stamped after the mail is scheduled) — a queue that has not moved sends nothing,
+  in that project (`project_members.task_digest_at`, stamped after the mail is scheduled) — a queue that has not moved sends nothing,
   and a `.invalid` placeholder address is skipped, never dialled. A server that was down at the hour sends
   nothing until the next one. Env: `KUKATKO_TASKS_DIGEST_ENABLED`, `KUKATKO_TASKS_DIGEST_HOUR`.
 

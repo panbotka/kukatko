@@ -31,7 +31,9 @@ func TestWhatsNew_countsOnlyTheProject(t *testing.T) {
 	pool := db.Pool()
 	f := projecttest.Seed(t, pool)
 
-	now := time.Date(2026, 10, 13, 9, 0, 0, 0, time.UTC)
+	// Far in the future on purpose: the seeded rows carry the real time, and
+	// they must predate the first visit or they are counted as news.
+	now := time.Date(2099, 10, 13, 9, 0, 0, 0, time.UTC)
 	svc := auth.NewService(auth.NewStore(pool), auth.SessionPolicy{TTL: 24 * time.Hour, MaxLifetime: 48 * time.Hour})
 	authAPI := auth.NewAPI(auth.APIConfig{Service: svc, Limiter: auth.NewLimiter(100, time.Minute)})
 	api := whatsnewapi.NewAPI(whatsnewapi.Config{

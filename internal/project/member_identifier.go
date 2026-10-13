@@ -121,9 +121,6 @@ func addIdentified(
 	if err != nil {
 		return "", "", fmt.Errorf("inserting membership: %w", err)
 	}
-	if err := stampAccountApproved(ctx, tx, userUID); err != nil {
-		return "", "", err
-	}
 	return OutcomeAdded, userUID, nil
 }
 

@@ -286,18 +286,18 @@ func countOf(counts []reset.TableCount, table string) int64 {
 }
 
 // TestExecute_keepsTheAccountButNotItsPerson pins the one thing a preserved
-// account does lose. users.subject_uid and project_members.subject_uid point into
-// the subjects table the wipe empties, so the reset nulls them in the same
-// transaction — Postgres would otherwise refuse the CASCADE-free truncation
-// outright. Everything that makes the account an account, its membership
-// included, is untouched.
+// membership does lose. project_members.subject_uid points into the subjects
+// table the wipe empties, so the reset nulls it in the same transaction —
+// Postgres would otherwise refuse the CASCADE-free truncation outright.
+// Everything that makes the account an account, its membership included, is
+// untouched.
 func TestExecute_keepsTheAccountButNotItsPerson(t *testing.T) {
 	env := newResetEnv(t)
 	env.seedLibrary(t)
 
 	var linked string
 	if err := env.db.Pool().QueryRow(t.Context(),
-		`SELECT subject_uid FROM users WHERE uid = 'usr000000001'`).Scan(&linked); err != nil {
+		`SELECT subject_uid FROM project_members WHERE user_uid = 'usr000000001'`).Scan(&linked); err != nil {
 		t.Fatalf("reading the seeded link: %v", err)
 	}
 	if linked != "sbj000000001" {
@@ -312,22 +312,14 @@ func TestExecute_keepsTheAccountButNotItsPerson(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	var (
-		username string
-		role     string
-		hash     string
-		subject  *string
-	)
+	var username, role, hash string
 	if err := env.db.Pool().QueryRow(t.Context(),
-		`SELECT username, role, password_hash, subject_uid FROM users WHERE uid = 'usr000000001'`).
-		Scan(&username, &role, &hash, &subject); err != nil {
+		`SELECT username, role, password_hash FROM users WHERE uid = 'usr000000001'`).
+		Scan(&username, &role, &hash); err != nil {
 		t.Fatalf("reading the account after the wipe: %v", err)
 	}
 	if username != "operator" || role != "maintainer" || hash != "hash" {
 		t.Errorf("account after the wipe = %s/%s/%s, want operator/maintainer/hash", username, role, hash)
-	}
-	if subject != nil {
-		t.Errorf("linked person after the wipe = %q, want none — that person no longer exists", *subject)
 	}
 
 	// The membership survives with its role; only its person is gone.
@@ -344,15 +336,11 @@ func TestExecute_keepsTheAccountButNotItsPerson(t *testing.T) {
 		t.Errorf("membership role after the wipe = %q, want admin", memberRole)
 	}
 	if memberSubject != nil {
-		t.Errorf("membership's person after the wipe = %q, want none", *memberSubject)
+		t.Errorf("membership's person after the wipe = %q, want none — that person no longer exists", *memberSubject)
 	}
 
 	// The constraint the wipe lifted is back: a link into a library that no
 	// longer holds that person is still refused.
-	if _, err := env.db.Pool().Exec(t.Context(),
-		`UPDATE users SET subject_uid = 'sbj000000001' WHERE uid = 'usr000000001'`); err == nil {
-		t.Error("linking to a deleted person succeeded; the foreign key was not restored")
-	}
 	if _, err := env.db.Pool().Exec(t.Context(),
 		`UPDATE project_members SET subject_uid = 'sbj000000001' WHERE user_uid = 'usr000000001'`); err == nil {
 		t.Error("linking a membership to a deleted person succeeded; the foreign key was not restored")

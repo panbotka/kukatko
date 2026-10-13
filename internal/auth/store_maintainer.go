@@ -112,9 +112,9 @@ func (s *Store) inGuardedTx(ctx context.Context, mutate func(pgx.Tx) error) erro
 
 // scanUpdatedUser runs an "UPDATE ... RETURNING userColumns" statement on tx and
 // returns the refreshed user, translating pgx.ErrNoRows into ErrUserNotFound and
-// a foreign-key violation — only subject_uid has one — into ErrSubjectNotFound.
-// It is shared by the guarded profile-update and disable writes, audited or not,
-// which differ only in their SQL and arguments.
+// a foreign-key violation — only the membership's subject_uid has one — into
+// ErrSubjectNotFound. It is shared by the guarded profile-update and disable
+// writes, audited or not, which differ only in their SQL and arguments.
 func scanUpdatedUser(ctx context.Context, tx pgx.Tx, query string, args ...any) (User, error) {
 	user, err := scanUser(tx.QueryRow(ctx, query, args...))
 	if err != nil {
@@ -129,16 +129,15 @@ func scanUpdatedUser(ctx context.Context, tx pgx.Tx, query string, args ...any) 
 	return user, nil
 }
 
-// updateUserReturningGuarded runs an "UPDATE ... RETURNING userColumns"
-// statement inside a guarded transaction and returns the refreshed user. A
-// change that would strand the instance without an enabled maintainer fails with
-// ErrLastMaintainer and is rolled back.
-func (s *Store) updateUserReturningGuarded(ctx context.Context, query string, args ...any) (User, error) {
+// updateUserGuarded runs update — one account write that returns the refreshed
+// user — inside a guarded transaction. A change that would strand the instance
+// without an enabled maintainer fails with ErrLastMaintainer and is rolled back.
+func (s *Store) updateUserGuarded(ctx context.Context, update func(pgx.Tx) (User, error)) (User, error) {
 	var user User
 	err := s.inGuardedTx(ctx, func(tx pgx.Tx) error {
-		u, scanErr := scanUpdatedUser(ctx, tx, query, args...)
-		if scanErr != nil {
-			return scanErr
+		u, updateErr := update(tx)
+		if updateErr != nil {
+			return updateErr
 		}
 		user = u
 		return nil

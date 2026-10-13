@@ -38,8 +38,8 @@ func TestAnnounce_onlyInsideTheAlbumsProject(t *testing.T) {
 		sql  string
 		args []any
 	}{
-		{`INSERT INTO users (uid, username, email, password_hash, role, approved_at)
-			VALUES ($1, $2, $3, 'x', 'user', now())`, []any{outsiderUID, outsiderUID, outsiderUID + "@example.test"}},
+		{`INSERT INTO users (uid, username, email, password_hash, role)
+			VALUES ($1, $2, $3, 'x', 'user')`, []any{outsiderUID, outsiderUID, outsiderUID + "@example.test"}},
 		{`INSERT INTO project_members (project_uid, user_uid, role, approved_at) VALUES ($1, $2, 'viewer', now())`,
 			[]any{f.A.ProjectUID, outsiderUID}},
 		{`INSERT INTO notification_prefs (user_uid, kind, channel, enabled)

@@ -24,17 +24,17 @@ type fakePictures struct {
 	err    error
 }
 
-func (f fakePictures) Resolve(context.Context, string) (userpic.Source, userpic.Origin, error) {
+func (f fakePictures) Resolve(context.Context, userpic.Viewer, string) (userpic.Source, userpic.Origin, error) {
 	return f.source, f.origin, f.err
 }
 
-func (f fakePictures) Describe(context.Context, string) (userpic.State, error) {
+func (f fakePictures) Describe(context.Context, userpic.Viewer) (userpic.State, error) {
 	return userpic.State{Origin: f.origin}, nil
 }
 
 func (f fakePictures) SetUpload(context.Context, string, []byte) error { return nil }
 
-func (f fakePictures) SetPhoto(context.Context, string, string) error { return nil }
+func (f fakePictures) SetPhoto(context.Context, userpic.Viewer, string) error { return nil }
 
 func (f fakePictures) Clear(context.Context, string) error { return nil }
 

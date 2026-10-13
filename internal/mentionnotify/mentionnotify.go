@@ -162,9 +162,13 @@ const taskPlaceSQL = `SELECT t.title, true, t.project_id FROM photo_tasks t WHER
 // comment).
 const albumPlaceSQL = `SELECT a.title, true, a.project_id FROM albums a WHERE a.uid = $1`
 
-// standingSQL reads, of the given accounts, the ones in good standing: enabled
-// and approved.
-const standingSQL = `SELECT uid FROM users WHERE uid = ANY($1) AND NOT disabled AND approved_at IS NOT NULL`
+// standingSQL reads, of the given accounts, the ones in good standing in the
+// project $2: enabled, and an approved member there or a maintainer (who
+// enters every project).
+const standingSQL = `SELECT u.uid FROM users u
+WHERE u.uid = ANY($1) AND NOT u.disabled
+  AND (u.role = 'maintainer' OR EXISTS (SELECT 1 FROM project_members pm
+      WHERE pm.user_uid = u.uid AND pm.project_uid = $2 AND pm.approved_at IS NOT NULL))`
 
 // Mentioned delivers the comment_mention notification to every account in
 // mentioned the rules (wanted) allow, under a savepoint: a delivery that fails
@@ -203,7 +207,7 @@ func (n *Notifier) notify(ctx context.Context, sp pgx.Tx, c comments.Comment, me
 			slog.String("comment_uid", c.UID), slog.String("photo_uid", subj.UID))
 		return nil
 	}
-	standing, err := readStanding(ctx, sp, mentioned)
+	standing, err := readStanding(ctx, sp, p.projectUID, mentioned)
 	if err != nil {
 		return err
 	}
@@ -248,14 +252,16 @@ func readPlace(ctx context.Context, sp pgx.Tx, subj comments.Subject) (place, er
 	return p, nil
 }
 
-// readStanding returns which of the mentioned accounts are in good standing,
-// keyed by uid; an account absent from the map is not.
-func readStanding(ctx context.Context, sp pgx.Tx, mentioned []comments.Mention) (map[string]bool, error) {
+// readStanding returns which of the mentioned accounts are in good standing in
+// the project projectUID, keyed by uid; an account absent from the map is not.
+func readStanding(
+	ctx context.Context, sp pgx.Tx, projectUID string, mentioned []comments.Mention,
+) (map[string]bool, error) {
 	uids := make([]string, 0, len(mentioned))
 	for _, m := range mentioned {
 		uids = append(uids, m.UserUID)
 	}
-	rows, err := sp.Query(ctx, standingSQL, uids)
+	rows, err := sp.Query(ctx, standingSQL, uids, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("reading the accounts' standing: %w", err)
 	}

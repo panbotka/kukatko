@@ -559,9 +559,13 @@ func TestHTTP_passkeyLoginRefusesABlockedAccount(t *testing.T) {
 		t.Errorf("disabled account status = %d, want 401: %s", status, body)
 	}
 
-	if _, err := env.db.Pool().Exec(t.Context(),
-		"UPDATE users SET disabled = false, approved_at = NULL WHERE uid = $1", alice.UID); err != nil {
-		t.Fatalf("un-approving the account: %v", err)
+	for _, stmt := range []string{
+		`UPDATE users SET disabled = false WHERE uid = $1`,
+		`UPDATE project_members SET approved_at = NULL WHERE user_uid = $1`,
+	} {
+		if _, err := env.db.Pool().Exec(t.Context(), stmt, alice.UID); err != nil {
+			t.Fatalf("un-approving the account: %v", err)
+		}
 	}
 	if status, body := env.signInWithPasskey(t, newClient(t), device, alice.UID); status != http.StatusForbidden {
 		t.Errorf("unapproved account status = %d, want 403: %s", status, body)

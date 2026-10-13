@@ -76,9 +76,10 @@ func New(cfg Config) *Service {
 
 // consumeSQL reads and deletes every pending notice of the account in one
 // statement, and returns the photos that may still be named — visible under the
-// notification reading and still carrying the account's linked person on a
-// valid marker — with their project, newest photo first. Notices that no longer qualify are deleted
-// all the same: they are what the window collected, and the window is closing.
+// notification reading and still carrying, on a valid marker, the person the
+// account's membership of the photo's project links — with their project,
+// newest photo first. Notices that no longer qualify are deleted all the same:
+// they are what the window collected, and the window is closing.
 const consumeSQL = `
 WITH consumed AS (
     DELETE FROM tag_notices WHERE user_uid = $1 RETURNING photo_uid
@@ -88,8 +89,8 @@ FROM consumed c
 JOIN photos p ON p.uid = c.photo_uid
 WHERE ` + notification.VisiblePhotoSQL + `
   AND EXISTS (SELECT 1 FROM markers m
-              JOIN users u ON u.subject_uid = m.subject_uid
-              WHERE u.uid = $1 AND m.photo_uid = p.uid AND NOT m.invalid)
+              JOIN project_members pm ON pm.subject_uid = m.subject_uid AND pm.project_uid = p.project_id
+              WHERE pm.user_uid = $1 AND m.photo_uid = p.uid AND NOT m.invalid)
 ORDER BY p.taken_at DESC NULLS LAST, p.created_at DESC, p.uid`
 
 // Handle runs one tag_notify job: it closes the window of the account the

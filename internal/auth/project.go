@@ -243,8 +243,8 @@ func ProjectUIDFromContext(ctx context.Context) string {
 // request's project — its membership's subject_uid, what `person:me` and
 // `family:me` resolve to — or nil when the membership names nobody, when the
 // caller (a maintainer) has no membership there, or when the request carries no
-// project context. It is never the account-wide users.subject_uid: who you are
-// is a fact about one project's people.
+// project context. There is no account-wide link (migration 0110 dropped it):
+// who you are is a fact about one project's people.
 func LinkedSubjectFromContext(ctx context.Context) *string {
 	p, ok := principalFromContext(ctx)
 	if !ok || p.project == nil {

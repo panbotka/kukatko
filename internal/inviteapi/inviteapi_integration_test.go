@@ -281,7 +281,10 @@ func TestAccept_raisesNeverLowers(t *testing.T) {
 
 	viewer := e.seedAccount(t, "lowly")
 	e.addMember(t, e.f.B.ProjectUID, viewer, project.RoleViewer, true)
+	// Waiting in B, but let in elsewhere — an account whose only membership is
+	// waiting is a registrant nobody has approved, and may not sign in at all.
 	waiting := e.seedAccount(t, "waiting")
+	e.addMember(t, e.f.A.ProjectUID, waiting, project.RoleViewer, true)
 	e.addMember(t, e.f.B.ProjectUID, waiting, project.RoleViewer, false)
 	boss := e.seedAccount(t, "boss")
 	e.addMember(t, e.f.B.ProjectUID, boss, project.RoleAdmin, true)

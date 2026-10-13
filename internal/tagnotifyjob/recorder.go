@@ -80,14 +80,19 @@ func NewRecorder(cfg RecorderConfig) *Recorder {
 	return &Recorder{window: window, audience: cfg.Audience, log: log, now: now}
 }
 
-// recipientsSQL lists the accounts that are the tagged subject: those linked to
-// it, still enabled and approved. A subject may be linked to several accounts (a
-// household login and a personal one, migration 0060); ordering by uid keeps
-// the advisory locks of one transaction in a stable order.
+// recipientsSQL lists the accounts that are the tagged subject: those whose
+// membership of the subject's own project links it ("this is me" lives on the
+// membership), approved there and still enabled. A subject may be linked to
+// several accounts (a household login and a personal one, migration 0060);
+// ordering by uid keeps the advisory locks of one transaction in a stable
+// order.
 const recipientsSQL = `
-SELECT uid FROM users
-WHERE subject_uid = $1 AND NOT disabled AND approved_at IS NOT NULL
-ORDER BY uid`
+SELECT u.uid
+FROM subjects s
+JOIN project_members pm ON pm.project_uid = s.project_id AND pm.subject_uid = s.uid
+JOIN users u ON u.uid = pm.user_uid
+WHERE s.uid = $1 AND pm.approved_at IS NOT NULL AND NOT u.disabled
+ORDER BY u.uid`
 
 // announceableSQL reports whether the photo may be named to anybody at all: it
 // is visible under the notification reading (not private, hidden or archived —
@@ -216,13 +221,13 @@ func (r *Recorder) open(ctx context.Context, sp pgx.Tx, userUID string) error {
 	return nil
 }
 
-// deleteNoticesSQL un-announces a photo for every account linked to the
-// subject — unless the subject is still on the photo through another valid
-// marker, in which case it was not really taken off.
+// deleteNoticesSQL un-announces a photo for every account whose membership
+// links the subject — unless the subject is still on the photo through another
+// valid marker, in which case it was not really taken off.
 const deleteNoticesSQL = `
 DELETE FROM tag_notices n
-USING users u
-WHERE u.subject_uid = $1 AND n.user_uid = u.uid AND n.photo_uid = $2
+USING project_members pm
+WHERE pm.subject_uid = $1 AND n.user_uid = pm.user_uid AND n.photo_uid = $2
   AND NOT EXISTS (SELECT 1 FROM markers m
                   WHERE m.photo_uid = $2 AND m.subject_uid = $1 AND NOT m.invalid)`
 

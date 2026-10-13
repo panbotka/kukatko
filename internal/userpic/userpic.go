@@ -8,10 +8,12 @@
 // order is the point:
 //
 //  1. a picture the user uploaded, re-encoded on receipt (Source.Upload);
-//  2. a photograph of the library the user pointed at (Source.PhotoUID);
-//  3. the avatar of the person users.subject_uid says the account is — the
-//     *default*, so an account that has said who it is wears that face with no
-//     action from anybody (Source.PhotoUID plus Source.Face);
+//  2. a photograph of the library the user pointed at (Source.PhotoUID) —
+//     shown only to a viewer who may see that photo's project;
+//  3. the avatar of the person the account says it is in the viewer's project
+//     (its membership's subject_uid) — the *default*, so an account that has
+//     said who it is wears that face with no action from anybody
+//     (Source.PhotoUID plus Source.Face); a request without a project skips it;
 //  4. nothing, which the HTTP layer answers 404 and the client draws as the
 //     coloured initial.
 //
@@ -34,7 +36,8 @@
 // # What may be picked
 //
 // A photo flagged private or hidden from the library may not become a profile
-// picture (ErrPhotoNotAllowed). Those flags exist so a photograph stays out of
+// picture (ErrPhotoNotAllowed), nor may a photo of a project the user is no
+// approved member of (ErrPhotoNotFound — to them it does not exist). Those flags exist so a photograph stays out of
 // what everybody browses; putting one on a profile — where it is shown to every
 // reader of every thread the account has written in — would be the plainest way
 // to sidestep them.

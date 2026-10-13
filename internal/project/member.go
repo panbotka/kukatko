@@ -127,9 +127,10 @@ type Member struct {
 	// LastLoginAt is the account's last sign-in, or nil (joined from users).
 	LastLoginAt *time.Time `json:"last_login_at"`
 	// HasPicture reports whether the account has a profile picture worth asking
-	// GET /users/{uid}/avatar for: an uploaded or picked one, or a linked person
-	// whose face stands in. A linked person without a usable face still answers
-	// 404 there, so a client keeps its initial as the fallback.
+	// GET /users/{uid}/avatar for: an uploaded or picked one, or a person this
+	// membership links, whose face stands in. A linked person without a usable
+	// face still answers 404 there, so a client keeps its initial as the
+	// fallback.
 	HasPicture bool `json:"has_picture"`
 }
 

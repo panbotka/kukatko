@@ -54,8 +54,8 @@ func newFixture(t *testing.T) *fixture {
 	f := &fixture{db: db, jobs: jobs.NewStore(db.Pool()), now: time.Now().UTC().Truncate(time.Second)}
 	f.useDeliverer(true, false)
 	for _, uid := range []string{annaUID, taggerUID} {
-		f.exec(t, `INSERT INTO users (uid, username, email, password_hash, role, approved_at)
-			VALUES ($1, $2, $3, 'x', 'user', now())`, uid, uid, uid+"@example.test")
+		f.exec(t, `INSERT INTO users (uid, username, email, password_hash, role)
+			VALUES ($1, $2, $3, 'x', 'user')`, uid, uid, uid+"@example.test")
 		f.exec(t, `INSERT INTO project_members (project_uid, user_uid, role, approved_at)
 			VALUES ($1, $2, 'editor', now())`, project.BootstrapUID, uid)
 	}
@@ -64,7 +64,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 	f.subject = subject.UID
-	f.exec(t, "UPDATE users SET subject_uid = $2 WHERE uid = $1", annaUID, f.subject)
+	f.exec(t, "UPDATE project_members SET subject_uid = $2 WHERE user_uid = $1", annaUID, f.subject)
 	f.exec(t, `INSERT INTO push_subscriptions (id, user_uid, endpoint, p256dh, auth, user_agent)
 		VALUES ('psanna', $1, 'https://push.example.test/anna', 'key', 'secret', 'test')`, annaUID)
 	// Every channel is off by default; anna opted into the push.
@@ -468,7 +468,7 @@ func TestRecordsNothing(t *testing.T) {
 		}},
 		{name: "subject linked to no account", actor: taggerUID, setup: func(t *testing.T, f *fixture, _ string) {
 			t.Helper()
-			f.exec(t, "UPDATE users SET subject_uid = NULL WHERE uid = $1", annaUID)
+			f.exec(t, "UPDATE project_members SET subject_uid = NULL WHERE user_uid = $1", annaUID)
 		}},
 		{name: "disabled account", actor: taggerUID, setup: func(t *testing.T, f *fixture, _ string) {
 			t.Helper()

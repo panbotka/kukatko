@@ -229,7 +229,7 @@ func TestRegister_unapprovedAccountCannotSignIn(t *testing.T) {
 		t.Fatalf("reading the registered account: %v", err)
 	}
 	if _, err := env.db.Pool().Exec(t.Context(),
-		`UPDATE users SET approved_at = now() WHERE uid = $1`, created.UID); err != nil {
+		`UPDATE project_members SET approved_at = now() WHERE user_uid = $1`, created.UID); err != nil {
 		t.Fatalf("approving the account: %v", err)
 	}
 	if status, body := env.do(t, newClient(t), http.MethodPost, "/api/v1/auth/login",

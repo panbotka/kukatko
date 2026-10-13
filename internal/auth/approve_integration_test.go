@@ -35,8 +35,8 @@ func waitingAccount(t *testing.T, env *httpEnv, username string) auth.User {
 
 // approve lets the waiting account uid into the bootstrap project the way a
 // project admin now does it — through the membership (internal/memberapi over
-// project.Store.Approve), which stamps the account's own approval too during
-// the transition. The instance-wide approval route is gone.
+// project.Store.Approve); the account's own approval is derived from it. The
+// instance-wide approval route is gone.
 func approve(t *testing.T, env *httpEnv, uid string) {
 	t.Helper()
 	if _, err := project.NewStore(env.db.Pool()).Approve(t.Context(), audit.Meta{},

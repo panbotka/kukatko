@@ -132,7 +132,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   an admin membership of the bootstrap project), any other value sets `users.role = 'user'` and the
   account's bootstrap membership to that role (created when missing). A registration creates a `user`
   with an **unapproved viewer membership**; a project admin's `POST /p/{project}/members/{user_uid}/approve`
-  approves that membership and also stamps `users.approved_at` (sign-in still reads it).
+  approves that membership — sign-in lets an account in once **any** of its memberships is approved (a
+  maintainer, or an account in no project, always); the account carries no approval of its own (`approved_at` in a user payload is derived:
+  the earliest membership approval).
   Responses of the admin user endpoints carry a free-form **`note`** alongside
   `display_name` (an admin note on why the account exists / who it is). Both fields are optional,
   defaulting to the empty string. A `note` longer than **1000 characters** (runes, not bytes) → 400
@@ -156,30 +158,35 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   carries **`subject_uid`**, the subject of the library this account belongs to, or `null`. Unlike
   `note` it *is* in the login and `/auth/me` payloads, deliberately: the client cannot render the
   "my photos" entry or draw the account's face without it, and it is the caller's own fact about
-  themselves. `PUT /auth/subject` writes it on the account **and on the caller's membership of the
-  request's project** (the bootstrap one through the unprefixed route) when the person belongs to that
-  project; **`person:me`/`family:me` resolve the membership's link** (`project_members.subject_uid`) of
+  themselves. The link lives **only on the membership** (`project_members.subject_uid`; the account-wide
+  `users.subject_uid` was dropped by migration 0110): a user payload carries the bootstrap project's link
+  (transition), `GET /auth/me` the request's project's. `PUT /auth/subject` writes the caller's membership
+  of the request's project (the bootstrap one through the unprefixed route) and answers with that link — a
+  caller who is no member there (a maintainer visiting) gets `null` and nothing is written;
+  **`person:me`/`family:me` resolve the membership's link** (`project_members.subject_uid`) of
   the project the query runs in, so the same account is a different person — or nobody — in each of its
   projects. **Several accounts may name the same subject** (a shared
   family login and a personal one are both that person), and **deleting the subject clears the link**
   (`ON DELETE SET NULL`), so every reader must survive `null` — the common case.
   Self-service: **`PUT /auth/subject`** (`RequireAuth`, any role) with `{"subject_uid": "sub…"}` or
   `{"subject_uid": null}` → 200 with the refreshed user; the account written to is **the session's**,
-  never one named in the body. A UID naming no subject → **400**. It writes **no audit entry**,
+  never one named in the body. A UID naming no person **of that project** (unknown, or another project's)
+  → **400**. It writes **no audit entry**,
   following `POST /auth/password`: the trail records what was done *to* an account by somebody else.
   Admin: `POST /admin/users` and `PATCH /admin/users/{uid}` accept `subject_uid` as part of the
-  **replaced** profile (unlike `note`, an omitted or null value **clears** the link), 400 for an
-  unknown subject, and both record it in the `user.create`/`user.update` audit details.
+  **replaced** profile (unlike `note`, an omitted or null value **clears** the link) and write it on the
+  bootstrap membership, 400 for a subject that is no person of the bootstrap project, and both record it in the `user.create`/`user.update` audit details.
   Linking an account **publishes that person's cover photo** next to every comment the account has
   written (see the comment thread below); the surfaces that set it say so. A subject's `private` flag
   gates no reading today and is unchanged by this.
   **Approval and the first-run welcome:** every user payload carries two nullable timestamps.
   **`approved_at`** is when an administrator let the account in; `null` means *registered, waiting for
-  an administrator*. Every account made through `POST /admin/users` (and the bootstrap maintainer) is
-  approved on creation — an administrator creating an account **is** the approval — so `null` belongs
-  to the accounts `POST /auth/register` makes, until a project admin approves their membership (Members
-  API below), which fills it too; accounts predating migration 0064
-  were backfilled as approved with their `created_at`. It is **not** the inverse of `disabled` and no
+  an administrator*. It is **derived from the memberships** (migration 0110 dropped the column): the
+  earliest approval of any membership, or `created_at` for a maintainer with none approved and for an
+  account that belongs to no project at all (it is waiting for nobody). Every account
+  made through `POST /admin/users` (and the bootstrap maintainer) is approved on creation — an
+  administrator creating an account **is** the approval — so `null` belongs to the accounts
+  `POST /auth/register` makes, until a project admin approves their membership (Members API below). It is **not** the inverse of `disabled` and no
   reader may collapse the two: *never approved* and *approved and later blocked* are different states,
   they mean opposite things to the person holding the account, and the admin listing shows both
   columns. **`welcome_seen_at`** is when the account's owner last dismissed or completed the first-run
@@ -417,7 +424,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     sign-in normalises it: trimmed, lower-cased) or its e-mail address (**case-insensitive**); nothing is
     matched partially and a username wins over an address. The answer is **always `202
     {"status":"accepted"}`**, byte for byte, whether the account was added, already was a member, or does
-    not exist — no enumeration. The membership starts **approved** (and stamps `users.approved_at`). The
+    not exist — no enumeration. The membership starts **approved**. The
     `project.member.add` audit entry records the real `outcome`: `added`, `already_member` (the
     membership is left untouched), `no_such_account` (with the typed `identifier`), or `ambiguous` (an
     address several accounts share — nobody is added). Only a malformed request is refused: 400
@@ -426,8 +433,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   - `PATCH /members/{user_uid}` `{role}` → 200 + the member. **The caller's own membership → 409 `self`**
     (another admin must change it); **409 `last_admin`** when it would demote the project's only admin;
     404 `not_member`; 422 `invalid_role`; 400 `invalid_body`. Setting the role it has records nothing.
-  - `POST /members/{user_uid}/approve` → 200 + the member. Stamps the membership (and, transition,
-    `users.approved_at`) and enqueues the `account_approved` mail **in the same transaction** — it names
+  - `POST /members/{user_uid}/approve` → 200 + the member. Stamps the membership (which is what lets the
+    account sign in) and enqueues the `account_approved` mail **in the same transaction** — it names
     the project and links to `mail.base_url` + `/p/<slug>/`. Approving an approved member is 200 with
     nothing changed, mailed or audited; 404 `not_member`.
   - `DELETE /members/{user_uid}` → 204; the account itself stays. **409 `last_admin`** for the project's
@@ -1185,9 +1192,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `{comments:[{uid,photo_uid,author_uid,author_name,author_photo_uid?,body,created_at,edited_at?,mentions}]}`, **oldest first** (a
   conversation reads forwards), `author_name` resolved server-side (display name, fallback username) so a
   thread needs no second lookup; **`author_photo_uid`** is the cover photo of the person the author's
-  account is linked to (`users.subject_uid` → `subjects.cover_photo_uid`, one LEFT JOIN in the same
-  statement), so the client can draw a face instead of an initial. It is **absent** for an authorless
-  comment, an unlinked account, and a linked person with no cover photo — the common case, which is why
+  account is linked to **in the comment's project** (its membership's `subject_uid` →
+  `subjects.cover_photo_uid`, LEFT JOINs in the same statement), so the client can draw a face instead of an
+  initial. It is **absent** for an authorless comment, an account unlinked in that project, and a linked
+  person with no cover photo — the common case, which is why
   the initials fallback is the normal rendering rather than an error path.
   A photo with no comments — or one that does not exist, or one of another project — is an empty array,
   not a 404. `POST /photos/{uid}/comments` `{body}` → **201** with the created comment; guarded by
@@ -1213,7 +1221,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   text, never matched — names an **account**, by uid, so a rename breaks no old mention. On create and on
   edit the server parses the tokens (outside code: a token inside a code span or block is not a mention,
   exactly as the renderer shows it as code), **validates** each uid against the accounts (existing,
-  enabled, approved — an unknown or disabled one is dropped, the token still renders from its own name),
+  enabled, an approved member of the comment's project or a maintainer — an unknown, disabled or foreign one is dropped, the token still renders from its own name),
   de-duplicates, stores the set in **`comment_mentions`** (migration `0098_comment_mentions.sql`,
   `(comment_uid, user_uid, position)`, both FKs `ON DELETE CASCADE`) and returns it as **`mentions`**:
   `[{user_uid, name, subject_uid}]` in order of first mention, resolved **on every read** — `name` is the
@@ -1874,7 +1882,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
 - **Profile picture (`/api/v1`, `internal/userpicapi`):** `GET /users/{uid}/avatar` (RequireAuth) → the
   square **`image/jpeg`** that stands for one **account**, and three self-service routes that change the
   caller's own. The picture is the first answer of a chain the **server** resolves — an uploaded picture, a
-  library photo the user picked, the avatar of the subject `users.subject_uid` names, nothing — so the client
+  library photo the user picked, the avatar of the subject the account's membership of the **request's
+  project** links (the unprefixed route is in the bootstrap project, the transition alias; a request without
+  a project skips this step), nothing — so the client
   asks one URL and either gets a picture or a **404**, which is its cue to draw the coloured initial. Which
   of the three answered is deliberately not in the response. The linked subject is the **default**: an
   account that has said which person it is wears that face with no action from anybody. Same serving shape as
@@ -1889,7 +1899,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   or inherited photo is cut by the very same `internal/avatar` renderer (centre-cropped whole for a pick, the
   face box for an inherited face) and an upload is served straight from its row. A picked photo is re-judged
   on **every** request, so one archived, purged or flagged after the fact simply stops answering and the
-  account falls down the chain instead of erroring.
+  account falls down the chain instead of erroring — and so does a picked photo of a project the **caller**
+  may not see (no approved membership there, not a maintainer): it is refused exactly as a private one is,
+  ending in the same 404 when nothing below it answers, never a 403.
   `GET /auth/picture` (RequireAuth) → `{origin: "upload"|"photo"|"subject"|"none", photo_uid?, subject_uid?}`
   — for the account page, which has to label the picture it shows and say what clearing it falls back to; it
   never returns the bytes. `PUT /auth/picture` (RequireAuth) sets it, and the two ways to give one are told
@@ -1897,8 +1909,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   most 8 MiB — an over-large request is refused **413** before it is buffered, not read into memory), while
   **`application/json`** `{photo_uid}` points at a library photo. A photo flagged **`private` or
   `hidden_from_library` is refused 400**: a profile picture is shown to every reader of every thread the
-  account writes in, so allowing one would be the plainest way to sidestep the flag. An undecodable upload is
-  400 too. `DELETE /auth/picture` (RequireAuth) clears it, idempotently — which restores the *chain*, not
+  account writes in, so allowing one would be the plainest way to sidestep the flag. A photo of a project the
+  caller is no approved member of (a maintainer excepted) is **400 `no such photo`**, the same answer as one
+  that does not exist. An undecodable upload is 400 too. `DELETE /auth/picture` (RequireAuth) clears it, idempotently — which restores the *chain*, not
   necessarily the initial: a linked account falls back to that person's face. All three are **self-scoped**
   (the account is the session's, never the request's) and, following `POST /auth/password`, **not audited** —
   the audit trail records what was done *to* an account by somebody else.
@@ -3164,7 +3177,7 @@ put a photo taken minutes either side of New Year in the same year.
 | `album:` | text | album membership by **name** (substring) or exact UID |
 | `label:` | text | a label by **name** or UID |
 | `task:` | text | membership in a **task** — the work queue's frozen group — by the task's **question** (substring, `*` wildcard) or exact UID. Closed tasks match too: the group is the record of what a batch of edits touched, which is exactly what somebody searching for it wants back |
-| `person:` (alias `subject:`) | text | a subject by **name**, by **nickname** or by UID, via non-invalid markers. The name and the nickname are matched on the same terms (substring, `*` wildcard, case- and accent-insensitive like `album:`) against the same bound pattern, so `person:Bohouš` finds Bohumil Nečas and `person:Necas` finds him too; an empty nickname matches nothing. The exact lower-case value **`me`** is reserved: it means the person the caller's own account is linked to (`users.subject_uid`) — see below |
+| `person:` (alias `subject:`) | text | a subject by **name**, by **nickname** or by UID, via non-invalid markers. The name and the nickname are matched on the same terms (substring, `*` wildcard, case- and accent-insensitive like `album:`) against the same bound pattern, so `person:Bohouš` finds Bohumil Nečas and `person:Necas` finds him too; an empty nickname matches nothing. The exact lower-case value **`me`** is reserved: it means the person the caller's own account is linked to in this project (`project_members.subject_uid`) — see below |
 | `family:` | text | a whole **family**: the named subject, everybody **descended** from them and all of those people's **partners**, matched through non-invalid markers. The root is named exactly as `person:` names a subject — by **name**, by **nickname** or by **UID**, same substring/`*`/case rules — and the filter keeps its **own** walk (`internal/photos`), independent of `internal/family`. It is deliberately **not** a connected component: in a village the families marry into each other, and a component would eventually swallow everybody and stop filtering anything. That makes it deliberately **different** from `GET /subjects/{uid}/tree`, which since the 2026-09-26 network redesign draws the whole reachable family (aunts, cousins, in-laws' relatives): the tree page shows a family, the filter narrows a listing, and the two answer different questions on purpose — do not "fix" the inconsistency by unifying them. A person reachable by two paths (cousins marrying) is counted **once**. The walk is bounded at 20 generations. The exact lower-case value **`me`** is reserved here too — see above. There is **no** Czech alias `rodina:`, for the same reason `osoba:` is unsupported: the key registry is English-only |
 | `uploader:` | text | who uploaded the photo, by the account's **username or display name** (substring, `*` wildcard, accent-insensitive like every text filter — a name is typed from memory, so `uploader:tomas` finds "Tomáš") or by exact UID. Two exact lower-case values are reserved: **`me`** is the caller's own account (see below) and **`none`** are the photos with **no** uploader, the ones an import brought in — so `uploader:!none` is everything somebody did upload |
 | `favorite:` `private:` `archived:` | `yes\|no` | per-user favourite / private / archived; `archived:` **removes the default live-only scope** |

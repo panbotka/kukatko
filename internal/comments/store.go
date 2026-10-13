@@ -55,18 +55,28 @@ const commentColumns = `c.uid, COALESCE(c.photo_uid, ''), COALESCE(c.task_uid, '
 	c.body, c.created_at, c.edited_at, ` + mentionsColumn
 
 // mentionsColumn resolves the comment's stored mentions (comment_mentions) to
-// the accounts' current names and linked people, as one JSON array in order of
-// first mention, empty — never NULL — for a comment without any. It is a
-// correlated subquery rather than a join so a comment stays one row however
-// many people it names; an account deleted since has no row (the cascade took
-// it), so it is simply absent, and the client falls back to the token's name.
+// the accounts' current names and the people their memberships of the
+// comment's project link, as one JSON array in order of first mention, empty —
+// never NULL — for a comment without any. It is a correlated subquery rather
+// than a join so a comment stays one row however many people it names; an
+// account deleted since has no row (the cascade took it), so it is simply
+// absent, and the client falls back to the token's name.
 const mentionsColumn = `COALESCE((
 	SELECT jsonb_agg(jsonb_build_object(
 		'user_uid', m.user_uid,
 		'name', COALESCE(NULLIF(mu.display_name, ''), mu.username),
-		'subject_uid', mu.subject_uid) ORDER BY m.position)
+		'subject_uid', mm.subject_uid) ORDER BY m.position)
 	FROM comment_mentions m JOIN users mu ON mu.uid = m.user_uid
+	LEFT JOIN project_members mm ON mm.user_uid = m.user_uid AND mm.project_uid = ` + commentProjectSQL + `
 	WHERE m.comment_uid = c.uid), '[]'::jsonb)`
+
+// commentProjectSQL is the project of the comment row aliased c: the project
+// of whichever photo, task or album it hangs off (a comment carries no project
+// of its own, see parentTables).
+const commentProjectSQL = `COALESCE(
+		(SELECT pp.project_id FROM photos pp WHERE pp.uid = c.photo_uid),
+		(SELECT pt.project_id FROM photo_tasks pt WHERE pt.uid = c.task_uid),
+		(SELECT pa.project_id FROM albums pa WHERE pa.uid = c.album_uid))`
 
 // mutationColumns is what a mutating CTE returns for the outer select to join
 // against. It is the raw row, not the resolved projection: the author's name is
@@ -74,13 +84,17 @@ const mentionsColumn = `COALESCE((
 const mutationColumns = `uid, photo_uid, task_uid, album_uid, author_uid, body, created_at, edited_at`
 
 // authorJoin resolves a comment's author to a user row, and that account to the
-// person it says it is. Both are LEFT JOINs, and for different reasons: the user
-// because author_uid is ON DELETE SET NULL (losing the account must not lose the
-// comment), the subject because almost no account is linked to one and a linked
-// one usually has no cover photo either. The join is here rather than in a second
-// query so one statement still yields everything a thread needs to render.
+// person its membership of the comment's project says it is (who you are is a
+// fact about one project's people). All three are LEFT JOINs, and for
+// different reasons: the user because author_uid is ON DELETE SET NULL (losing
+// the account must not lose the comment), the membership because the author
+// may have left the project (or is a maintainer who never joined it), the
+// subject because almost no account is linked to one and a linked one usually
+// has no cover photo either. The joins are here rather than in a second query
+// so one statement still yields everything a thread needs to render.
 const authorJoin = ` LEFT JOIN users u ON u.uid = c.author_uid` +
-	` LEFT JOIN subjects s ON s.uid = u.subject_uid`
+	` LEFT JOIN project_members um ON um.user_uid = c.author_uid AND um.project_uid = ` + commentProjectSQL +
+	` LEFT JOIN subjects s ON s.uid = um.subject_uid`
 
 // parentTables maps each subject column to the root table its uid names. A
 // comment carries no project of its own: it belongs to the project of the

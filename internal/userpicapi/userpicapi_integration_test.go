@@ -14,11 +14,13 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/avatar"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
@@ -43,6 +45,7 @@ type env struct {
 	authSvc   *auth.Service
 	people    *people.Store
 	photos    *photos.Store
+	projects  *project.Store
 }
 
 // squareJPEG builds a decodable side×side JPEG, standing in both for an uploaded
@@ -87,7 +90,7 @@ func newEnv(t *testing.T) *env {
 	api := userpicapi.NewAPI(userpicapi.Config{
 		Pictures: userpic.NewService(userpic.Config{
 			Pictures: userpic.NewStore(pool),
-			Users:    authStore,
+			Members:  project.NewStore(pool),
 			Subjects: peopleStore,
 			Photos:   photoStore,
 		}),
@@ -105,7 +108,7 @@ func newEnv(t *testing.T) *env {
 	t.Cleanup(server.Close)
 	return &env{
 		server: server, authStore: authStore, authSvc: authSvc,
-		people: peopleStore, photos: photoStore,
+		people: peopleStore, photos: photoStore, projects: project.NewStore(pool),
 	}
 }
 
@@ -485,5 +488,131 @@ func TestPicture_myOwnPictureIsNeverReusedWithoutAsking(t *testing.T) {
 	}
 	if got, want := somebodyElse.Header.Get("Cache-Control"), "private, max-age=600, must-revalidate"; got != want {
 		t.Errorf("somebody else's Cache-Control = %q, want %q", got, want)
+	}
+}
+
+// projectB creates a second project — B to the bootstrap project's A — with
+// no members.
+func (e *env) projectB(t *testing.T) *project.Project {
+	t.Helper()
+	p, err := e.projects.Create(t.Context(), audit.Meta{}, project.CreateParams{Slug: "druhy", Name: "Druhý"})
+	if err != nil {
+		t.Fatalf("creating project B: %v", err)
+	}
+	return p
+}
+
+// join makes userUID an approved viewer of projectUID.
+func (e *env) join(t *testing.T, projectUID, userUID string) {
+	t.Helper()
+	if _, err := e.projects.AddMember(t.Context(), audit.Meta{}, projectUID, userUID, project.RoleViewer, true); err != nil {
+		t.Fatalf("adding %s to %s: %v", userUID, projectUID, err)
+	}
+}
+
+// facedSubject creates a person of projectUID with one detected face on a
+// fresh photo of that project.
+func (e *env) facedSubject(t *testing.T, projectUID, name, hash string) people.Subject {
+	t.Helper()
+	photo := e.catalogue(t, hash, func(p *photos.Photo) { p.ProjectID = projectUID })
+	subject, err := e.people.CreateSubject(t.Context(), projectUID, people.Subject{Name: name})
+	if err != nil {
+		t.Fatalf("creating %s: %v", name, err)
+	}
+	if _, err := e.people.CreateMarker(t.Context(), projectUID, people.Marker{
+		PhotoUID: photo.UID, SubjectUID: &subject.UID,
+		X: 0.4, Y: 0.3, W: 0.2, H: 0.25, Score: 90,
+	}); err != nil {
+		t.Fatalf("creating the marker of %s: %v", name, err)
+	}
+	return subject
+}
+
+// TestPicture_theInheritedFaceIsTheRequestsProjects verifies the face step
+// reads the membership of the request's project (the bootstrap project on the
+// unprefixed route): an account linked to a person only in project B wears no
+// face in A, and once its A membership names a person, that one is the face.
+func TestPicture_theInheritedFaceIsTheRequestsProjects(t *testing.T) {
+	env := newEnv(t)
+	uid, client := env.login(t, "twofaced")
+	b := env.projectB(t)
+	env.join(t, b.UID, uid)
+	inB := env.facedSubject(t, b.UID, "Anna v B", "5555555555555555555555555555555555555555555555555555555555555555")
+	if _, err := env.projects.SetSubject(t.Context(), audit.Meta{}, b.UID, uid, &inB.UID); err != nil {
+		t.Fatalf("linking the account in B: %v", err)
+	}
+
+	resp := env.avatarOf(t, client, uid, "")
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("linked only in B, asked in A: status = %d, want 404", resp.StatusCode)
+	}
+	if state := env.describe(t, client); state.Origin != userpic.OriginNone || state.SubjectUID != "" {
+		t.Errorf("linked only in B, described in A: %+v, want nothing", state)
+	}
+
+	inA := env.facedSubject(t, project.BootstrapUID, "Anna v A",
+		"6666666666666666666666666666666666666666666666666666666666666666")
+	if _, err := env.authStore.SetUserSubject(t.Context(), project.BootstrapUID, uid, &inA.UID); err != nil {
+		t.Fatalf("linking the account in A: %v", err)
+	}
+	state := env.describe(t, client)
+	if state.Origin != userpic.OriginSubject || state.SubjectUID != inA.UID {
+		t.Errorf("linked in both, described in A: %+v, want A's person %s", state, inA.UID)
+	}
+	ok := env.avatarOf(t, client, uid, "")
+	defer func() { _ = ok.Body.Close() }()
+	if ok.StatusCode != http.StatusOK {
+		t.Errorf("linked in A: status = %d, want 200", ok.StatusCode)
+	}
+}
+
+// TestPicture_aPickedPhotoOfBIsNotServedToAMemberOfAOnly verifies a picked
+// photo is refused, as a private one is, to a viewer who may not see its
+// project: the picker (a member of A and B) picks a photo of B, a member of A
+// only gets the 404 of "no picture", and a member of both gets the picture.
+func TestPicture_aPickedPhotoOfBIsNotServedToAMemberOfAOnly(t *testing.T) {
+	env := newEnv(t)
+	picker, pickerClient := env.login(t, "picker")
+	_, onlyA := env.login(t, "onlya")
+	both, bothClient := env.login(t, "both")
+	b := env.projectB(t)
+	env.join(t, b.UID, picker)
+	env.join(t, b.UID, both)
+	photo := env.catalogue(t, "7777777777777777777777777777777777777777777777777777777777777777",
+		func(p *photos.Photo) { p.ProjectID = b.UID })
+
+	if status, body := env.pick(t, pickerClient, photo.UID); status != http.StatusNoContent {
+		t.Fatalf("pick status = %d, want 204 (%s)", status, body)
+	}
+
+	refused := env.avatarOf(t, onlyA, picker, "")
+	_ = refused.Body.Close()
+	if refused.StatusCode != http.StatusNotFound {
+		t.Errorf("a member of A only: status = %d, want 404", refused.StatusCode)
+	}
+	served := env.avatarOf(t, bothClient, picker, "")
+	_ = served.Body.Close()
+	if served.StatusCode != http.StatusOK {
+		t.Errorf("a member of both (%s): status = %d, want 200", both, served.StatusCode)
+	}
+}
+
+// TestPicture_pickRefusesAPhotoOfAProjectTheCallerIsNotIn verifies PUT
+// /auth/picture checks the caller is a member of the photo's project: a photo
+// of B is "no such photo" to a member of A only, and nothing is stored.
+func TestPicture_pickRefusesAPhotoOfAProjectTheCallerIsNotIn(t *testing.T) {
+	env := newEnv(t)
+	_, client := env.login(t, "outsider")
+	b := env.projectB(t)
+	photo := env.catalogue(t, "8888888888888888888888888888888888888888888888888888888888888888",
+		func(p *photos.Photo) { p.ProjectID = b.UID })
+
+	if status, body := env.pick(t, client, photo.UID); status != http.StatusBadRequest ||
+		!strings.Contains(body, userpic.ErrPhotoNotFound.Error()) {
+		t.Errorf("pick status = %d (%s), want 400 %q", status, body, userpic.ErrPhotoNotFound)
+	}
+	if state := env.describe(t, client); state.Origin != userpic.OriginNone {
+		t.Errorf("a refused pick was stored anyway: %+v", state)
 	}
 }

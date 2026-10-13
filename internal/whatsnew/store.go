@@ -59,8 +59,7 @@ func (s *Store) WithGap(gap time.Duration) *Store {
 //
 // The row is the caller's membership of the project ($4), not the account: a
 // visit is a visit to one project, so the two timestamps and the linked person
-// live on project_members (the matching users columns are a transition copy
-// nobody writes any more).
+// live on project_members, their only home.
 const rotateVisitSQL = `
 UPDATE project_members
 SET last_seen_at = $2,

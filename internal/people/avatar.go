@@ -51,13 +51,8 @@ type Box struct {
 // with a photo the reader cannot open.
 const subjectAvatarSQL = subjectAvatarSelect + " AND " + "s.project_id = $2"
 
-// linkedSubjectAvatarSQL is subjectAvatarSQL without the project predicate, for
-// the one caller that resolves a subject outside any project: an account's
-// profile picture, served instance-wide (see LinkedSubjectAvatar).
-const linkedSubjectAvatarSQL = subjectAvatarSelect
-
-// subjectAvatarSelect is the statement both avatar reads share, ending in the
-// WHERE clause that names the subject so the scoped variant can extend it.
+// subjectAvatarSelect is subjectAvatarSQL up to the WHERE clause that names the
+// subject, which subjectAvatarSQL extends with the project predicate.
 const subjectAvatarSelect = `
 WITH best_face AS (
     SELECT m.photo_uid, m.x, m.y, m.w, m.h
@@ -93,15 +88,6 @@ func (s *Store) SubjectAvatar(ctx context.Context, projectUID, uid string) (Avat
 		return AvatarSource{}, err
 	}
 	return s.readAvatar(ctx, subjectAvatarSQL, uid, projectUID)
-}
-
-// LinkedSubjectAvatar is SubjectAvatar for the subject an account is linked to,
-// read without a project: an account (and so its profile picture, served at the
-// instance-wide GET /users/{uid}/avatar) belongs to no single project, and the
-// link itself names the subject. Nothing that serves a project's catalogue may
-// call it — that is what SubjectAvatar is for.
-func (s *Store) LinkedSubjectAvatar(ctx context.Context, uid string) (AvatarSource, error) {
-	return s.readAvatar(ctx, linkedSubjectAvatarSQL, uid)
 }
 
 // readAvatar runs one of the avatar statements with args and maps its row.

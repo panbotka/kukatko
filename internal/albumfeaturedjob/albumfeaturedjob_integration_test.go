@@ -65,8 +65,8 @@ func newFixture(t *testing.T) *fixture {
 	for uid, role := range map[string]string{
 		curatorUID: "curator", viewerUID: "viewer", editorUID: "editor", adminUID: "admin", disabledUID: "editor",
 	} {
-		f.exec(t, `INSERT INTO users (uid, username, email, password_hash, role, approved_at, disabled)
-			VALUES ($1, $2, $3, 'x', 'user', now(), $4)`, uid, uid, uid+"@example.test", uid == disabledUID)
+		f.exec(t, `INSERT INTO users (uid, username, email, password_hash, role, disabled)
+			VALUES ($1, $2, $3, 'x', 'user', $4)`, uid, uid, uid+"@example.test", uid == disabledUID)
 		f.exec(t, `INSERT INTO project_members (project_uid, user_uid, role, approved_at)
 			VALUES ($1, $2, $3, now())`, project.BootstrapUID, uid, role)
 	}

@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/imgconvert"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // Origin names which link of the chain produced a picture. It is reported to the
@@ -41,21 +41,39 @@ type Pictures interface {
 	Clear(ctx context.Context, userUID string) error
 }
 
-// Users resolves an account to the person of the library it says it is. It is
-// satisfied by *auth.Store.
-type Users interface {
-	// GetUserByUID returns the account, or auth.ErrUserNotFound.
-	GetUserByUID(ctx context.Context, uid string) (auth.User, error)
+// Members answers the two questions the chain asks of a project's
+// memberships: which person the pictured account says it is there, and
+// whether the viewer may see that project's photos at all. It is satisfied by
+// *project.Store.
+type Members interface {
+	// Membership returns the account's membership of the project, or
+	// project.ErrNotMember.
+	Membership(ctx context.Context, projectUID, userUID string) (*project.Member, error)
 }
 
 // Subjects resolves a subject to the picture that stands for it — the same
 // lookup the subject avatar endpoint makes, so an inherited face is exactly the
 // face the people index draws. It is satisfied by *people.Store.
 type Subjects interface {
-	// LinkedSubjectAvatar returns the cover photo or best face of the subject an
-	// account is linked to, or people.ErrSubjectNotFound / people.ErrNoAvatar. It
-	// reads without a project: an account's picture is instance-wide.
-	LinkedSubjectAvatar(ctx context.Context, uid string) (people.AvatarSource, error)
+	// SubjectAvatar returns the cover photo or best face of the subject in the
+	// project, or people.ErrSubjectNotFound / people.ErrNoAvatar.
+	SubjectAvatar(ctx context.Context, projectUID, uid string) (people.AvatarSource, error)
+}
+
+// Viewer is who asks for a picture, and from where: the requesting account,
+// whether it is a maintainer (who enters every project) and the project the
+// request is in — empty when it carries none. A picture is not the same to
+// everybody: the inherited face is the pictured account's person *in the
+// viewer's project*, and a picked photo is shown only to somebody who may see
+// the photo's project.
+type Viewer struct {
+	// UserUID is the requesting account; empty for nobody, who may see no
+	// project's photos.
+	UserUID string
+	// Maintainer is whether that account holds the instance's maintainer role.
+	Maintainer bool
+	// ProjectUID is the project the request is in, or empty.
+	ProjectUID string
 }
 
 // Photos reads the record behind a picked photo: whether it still exists, and
@@ -70,7 +88,7 @@ type Photos interface {
 // to status codes.
 type Service struct {
 	pictures Pictures
-	users    Users
+	members  Members
 	subjects Subjects
 	photos   Photos
 	budget   *imgconvert.DecodeBudget
@@ -80,8 +98,9 @@ type Service struct {
 type Config struct {
 	// Pictures is where an uploaded or picked picture is stored.
 	Pictures Pictures
-	// Users resolves the account's linked subject, the chain's third source.
-	Users Users
+	// Members resolves the account's linked subject in the viewer's project,
+	// the chain's third source, and the viewer's access to a picked photo.
+	Members Members
 	// Subjects turns that subject into a photo and a face box.
 	Subjects Subjects
 	// Photos decides whether a picked photo is still showable.
@@ -95,29 +114,31 @@ type Config struct {
 func NewService(cfg Config) *Service {
 	return &Service{
 		pictures: cfg.Pictures,
-		users:    cfg.Users,
+		members:  cfg.Members,
 		subjects: cfg.Subjects,
 		photos:   cfg.Photos,
 		budget:   cfg.DecodeBudget,
 	}
 }
 
-// Resolve walks the chain for one account and returns the first answer that
-// exists, together with the Origin that produced it. It returns ErrNoPicture
-// when no link of the chain answers — an ordinary outcome, and the one the HTTP
-// layer turns into the 404 that tells a client to draw the initial.
+// Resolve walks the chain for one account, as viewer sees it, and returns the
+// first answer that exists, together with the Origin that produced it. It
+// returns ErrNoPicture when no link of the chain answers — an ordinary outcome,
+// and the one the HTTP layer turns into the 404 that tells a client to draw the
+// initial.
 //
 // Every link is re-checked on every call rather than trusted from when it was
 // set: a picked photo is looked up and re-judged, so one that has since been
 // archived, purged, or flagged private or hidden simply stops being an answer
 // and the account falls through to the face below it. That is the difference
 // between a chain and a stored decision — the stored decision would serve a
-// photo its owner has since hidden.
-func (s *Service) Resolve(ctx context.Context, userUID string) (Source, Origin, error) {
+// photo its owner has since hidden. A picked photo of a project the viewer may
+// not see is not an answer either, for the same reason a private one is not.
+func (s *Service) Resolve(ctx context.Context, viewer Viewer, userUID string) (Source, Origin, error) {
 	stored, err := s.pictures.Get(ctx, userUID)
 	switch {
 	case err == nil:
-		source, ok, storedErr := s.resolveStored(ctx, stored)
+		source, ok, storedErr := s.resolveStored(ctx, viewer, stored)
 		if storedErr != nil {
 			return Source{}, OriginNone, storedErr
 		}
@@ -129,14 +150,15 @@ func (s *Service) Resolve(ctx context.Context, userUID string) (Source, Origin, 
 	default:
 		return Source{}, OriginNone, fmt.Errorf("userpic: reading stored picture of %s: %w", userUID, err)
 	}
-	return s.resolveSubject(ctx, userUID)
+	return s.resolveSubject(ctx, viewer.ProjectUID, userUID)
 }
 
 // resolveStored turns a stored row into a servable source, reporting false when
-// the row exists but cannot be served — a picked photo that has gone or been
-// flagged since. A false is a fall-through, not a failure: the caller moves on
-// to the next link of the chain.
-func (s *Service) resolveStored(ctx context.Context, stored Picture) (Source, bool, error) {
+// the row exists but cannot be served to viewer — a picked photo that has gone
+// or been flagged since, or one of a project viewer may not see. A false is a
+// fall-through, not a failure: the caller moves on to the next link of the
+// chain.
+func (s *Service) resolveStored(ctx context.Context, viewer Viewer, stored Picture) (Source, bool, error) {
 	if stored.Kind == KindUpload {
 		return Source{Upload: stored.Image}, true, nil
 	}
@@ -150,30 +172,71 @@ func (s *Service) resolveStored(ctx context.Context, stored Picture) (Source, bo
 	if !Showable(photo) {
 		return Source{}, false, nil
 	}
+	ok, err := s.maySee(ctx, viewer, photo.ProjectID)
+	if err != nil || !ok {
+		return Source{}, false, err
+	}
 	return Source{PhotoUID: photo.UID}, true, nil
 }
 
-// resolveSubject returns the avatar of the person the account says it is — the
-// chain's default and the reason most accounts need to configure nothing at all.
-// An account with no link, a link to a person who has been deleted, or a person
-// with no picture anywhere all yield ErrNoPicture.
-func (s *Service) resolveSubject(ctx context.Context, userUID string) (Source, Origin, error) {
-	user, err := s.users.GetUserByUID(ctx, userUID)
-	if errors.Is(err, auth.ErrUserNotFound) {
-		return Source{}, OriginNone, ErrNoPicture
+// maySee reports whether viewer may see the photos of the project projectUID:
+// a maintainer always, anybody else only as an approved member of it.
+func (s *Service) maySee(ctx context.Context, viewer Viewer, projectUID string) (bool, error) {
+	if viewer.Maintainer {
+		return true, nil
+	}
+	if viewer.UserUID == "" || projectUID == "" {
+		return false, nil
+	}
+	member, err := s.members.Membership(ctx, projectUID, viewer.UserUID)
+	if errors.Is(err, project.ErrNotMember) {
+		return false, nil
 	}
 	if err != nil {
-		return Source{}, OriginNone, fmt.Errorf("userpic: reading account %s: %w", userUID, err)
+		return false, fmt.Errorf("userpic: reading the membership of %s in %s: %w", viewer.UserUID, projectUID, err)
 	}
-	if user.SubjectUID == nil || *user.SubjectUID == "" {
+	return member.ApprovedAt != nil, nil
+}
+
+// linkedSubject returns the person the account userUID says it is in the
+// project projectUID — its membership's link — or "" when there is no project,
+// the account is no member there, or the membership names nobody.
+func (s *Service) linkedSubject(ctx context.Context, projectUID, userUID string) (string, error) {
+	if projectUID == "" || userUID == "" {
+		return "", nil
+	}
+	member, err := s.members.Membership(ctx, projectUID, userUID)
+	if errors.Is(err, project.ErrNotMember) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("userpic: reading the membership of %s in %s: %w", userUID, projectUID, err)
+	}
+	if member.SubjectUID == nil {
+		return "", nil
+	}
+	return *member.SubjectUID, nil
+}
+
+// resolveSubject returns the avatar of the person the account says it is in
+// the project projectUID — the chain's default and the reason most accounts
+// need to configure nothing at all. A request with no project skips the step;
+// an account with no link there, a link to a person who has been deleted, or a
+// person with no picture anywhere all yield ErrNoPicture.
+func (s *Service) resolveSubject(ctx context.Context, projectUID, userUID string) (Source, Origin, error) {
+	subjectUID, err := s.linkedSubject(ctx, projectUID, userUID)
+	if err != nil {
+		return Source{}, OriginNone, err
+	}
+	if subjectUID == "" {
 		return Source{}, OriginNone, ErrNoPicture
 	}
-	avatar, err := s.subjects.LinkedSubjectAvatar(ctx, *user.SubjectUID)
+	avatar, err := s.subjects.SubjectAvatar(ctx, projectUID, subjectUID)
 	if errors.Is(err, people.ErrSubjectNotFound) || errors.Is(err, people.ErrNoAvatar) {
 		return Source{}, OriginNone, ErrNoPicture
 	}
 	if err != nil {
-		return Source{}, OriginNone, fmt.Errorf("userpic: reading subject avatar %s: %w", *user.SubjectUID, err)
+		return Source{}, OriginNone, fmt.Errorf("userpic: reading subject avatar %s: %w", subjectUID, err)
 	}
 	return Source{PhotoUID: avatar.PhotoUID, Face: convertBox(avatar.Face)}, OriginSubject, nil
 }
@@ -194,21 +257,19 @@ type State struct {
 	SubjectUID string `json:"subject_uid,omitempty"`
 }
 
-// Describe reports which source currently answers for the account, for the
-// account page. It is the same walk as Resolve without the bytes: a page that
-// only has to label the picture it is about to show should not also make the
-// server read an uploaded JPEG out of the database.
-func (s *Service) Describe(ctx context.Context, userUID string) (State, error) {
+// Describe reports which source currently answers for viewer's own account,
+// for the account page. It is the same walk as Resolve without the bytes: a
+// page that only has to label the picture it is about to show should not also
+// make the server read an uploaded JPEG out of the database.
+func (s *Service) Describe(ctx context.Context, viewer Viewer) (State, error) {
 	state := State{Origin: OriginNone}
-	user, err := s.users.GetUserByUID(ctx, userUID)
-	if err != nil && !errors.Is(err, auth.ErrUserNotFound) {
-		return State{}, fmt.Errorf("userpic: reading account %s: %w", userUID, err)
+	subjectUID, err := s.linkedSubject(ctx, viewer.ProjectUID, viewer.UserUID)
+	if err != nil {
+		return State{}, err
 	}
-	if err == nil && user.SubjectUID != nil {
-		state.SubjectUID = *user.SubjectUID
-	}
+	state.SubjectUID = subjectUID
 
-	source, origin, err := s.Resolve(ctx, userUID)
+	source, origin, err := s.Resolve(ctx, viewer, viewer.UserUID)
 	if errors.Is(err, ErrNoPicture) {
 		return state, nil
 	}
@@ -250,16 +311,18 @@ func (s *Service) SetUpload(ctx context.Context, userUID string, data []byte) er
 	return nil
 }
 
-// SetPhoto points the account's picture at the library photo named by photoUID,
+// SetPhoto points viewer's own picture at the library photo named by photoUID,
 // replacing whatever it had. It returns ErrPhotoNotFound for a photo that does
-// not exist (or has been archived, which is the same thing to somebody picking
-// one), and ErrPhotoNotAllowed for one flagged private or hidden from the
+// not exist, has been archived, or belongs to a project viewer is no approved
+// member of (a maintainer excepted) — all the same thing to somebody picking
+// one — and ErrPhotoNotAllowed for one flagged private or hidden from the
 // library.
 //
-// The refusal is the point of the method. A profile picture is shown to every
-// reader of every thread the account writes in, so letting a private photo
-// become one would be the plainest way there is to sidestep the flag.
-func (s *Service) SetPhoto(ctx context.Context, userUID, photoUID string) error {
+// The refusals are the point of the method. A profile picture is shown to every
+// reader of every thread the account writes in, so letting a private photo —
+// or a photo of a library the account cannot even open — become one would be
+// the plainest way there is to sidestep the flag or the project boundary.
+func (s *Service) SetPhoto(ctx context.Context, viewer Viewer, photoUID string) error {
 	photo, err := s.photos.GetByUID(ctx, photoUID)
 	if errors.Is(err, photos.ErrPhotoNotFound) {
 		return ErrPhotoNotFound
@@ -267,14 +330,21 @@ func (s *Service) SetPhoto(ctx context.Context, userUID, photoUID string) error 
 	if err != nil {
 		return fmt.Errorf("userpic: reading picked photo %s: %w", photoUID, err)
 	}
+	ok, err := s.maySee(ctx, viewer, photo.ProjectID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrPhotoNotFound
+	}
 	if photo.Private || photo.HiddenFromLibrary {
 		return ErrPhotoNotAllowed
 	}
 	if photo.ArchivedAt != nil {
 		return ErrPhotoNotFound
 	}
-	if err := s.pictures.SetPhoto(ctx, userUID, photo.UID); err != nil {
-		return fmt.Errorf("userpic: storing the picked picture of %s: %w", userUID, err)
+	if err := s.pictures.SetPhoto(ctx, viewer.UserUID, photo.UID); err != nil {
+		return fmt.Errorf("userpic: storing the picked picture of %s: %w", viewer.UserUID, err)
 	}
 	return nil
 }

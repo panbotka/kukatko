@@ -77,14 +77,17 @@ const uploadField = "picture"
 // handlers are unit-testable without a database; it is satisfied by
 // *userpic.Service.
 type Pictures interface {
-	// Resolve returns the first answer of the chain, or userpic.ErrNoPicture.
-	Resolve(ctx context.Context, userUID string) (userpic.Source, userpic.Origin, error)
-	// Describe reports which source currently answers, without the bytes.
-	Describe(ctx context.Context, userUID string) (userpic.State, error)
+	// Resolve returns the first answer of the chain as viewer sees it, or
+	// userpic.ErrNoPicture.
+	Resolve(ctx context.Context, viewer userpic.Viewer, userUID string) (userpic.Source, userpic.Origin, error)
+	// Describe reports which source currently answers for viewer's own
+	// account, without the bytes.
+	Describe(ctx context.Context, viewer userpic.Viewer) (userpic.State, error)
 	// SetUpload normalizes and stores submitted image bytes.
 	SetUpload(ctx context.Context, userUID string, data []byte) error
-	// SetPhoto points the account's picture at a library photo.
-	SetPhoto(ctx context.Context, userUID, photoUID string) error
+	// SetPhoto points viewer's own picture at a library photo of a project
+	// viewer may see.
+	SetPhoto(ctx context.Context, viewer userpic.Viewer, photoUID string) error
 	// Clear removes the stored picture.
 	Clear(ctx context.Context, userUID string) error
 }
@@ -157,7 +160,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 // they are one answer to it. A caller presenting the current ETag gets 304.
 func (a *API) handleAvatar(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
-	source, _, err := a.pictures.Resolve(r.Context(), uid)
+	source, _, err := a.pictures.Resolve(r.Context(), viewerOf(r), uid)
 	if err != nil {
 		writeResolveError(w, err)
 		return
@@ -168,6 +171,18 @@ func (a *API) handleAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.servePhoto(w, r, source, policy)
+}
+
+// viewerOf is who asks, as the chain needs to know it: the signed-in account,
+// whether it is a maintainer, and the request's project — the one the
+// inherited face is looked up in, empty when the request carries none.
+func viewerOf(r *http.Request) userpic.Viewer {
+	viewer := userpic.Viewer{ProjectUID: auth.ProjectUIDFromContext(r.Context())}
+	if user, ok := auth.UserFromContext(r.Context()); ok {
+		viewer.UserUID = user.UID
+		viewer.Maintainer = user.Role.CanMaintain()
+	}
+	return viewer
 }
 
 // cachePolicy picks how long this answer may be reused without asking again: the
@@ -249,7 +264,7 @@ func (a *API) handleDescribe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	state, err := a.pictures.Describe(r.Context(), user.UID)
+	state, err := a.pictures.Describe(r.Context(), viewerOf(r))
 	if err != nil {
 		log.Printf("userpicapi: describing picture of %s: %v", user.UID, err)
 		writeError(w, http.StatusInternalServerError, "could not read the profile picture")
@@ -270,8 +285,9 @@ type pickRequest struct {
 // keep, a JSON body carries the uid of a photograph the library already holds.
 //
 // It answers 204, 400 for an unreadable body, an undecodable picture or a photo
-// that may not be one (private or hidden), 413 for an over-large upload, and 500
-// otherwise.
+// that may not be one (private or hidden, or of a project the caller is no
+// approved member of — that one reads as "no such photo"), 413 for an
+// over-large upload, and 500 otherwise.
 func (a *API) handleSet(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
@@ -287,7 +303,7 @@ func (a *API) handleSet(w http.ResponseWriter, r *http.Request) {
 		a.setUpload(w, r, user.UID)
 		return
 	}
-	a.setPicked(w, r, user.UID)
+	a.setPicked(w, r)
 }
 
 // setUpload reads the submitted picture out of the multipart body and stores the
@@ -322,8 +338,10 @@ func (a *API) setUpload(w http.ResponseWriter, r *http.Request, userUID string) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// setPicked points the caller's picture at a photograph of the library.
-func (a *API) setPicked(w http.ResponseWriter, r *http.Request, userUID string) {
+// setPicked points the caller's picture at a photograph of the library — of a
+// project the caller may see; any other photo is the same 404 as one that does
+// not exist.
+func (a *API) setPicked(w http.ResponseWriter, r *http.Request) {
 	var req pickRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -333,7 +351,7 @@ func (a *API) setPicked(w http.ResponseWriter, r *http.Request, userUID string) 
 		writeError(w, http.StatusBadRequest, "photo_uid is required")
 		return
 	}
-	if err := a.pictures.SetPhoto(r.Context(), userUID, req.PhotoUID); err != nil {
+	if err := a.pictures.SetPhoto(r.Context(), viewerOf(r), req.PhotoUID); err != nil {
 		writeSetError(w, err)
 		return
 	}

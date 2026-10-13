@@ -7,6 +7,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/userpic"
@@ -32,7 +33,7 @@ func buildUserPicAPI(
 	return userpicapi.NewAPI(userpicapi.Config{
 		Pictures: userpic.NewService(userpic.Config{
 			Pictures: userpic.NewStore(pool),
-			Users:    auth.NewStore(pool),
+			Members:  project.NewStore(pool),
 			Subjects: people.NewStore(pool),
 			Photos:   photoStore,
 			// An uploaded picture is decoded in-process like any other image.

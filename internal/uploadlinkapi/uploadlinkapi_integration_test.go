@@ -300,8 +300,9 @@ func TestAnonymousUploadThenRegisterClaimsThePhotos(t *testing.T) {
 	}
 	var newUID string
 	var approved *time.Time
-	if err := e.db.Pool().QueryRow(t.Context(), "SELECT uid, approved_at FROM users WHERE username = 'novy'").
-		Scan(&newUID, &approved); err != nil {
+	if err := e.db.Pool().QueryRow(t.Context(), `SELECT u.uid, min(m.approved_at)
+		FROM users u LEFT JOIN project_members m ON m.user_uid = u.uid
+		WHERE u.username = 'novy' GROUP BY u.uid`).Scan(&newUID, &approved); err != nil {
 		t.Fatalf("reading the new account: %v", err)
 	}
 	if approved != nil {

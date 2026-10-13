@@ -35,17 +35,34 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // nullable in the schema, so it is coalesced to the empty string here and the Go
 // model can keep it a plain string.
 //
-// The last column is the account's role in the bootstrap project, read by a
-// correlated subquery so every user read — SELECT … FROM users and UPDATE users
-// … RETURNING alike, which is why the table is never aliased — carries it without
-// a join (transition: until the users.* readers move to the membership). A
-// RETURNING clause sees the membership as it was before the statement, so a
-// statement that also writes the membership patches the result in Go.
+// Three columns are read off the memberships by correlated subqueries, so every
+// user read — SELECT … FROM users and UPDATE users … RETURNING alike, which is
+// why the table is never aliased — carries them without a join: the linked
+// person and the role in the bootstrap project (transition: what the
+// unprefixed account payloads still speak), and the account's approval
+// (accountApprovedSQL). A RETURNING clause sees the membership as it was before
+// the statement, so a statement that also writes the membership patches the
+// result in Go.
 const userColumns = `uid, username, display_name, email, password_hash, role,
 	disabled, created_at, updated_at, last_login_at, COALESCE(note, '') AS note,
-	subject_uid, approved_at, welcome_seen_at,
+	(SELECT m.subject_uid FROM project_members m
+		WHERE m.user_uid = users.uid AND m.project_uid = '` + project.BootstrapUID + `') AS subject_uid,
+	` + accountApprovedSQL + ` AS approved_at, welcome_seen_at,
 	COALESCE((SELECT m.role FROM project_members m
 		WHERE m.user_uid = users.uid AND m.project_uid = '` + project.BootstrapUID + `'), '') AS project_role`
+
+// accountApprovedSQL is when the account (the users row in scope, never
+// aliased) was let in: the earliest approval of any of its memberships. While
+// it holds memberships and none is approved it is NULL — "registered,
+// waiting", which sign-in refuses. A maintainer enters every project whatever
+// its memberships say, and an account in no project at all is waiting for
+// nobody (it may sign in, see nothing and accept an invitation), so both count
+// as approved since they were created.
+const accountApprovedSQL = `COALESCE(
+		(SELECT min(m.approved_at) FROM project_members m WHERE m.user_uid = users.uid),
+		CASE WHEN users.role = '` + string(RoleMaintainer) + `'
+			OR NOT EXISTS (SELECT 1 FROM project_members m WHERE m.user_uid = users.uid)
+		THEN users.created_at END)`
 
 // lockUserQuery reads one account and locks its row for the rest of the
 // transaction, so the decision that follows — is it blocked? has somebody
@@ -100,11 +117,49 @@ func isUniqueViolation(err error) bool {
 }
 
 // isForeignKeyViolation reports whether err is a PostgreSQL foreign-key
-// violation (SQLSTATE 23503). The only foreign key a user row carries is
-// subject_uid, so it always means the named person does not exist.
+// violation (SQLSTATE 23503). The only foreign key an account write can trip is
+// the membership's subject_uid, so it always means the named person does not
+// exist (checkSubject refuses that up front; this covers a subject deleted in
+// between).
 func isForeignKeyViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == foreignKeyViolation
+}
+
+// querier is the one method checkSubject needs, satisfied by the pool and by a
+// transaction alike.
+type querier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// execQuerier is a querier that also executes statements — the pool or a
+// transaction, whichever an account insert runs on.
+type execQuerier interface {
+	querier
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
+// subjectInProjectQuery reports whether the subject $1 is a person of the
+// project $2.
+const subjectInProjectQuery = `SELECT EXISTS (SELECT 1 FROM subjects WHERE uid = $1 AND project_id = $2)`
+
+// checkSubject returns ErrSubjectNotFound unless subjectUID (nil or empty: no
+// link, always fine) names a person of the project projectUID. A person is a
+// row of one project, so another project's subject is nobody there — the same
+// answer as a uid that names nothing at all.
+func checkSubject(ctx context.Context, q querier, projectUID string, subjectUID *string) error {
+	uid := normalizeSubjectUID(subjectUID)
+	if uid == nil {
+		return nil
+	}
+	var ok bool
+	if err := q.QueryRow(ctx, subjectInProjectQuery, *uid, projectUID).Scan(&ok); err != nil {
+		return fmt.Errorf("auth: checking subject %s: %w", *uid, err)
+	}
+	if !ok {
+		return ErrSubjectNotFound
+	}
+	return nil
 }
 
 // normalizeSubjectUID maps an empty-string link to nil, so a client that clears
@@ -119,33 +174,21 @@ func normalizeSubjectUID(uid *string) *string {
 	return uid
 }
 
-// insertUserQuery inserts one account. approved_at is written from the model
-// rather than defaulted in the schema: a row that says nothing about approval is
-// an account still waiting for one, and that has to stay the answer once
-// self-service registration inserts rows of its own. welcome_seen_at is
-// deliberately absent — a brand new account has never seen the welcome, and the
-// column's NULL says so.
-//
-// The same statement makes the account a member of the project $11 with the
-// role $12 — approved exactly when the account is — unless $12 is empty, which
-// creates an account with no membership at all. The linked person $9 is copied
-// onto the membership too when it is a person of that project (memberSubjectSQL):
-// person:me reads the membership, the users column is a transition copy.
+// insertUserQuery inserts one account and makes it a member of the project $11
+// with the role $12 — unless $12 is empty, which creates an account with no
+// membership at all. The membership is approved at $10 (from the model, never
+// a schema default: a row that says nothing about approval is an account still
+// waiting for one, which is what self-service registration inserts) and links
+// the person $9, which checkSubject has confirmed is one of that project's.
+// welcome_seen_at is deliberately absent — a brand new account has never seen
+// the welcome, and the column's NULL says so.
 const insertUserQuery = `WITH new_user AS (
-	INSERT INTO users
-		(uid, username, display_name, email, password_hash, role, disabled, note, subject_uid,
-		 approved_at)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	RETURNING uid, approved_at
+	INSERT INTO users (uid, username, display_name, email, password_hash, role, disabled, note)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	RETURNING uid
 )
 INSERT INTO project_members (project_uid, user_uid, role, approved_at, subject_uid)
-SELECT $11::text, uid, $12::text, approved_at, ` + memberSubjectSQL + ` FROM new_user WHERE $12::text <> ''`
-
-// memberSubjectSQL is the linked person ($9) as a membership of the project
-// ($11) may hold it: the subject when it belongs to that project, NULL
-// otherwise — a person is a row of one project, so another project's subject
-// is nobody here.
-const memberSubjectSQL = `(SELECT s.uid FROM subjects s WHERE s.uid = $9::text AND s.project_id = $11::text)`
+SELECT $11::text, uid, $12::text, $10, $9 FROM new_user WHERE $12::text <> ''`
 
 // projectToJoin returns the project a new account's membership is created in:
 // u.joinProject, or the bootstrap project when the caller named none.
@@ -166,12 +209,17 @@ func insertUserArgs(u User) []any {
 	}
 }
 
-// CreateUser inserts u (its CreatedAt/UpdatedAt are assigned by the database
-// defaults and not read back). It returns ErrUsernameTaken if the username
-// already exists, ErrSubjectNotFound if u.SubjectUID names no subject, or a
-// wrapped error otherwise.
-func (s *Store) CreateUser(ctx context.Context, u User) error {
-	_, err := s.pool.Exec(ctx, insertUserQuery, insertUserArgs(u)...)
+// insertUser runs insertUserQuery for u on q, refusing a linked person who is
+// not one of the joined project's first. It returns ErrUsernameTaken for a
+// duplicate username, ErrSubjectNotFound for a person who is nobody there, or a
+// wrapped error.
+func insertUser(ctx context.Context, q execQuerier, u User) error {
+	if u.ProjectRole != "" {
+		if err := checkSubject(ctx, q, projectToJoin(u), u.SubjectUID); err != nil {
+			return err
+		}
+	}
+	_, err := q.Exec(ctx, insertUserQuery, insertUserArgs(u)...)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return ErrUsernameTaken
@@ -182,6 +230,14 @@ func (s *Store) CreateUser(ctx context.Context, u User) error {
 		return fmt.Errorf("auth: inserting user: %w", err)
 	}
 	return nil
+}
+
+// CreateUser inserts u (its CreatedAt/UpdatedAt are assigned by the database
+// defaults and not read back). It returns ErrUsernameTaken if the username
+// already exists, ErrSubjectNotFound if u.SubjectUID names no person of the
+// joined project, or a wrapped error otherwise.
+func (s *Store) CreateUser(ctx context.Context, u User) error {
+	return insertUser(ctx, s.pool, u)
 }
 
 // GetUserByUsername returns the user with the given username, or ErrUserNotFound.
@@ -226,8 +282,8 @@ func (s *Store) getUser(ctx context.Context, col, val string) (User, error) {
 // is what the administration page asks for by default.
 type UserFilter struct {
 	// Pending selects by approval state: true lists only the accounts waiting
-	// for an administrator (approved_at IS NULL), false only the ones already
-	// let in, and nil — the usual case — everybody.
+	// for an administrator (no approved membership, see accountApprovedSQL),
+	// false only the ones already let in, and nil — the usual case — everybody.
 	Pending *bool
 }
 
@@ -236,7 +292,7 @@ type UserFilter struct {
 // than as two statements, so a NULL parameter (no filter) selects every row and
 // the listing has exactly one query.
 const listUsersQuery = `SELECT ` + userColumns + ` FROM users
-	WHERE $1::boolean IS NULL OR (approved_at IS NULL) = $1
+	WHERE $1::boolean IS NULL OR (` + accountApprovedSQL + ` IS NULL) = $1
 	ORDER BY username`
 
 // ListUsers returns the users matching filter, ordered by username. The slice is
@@ -269,21 +325,18 @@ func (s *Store) ListUsers(ctx context.Context, filter UserFilter) ([]User, error
 // separate statement.
 //
 // $4 is the instance role; the same statement sets the account's role in the
-// project $8 to $9, creating the membership (approved exactly when the account
-// is) when there is none. RETURNING still sees the old membership — callers
-// patch the result with withProjectRole.
-//
-// The linked person $7 is mirrored onto that membership when it is a person of
-// the project $8, and cleared there otherwise (person:me reads the membership).
+// project $8 to $9 and its linked person there to $7 (which checkSubject has
+// confirmed is one of that project's), creating the membership — approved
+// exactly when the account is — when there is none. RETURNING still sees the
+// old membership; profileUpdate patches the result.
 const updateUserProfileQuery = `WITH member AS (
 	INSERT INTO project_members (project_uid, user_uid, role, approved_at, subject_uid)
-	SELECT $8::text, uid, $9::text, approved_at,
-		(SELECT s.uid FROM subjects s WHERE s.uid = $7::text AND s.project_id = $8::text)
+	SELECT $8::text, uid, $9::text, ` + accountApprovedSQL + `, $7::text
 	FROM users WHERE uid = $1
 	ON CONFLICT (project_uid, user_uid) DO UPDATE SET role = EXCLUDED.role, subject_uid = EXCLUDED.subject_uid
 )
 UPDATE users SET display_name = $2, email = $3, role = $4, disabled = $5,
-		note = COALESCE($6::text, note), subject_uid = $7, updated_at = now()
+		note = COALESCE($6::text, note), updated_at = now()
 	WHERE uid = $1 RETURNING ` + userColumns
 
 // updateUserProfileArgs returns the arguments of updateUserProfileQuery in its
@@ -296,24 +349,32 @@ func updateUserProfileArgs(uid string, in UpdateUserInput) []any {
 	}
 }
 
-// setUserSubjectQuery points one account at a person of the library, or clears
-// the link when the argument is NULL, and returns the refreshed row.
-//
-// The link is written onto the account's membership of the project $3 too —
-// that is the copy person:me and the what's-new digest read — when the person
-// is one of that project's (NULL clears it); the users column is the
-// transition copy the account page and the profile picture still read.
-//
-// It leaves updated_at alone on purpose. The user-administration screens read
-// that column as "an administrator edited this profile", and somebody saying who
-// they are on their own account page is not that.
-const setUserSubjectQuery = `WITH member AS (
-	UPDATE project_members SET subject_uid =
-		(SELECT s.uid FROM subjects s WHERE s.uid = $2::text AND s.project_id = $3::text)
-	WHERE user_uid = $1 AND project_uid = $3
-)
-UPDATE users SET subject_uid = $2
-	WHERE uid = $1 RETURNING ` + userColumns
+// profileUpdate returns the guarded mutation that replaces uid's profile with
+// in: the linked person is checked against the bootstrap project (the
+// membership the unprefixed admin routes edit) first, and the refreshed user
+// carries the role and the link just written, which the statement's RETURNING
+// could not see yet.
+func profileUpdate(ctx context.Context, uid string, in UpdateUserInput) func(pgx.Tx) (User, error) {
+	return func(tx pgx.Tx) (User, error) {
+		if err := checkSubject(ctx, tx, project.BootstrapUID, in.SubjectUID); err != nil {
+			return User{}, err
+		}
+		user, err := scanUpdatedUser(ctx, tx, updateUserProfileQuery, updateUserProfileArgs(uid, in)...)
+		if err != nil {
+			return User{}, err
+		}
+		_, inProject := in.Role.Split()
+		user = withProjectRole(user, inProject)
+		user.SubjectUID = normalizeSubjectUID(in.SubjectUID)
+		return user, nil
+	}
+}
+
+// setMemberSubjectQuery points the account $1's membership of the project $3
+// at the person $2, or clears the link when $2 is NULL, and reports the
+// membership it wrote — none when the account is not a member there.
+const setMemberSubjectQuery = `UPDATE project_members SET subject_uid = $2
+	WHERE user_uid = $1 AND project_uid = $3 RETURNING subject_uid`
 
 // setUserDisabledQuery flips the disabled flag of one user and returns the
 // refreshed row.
@@ -322,44 +383,52 @@ const setUserDisabledQuery = `UPDATE users SET disabled = $2, updated_at = now()
 
 // UpdateUserProfile updates the mutable profile fields of the user identified by
 // uid and returns the refreshed user. It returns ErrUserNotFound if no such user
-// exists, or ErrLastMaintainer when the change would leave the instance without a
-// single enabled maintainer (see withMaintainerGuard). updated_at is bumped to
-// now() by the statement.
+// exists, ErrSubjectNotFound when in.SubjectUID names no person of the
+// bootstrap project, or ErrLastMaintainer when the change would leave the
+// instance without a single enabled maintainer (see withMaintainerGuard).
+// updated_at is bumped to now() by the statement.
 func (s *Store) UpdateUserProfile(ctx context.Context, uid string, in UpdateUserInput) (User, error) {
-	user, err := s.updateUserReturningGuarded(ctx, updateUserProfileQuery, updateUserProfileArgs(uid, in)...)
-	if err != nil {
-		return User{}, err
-	}
-	_, inProject := in.Role.Split()
-	return withProjectRole(user, inProject), nil
+	return s.updateUserGuarded(ctx, profileUpdate(ctx, uid, in))
 }
 
 // SetUserSubject points the account identified by uid at the subject named by
-// subjectUID, or clears the link when subjectUID is nil (or empty). It is the
-// self-service write behind the account page and returns the refreshed user,
-// ErrUserNotFound if no such account exists, or ErrSubjectNotFound when the UID
-// names no person in the library.
-//
-// The membership of projectUID (empty = the bootstrap project, the transition
-// default of the unprefixed account routes) carries the same link when the
-// person belongs to that project.
+// subjectUID in the project projectUID (empty = the bootstrap project, the
+// transition default of the unprefixed account routes), or clears the link
+// when subjectUID is nil (or empty). The link lives on the membership: who you
+// are is a fact about one project's people. It is the self-service write
+// behind the account page and returns the refreshed user carrying the link of
+// that project — nil when the account is no member there (a maintainer
+// visiting), where nothing is written — ErrUserNotFound if no such account
+// exists, or ErrSubjectNotFound when the UID names no person of the project.
 //
 // It is deliberately outside the maintainer guard: the link carries no
-// permission and cannot strand the instance.
+// permission and cannot strand the instance. It leaves updated_at alone on
+// purpose: the user-administration screens read that column as "an
+// administrator edited this profile", and somebody saying who they are on
+// their own account page is not that.
 func (s *Store) SetUserSubject(ctx context.Context, projectUID, uid string, subjectUID *string) (User, error) {
 	if projectUID == "" {
 		projectUID = project.BootstrapUID
 	}
-	user, err := scanUser(s.pool.QueryRow(ctx, setUserSubjectQuery, uid, normalizeSubjectUID(subjectUID), projectUID))
+	subjectUID = normalizeSubjectUID(subjectUID)
+	user, err := s.GetUserByUID(ctx, uid)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return User{}, ErrUserNotFound
-		}
-		if isForeignKeyViolation(err) {
-			return User{}, ErrSubjectNotFound
-		}
 		return User{}, err
 	}
+	if err := checkSubject(ctx, s.pool, projectUID, subjectUID); err != nil {
+		return User{}, err
+	}
+	var written *string
+	err = s.pool.QueryRow(ctx, setMemberSubjectQuery, uid, subjectUID, projectUID).Scan(&written)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		written = nil
+	case isForeignKeyViolation(err):
+		return User{}, ErrSubjectNotFound
+	case err != nil:
+		return User{}, fmt.Errorf("auth: linking %s to a person: %w", uid, err)
+	}
+	user.SubjectUID = written
 	return user, nil
 }
 
@@ -368,7 +437,9 @@ func (s *Store) SetUserSubject(ctx context.Context, projectUID, uid string, subj
 // such user exists, or ErrLastMaintainer when disabling would leave the instance
 // without a single enabled maintainer (see withMaintainerGuard).
 func (s *Store) SetUserDisabled(ctx context.Context, uid string, disabled bool) (User, error) {
-	return s.updateUserReturningGuarded(ctx, setUserDisabledQuery, uid, disabled)
+	return s.updateUserGuarded(ctx, func(tx pgx.Tx) (User, error) {
+		return scanUpdatedUser(ctx, tx, setUserDisabledQuery, uid, disabled)
+	})
 }
 
 // markWelcomeSeenQuery records that the account has seen the first-run welcome
@@ -379,7 +450,7 @@ func (s *Store) SetUserDisabled(ctx context.Context, uid string, disabled bool) 
 // reload of the page that sends it — leaves the first time in place and can
 // never move it backwards.
 //
-// Like setUserSubjectQuery it leaves updated_at alone. The user-administration
+// Like SetUserSubject it leaves updated_at alone. The user-administration
 // screens read that column as "an administrator edited this profile", and
 // somebody closing their own welcome is not that.
 const markWelcomeSeenQuery = `UPDATE users SET welcome_seen_at = COALESCE(welcome_seen_at, $2)

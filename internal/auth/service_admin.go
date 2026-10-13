@@ -271,8 +271,8 @@ func (s *Service) prepareRegistration(in CreateUserInput) (User, error) {
 // database — and an administrator creating an account *is* the approval, so
 // there is nothing further to wait for. The one caller that must not keep the
 // stamp is self-service registration, which goes through prepareRegistration and
-// strips it again: an account nobody has approved yet is stored with a NULL
-// approved_at.
+// strips it again: an account nobody has approved yet gets a membership with a
+// NULL approved_at.
 func (s *Service) approvedNow() *time.Time {
 	at := s.now()
 	return &at

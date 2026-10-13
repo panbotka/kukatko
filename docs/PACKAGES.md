@@ -101,33 +101,36 @@ to `## Package map` in `CLAUDE.md`.
   starts guessing OAuth metadata under `/.well-known/…` instead of reporting that it needs a token
   (see `docs/MCP.md`); `Challenge` is where `resource_metadata="…"`/`scope="…"` would be appended if
   Kukátko ever grows its own OAuth.
-  **`users.subject_uid`** (migration `0060_users_subject.sql`) is the person of the library an account
-  belongs to: nullable, **not** unique (several accounts may legitimately be the same person), FK
-  `users_subject_uid_fkey` → `subjects(uid)` **ON DELETE SET NULL** (deleting a person never deletes an
-  account), with a partial index on the linked rows for that cleanup. The constraint is **named
-  explicitly** because `kukatko maintenance reset` has to drop and restore it around its truncation — see
-  `internal/reset`. It is carried on `auth.User` as `SubjectUID *string` and — unlike `Note` — **is**
-  serialised into the login/`/auth/me` payloads, deliberately: the client needs it for the "my photos"
-  entry and for the account's avatar. `Store.SetUserSubject(ctx, projectUID, uid, subject)` is the
-  self-service write behind `PUT /auth/subject` (outside the maintainer guard: the link carries no
-  permission), while the admin create/update paths take it as part of the replaced profile and record it in
-  their audit entries; **every one of these writers also mirrors the link onto the membership** (of the
-  request's project for `/auth/subject`, of the bootstrap project for the admin paths) when the person
-  belongs to that project — `person:me` and the what's-new digest read `project_members.subject_uid`, the
-  users column is the transition copy the account page and the profile picture still read;
-  a UID naming no subject surfaces as `ErrSubjectNotFound` (SQLSTATE 23503 → 400).
-  **`users.approved_at` / `users.welcome_seen_at`** (migration `0064_users_approval_welcome.sql`) are two
-  nullable timestamps: when an administrator let the account in (`NULL` = registered, waiting for one)
-  and when its owner last dismissed the first-run welcome (`NULL` = never). Both are timestamps rather
-  than flags because "when" is asked in practice — how long somebody has waited, and whether the welcome
-  text has changed since it was read. Neither column has a database default: an insert silent about
-  approval means *not approved*, which must stay the safe answer once registration writes rows of its
-  own, so `insertUserQuery`/`insertUserArgs` (shared by the plain and audited insert paths) pass the
-  stamp explicitly and `Service.prepareNewUser` fills it from the service clock via `approvedNow` —
-  its callers are the admin API and the bootstrap, and creating an account is the approval. The one
-  path that must not keep the stamp is `Service.prepareRegistration`, which wraps `prepareNewUser` and
-  strips it again, so every rule about usernames, addresses and passwords stays in one place.
-  `approved_at` is **not** the inverse of `disabled` and no read may collapse them; both are carried on
+  **The linked person** ("this is me") lives on the membership, `project_members.subject_uid` (migration
+  0101; the account-wide `users.subject_uid` of 0060 was dropped by 0110): nullable, **not** unique
+  (several accounts may legitimately be the same person), FK `project_members_subject_uid_fkey` →
+  `subjects(uid)` **ON DELETE SET NULL** — named explicitly because `kukatko maintenance reset` drops and
+  restores it around its truncation (see `internal/reset`). `auth.User.SubjectUID` is read off a
+  membership by a correlated subquery in `userColumns`: the bootstrap project's on an account read
+  (transition, like `ProjectRole`), overwritten with the request's project's (`p.projectSubject`) on
+  `GET /auth/me`. It **is** serialised into the login/`/auth/me` payloads, deliberately — the client
+  needs it for the "my photos" entry and the account's avatar. `Store.SetUserSubject(ctx, projectUID,
+  uid, subject)` is the self-service write behind `PUT /auth/subject` (outside the maintainer guard: the
+  link carries no permission): it writes the membership of `projectUID` and returns the account carrying
+  that link (nil when it is no member there — nothing is written). The admin create/update paths write
+  the bootstrap membership as part of the replaced profile and record it in their audit entries. Every
+  writer first runs `checkSubject`: a UID naming no person **of that project** (unknown, or another
+  project's) is `ErrSubjectNotFound` (→ 400); a FK violation (SQLSTATE 23503) maps to the same error.
+  **Approval and the welcome.** `users.welcome_seen_at` (migration `0064_users_approval_welcome.sql`)
+  is when the owner last dismissed the first-run welcome (`NULL` = never). The account's **approval**
+  is no column any more (0110 dropped `users.approved_at`): `accountApprovedSQL` derives it — the
+  earliest `approved_at` of the account's memberships, or `created_at` for a maintainer with none
+  approved (a maintainer enters every project) and for an account in **no** project (waiting for nobody:
+  it may sign in, sees an empty chooser and can accept an invitation) — and `userColumns` carries it as `approved_at`, so
+  `auth.User.ApprovedAt` (nil = registered, waiting; sign-in answers `ErrNotApproved`) and the
+  `?pending=` filter of the admin listing read the memberships. A new account's membership is written
+  with an explicit stamp: `insertUserQuery`/`insertUserArgs` (shared by the plain and audited insert
+  paths) pass `User.ApprovedAt`, which `Service.prepareNewUser` fills from the service clock via
+  `approvedNow` — its callers are the admin API and the bootstrap, and creating an account is the
+  approval. The one path that must not keep the stamp is `Service.prepareRegistration`, which wraps
+  `prepareNewUser` and strips it again, so every rule about usernames, addresses and passwords stays in
+  one place.
+  Approval is **not** the inverse of `disabled` and no read may collapse them; both are carried on
   `auth.User` (`ApprovedAt`/`WelcomeSeenAt *time.Time`, serialised) and shown by the admin roster.
   `Store.MarkWelcomeSeen` is the self-service write behind `POST /auth/welcome-seen`: its
   `COALESCE(welcome_seen_at, $2)` makes it idempotent (the stamp lands only while the column is still
@@ -195,7 +198,7 @@ to `## Package map` in `CLAUDE.md`.
   **Approving a waiting account** is no longer here: the instance-wide `POST /admin/users/{uid}/approve`,
   its `Approval` type and `Store.ApproveUserAudited` were removed in multi-tenancy step 24. Approval is a
   membership's, given by that project's admin through `internal/memberapi` over
-  `project.Store.ApproveWith`, which also stamps `users.approved_at` (sign-in still reads it). The
+  `project.Store.ApproveWith`; the account's own approval is derived from its memberships. The
   `noMail{}` scheduler the mail-sending flows fall back to lives in `register.go`.
   `PATCH /admin/users/{uid}` (profile, `disabled`, the transitional five-rung `role`) is
   **`RequireMaintainer`** like `/disable`: a project admin manages their members' roles through the
@@ -1652,9 +1655,11 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   `(photo_uid, created_at) WHERE deleted_at IS NULL` serving both the thread read and its count;
   `NewStore(pool)` → `List(photoUID)` (live only, oldest first, `author_name` resolved by a LEFT JOIN on
   `users`: `display_name`, fallback `username`, empty for a deleted account, so one query renders a thread —
-  and `author_photo_uid` by a second LEFT JOIN through `users.subject_uid` onto `subjects.cover_photo_uid`,
-  so the thread can draw the author's face where it would otherwise draw a letter; it is NULL for an
-  authorless comment, an unlinked account and a linked person with no cover photo, which is the common case),
+  and `author_photo_uid` by LEFT JOINs through the author's membership of the comment's project
+  (`project_members.subject_uid`, the project read off the photo/task/album by `commentProjectSQL`) onto
+  `subjects.cover_photo_uid`, so the thread can draw the author's face where it would otherwise draw a
+  letter; it is NULL for an authorless comment, an account unlinked in that project and a linked person
+  with no cover photo, which is the common case; a mention's `subject_uid` is read the same way),
   `CountsAmong(photoUIDs)` (one `GROUP BY`; deliberately the bulk shape even though the detail asks about one
   photo, so a per-photo count cannot be written by accident), `Get(uid)` and
   `Create`/`Update`/`Delete` — each a CTE that mutates and reads the row back with its author in one
@@ -2378,8 +2383,7 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   leaves no audit row; the audited writes default the entry's `ProjectUID`. The slug is unique **per
   project** (`(project_id, slug)`), so `GetSubjectBySlug` and the find-or-create of a face assignment work
   inside one project. `Tagging` carries `ProjectUID`, so the tag observer (`internal/tagnotifyjob`) hears
-  which project a tagging happened in. Deliberately unscoped: `LinkedSubjectAvatar` (an account's
-  profile picture, served instance-wide), `ListMarkersWithSubjects` (the sidecar job, keyed by the photo
+  which project a tagging happened in. Deliberately unscoped: `ListMarkersWithSubjects` (the sidecar job, keyed by the photo
   it loaded) and `CreateSubjectTx`, which takes the project from its caller (`internal/family` passes the
   request's). The nameless repair is scoped since step 14: `ListNamelessSubjects`/`SnapshotSubject`/
   `DetachSubject`/`RestoreSubject` take the project (a subject of another project is `ErrSubjectNotFound`,
@@ -3518,13 +3522,22 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   `internal/userpic/`
   (a **user's profile picture** — the small square that stands for an *account* wherever a person is named,
   instead of the coloured initial. It is not one thing but the first of four answers that exists, and the
-  order is the point: an uploaded picture, a library photo the user picked, the avatar of the subject
-  `users.subject_uid` names — the **default**, so a linked account wears that face with no action from
-  anybody — and nothing, which the HTTP layer answers 404 and a client draws as the initial. `Service` =
-  `NewService(Config{Pictures,Users,Subjects,Photos})` with `Resolve` (→ `Source{Upload|PhotoUID,Face}` +
-  `Origin`), `Describe` (→ `State{Origin,PhotoUID,SubjectUID}`, the same walk without the bytes, for the
-  account page), `SetUpload`, `SetPhoto`, `Clear`; the four dependencies are interfaces (`*Store`,
-  `*auth.Store`, `*people.Store`, `*photos.Store`) so the chain unit-tests with fakes. **Every link is
+  order is the point: an uploaded picture, a library photo the user picked (shown only to a viewer who may
+  see that photo's project), the avatar of the subject the account's membership of the **viewer's
+  project** links — the **default**, so a linked account wears that face with no action from anybody; a
+  request with no project skips the step — and nothing, which the HTTP layer answers 404 and a client draws
+  as the initial. `Service` =
+  `NewService(Config{Pictures,Members,Subjects,Photos})` with `Resolve(ctx, viewer, userUID)` (→
+  `Source{Upload|PhotoUID,Face}` + `Origin`), `Describe(ctx, viewer)` (→ `State{Origin,PhotoUID,SubjectUID}`,
+  the same walk without the bytes, for the caller's own account page), `SetUpload`, `SetPhoto(ctx, viewer,
+  photoUID)`, `Clear`. `Viewer{UserUID, Maintainer, ProjectUID}` is who asks and from which project
+  (`userpicapi` fills it from the principal and `auth.ProjectUIDFromContext`): the face step reads the
+  pictured account's `project.Member.SubjectUID` in `viewer.ProjectUID` and asks
+  `people.Store.SubjectAvatar` in that project; a picked photo answers only when `maySee` — a maintainer,
+  or an **approved member** of `photo.ProjectID` — and otherwise falls through exactly as a private one
+  does (so the serving route ends in the same 404); `SetPhoto` refuses a photo of a project the caller may
+  not see with `ErrPhotoNotFound`. The four dependencies are interfaces (`*Store`, `*project.Store`,
+  `*people.Store`, `*photos.Store`) so the chain unit-tests with fakes. **Every link is
   re-checked on every call** rather than trusted from when it was set: a picked photo that has since been
   archived, purged or flagged **falls through** instead of failing, which is the difference between a chain
   and a stored decision. `Showable(photo)` is the one judgement — not archived, not `private`, not
@@ -3572,7 +3585,9 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   twice (the declared `Content-Length` and a `http.MaxBytesReader`, so a client that lies is stopped too) and
   maps outcomes: `ErrTooLarge` → **413**, `ErrUnsupportedFormat`/`ErrPhotoNotAllowed`/`ErrPhotoNotFound` →
   **400**, everything else a logged 500. The three writes are **self-scoped** — the account comes from
-  `auth.UserFromContext`, never from the request. Mounted in `serve` (`buildUserPicAPI` in
+  `auth.UserFromContext`, never from the request. `viewerOf(r)` builds the chain's `userpic.Viewer` from the
+  principal (uid, `Role.CanMaintain()`) and `auth.ProjectUIDFromContext` — through the unprefixed routes
+  the bootstrap project, which `RequireAuth` enters (transition alias). Mounted in `serve` (`buildUserPicAPI` in
   `cmd/kukatko/userpic.go`, in `discoveryAPIOptions`, sharing the avatar renderer's cache directory)),
   `internal/organize/`
   (the DB layer for **organization** — albums, labels, **per-user favorites** (replacing the global
@@ -3935,8 +3950,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   mail and the „Na mně" filter can never disagree about whose move it is), grouped by the task's project
   and the participant, restricted to enabled accounts with an **approved membership** of that (active)
   project and to pairs with a waiting task whose activity is newer than **`project_members.task_digest_at`**
-  (the membership's watermark; `users.task_digest_at` from migration 0084 is a transition copy nobody
-  writes; NULL = never written to); `DigestTargets(ctx)` → the `[]DigestTarget{ProjectUID,UserUID}` the
+  (the membership's watermark; the account-wide `users.task_digest_at` of migration 0084 was dropped by
+  0110; NULL = never written to); `DigestTargets(ctx)` → the `[]DigestTarget{ProjectUID,UserUID}` the
   daily scheduler enqueues one job for each; `DigestFor(ctx, projectUID, userUID)` → that one pair's
   digest or nil (both required); and `MarkDigested(ctx, projectUID, uid, at)` which stamps the membership
   (an unknown membership is not an error); consumed by `internal/taskdigestjob`;
@@ -4966,13 +4981,14 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   the object keys come from), and only then `TRUNCATE … RESTART IDENTITY` (**no CASCADE**) plus
   `audit.Write(ActionLibraryReset)` **in one transaction**, then a re-count → `Result{Before,After,Storage}`.
   That transaction opens with the wipe's one piece of surgery (`unlinkAccounts`): drop
-  `users_subject_uid_fkey`, null every `users.subject_uid`, truncate, put the constraint straight back.
-  `users` is preserved and therefore outside the TRUNCATE list, and Postgres refuses to truncate a table an
-  unlisted table references — structurally, whatever the rows say — so that one foreign key would fail the
-  whole wipe, and CASCADE (which would take the accounts) is the one escape this command must never use.
-  DDL is transactional, so a failure anywhere puts the constraint back with everything else. Nulling the
-  column is also simply true: the person that link named is about to stop existing. Every account keeps its
-  credentials, role, note and history — the link is the only thing a preserved account loses.
+  `project_members_subject_uid_fkey`, null every `project_members.subject_uid`, truncate, put the
+  constraint straight back. `project_members` is preserved and therefore outside the TRUNCATE list, and
+  Postgres refuses to truncate a table an unlisted table references — structurally, whatever the rows say —
+  so that one foreign key would fail the whole wipe, and CASCADE (which would take the memberships) is the
+  one escape this command must never use. DDL is transactional, so a failure anywhere puts the constraint
+  back with everything else. Nulling the column is also simply true: the person that link named is about to
+  stop existing. Every account keeps its credentials, role, note and history, every membership its role —
+  the link is the only thing a preserved membership loses.
   Any object that fails to delete skips the truncation and returns `ErrStorageIncomplete` — the catalogue is
   the only remaining record of what those objects are, and the whole run is idempotent, so the answer is to fix
   the store and repeat. `keys.go` owns the scope: `classifyKey` translates `storekeys.Classify`
@@ -5848,7 +5864,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (both `Text` and `Pattern`, so the compiled LIKE cannot still match a person *named* "me"), in place.
   The linked subject is **the caller's membership of the request's project** (`project_members.subject_uid`,
   read by the auth guard when it admits the caller and exposed as `auth.LinkedSubjectFromContext`; nil for a
-  maintainer without a membership) — never the account-wide `users.subject_uid`: the same account is a
+  maintainer without a membership) — never an account-wide link (there is none since 0110): the same account is a
   different person, or nobody, in each of its projects. `photoapi.applyMeTokens(params, user, linked)` and
   the MCP caller (`caller.linked`) pass it.
   (both keys name a subject, so one pass rewrites both and they share one verdict).
@@ -6479,8 +6495,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (payload `{user_uid}`, dedup index migration 0089), config `notifications.tags.window` (default **1h**;
   `push.tags.window` is its deprecated alias). The flow is in [`ARCHITECTURE.md`](ARCHITECTURE.md) §8.
   - **`Recorder`** (`NewRecorder(RecorderConfig{Window, Audience, Logger, Now})`, panicking without
-    `Audience` — `*notifydeliver.Deliverer`'s `ChannelsTx`) is the `people.TagObserver`. **`Tagged`** records, for every enabled, approved
-    account linked to the subject (several may be — migration 0060), one notice, and opens the account's
+    `Audience` — `*notifydeliver.Deliverer`'s `ChannelsTx`) is the `people.TagObserver`. **`Tagged`** records, for every enabled
+    account whose **approved membership of the subject's project** links the subject (several may —
+    migration 0060), one notice, and opens the account's
     window when none is open: **`jobs.EnqueueOrSkip`** of `tag_notify` with `RunAfter = now + window`.
     It records **nothing at all** when the acting account is itself linked to the
     subject (nobody hears about their own work — nor does a second account of the same person), when the
@@ -6585,7 +6602,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   transaction (the tagging recorder's rule: a notification is worth less than the assignment, so a
   failed delivery is rolled back to the savepoint, logged and swallowed; only a broken transaction is
   returned), reads one row — the task's project and title, the asker's name (display name, else username) and the
-  asked account's `disabled`/`approved_at` — and applies the pure **`wanted`** rules: never without an
+  asked account's `disabled` and whether it may enter the task's project (an approved membership there, or
+  a maintainer) — and applies the pure **`wanted`** rules: never without an
   actor (a NULL `added_by` is joined by acting, not asked), never the person who asked themselves,
   never a disabled or unapproved account. Whether the person wants the kind at all is
   `notifydeliver.Deliver`'s per-account question (every channel off by default). The message:
@@ -6611,7 +6629,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   delivery is rolled back to it, logged and swallowed; only a broken transaction is returned), reads the
   **place** with its project (`photoPlaceSQL`: the photo's title and whether it may be named at all —
   `notification.VisiblePhotoSQL`, not private, hidden or archived; `taskPlaceSQL`: the title, always
-  visible) and the mentioned accounts' **standing** in one query (`standingSQL`: enabled and approved),
+  visible) and the mentioned accounts' **standing** in one query (`standingSQL`: enabled, and an approved member of the comment's project or a maintainer),
   and applies the pure **`wanted(userUID, authorUID, standing, place)`** rules: never the writer, never an
   account out of standing, never for a photo that may not be named — the mention is still highlighted in
   the thread, only the announcement is skipped. Whether the person wants the kind at all is
@@ -6733,7 +6751,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `Slug`, `Name`, `Active`, `Role`, `Approved` — what the project chooser will list),
     `MemberTargetType = "project_member"`. Sentinels `ErrNotMember`, `ErrAlreadyMember`, `ErrLastAdmin`,
     `ErrUserNotFound`, `ErrSubjectNotFound`. `Member.HasPicture` (`json:"has_picture"`) is computed in
-    `memberColumns`: a `user_pictures` row or a linked `users.subject_uid` — "worth asking for the avatar".
+    `memberColumns`: a `user_pictures` row or the membership's own `subject_uid` — "worth asking for the avatar".
   - `member_store.go` — reads: `Members(projectUID)` (by display name, the username standing in for an empty
     one; unknown project = `ErrNotFound`, no members = empty slice), `Membership(projectUID, userUID)`
     (`ErrNotMember`), `MembershipsOf(userUID)` (by project name, inactive projects included). Writes, each
@@ -6743,9 +6761,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `ErrNotFound`, unknown account = `ErrUserNotFound`); `SetRole` → `project.member.role` (+
     `previous_role`); `Approve` → `project.member.approve` (an approved member keeps its original time;
     `ApproveWith(…, hook ApproveHook)` runs `hook(ctx, tx, member)` on the approval's transaction when it
-    really changes something — how `internal/memberapi` queues the approval mail); an approval, and an
-    approved `AddMember`, also stamp a missing `users.approved_at` (`stampAccountApproved`, transition:
-    sign-in still reads it);
+    really changes something — how `internal/memberapi` queues the approval mail); nothing is stamped on
+    the account — its approval is derived from its memberships (`auth`'s `accountApprovedSQL`);
     `RemoveMember` → `project.member.remove`; `SetSubject(…, *string)` → `project.member.subject` (+
     `previous_subject_uid`; nil clears; unknown subject = `ErrSubjectNotFound`). A change to nothing writes
     neither the row nor an audit entry. Every write **locks the project row** first, so concurrent changes
@@ -6763,8 +6780,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     the trail and the tests, never for the person who asked. `ErrEmptyIdentifier` for a blank one.
   - `internal/reset` keeps `projects` and `project_members` among the **preserved** tables (account-side,
     like `users`); `project_members.subject_uid` points into the wiped `subjects`, so the reset lifts,
-    nulls and restores `project_members_subject_uid_fkey` exactly like `users_subject_uid_fkey`
-    (`subjectLinks` in `reset.go`), and
+    nulls and restores `project_members_subject_uid_fkey` (`subjectLinks` in `reset.go`; the
+    `users_subject_uid_fkey` it once handled too went with `users.subject_uid` in 0110), and
     `dbtest.TruncateAll` re-seeds the bootstrap row after truncating, so a truncated test database looks
     like a freshly migrated one.
 - **System administrator's projects API (`internal/projectapi`):** the instance-level `/projects` and

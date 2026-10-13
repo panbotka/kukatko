@@ -408,10 +408,11 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
 - **`albums`** + **`album_photos`** — `type IN (album|folder|moment|state|month)`; an album is always
   chronological (migration 0022 removed both the manual `sort_order` and the `order_by` sort choice).
 - **`labels`** + **`photo_labels`** — `source IN (manual|ai|import)`, `uncertainty`.
-- **`users`** — `role IN (viewer|curator|editor|admin|maintainer)`, `password_hash` (bcrypt cost 12), `disabled`,
-  plus the nullable `approved_at` (NULL = registered, waiting for an administrator — distinct from
-  `disabled`, which is an account that *was* let in and then blocked) and `welcome_seen_at`
-  (NULL = the first-run welcome has never been seen), migration `0064_users_approval_welcome.sql`.
+- **`users`** — `role IN (user|maintainer)` (the instance role since migration 0103), `password_hash`
+  (bcrypt cost 12), `disabled`, plus the nullable `welcome_seen_at` (NULL = the first-run welcome has never
+  been seen), migration `0064_users_approval_welcome.sql`. Approval (NULL = registered, waiting for an
+  administrator — distinct from `disabled`, which is an account that *was* let in and then blocked) lives on
+  the memberships since migration 0110 dropped `users.approved_at` (see `project_members` below).
 - **`sessions`** — see [§11](#11-auth-a-bezpečnost) (sliding expiry added).
 - **`password_reset_tokens`** — one-time links with which somebody sets their own password
   (migration `0065_password_reset_tokens.sql`): `token_hash` (hex SHA-256, UNIQUE — **only the hash**
@@ -606,21 +607,18 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   FKs `ON DELETE CASCADE`, index on `user_uid`; `role` on the project ladder `viewer`/`curator`/`editor`/`admin`
   (**no maintainer** — that stays the instance role), `approved_at` (NULL = waiting for a project admin),
   `subject_uid` ("this is me" in this project, FK to `subjects` `ON DELETE SET NULL`, constraint
-  `project_members_subject_uid_fkey`, which the reset lifts and restores like the users one), `last_seen_at`,
+  `project_members_subject_uid_fkey`, which the reset lifts and restores), `last_seen_at`,
   `visit_reference_at`, `task_digest_at` (the per-project visit/digest clocks), `created_at`. The migration
   backfills one bootstrap-project row per existing account (`maintainer` → `admin`, the other five columns
   copied 1:1, `ON CONFLICT DO NOTHING`) and adds **`users.last_project_uid`** (FK `projects`, `ON DELETE SET
   NULL`, backfilled to the bootstrap uid). A project keeps at least one admin (`ErrLastAdmin` in the store).
   Store: `internal/project`. Preserved by a reset.
-  **Transitional:** `users.role`, `approved_at`, `subject_uid`, `last_seen_at`, `visit_reference_at` and
-  `task_digest_at` still exist; the membership was a copy taken at migration time and the readers move to it
-  step by step. **Moved already:** the what's-new visit clocks (`last_seen_at`/`visit_reference_at`, read
-  **and written** only on the membership — a visit is a visit to one project), the task digest watermark
-  (`task_digest_at`, one digest per (project, person)) and the "this is me" link for `person:me`/`family:me`
-  and the digest's "photos of you" (the membership's `subject_uid`; the account-page and admin writers mirror
-  it onto the membership, while the profile picture and `/auth/me` still read the users copy). Only the step
-  that finishes the move drops the `users` columns (never in the migration that adds the new ones, so a
-  rollback stays possible).
+  The membership is the **only** home of these five values: migration **0110** dropped the transitional
+  copies `users.approved_at`, `subject_uid`, `last_seen_at`, `visit_reference_at` and `task_digest_at`
+  (rebuildable for an older release by `docs/migrations-rollback/0110_down.sql`). An account's approval is
+  derived — approved once any membership is (a maintainer, or an account in no project, always) — and the "this is me" link, the visit
+  clocks and the digest watermark are read and written per project only. `users.role` stays as the
+  instance role (`user`/`maintainer`, migration 0103).
 - **`project_invites`** (migration 0109) — invitation links into a project: `uid` (`iv…`), `project_uid` (FK
   `ON DELETE CASCADE`), `code_hash` UNIQUE + readable `code` (as upload links), `role` (the project ladder),
   `expires_at`, `max_uses` (NULL = no cap), `uses`, final `revoked_at`, `created_by` (`ON DELETE SET NULL`),
@@ -946,8 +944,9 @@ lost on restart).
   tagging is collected per account:
   1. **Every assignment** — face UI, review game, cluster, candidate acceptance, attaching a person by
      hand — ends in the people store,
-     which reports it to its **tag observer** inside the assignment's transaction. For each account linked
-     to the tagged subject (`users.subject_uid`) the recorder writes a `tag_notices (user_uid, photo_uid)`
+     which reports it to its **tag observer** inside the assignment's transaction. For each account whose
+     approved membership of the subject's project links the tagged subject (`project_members.subject_uid`)
+     the recorder writes a `tag_notices (user_uid, photo_uid)`
      row, and **when the account has no window open** (no queued `tag_notify` job) enqueues one with
      `run_after = now + notifications.tags.window` (default 1 h). Later tags inside the window add rows and find
      the job queued. Both writes share the assignment's transaction: a rolled-back assignment announces

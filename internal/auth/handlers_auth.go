@@ -215,6 +215,7 @@ func (a *API) meResponseFor(ctx context.Context, p principal) (meResponse, error
 	user := p.user
 	if p.project != nil {
 		user = withProjectRole(user, p.projectRole)
+		user.SubjectUID = p.projectSubject
 	}
 	return meResponse{
 		loginResponse:   loginResponse{User: user, DownloadToken: p.session.DownloadToken},

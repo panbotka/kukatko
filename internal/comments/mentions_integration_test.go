@@ -99,7 +99,7 @@ func TestCreate_storesAndResolvesMentions(t *testing.T) {
 	off := f.makeApprovedUser(t, "us_off", "off", "Vypnutý", true)
 	pending := f.makeUser(t, "us_new", "newcomer", "Nováček")
 	f.exec(t, `INSERT INTO subjects (uid, slug, name) VALUES ('su_bob', 'bob', 'Bob')`)
-	f.exec(t, `UPDATE users SET subject_uid = 'su_bob' WHERE uid = $1`, bob)
+	f.exec(t, `UPDATE project_members SET subject_uid = 'su_bob' WHERE user_uid = $1`, bob)
 	photo := f.makePhoto(t, "one")
 
 	body := "Hele @[Bob](user:us_bob), @[Alice](user:us_alice) a @[Bob](user:us_bob) — " +

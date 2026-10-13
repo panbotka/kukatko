@@ -9,13 +9,19 @@ import (
 )
 
 // resolveMentionsSQL turns the uids a body mentions into the accounts that can
-// be mentioned: existing, enabled and approved. A uid that matches no such row
-// is dropped — the token still renders from its own name, but nothing is
-// stored or announced for an account that could not be notified anyway.
+// be mentioned on the comment $2: existing, enabled and in its project — an
+// approved member, or a maintainer, who enters every project. A uid that
+// matches no such row is dropped — the token still renders from its own name,
+// but nothing is stored or announced for an account that could not be
+// notified anyway. The linked person is the one the membership of the
+// comment's project names.
 const resolveMentionsSQL = `
-SELECT uid, COALESCE(NULLIF(display_name, ''), username), subject_uid
-FROM users
-WHERE uid = ANY($1) AND NOT disabled AND approved_at IS NOT NULL`
+SELECT u.uid, COALESCE(NULLIF(u.display_name, ''), u.username), pm.subject_uid
+FROM users u
+CROSS JOIN (SELECT ` + commentProjectSQL + ` AS project_uid FROM comments c WHERE c.uid = $2) cp
+LEFT JOIN project_members pm ON pm.user_uid = u.uid AND pm.project_uid = cp.project_uid
+WHERE u.uid = ANY($1) AND NOT u.disabled
+  AND (pm.approved_at IS NOT NULL OR u.role = 'maintainer')`
 
 // existingMentionsSQL reads who a comment mentioned before this write, so an
 // edit can tell a fresh mention from one the previous body already carried.
@@ -61,7 +67,7 @@ func (s *Store) mentionsThen(along Along) postStep {
 // mentions that are new on the comment, the author's own left out: a
 // self-mention is stored (it renders like any other) but is nobody's news.
 func (s *Store) syncMentions(ctx context.Context, tx pgx.Tx, c *Comment) ([]Mention, error) {
-	resolved, err := resolveMentions(ctx, tx, ParseMentions(c.Body))
+	resolved, err := resolveMentions(ctx, tx, c.UID, ParseMentions(c.Body))
 	if err != nil {
 		return nil, fmt.Errorf("comments: resolving the mentions of %s: %w", c.UID, err)
 	}
@@ -89,10 +95,10 @@ func (s *Store) syncMentions(ctx context.Context, tx pgx.Tx, c *Comment) ([]Ment
 	return fresh, nil
 }
 
-// resolveMentions returns the mentionable accounts among refs, in the order of
-// refs, each with its current name and linked person. It is an empty slice,
-// never nil, when nothing resolves.
-func resolveMentions(ctx context.Context, tx pgx.Tx, refs []MentionRef) ([]Mention, error) {
+// resolveMentions returns the accounts among refs that can be mentioned on the
+// comment commentUID, in the order of refs, each with its current name and
+// linked person. It is an empty slice, never nil, when nothing resolves.
+func resolveMentions(ctx context.Context, tx pgx.Tx, commentUID string, refs []MentionRef) ([]Mention, error) {
 	out := make([]Mention, 0, len(refs))
 	if len(refs) == 0 {
 		return out, nil
@@ -101,7 +107,7 @@ func resolveMentions(ctx context.Context, tx pgx.Tx, refs []MentionRef) ([]Menti
 	for _, ref := range refs {
 		uids = append(uids, ref.UserUID)
 	}
-	rows, err := tx.Query(ctx, resolveMentionsSQL, uids)
+	rows, err := tx.Query(ctx, resolveMentionsSQL, uids, commentUID)
 	if err != nil {
 		return nil, fmt.Errorf("querying accounts: %w", err)
 	}
