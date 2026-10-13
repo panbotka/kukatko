@@ -548,6 +548,11 @@ kukatko project purge b-test --yes --confirm b-test       # purge, write the rep
 kukatko project purge v --allow-bootstrap                 # still refused while v lives in the root layout
 ```
 
+**In the container, pass `--report`.** The image's working directory `/app` is not writable by the
+`nobody` user, so the default report path fails *after* the purge has completed (the database and store halves
+both done, exit 1, `writing the purge report …: permission denied` — seen in the final safety gate). Use
+`--report /var/lib/kukatko/tmp/project-purge-<slug>.json` there.
+
 Deactivate the project first so nobody uploads into it while it goes. If the store half fails (exit nonzero, the
 report lists the failures), the database is already gone: the leftover objects are what the next
 `maintenance scan` reports as `orphan_project`.

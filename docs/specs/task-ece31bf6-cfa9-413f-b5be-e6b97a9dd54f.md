@@ -1,0 +1,27 @@
+# Migration safety gate II (after the whole programme)
+
+## Context
+
+Kukátko has been turned multi-tenant across the previous 39 steps while production kept running (~21k photos, 78 GB of originals on Cloudflare R2, 14 accounts, project `v` = Veselice). The owner's rule: **nothing may be lost — no row, no photo, no album membership, no face, no account — and there must be no outage.** The first safety gate (step 05) built `kukatko maintenance inventory` / `inventory-diff` and `docs/MIGRATION_SAFETY.md`, and rehearsed the schema steps. This final step rehearses the **entire** chain from the version production runs today to the current `main`, walks the product end to end, and gives the final Go/No-go before the release. Design: `docs/superpowers/specs/2026-10-11-multi-tenancy-design.md`; read `docs/MIGRATION_SAFETY.md`, `docs/OPERATIONS.md` (upgrade runbook, rekey runbook), `docs/RESTORE.md`. Step 40 of 40.
+
+Facts: the deployed version is a release tag (read it from `/healthz` on production; `main` is ahead). Backups: `pg_dump` + bucket sync to S3. Staging stack on the build box (`~/kukatko-stage`, port 6490, `./upgrade.sh`), Postgres with pgvector on the box. Production access: 1Password via `op`, root SSH to the VPS (`100.68.61.47`), prod DB `kukatko` in the `pgvector` container. **Run nothing but read-only SQL and `pg_dump` against production.** Keep the dump on the box only and delete it when done.
+
+## Requirements
+
+### 1. Data rehearsal (the full chain)
+- Fresh prod `pg_dump` restored into a throwaway database on the box. Inventory A with the deployed tag's binary (build it from git). Apply `main`'s migrations with per-file timing and lock sampling; inventory B with the new binary; `inventory-diff A B --expect …` — every difference explained (the `projects` row, memberships = users, `project_id` columns without defaults, the collapsed `users.role`, the dropped `users.*` columns, `project_invites`, `storage_rekey_runs`, settings/announcements keyed by project). **Any unexplained difference blocks.**
+- Rollback: apply every `docs/migrations-rollback/*_down.sql` in reverse order on a fresh copy and prove inventory A is restored; write `down.sql` for any migration added since gate I that lacks one.
+- Outage window: total migration time + restart on the copy; any single file > 30 s is a finding.
+
+### 2. Product walkthrough on the staging stack with the migrated copy
+- Deploy `main` to the box staging stack **with the migrated copy of the data** and a copy of (or read-only access to) the bucket; sign in as the copied maintainer account. Walk, on desktop and phone viewport (drive it with `agent-browser`, screenshots to `/mnt/nas-botka/kukatko/mt-gate-II/`): `/` → lands in `/p/v/`; library, timeline, search with three keys, an album, a person, the family tree, a task with a comment, favourites, what's new, notifications inbox, upload one photo (then delete it from the trash), the members page, the settings page, `/system/projects` + `/system/users`, the storage section showing "v kořeni" with the Start button **not pressed**, `/projects` chooser. Every old-style URL from a list of 15 real deep links (take them from the prod access log or compose from real uids) must redirect to its `/p/v/` twin.
+- Second tenant: create project `gate-ii` through `/system/projects`, add a second account by invitation link, sign in as it, confirm it sees nothing of `v` (`/p/v/…` → 404, chooser lists only `gate-ii`, no name of a `v` member anywhere, `/api/v1/p/v/photos` → 404 with the same body as a random slug). Upload the same photo bytes that exist in `v` into `gate-ii`; confirm two rows, two keys, and that purging it from `gate-ii`'s trash leaves `v`'s object intact. Then `kukatko project purge gate-ii --dry-run`, then execute, and confirm `v`'s inventory is unchanged.
+- Storage move rehearsal (**staging only**): run `kukatko storage rekey v --dry-run`; then start the move on staging, let it process at least 500 photos, pause, resume, kill the server mid-run and restart, and verify with `inventory --storage` + the maintenance scan that every `file_path` points at an existing object with the right size at every checkpoint and that no root object was deleted before its prefixed copy existed (inspect the storage listing diff between checkpoints). Let it finish if time allows; record the throughput to extrapolate the production duration.
+
+### 3. The verdict
+- Append a dated "Gate II" section to `docs/MIGRATION_SAFETY.md`: versions rehearsed, timings and locks, the inventory diff with explanations, rollback result, the walkthrough checklist with every item ticked and the screenshot folder, the second-tenant isolation checklist, the rekey rehearsal numbers (photos/min, extrapolated hours for 21k), the expected outage window, and a **Go / No-go** line, followed by the owner's release-day checklist (backup → inventory A on prod → deploy → inventory B → diff → UI spot-check from the walkthrough list → announce → only later start the storage move from `/system/projects/v` and watch it).
+- Any blocking finding (data difference, failed migration on real data, a leak between tenants, a lost object during the rekey rehearsal) is written up with the exact reproduction and the task ends as `needs_review`. Small local fixes may be made here; anything larger is reported, not patched.
+
+## Out of scope
+
+New features, starting the storage move on production, touching production beyond read-only queries and `pg_dump`.

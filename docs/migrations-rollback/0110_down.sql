@@ -19,6 +19,8 @@ ALTER TABLE users ADD CONSTRAINT users_subject_uid_fkey
     FOREIGN KEY (subject_uid) REFERENCES subjects (uid) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_users_subject_uid ON users (subject_uid)
     WHERE subject_uid IS NOT NULL;
+COMMENT ON COLUMN users.task_digest_at IS
+    'When the last tasks-waiting digest was scheduled for this account; NULL before the first one.';
 
 UPDATE users u SET
     subject_uid        = m.subject_uid,
