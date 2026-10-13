@@ -233,18 +233,39 @@ func (e *Enqueuer) EnqueueFamilyExport(ctx context.Context, projectUID string) e
 	return nil
 }
 
-// EnqueueTaskDigest schedules one run of the daily tasks-waiting digest: the
-// job that mails every person the open tasks whose move is theirs. It takes no
-// identifier and no delay — the scheduler that calls it already waited for the
-// configured hour, and the handler reads the current queue when it runs.
+// TaskDigestPayload is the payload of a task_digest job: the one (project,
+// person) pair whose digest the job sends. project_uid is the field every
+// library-wide job carries its project under; both fields are what the dedup
+// index keys on (migration 0107). A job queued before the payload existed has
+// neither; its handler reads that as nothing to send.
+type TaskDigestPayload struct {
+	ProjectUID string `json:"project_uid"`
+	UserUID    string `json:"user_uid"`
+}
+
+// EnqueueTaskDigest schedules the tasks-waiting digest of one person in one
+// project: the job that mails userUID the open tasks of projectUID whose move
+// is theirs. It takes no delay — the scheduler that calls it already waited for
+// the configured hour, and the handler reads the current queue when it runs.
+// An empty projectUID or userUID is refused: a job naming nobody would mail
+// nobody.
 //
-// Dedup is scoped to the queued state (idx_jobs_task_digest_dedup, migration
-// 0084): a pre-existing *queued* job is a no-op (nil error), so a restart
-// straddling the scheduled hour cannot queue the same day's digest twice. A
-// job already *running* does not block a fresh one; the handler's own stamp
-// on each account is what keeps the second run from repeating the mail.
-func (e *Enqueuer) EnqueueTaskDigest(ctx context.Context) error {
-	if _, err := e.store.Enqueue(ctx, TypeTaskDigest, nil, EnqueueOptions{}); err != nil {
+// Dedup is scoped to the queued state and keyed on the pair
+// (idx_jobs_task_digest_dedup, migration 0107): a pre-existing *queued* job
+// for the same pair is a no-op (nil error), so a restart straddling the
+// scheduled hour cannot queue the same day's digest twice, while another
+// pair's job is never a duplicate. A job already *running* does not block a
+// fresh one; the handler's own stamp on the membership is what keeps the
+// second run from repeating the mail.
+func (e *Enqueuer) EnqueueTaskDigest(ctx context.Context, projectUID, userUID string) error {
+	if projectUID == "" || userUID == "" {
+		return fmt.Errorf("jobs: enqueuing %s: a digest names one project and one person", TypeTaskDigest)
+	}
+	payload, err := json.Marshal(TaskDigestPayload{ProjectUID: projectUID, UserUID: userUID})
+	if err != nil {
+		return fmt.Errorf("jobs: encoding %s payload: %w", TypeTaskDigest, err)
+	}
+	if _, err := e.store.Enqueue(ctx, TypeTaskDigest, payload, EnqueueOptions{}); err != nil {
 		if errors.Is(err, ErrDuplicate) {
 			return nil
 		}

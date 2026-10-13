@@ -20,17 +20,19 @@ type lockedCode struct {
 	code *string
 }
 
-// lockLiveCode locks the link with uid on tx and returns its code columns. It
-// returns ErrNotFound for an unknown link and ErrRevoked for a revoked one — the
+// lockLiveCode locks the project's link with uid on tx and returns its code
+// columns. It returns ErrNotFound for an unknown link (or one of another
+// project) and ErrRevoked for a revoked one — the
 // same refusal Extend gives. An expired link is not refused: it can be extended
 // back to life, and its address is worth having (or replacing) before that.
-func lockLiveCode(ctx context.Context, tx pgx.Tx, uid string) (lockedCode, error) {
+func lockLiveCode(ctx context.Context, tx pgx.Tx, projectUID, uid string) (lockedCode, error) {
 	var (
 		locked  lockedCode
 		revoked *time.Time
 	)
-	err := tx.QueryRow(ctx, "SELECT code_hash, code, revoked_at FROM upload_links WHERE uid = $1 FOR UPDATE",
-		uid).Scan(&locked.hash, &locked.code, &revoked)
+	err := tx.QueryRow(ctx,
+		"SELECT code_hash, code, revoked_at FROM upload_links WHERE uid = $1 AND project_id = $2 FOR UPDATE",
+		uid, projectUID).Scan(&locked.hash, &locked.code, &revoked)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return lockedCode{}, ErrNotFound
 	}
@@ -48,12 +50,15 @@ func lockLiveCode(ctx context.Context, tx pgx.Tx, uid string) (lockedCode, error
 // but the original code can ever be stored and the link's URL stays exactly what
 // it was. The change and entry commit together and return the updated link.
 //
-// It returns ErrNotFound for an unknown link, ErrRevoked for a revoked one and
-// ErrCodeMismatch (with nothing changed) for any other code. Restoring a code
+// It returns ErrNotFound for an unknown link (or one of another project),
+// ErrRevoked for a revoked one and ErrCodeMismatch (with nothing changed) for any other code. Restoring a code
 // that is already readable changes nothing and writes no audit entry.
-func (s *Store) RestoreCode(ctx context.Context, uid, code string, entry audit.Entry) (Link, error) {
+func (s *Store) RestoreCode(ctx context.Context, projectUID, uid, code string, entry audit.Entry) (Link, error) {
+	if projectUID == "" {
+		return Link{}, ErrNoProject
+	}
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
-		locked, err := lockLiveCode(ctx, tx, uid)
+		locked, err := lockLiveCode(ctx, tx, projectUID, uid)
 		if err != nil {
 			return err
 		}
@@ -67,12 +72,12 @@ func (s *Store) RestoreCode(ctx context.Context, uid, code string, entry audit.E
 			return fmt.Errorf("uploadlink: restoring code: %w", err)
 		}
 		entry.TargetType, entry.TargetUID = TargetType, uid
-		return audit.Write(ctx, tx, entry)
+		return audit.Write(ctx, tx, inProject(entry, projectUID))
 	})
 	if err != nil {
 		return Link{}, err
 	}
-	return s.Get(ctx, uid)
+	return s.Get(ctx, projectUID, uid)
 }
 
 // rotateCodeSQL replaces a link's code unless the fresh one collides with
@@ -86,21 +91,24 @@ WHERE uid = $1 AND NOT EXISTS (SELECT 1 FROM upload_links o WHERE o.code_hash = 
 // point, for a link that leaked — and nothing else about the link changes. The
 // change and entry commit together. It returns ErrNotFound for an unknown link
 // and ErrRevoked for a revoked one.
-func (s *Store) RotateCode(ctx context.Context, uid string, entry audit.Entry) (Link, error) {
+func (s *Store) RotateCode(ctx context.Context, projectUID, uid string, entry audit.Entry) (Link, error) {
+	if projectUID == "" {
+		return Link{}, ErrNoProject
+	}
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
-		if _, err := lockLiveCode(ctx, tx, uid); err != nil {
+		if _, err := lockLiveCode(ctx, tx, projectUID, uid); err != nil {
 			return err
 		}
 		if err := replaceCode(ctx, tx, uid); err != nil {
 			return err
 		}
 		entry.TargetType, entry.TargetUID = TargetType, uid
-		return audit.Write(ctx, tx, entry)
+		return audit.Write(ctx, tx, inProject(entry, projectUID))
 	})
 	if err != nil {
 		return Link{}, err
 	}
-	return s.Get(ctx, uid)
+	return s.Get(ctx, projectUID, uid)
 }
 
 // replaceCode stores a fresh code (and its hash) on the link with uid on tx,

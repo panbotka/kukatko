@@ -56,6 +56,9 @@ var (
 	// ErrCodeMismatch means a code offered to RestoreCode does not hash to the
 	// link's code_hash; nothing was stored.
 	ErrCodeMismatch = errors.New("uploadlink: the code does not match this link")
+	// ErrNoProject means a project-scoped call named no project: the
+	// management of links is always about one project and is never defaulted.
+	ErrNoProject = errors.New("uploadlink: no project given")
 )
 
 // Limits on what a link may carry. They are characters (runes), not bytes.
@@ -118,6 +121,10 @@ type Link struct {
 	// Albums and Labels are the targets, ordered by name.
 	Albums []Target `json:"albums"`
 	Labels []Target `json:"labels"`
+	// ProjectUID is the project the link files into (upload_links.project_id).
+	// The public routes resolve a link by its code alone, instance-wide, and
+	// learn the project from here; it is never serialised.
+	ProjectUID string `json:"-"`
 }
 
 // StateAt reports the link's state at now: revoked wins over expired, because a

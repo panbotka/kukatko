@@ -15,9 +15,9 @@ import (
 // interface so the digest neither copies the "whose move is it" predicate nor
 // depends on the store's construction.
 type TaskCounter interface {
-	// WaitingOnMe returns how many open tasks the caller is on where somebody
-	// else acted last.
-	WaitingOnMe(ctx context.Context, callerUID string) (int, error)
+	// WaitingOnMe returns how many open tasks of the project projectUID the
+	// caller is on where somebody else acted last.
+	WaitingOnMe(ctx context.Context, projectUID, callerUID string) (int, error)
 }
 
 // Store produces the "what's new" digest over the shared pgx pool. It owns no
@@ -43,7 +43,7 @@ func (s *Store) WithGap(gap time.Duration) *Store {
 	return &Store{pool: s.pool, tasks: s.tasks, gap: gap}
 }
 
-// rotateVisitSQL stamps the heartbeat and, when the previous read is at least a
+// rotateVisitSQL stamps the heartbeat of one membership and, when the previous read is at least a
 // gap old, rotates the reference point onto it. The whole decision is made in
 // this one statement so that two tabs loading the library at the same instant
 // cannot both rotate: the second waits on the row lock, then re-reads a
@@ -56,50 +56,60 @@ func (s *Store) WithGap(gap time.Duration) *Store {
 // whether the digest can have a "new photos of you" line at all. The link rides
 // along on this statement because the row is already being written: asking for
 // it separately would be a second round trip for one nullable column.
+//
+// The row is the caller's membership of the project ($4), not the account: a
+// visit is a visit to one project, so the two timestamps and the linked person
+// live on project_members (the matching users columns are a transition copy
+// nobody writes any more).
 const rotateVisitSQL = `
-UPDATE users
+UPDATE project_members
 SET last_seen_at = $2,
     visit_reference_at = CASE
         WHEN last_seen_at IS NOT NULL AND last_seen_at <= $3 THEN last_seen_at
         ELSE visit_reference_at
     END
-WHERE uid = $1
+WHERE user_uid = $1 AND project_uid = $4
 RETURNING visit_reference_at, subject_uid`
 
-// visit is one summary read seen from the account it belongs to: who is
-// reading, the reference point of this visit, and the person the account says it
-// is.
+// visit is one summary read seen from the membership it belongs to: which
+// project, who is reading, the reference point of this visit, and the person the
+// account says it is in that project.
 type visit struct {
+	// projectUID is the project the digest is about; every count reads only it.
+	projectUID string
 	// viewer is the account the digest is for. It is not only the row that gets
 	// stamped: it is also what every count subtracts, because a reader's own
 	// comment, album or upload is not news to them.
 	viewer string
 	// since is the digest's "since", zero when the account has no reference point.
 	since time.Time
-	// subjectUID is the account's linked person, nil when it has named none.
+	// subjectUID is the member's linked person in the project, nil when it has
+	// named none.
 	subjectUID *string
 }
 
-// rotateVisit records that userUID is here at now and returns the visit this
-// read belongs to.
+// rotateVisit records that userUID is in projectUID at now and returns the
+// visit this read belongs to.
 //
-// The returned since is zero when the account has no reference point yet, which
-// is every account's first read: there is no "away" to report on. It returns
-// ErrUserNotFound when no row matched, i.e. the account was deleted between
-// authenticating the request and stamping the visit.
-func (s *Store) rotateVisit(ctx context.Context, userUID string, now time.Time) (visit, error) {
+// The returned since is zero when the membership has no reference point yet,
+// which is every member's first read: there is no "away" to report on. It
+// returns ErrUserNotFound when no row matched: the account was deleted between
+// authenticating the request and stamping the visit, or it entered the project
+// without a membership (a maintainer, who is admin everywhere) and so has no
+// visit bookkeeping there.
+func (s *Store) rotateVisit(ctx context.Context, projectUID, userUID string, now time.Time) (visit, error) {
 	var (
 		reference *time.Time
 		subject   *string
 	)
-	err := s.pool.QueryRow(ctx, rotateVisitSQL, userUID, now, now.Add(-s.gap)).Scan(&reference, &subject)
+	err := s.pool.QueryRow(ctx, rotateVisitSQL, userUID, now, now.Add(-s.gap), projectUID).Scan(&reference, &subject)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return visit{}, ErrUserNotFound
 	}
 	if err != nil {
 		return visit{}, fmt.Errorf("whatsnew: stamping visit: %w", err)
 	}
-	v := visit{viewer: userUID, subjectUID: subject}
+	v := visit{projectUID: projectUID, viewer: userUID, subjectUID: subject}
 	if reference != nil {
 		v.since = *reference
 	}
@@ -127,6 +137,10 @@ func (s *Store) rotateVisit(ctx context.Context, userUID string, now time.Time) 
 // question that has been waiting on you for a fortnight is still yours to
 // answer, whereas one opened yesterday that you have already answered is not.
 //
+// $3 is the project: every subquery reads only its rows (a comment through the
+// photo it is on, which carries the project), so another project's uploads,
+// albums, people and comments are never anybody's news here.
+//
 // $2 is the reader. Their own upload, comment and album are subtracted: the
 // digest reports what *others* did while they were away, and being told about
 // the comment you just wrote is a bug, not news. IS DISTINCT FROM rather than
@@ -139,20 +153,21 @@ func (s *Store) rotateVisit(ctx context.Context, userUID string, now time.Time) 
 const countsSQL = `
 SELECT
     (SELECT count(*) FROM photos
-        WHERE created_at > $1
+        WHERE created_at > $1 AND project_id = $3
           AND archived_at IS NULL
           AND (stack_uid IS NULL OR stack_primary)
           AND NOT hidden_from_library
           AND uploaded_by IS DISTINCT FROM $2),
-    (SELECT count(*) FROM comments
-        WHERE created_at > $1 AND deleted_at IS NULL
-          AND photo_uid IS NOT NULL
-          AND author_uid IS DISTINCT FROM $2),
+    (SELECT count(*) FROM comments c
+        WHERE c.created_at > $1 AND c.deleted_at IS NULL
+          AND c.photo_uid IS NOT NULL
+          AND c.author_uid IS DISTINCT FROM $2
+          AND EXISTS (SELECT 1 FROM photos cp WHERE cp.uid = c.photo_uid AND cp.project_id = $3)),
     (SELECT count(*) FROM albums
-        WHERE created_at > $1 AND type = 'album'
+        WHERE created_at > $1 AND type = 'album' AND project_id = $3
           AND created_by IS DISTINCT FROM $2),
     (SELECT count(*) FROM subjects
-        WHERE created_at > $1 AND name <> '')`
+        WHERE created_at > $1 AND name <> '' AND project_id = $3)`
 
 // minePhotosSQL counts the new photographs the reader themselves is on. It is
 // the photo predicate of countsSQL — the library grid's own base filter and the
@@ -165,7 +180,7 @@ SELECT
 // a linked account, which most are not.
 const minePhotosSQL = `
 SELECT count(*) FROM photos p
-WHERE p.created_at > $1
+WHERE p.created_at > $1 AND p.project_id = $4
   AND p.archived_at IS NULL
   AND (p.stack_uid IS NULL OR p.stack_primary)
   AND NOT p.hidden_from_library
@@ -180,12 +195,12 @@ WHERE p.created_at > $1
 // entirely and reports zero.
 func (s *Store) countSince(ctx context.Context, v visit) (counts, error) {
 	var c counts
-	if err := s.pool.QueryRow(ctx, countsSQL, v.since, v.viewer).
+	if err := s.pool.QueryRow(ctx, countsSQL, v.since, v.viewer, v.projectUID).
 		Scan(&c.photos, &c.comments, &c.albums, &c.people); err != nil {
 		return counts{}, fmt.Errorf("whatsnew: counting changes: %w", err)
 	}
 	if s.tasks != nil {
-		waiting, err := s.tasks.WaitingOnMe(ctx, v.viewer)
+		waiting, err := s.tasks.WaitingOnMe(ctx, v.projectUID, v.viewer)
 		if err != nil {
 			return counts{}, fmt.Errorf("whatsnew: counting tasks waiting on the reader: %w", err)
 		}
@@ -194,7 +209,8 @@ func (s *Store) countSince(ctx context.Context, v visit) (counts, error) {
 	if v.subjectUID == nil || c.photos == 0 {
 		return c, nil
 	}
-	if err := s.pool.QueryRow(ctx, minePhotosSQL, v.since, v.viewer, *v.subjectUID).Scan(&c.mine); err != nil {
+	row := s.pool.QueryRow(ctx, minePhotosSQL, v.since, v.viewer, *v.subjectUID, v.projectUID)
+	if err := row.Scan(&c.mine); err != nil {
 		return counts{}, fmt.Errorf("whatsnew: counting new photos of the reader: %w", err)
 	}
 	return c, nil
@@ -208,14 +224,14 @@ func (s *Store) countSince(ctx context.Context, v visit) (counts, error) {
 const listAlbumsSQL = `
 SELECT uid, title
 FROM albums
-WHERE created_at > $1 AND type = 'album' AND created_by IS DISTINCT FROM $2
+WHERE created_at > $1 AND type = 'album' AND created_by IS DISTINCT FROM $2 AND project_id = $4
 ORDER BY created_at DESC
 LIMIT $3`
 
 // listAlbums returns up to [MaxItems] albums somebody other than the reader
 // created after v.since, newest first.
 func (s *Store) listAlbums(ctx context.Context, v visit) ([]Album, error) {
-	rows, err := s.pool.Query(ctx, listAlbumsSQL, v.since, v.viewer, MaxItems)
+	rows, err := s.pool.Query(ctx, listAlbumsSQL, v.since, v.viewer, MaxItems, v.projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("whatsnew: listing new albums: %w", err)
 	}
@@ -239,14 +255,14 @@ func (s *Store) listAlbums(ctx context.Context, v visit) ([]Album, error) {
 const listPeopleSQL = `
 SELECT uid, name
 FROM subjects
-WHERE created_at > $1 AND name <> ''
+WHERE created_at > $1 AND name <> '' AND project_id = $3
 ORDER BY created_at DESC
 LIMIT $2`
 
-// listPeople returns up to [MaxItems] named subjects created after since,
-// newest first.
-func (s *Store) listPeople(ctx context.Context, since time.Time) ([]Person, error) {
-	rows, err := s.pool.Query(ctx, listPeopleSQL, since, MaxItems)
+// listPeople returns up to [MaxItems] named subjects of v's project created
+// after v.since, newest first.
+func (s *Store) listPeople(ctx context.Context, v visit) ([]Person, error) {
+	rows, err := s.pool.Query(ctx, listPeopleSQL, v.since, MaxItems, v.projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("whatsnew: listing new people: %w", err)
 	}
@@ -263,8 +279,9 @@ func (s *Store) listPeople(ctx context.Context, since time.Time) ([]Person, erro
 	return people, nil
 }
 
-// Summary stamps userUID's visit at now and returns the digest of everything
-// somebody else did since the reference point of that visit: the reader's own
+// Summary stamps userUID's visit to the project projectUID at now and returns
+// the digest of everything somebody else did in that project since the
+// reference point of that visit: the reader's own
 // comments, albums and uploads are excluded, because a digest is what you missed
 // while you were away and you did not miss your own work.
 //
@@ -274,9 +291,13 @@ func (s *Store) listPeople(ctx context.Context, since time.Time) ([]Person, erro
 // summary is what advances the visit bookkeeping, so it happens even when the
 // digest turns out empty.
 //
-// It returns ErrUserNotFound when the account no longer exists.
-func (s *Store) Summary(ctx context.Context, userUID string, now time.Time) (Summary, error) {
-	v, err := s.rotateVisit(ctx, userUID, now)
+// It returns ErrNoProject for an empty projectUID and ErrUserNotFound when the
+// account is not (or no longer) a member of the project.
+func (s *Store) Summary(ctx context.Context, projectUID, userUID string, now time.Time) (Summary, error) {
+	if projectUID == "" {
+		return Summary{}, ErrNoProject
+	}
+	v, err := s.rotateVisit(ctx, projectUID, userUID, now)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -311,7 +332,7 @@ func (s *Store) lists(ctx context.Context, v visit, c counts) ([]Album, []Person
 		}
 	}
 	if c.people > 0 {
-		if people, err = s.listPeople(ctx, v.since); err != nil {
+		if people, err = s.listPeople(ctx, v); err != nil {
 			return nil, nil, err
 		}
 	}

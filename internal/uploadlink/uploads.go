@@ -179,30 +179,39 @@ func targetUIDs(ctx context.Context, tx pgx.Tx, query, linkUID string) ([]string
 	return uids, nil
 }
 
-// attributeSQL hands the photos an anonymous session created to the account $2:
-// the provenance rows first, then the photos themselves — only those still
-// owned by nobody, so a photo is never taken from anybody and a session can be
-// claimed once.
+// attributeSQL hands the photos an anonymous session created through the links
+// of the project $3 to the account $2: the provenance rows first, then the
+// photos themselves — only those of that project still owned by nobody, so a
+// photo is never taken from anybody, a session can be claimed once, and a
+// registration into one project never claims what the same browser uploaded
+// into another.
 const attributeSQL = `
 WITH claimed AS (
-    UPDATE upload_link_photos SET uploaded_by = $2
-    WHERE session_hash = $1 AND outcome = 'created' AND uploaded_by IS NULL
-    RETURNING photo_uid
+    UPDATE upload_link_photos ulp SET uploaded_by = $2
+    FROM upload_links l
+    WHERE l.uid = ulp.link_uid AND l.project_id = $3
+      AND ulp.session_hash = $1 AND ulp.outcome = 'created' AND ulp.uploaded_by IS NULL
+    RETURNING ulp.photo_uid
 )
 UPDATE photos SET uploaded_by = $2, updated_at = now()
-WHERE uid IN (SELECT photo_uid FROM claimed) AND uploaded_by IS NULL
+WHERE uid IN (SELECT photo_uid FROM claimed) AND uploaded_by IS NULL AND project_id = $3
 RETURNING uid`
 
 // AttributeSessionTx attributes to userUID, on tx, every photo the anonymous
-// session whose token hashes to sessionHash created through any link, and
-// returns the UIDs of the photos it changed (whose sidecars are now stale). It
-// runs in the transaction that creates the account, so the photos are claimed if
-// and only if the account exists. An empty sessionHash claims nothing.
-func AttributeSessionTx(ctx context.Context, tx pgx.Tx, sessionHash, userUID string) ([]string, error) {
+// session whose token hashes to sessionHash created through a link of the
+// project projectUID, and returns the UIDs of the photos it changed (whose
+// sidecars are now stale). It runs in the transaction that creates the account
+// (and its membership of that project), so the photos are claimed if and only
+// if the account exists. An empty sessionHash claims nothing; an empty
+// projectUID is ErrNoProject.
+func AttributeSessionTx(ctx context.Context, tx pgx.Tx, projectUID, sessionHash, userUID string) ([]string, error) {
 	if sessionHash == "" {
 		return nil, nil
 	}
-	rows, err := tx.Query(ctx, attributeSQL, sessionHash, userUID)
+	if projectUID == "" {
+		return nil, ErrNoProject
+	}
+	rows, err := tx.Query(ctx, attributeSQL, sessionHash, userUID, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("uploadlink: attributing session photos: %w", err)
 	}

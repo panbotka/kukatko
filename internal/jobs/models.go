@@ -126,13 +126,13 @@ const (
 	// but talks to a remote host (the browser vendor's push service), which is why
 	// it is queued. See internal/pushjob.
 	TypePushSend = "push_send"
-	// TypeTaskDigest sends every person one e-mail a day listing the open tasks
-	// whose move is theirs — the "waiting on me" of the task queue, evaluated for
-	// everybody at once rather than for one reader. It runs locally and only
-	// schedules mail_send jobs; it is enqueued once a day by the scheduler in
-	// internal/taskdigestjob, and only while the digest and mail are both on.
-	// It belongs to no photo, so it has a dedup index of its own (migration
-	// 0084) keeping at most one queued job.
+	// TypeTaskDigest sends one person one e-mail listing the open tasks of one
+	// project whose move is theirs — the "waiting on me" of the task queue. Its
+	// payload is TaskDigestPayload (project_uid + user_uid). It runs locally and
+	// only schedules a mail_send job; the scheduler in internal/taskdigestjob
+	// enqueues one per due (project, person) pair once a day, and only while the
+	// digest and mail are both on. It belongs to no photo, so it has a dedup
+	// index of its own (migration 0107) keeping at most one queued job per pair.
 	TypeTaskDigest = "task_digest"
 	// TypeTagNotify closes one account's tagging window: it reads every photo
 	// the account's linked person was tagged on since the window opened (the

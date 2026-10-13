@@ -37,6 +37,35 @@ func hashOf(b []byte) string {
 // deterministic regardless of when the test runs.
 var fixedTime = time.Date(2024, time.May, 17, 10, 30, 0, 0, time.UTC)
 
+// TestFSStoreUnder_keysUnderThePrefix verifies a prefixed store lands under
+// the prefix — so the same bytes under two prefixes are two keys, neither a
+// duplicate of the other — and that a prefix trying to climb out of the root
+// is confined to it.
+func TestFSStoreUnder_keysUnderThePrefix(t *testing.T) {
+	t.Parallel()
+	fs := newTestFS(t)
+	content := []byte("same bytes in two projects\n")
+
+	root, err := fs.Store(t.Context(), bytes.NewReader(content), fixedTime, "fox.jpg")
+	if err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+	prefixed, err := fs.StoreUnder(t.Context(), bytes.NewReader(content), "projects/pjb/", fixedTime, "fox.jpg")
+	if err != nil {
+		t.Fatalf("StoreUnder: %v (an identical root copy must not make it a duplicate)", err)
+	}
+	if root.RelPath != "2024/05/fox.jpg" || prefixed.RelPath != "projects/pjb/2024/05/fox.jpg" {
+		t.Errorf("keys = %q and %q, want the root layout and the same under the prefix", root.RelPath, prefixed.RelPath)
+	}
+	if _, err := os.Stat(filepath.Join(fs.root, "projects", "pjb", "2024", "05", "fox.jpg")); err != nil {
+		t.Errorf("the prefixed file is not on disk: %v", err)
+	}
+	escaped, err := fs.StoreUnder(t.Context(), bytes.NewReader(content), "../../outside", fixedTime, "fox.jpg")
+	if err != nil || escaped.RelPath != "outside/2024/05/fox.jpg" {
+		t.Errorf("StoreUnder(../../outside) = %q, %v; want it confined to the root", escaped.RelPath, err)
+	}
+}
+
 func TestFSStore_hashAndLayout(t *testing.T) {
 	t.Parallel()
 	fs := newTestFS(t)

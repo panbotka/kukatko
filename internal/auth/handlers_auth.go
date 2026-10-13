@@ -248,7 +248,7 @@ func (a *API) handleSubject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	user, err := a.svc.SetUserSubject(r.Context(), p.user.UID, req.SubjectUID)
+	user, err := a.svc.SetUserSubject(r.Context(), ProjectUIDFromContext(r.Context()), p.user.UID, req.SubjectUID)
 	switch {
 	case err == nil:
 		writeJSON(w, http.StatusOK, user)

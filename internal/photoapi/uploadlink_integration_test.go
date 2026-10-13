@@ -113,7 +113,7 @@ func seedUploadLink(t *testing.T, env *env, links *uploadlink.Store, creatorUID 
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	link, _, err := links.Create(t.Context(), uploadlink.NewLink{
+	link, _, err := links.Create(t.Context(), project.BootstrapUID, uploadlink.NewLink{
 		Title: "Pouť 2026", CreatedBy: creatorUID, ExpiresAt: time.Now().Add(time.Hour),
 		AlbumUIDs: []string{album.UID},
 	}, audit.Entry{ActorUID: creatorUID, Action: audit.ActionUploadLinkCreate})

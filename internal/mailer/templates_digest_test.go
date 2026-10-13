@@ -46,6 +46,27 @@ func TestRenderTasksWaitingDigest(t *testing.T) {
 	}
 }
 
+// TestRenderTasksWaitingDigest_projectHeading verifies the task list is headed
+// by the project it belongs to, so the two digests of a person in two projects
+// tell apart, and that the heading is absent without a project name.
+func TestRenderTasksWaitingDigest_projectHeading(t *testing.T) {
+	t.Parallel()
+
+	data := TasksWaitingDigestData{
+		DisplayName: "Jan", Total: 1, ProjectName: "Veselice",
+		Tasks:    []DigestTask{{Title: "Rok?", State: "question", URL: "https://k.example/p/v/tasks/tk-1"}},
+		QueueURL: "https://k.example/p/v/tasks?waiting=1",
+	}
+	want := "v Kukátku na tebe čeká 1 úkol:\n\nProjekt Veselice\n\n- Rok? (čeká na odpověď)\n"
+	if got := RenderTasksWaitingDigest(data).Body; !strings.Contains(got, want) {
+		t.Errorf("Body =\n%s\nwant it to contain %q", got, want)
+	}
+	data.ProjectName = ""
+	if got := RenderTasksWaitingDigest(data).Body; strings.Contains(got, "Projekt") {
+		t.Errorf("Body without a project name = %q, want no heading", got)
+	}
+}
+
 // TestRenderTasksWaitingDigest_counts verifies the subject and the opening line
 // follow the Czech plural rule, the verb agrees with the count, and the "and N
 // more" tail appears only when the list was cut.

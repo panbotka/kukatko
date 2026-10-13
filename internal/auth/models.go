@@ -164,6 +164,11 @@ type User struct {
 	// Only ever moved forward, and only by the account itself — see
 	// Service.MarkWelcomeSeen.
 	WelcomeSeenAt *time.Time `json:"welcome_seen_at"`
+	// joinProject is the project a new account's membership is created in by
+	// CreateUser and its audited twins; empty is the bootstrap project. It is
+	// set only by a registration through an upload link, which joins the link's
+	// project, and is never read back from the database.
+	joinProject string
 }
 
 // Session is an authenticated session bound to a user. Token is the opaque value

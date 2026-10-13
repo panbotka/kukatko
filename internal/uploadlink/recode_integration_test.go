@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/uploadlink"
 )
 
@@ -74,7 +75,7 @@ func TestRestoreCode_matching(t *testing.T) {
 	link, code := f.legacyLink(t)
 	before := f.readRow(t, link.UID)
 
-	restored, err := f.store.RestoreCode(ctx, link.UID, code, f.restoreEntry())
+	restored, err := f.store.RestoreCode(ctx, project.BootstrapUID, link.UID, code, f.restoreEntry())
 	if err != nil {
 		t.Fatalf("RestoreCode: %v", err)
 	}
@@ -88,7 +89,7 @@ func TestRestoreCode_matching(t *testing.T) {
 	if byCode, err := f.store.ByCode(ctx, code); err != nil || byCode.UID != link.UID || byCode.Code != code {
 		t.Errorf("ByCode after restore = %+v, %v, want the same link with its code", byCode, err)
 	}
-	if _, err := f.store.RestoreCode(ctx, link.UID, code, f.restoreEntry()); err != nil {
+	if _, err := f.store.RestoreCode(ctx, project.BootstrapUID, link.UID, code, f.restoreEntry()); err != nil {
 		t.Fatalf("second RestoreCode: %v", err)
 	}
 	if got := f.auditCount(t, audit.ActionUploadLinkRestoreCode, link.UID); got != 1 {
@@ -105,7 +106,7 @@ func TestRestoreCode_mismatch(t *testing.T) {
 	before := f.readRow(t, link.UID)
 
 	for _, wrong := range []string{"Zz9Zz9Zz", "short", code + "x", ""} {
-		if _, err := f.store.RestoreCode(ctx, link.UID, wrong, f.restoreEntry()); !errors.Is(err,
+		if _, err := f.store.RestoreCode(ctx, project.BootstrapUID, link.UID, wrong, f.restoreEntry()); !errors.Is(err,
 			uploadlink.ErrCodeMismatch) {
 			t.Errorf("RestoreCode(%q) error = %v, want ErrCodeMismatch", wrong, err)
 		}
@@ -128,7 +129,7 @@ func TestRotateCode(t *testing.T) {
 	link, oldCode := f.legacyLink(t)
 	before := f.readRow(t, link.UID)
 
-	rotated, err := f.store.RotateCode(ctx, link.UID,
+	rotated, err := f.store.RotateCode(ctx, project.BootstrapUID, link.UID,
 		audit.Entry{ActorUID: f.curator, Action: audit.ActionUploadLinkRotateCode})
 	if err != nil {
 		t.Fatalf("RotateCode: %v", err)
@@ -158,15 +159,15 @@ func TestRecode_revokedAndExpired(t *testing.T) {
 	ctx := context.Background()
 
 	revoked, code := f.legacyLink(t)
-	if _, err := f.store.Revoke(ctx, revoked.UID,
+	if _, err := f.store.Revoke(ctx, project.BootstrapUID, revoked.UID,
 		audit.Entry{ActorUID: f.curator, Action: audit.ActionUploadLinkRevoke}); err != nil {
 		t.Fatalf("Revoke: %v", err)
 	}
-	if _, err := f.store.RestoreCode(ctx, revoked.UID, code, f.restoreEntry()); !errors.Is(err,
+	if _, err := f.store.RestoreCode(ctx, project.BootstrapUID, revoked.UID, code, f.restoreEntry()); !errors.Is(err,
 		uploadlink.ErrRevoked) {
 		t.Errorf("RestoreCode(revoked) error = %v, want ErrRevoked", err)
 	}
-	if _, err := f.store.RotateCode(ctx, revoked.UID, f.restoreEntry()); !errors.Is(err, uploadlink.ErrRevoked) {
+	if _, err := f.store.RotateCode(ctx, project.BootstrapUID, revoked.UID, f.restoreEntry()); !errors.Is(err, uploadlink.ErrRevoked) {
 		t.Errorf("RotateCode(revoked) error = %v, want ErrRevoked", err)
 	}
 	if row := f.readRow(t, revoked.UID); row.code != nil || row.hash != uploadlink.HashSecret(code) {
@@ -178,10 +179,10 @@ func TestRecode_revokedAndExpired(t *testing.T) {
 		expired.UID); err != nil {
 		t.Fatalf("expiring: %v", err)
 	}
-	if got, err := f.store.RestoreCode(ctx, expired.UID, code, f.restoreEntry()); err != nil || got.Code != code {
+	if got, err := f.store.RestoreCode(ctx, project.BootstrapUID, expired.UID, code, f.restoreEntry()); err != nil || got.Code != code {
 		t.Errorf("RestoreCode(expired) = %q, %v, want the code stored", got.Code, err)
 	}
-	if _, err := f.store.RotateCode(ctx, "ul_missing", f.restoreEntry()); !errors.Is(err, uploadlink.ErrNotFound) {
+	if _, err := f.store.RotateCode(ctx, project.BootstrapUID, "ul_missing", f.restoreEntry()); !errors.Is(err, uploadlink.ErrNotFound) {
 		t.Errorf("RotateCode(unknown) error = %v, want ErrNotFound", err)
 	}
 }

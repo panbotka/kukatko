@@ -79,7 +79,7 @@ func (f fixture) makePhoto(t *testing.T, hash string) string {
 // createLink creates a link to the fixture's album and label, valid for a day.
 func (f fixture) createLink(t *testing.T) (uploadlink.Link, string) {
 	t.Helper()
-	link, code, err := f.store.Create(context.Background(), uploadlink.NewLink{
+	link, code, err := f.store.Create(context.Background(), project.BootstrapUID, uploadlink.NewLink{
 		Title: "Pouť 2026 – fotky od vás", Note: "Díky!", CreatedBy: f.curator,
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 		AlbumUIDs: []string{f.album.UID}, LabelUIDs: []string{f.label.UID, f.label.UID},
@@ -130,7 +130,7 @@ func TestCreate_storesCodeAndResolvesByCode(t *testing.T) {
 	if link.Code != code {
 		t.Errorf("created link Code = %q, want %q", link.Code, code)
 	}
-	if got, err := f.store.Get(ctx, link.UID); err != nil || got.Code != code {
+	if got, err := f.store.Get(ctx, project.BootstrapUID, link.UID); err != nil || got.Code != code {
 		t.Errorf("Get Code = %q, %v, want the readable code %q", got.Code, err, code)
 	}
 	byCode, err := f.store.ByCode(ctx, code)
@@ -150,13 +150,13 @@ func TestCreate_storesCodeAndResolvesByCode(t *testing.T) {
 func TestCreate_unknownTargetRollsBack(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	_, _, err := f.store.Create(ctx, uploadlink.NewLink{
+	_, _, err := f.store.Create(ctx, project.BootstrapUID, uploadlink.NewLink{
 		CreatedBy: f.curator, ExpiresAt: time.Now().Add(time.Hour), AlbumUIDs: []string{"al_missing"},
 	}, audit.Entry{ActorUID: f.curator, Action: audit.ActionUploadLinkCreate})
 	if !errors.Is(err, uploadlink.ErrTargetNotFound) {
 		t.Fatalf("Create error = %v, want ErrTargetNotFound", err)
 	}
-	links, err := f.store.List(ctx, "")
+	links, err := f.store.List(ctx, project.BootstrapUID, "")
 	if err != nil || len(links) != 0 {
 		t.Errorf("List = %v, %v; want no links", links, err)
 	}
@@ -168,15 +168,15 @@ func TestList_scopesToCreator(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	f.createLink(t)
-	mine, err := f.store.List(ctx, f.curator)
+	mine, err := f.store.List(ctx, project.BootstrapUID, f.curator)
 	if err != nil || len(mine) != 1 {
 		t.Fatalf("List(curator) = %d links, %v", len(mine), err)
 	}
-	others, err := f.store.List(ctx, "us_somebody_else")
+	others, err := f.store.List(ctx, project.BootstrapUID, "us_somebody_else")
 	if err != nil || len(others) != 0 {
 		t.Errorf("List(other) = %d links, %v; want 0", len(others), err)
 	}
-	all, err := f.store.List(ctx, "")
+	all, err := f.store.List(ctx, project.BootstrapUID, "")
 	if err != nil || len(all) != 1 {
 		t.Errorf("List(all) = %d links, %v; want 1", len(all), err)
 	}
@@ -192,26 +192,26 @@ func TestExtendAndRevoke(t *testing.T) {
 
 	later := time.Now().Add(30 * 24 * time.Hour).Truncate(time.Second)
 	entry.Action = audit.ActionUploadLinkExtend
-	extended, err := f.store.Extend(ctx, link.UID, later, entry)
+	extended, err := f.store.Extend(ctx, project.BootstrapUID, link.UID, later, entry)
 	if err != nil || !extended.ExpiresAt.Equal(later) {
 		t.Fatalf("Extend = %v, %v; want expiry %v", extended.ExpiresAt, err, later)
 	}
 	entry.Action = audit.ActionUploadLinkRevoke
-	revoked, err := f.store.Revoke(ctx, link.UID, entry)
+	revoked, err := f.store.Revoke(ctx, project.BootstrapUID, link.UID, entry)
 	if err != nil || revoked.RevokedAt == nil {
 		t.Fatalf("Revoke = %+v, %v", revoked, err)
 	}
-	if _, err := f.store.Revoke(ctx, link.UID, entry); err != nil {
+	if _, err := f.store.Revoke(ctx, project.BootstrapUID, link.UID, entry); err != nil {
 		t.Fatalf("second Revoke: %v", err)
 	}
 	if got := f.auditCount(t, audit.ActionUploadLinkRevoke, link.UID); got != 1 {
 		t.Errorf("revoke audit entries = %d, want 1 (the second revoke changes nothing)", got)
 	}
 	entry.Action = audit.ActionUploadLinkExtend
-	if _, err := f.store.Extend(ctx, link.UID, later, entry); !errors.Is(err, uploadlink.ErrRevoked) {
+	if _, err := f.store.Extend(ctx, project.BootstrapUID, link.UID, later, entry); !errors.Is(err, uploadlink.ErrRevoked) {
 		t.Errorf("Extend(revoked) error = %v, want ErrRevoked", err)
 	}
-	if _, err := f.store.Extend(ctx, "ul_missing", later, entry); !errors.Is(err, uploadlink.ErrNotFound) {
+	if _, err := f.store.Extend(ctx, project.BootstrapUID, "ul_missing", later, entry); !errors.Is(err, uploadlink.ErrNotFound) {
 		t.Errorf("Extend(missing) error = %v, want ErrNotFound", err)
 	}
 }
@@ -241,7 +241,7 @@ func TestRecordUpload_filesIntoTargets(t *testing.T) {
 	if err != nil || len(labels) != 1 {
 		t.Errorf("PhotoLabelsForPhoto = %+v, %v", labels, err)
 	}
-	got, err := f.store.Get(ctx, link.UID)
+	got, err := f.store.Get(ctx, project.BootstrapUID, link.UID)
 	if err != nil || got.UploadCount != 1 || got.LastUsedAt == nil {
 		t.Errorf("counters = %d / %v, %v", got.UploadCount, got.LastUsedAt, err)
 	}
@@ -275,7 +275,7 @@ func TestReserveUpload_capAndLiveness(t *testing.T) {
 	now := time.Now()
 	count := func() int {
 		t.Helper()
-		got, err := f.store.Get(ctx, link.UID)
+		got, err := f.store.Get(ctx, project.BootstrapUID, link.UID)
 		if err != nil {
 			t.Fatalf("Get: %v", err)
 		}
@@ -305,7 +305,7 @@ func TestReserveUpload_capAndLiveness(t *testing.T) {
 	if err := f.store.ReserveUpload(ctx, "ul_missing", 0, now); !errors.Is(err, uploadlink.ErrNotFound) {
 		t.Errorf("reservation on a missing link error = %v, want ErrNotFound", err)
 	}
-	if _, err := f.store.Revoke(ctx, link.UID, audit.Entry{ActorUID: f.curator, Action: audit.ActionUploadLinkRevoke}); err != nil {
+	if _, err := f.store.Revoke(ctx, project.BootstrapUID, link.UID, audit.Entry{ActorUID: f.curator, Action: audit.ActionUploadLinkRevoke}); err != nil {
 		t.Fatalf("Revoke: %v", err)
 	}
 	if err := f.store.ReserveUpload(ctx, link.UID, 0, now); !errors.Is(err, uploadlink.ErrRevoked) {
@@ -415,7 +415,7 @@ func attribute(t *testing.T, db *database.DB, sessionHash, userUID string) []str
 	var uids []string
 	err := pgx.BeginFunc(ctx, db.Pool(), func(tx pgx.Tx) error {
 		var err error
-		uids, err = uploadlink.AttributeSessionTx(ctx, tx, sessionHash, userUID)
+		uids, err = uploadlink.AttributeSessionTx(ctx, tx, project.BootstrapUID, sessionHash, userUID)
 		return err
 	})
 	if err != nil {

@@ -43,7 +43,10 @@ type caller struct {
 	// projectUID is the uid of the request's project: every catalogue read a
 	// tool makes is confined to it.
 	projectUID string
-	meta       audit.Meta
+	// linked is the person the caller's membership of the project names ("this
+	// is me"), what `person:me` resolves to; nil when it names nobody.
+	linked *string
+	meta   audit.Meta
 }
 
 // entry builds an audit entry for a mutation this caller is making, so every
@@ -73,7 +76,8 @@ func (a *API) withCaller(next http.Handler) http.Handler {
 		}
 		c := caller{
 			user: user, role: auth.ProjectRoleFromContext(r.Context()),
-			projectUID: auth.ProjectUIDFromContext(r.Context()), meta: audit.FromRequest(r, user.UID),
+			projectUID: auth.ProjectUIDFromContext(r.Context()), linked: auth.LinkedSubjectFromContext(r.Context()),
+			meta: audit.FromRequest(r, user.UID),
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, c)))
 	})

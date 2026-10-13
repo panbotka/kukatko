@@ -48,10 +48,14 @@ var subjectKeys = map[query.Key]bool{
 }
 
 // Resolve rewrites every `person:me` and `family:me` alternative in filters to
-// the subject linked to the caller's account, in place.
+// the subject linked to the caller in the current project, in place.
 //
-// linked is the caller's linked subject UID, or nil when the account has not
-// said which person it is. used reports whether the token appeared at all;
+// linked is the caller's linked subject UID in the request's project — the
+// membership's project_members.subject_uid, which the auth guard reads when it
+// admits the caller (auth.LinkedSubjectFromContext), never the account-wide
+// users column — or nil when the caller has not said which person it is there.
+// A person is a row of one project, so the same account is a different person
+// (or nobody) in each of its projects. used reports whether the token appeared at all;
 // resolved is false only when it did and linked was nil, which is the case the
 // caller has to answer with an empty result and a reason.
 //

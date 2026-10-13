@@ -47,7 +47,7 @@ func (a *API) handleTimeline(w http.ResponseWriter, r *http.Request) {
 	// histogram accompanies; an unresolvable one leaves the buckets empty, which
 	// is exactly what the grid beside it shows. The reason has nowhere to go in
 	// an aggregation — the list reports it.
-	applyMeTokens(&params, user)
+	applyMeTokens(&params, user, auth.LinkedSubjectFromContext(r.Context()))
 
 	timeline, err := a.store.TimelineBuckets(r.Context(), auth.ProjectUIDFromContext(r.Context()), params)
 	if err != nil {

@@ -18,7 +18,8 @@ func taskDigestOn(cfg *config.Config) bool {
 }
 
 // buildTaskDigestServiceOrNil assembles the `task_digest` job handler — the
-// once-a-day run that mails every person the open tasks whose move is theirs —
+// per-(project, person) job that mails one person the open tasks of one
+// project whose move is theirs —
 // or nil when the digest is off. Its mails go through the same queue enqueuer
 // the account flows use, on the pool: a digest is not the side effect of any
 // one mutation, so there is no transaction to join. The links inside it are
@@ -35,13 +36,14 @@ func buildTaskDigestServiceOrNil(cfg *config.Config, db *database.DB) *taskdiges
 	})
 }
 
-// buildTaskDigestScheduler returns the daily scheduler that enqueues the
-// `task_digest` job at tasks.digest.hour UTC — inert (its Run returns at once)
+// buildTaskDigestScheduler returns the daily scheduler that enqueues one
+// `task_digest` job per due (project, person) pair at tasks.digest.hour UTC — inert (its Run returns at once)
 // when the digest is off, so the serve command can always start it.
 func buildTaskDigestScheduler(cfg *config.Config, db *database.DB) *taskdigestjob.Scheduler {
 	return taskdigestjob.NewScheduler(taskdigestjob.SchedulerConfig{
 		Enabled:  taskDigestOn(cfg),
 		Enqueuer: jobs.NewEnqueuer(jobs.NewStore(db.Pool())),
+		Targets:  phototask.NewStore(db.Pool()),
 		Hour:     cfg.Tasks.Digest.Hour,
 	})
 }

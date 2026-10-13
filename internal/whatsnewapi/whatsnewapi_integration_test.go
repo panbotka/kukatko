@@ -57,7 +57,7 @@ func newEnv(t *testing.T) *env {
 
 	e := &env{authSvc: authSvc, db: db, now: time.Date(2026, 8, 9, 9, 0, 0, 0, time.UTC)}
 	api := whatsnewapi.NewAPI(whatsnewapi.Config{
-		Store:       whatsnew.NewStore(db.Pool(), bootstrapTasks{phototask.NewStore(db.Pool())}).WithGap(testGap),
+		Store:       whatsnew.NewStore(db.Pool(), phototask.NewStore(db.Pool())).WithGap(testGap),
 		RequireAuth: authAPI.RequireAuth,
 		Now:         func() time.Time { return e.now },
 	})
@@ -409,10 +409,13 @@ func (e *env) markPerson(t *testing.T, uid, photoUID, subjectUID string) {
 	           VALUES ($1, $2, $3, 'face', 0.1, 0.1, 0.2, 0.2)`, uid, photoUID, subjectUID)
 }
 
-// linkAccount points a user account at a person of the library.
+// linkAccount points a user's membership of the bootstrap project at a person
+// of that project.
 func (e *env) linkAccount(t *testing.T, username, subjectUID string) {
 	t.Helper()
-	e.exec(t, `UPDATE users SET subject_uid = $2 WHERE username = $1`, username, subjectUID)
+	e.exec(t, `UPDATE project_members SET subject_uid = $2
+	           WHERE project_uid = $3 AND user_uid = (SELECT uid FROM users WHERE username = $1)`,
+		username, subjectUID, project.BootstrapUID)
 }
 
 // TestMinePhotosCountsOnlyTheReader: the digest's "new photos of you" line
@@ -490,17 +493,4 @@ func TestMinePhotosSurvivesTheSubjectBeingDeleted(t *testing.T) {
 	if got.MinePhotos != 0 {
 		t.Errorf("mine_photos = %d, want 0 once the person is gone", got.MinePhotos)
 	}
-}
-
-// bootstrapTasks is the task store as the digest's caller-only TaskCounter,
-// counting in the bootstrap project — where these fixtures write — the way the
-// server's adapter counts in the request's project.
-type bootstrapTasks struct {
-	tasks *phototask.Store
-}
-
-// WaitingOnMe returns how many of the bootstrap project's open tasks wait on
-// callerUID.
-func (b bootstrapTasks) WaitingOnMe(ctx context.Context, callerUID string) (int, error) {
-	return b.tasks.WaitingOnMe(ctx, project.BootstrapUID, callerUID) //nolint:wrapcheck // a test adapter
 }

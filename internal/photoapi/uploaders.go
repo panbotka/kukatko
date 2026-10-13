@@ -72,7 +72,7 @@ func (a *API) handleUploaders(w http.ResponseWriter, r *http.Request) {
 	// The facet counts the same photos the grid lists, so the caller-dependent
 	// tokens resolve here too; an unresolvable `person:me` yields no uploaders,
 	// matching an empty grid.
-	applyMeTokens(&params, user)
+	applyMeTokens(&params, user, auth.LinkedSubjectFromContext(r.Context()))
 	// The facet offers every uploader, whichever one is currently selected.
 	params.UploadedBy, params.NoUploader = "", false
 

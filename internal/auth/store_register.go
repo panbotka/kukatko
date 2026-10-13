@@ -9,8 +9,8 @@ import (
 
 // listApprovalRecipientsQuery reads the accounts that are told somebody
 // registered: every enabled maintainer and every enabled, approved admin of the
-// project $1 (the bootstrap project during the transition), by username so the
-// order is stable between runs.
+// project $1 (the project the registration joins), by username so the order is
+// stable between runs.
 //
 // It deliberately does not filter on the address. An account with a placeholder
 // address in the reserved .invalid domain is skipped later by the mail enqueuer,
@@ -24,13 +24,17 @@ const listApprovalRecipientsQuery = `SELECT ` + userColumns + `
 	ORDER BY username`
 
 // ListApprovalRecipients returns every enabled account that may approve a
-// registration — the admins and the maintainers — so each can be told somebody
-// is waiting. The slice is empty (not nil) when there is nobody: an instance
-// whose only administrator is disabled still accepts registrations, it just has
-// nobody to notify.
-func (s *Store) ListApprovalRecipients(ctx context.Context) ([]User, error) {
+// registration into projectUID — its admins and the maintainers — so each can
+// be told somebody is waiting. An empty projectUID is the bootstrap project.
+// The slice is empty (not nil) when there is nobody: a project whose only
+// administrator is disabled still accepts registrations, it just has nobody to
+// notify.
+func (s *Store) ListApprovalRecipients(ctx context.Context, projectUID string) ([]User, error) {
+	if projectUID == "" {
+		projectUID = project.BootstrapUID
+	}
 	rows, err := s.pool.Query(ctx, listApprovalRecipientsQuery,
-		project.BootstrapUID, string(RoleMaintainer), string(project.RoleAdmin))
+		projectUID, string(RoleMaintainer), string(project.RoleAdmin))
 	if err != nil {
 		return nil, fmt.Errorf("auth: querying approval recipients: %w", err)
 	}

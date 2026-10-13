@@ -44,8 +44,10 @@ func NewRegistrationGate(links LinkResolver, sidecar SidecarEnqueuer, now func()
 // AdmitRegistration admits a registration naming code when code names a live
 // link, returning auth.ErrRegistrationLink otherwise — an unknown, expired and
 // revoked link are one answer, so the registration endpoint confirms nothing
-// about which codes exist. The grant claims, on the account's transaction, the
-// photos r's anonymous upload session created.
+// about which codes exist. The grant names the link's project — the account
+// becomes a member of that project only — and claims, on the account's
+// transaction, the photos r's anonymous upload session created through that
+// project's links (never another project's).
 func (g *RegistrationGate) AdmitRegistration(
 	ctx context.Context, r *http.Request, code string,
 ) (auth.LinkGrant, error) {
@@ -62,9 +64,10 @@ func (g *RegistrationGate) AdmitRegistration(
 	sessionHash := SessionHash(r)
 	var claimed []string
 	return auth.LinkGrant{
-		LinkUID: link.UID,
+		LinkUID:    link.UID,
+		ProjectUID: link.ProjectUID,
 		Claim: func(ctx context.Context, tx pgx.Tx, userUID string) error {
-			uids, err := uploadlink.AttributeSessionTx(ctx, tx, sessionHash, userUID)
+			uids, err := uploadlink.AttributeSessionTx(ctx, tx, link.ProjectUID, sessionHash, userUID)
 			claimed = uids
 			return err //nolint:wrapcheck // already wrapped by uploadlink.
 		},

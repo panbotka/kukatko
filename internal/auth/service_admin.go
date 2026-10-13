@@ -292,15 +292,16 @@ func (s *Service) MarkWelcomeSeen(ctx context.Context, uid string) (User, error)
 }
 
 // SetUserSubject records which person of the library the account identified by
-// uid is, or clears the link when subjectUID is nil or empty. It is the
+// uid is — on the account and on its membership of projectUID — or clears the
+// link when subjectUID is nil or empty. It is the
 // self-service path behind the account page, so it records no audit entry — the
 // same bargain Service.ChangePassword strikes for a user acting on their own
 // account; the administrator's path through UpdateUserAudited is audited.
 //
 // It returns the refreshed user, ErrUserNotFound when the account does not
 // exist, or ErrSubjectNotFound when the UID names nobody.
-func (s *Service) SetUserSubject(ctx context.Context, uid string, subjectUID *string) (User, error) {
-	return s.store.SetUserSubject(ctx, uid, subjectUID)
+func (s *Service) SetUserSubject(ctx context.Context, projectUID, uid string, subjectUID *string) (User, error) {
+	return s.store.SetUserSubject(ctx, projectUID, uid, subjectUID)
 }
 
 // ListUsers returns the users matching filter, ordered by username. A zero

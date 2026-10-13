@@ -613,9 +613,14 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   NULL`, backfilled to the bootstrap uid). A project keeps at least one admin (`ErrLastAdmin` in the store).
   Store: `internal/project`. Preserved by a reset.
   **Transitional:** `users.role`, `approved_at`, `subject_uid`, `last_seen_at`, `visit_reference_at` and
-  `task_digest_at` still exist and are **still what today's code reads**; the membership is a copy taken at
-  migration time. Later steps move each reader to `project_members`, and only the step that finishes the
-  move drops the `users` columns (never in the migration that adds the new ones, so a rollback stays possible).
+  `task_digest_at` still exist; the membership was a copy taken at migration time and the readers move to it
+  step by step. **Moved already:** the what's-new visit clocks (`last_seen_at`/`visit_reference_at`, read
+  **and written** only on the membership — a visit is a visit to one project), the task digest watermark
+  (`task_digest_at`, one digest per (project, person)) and the "this is me" link for `person:me`/`family:me`
+  and the digest's "photos of you" (the membership's `subject_uid`; the account-page and admin writers mirror
+  it onto the membership, while the profile picture and `/auth/me` still read the users copy). Only the step
+  that finishes the move drops the `users` columns (never in the migration that adds the new ones, so a
+  rollback stays possible).
 - **`project_id` on the catalogue** (migration 0102) — every catalogue root row names its project:
   `project_id TEXT NOT NULL DEFAULT 'pj0000000000000000veselice' REFERENCES projects(uid) ON DELETE CASCADE`
   (backfilled to the bootstrap project). Child tables are scoped through their FK to a root row:
@@ -644,6 +649,12 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   routes (`/auth/*`, `/push/*`, `/jobs`, `/system`, `/backup`, `/maintenance`, `/restore`, `/audit`, the public
   `/u/{code}`) are mounted once. Links a response carries follow the prefix the request came through
   (`auth.APIBase`). Details: `docs/API.md` → *Project prefix*.
+- **Public routes resolve their own project.** `/u/{code}` has no prefix and no member: the link row
+  (`upload_links.project_id`) names the project, and the upload is ingested **into it** (`ingest.Request`
+  `ProjectUID` + `StoragePrefix`: per-project dedup, the original under the project's prefix through
+  `storage.PrefixStorer`), filed into its albums and labels, and a registration through the link creates
+  the membership in that project only (unapproved viewer) and claims only that project's anonymous
+  uploads. A link of a deactivated project answers like an unknown one.
 
 **The model is completed in later steps** (membership readers, scoped reads, per-project storage,
 limits, removing the alias); the design is
@@ -898,9 +909,11 @@ lost on restart).
   enqueued while the SMTP server is away still arrives once it is back. It is enqueued **inside the
   transaction of the mutation that caused it** (the way audit rows are written), so a rolled-back registration
   sends nothing — neither its mails nor the administrators' notifications, which a registration
-  delivers (`internal/notifydeliver`) in that same transaction. See `internal/mailjob`. `task_digest` is the once-a-day run that mails every person the open
-  tasks whose move is theirs; it is enqueued by a scheduler at `tasks.digest.hour` UTC (only with the digest
-  and mail both on), schedules `mail_send` jobs rather than sending, and stamps `users.task_digest_at` so a
+  delivers (`internal/notifydeliver`) in that same transaction. See `internal/mailjob`. `task_digest` mails one person the open
+  tasks of one project whose move is theirs; the scheduler enqueues one job per due (project, person) pair
+  at `tasks.digest.hour` UTC (payload `project_uid` + `user_uid`, deduped per pair; only with the digest
+  and mail both on), the job schedules a `mail_send` job rather than sending — headed with the project's
+  name, linking under `/p/<slug>/` — and stamps the membership's `project_members.task_digest_at` so a
   queue that has not moved since the last digest sends nothing. See `internal/taskdigestjob`.
   `push_send` is the same thing for Web Push, with one difference: a job delivers to **one subscribed
   device**, not to an account. The enqueue helper fans out inside the caller's transaction, one job per

@@ -92,6 +92,12 @@ type UploadLinkGate interface {
 type LinkGrant struct {
 	// LinkUID names the link, for the audit entry.
 	LinkUID string
+	// ProjectUID is the link's project: its registration settings decide
+	// whether the door is open, the account becomes a member of it (a viewer,
+	// unapproved — the same approval flow as any registration) and of no other,
+	// and its admins are the ones told somebody is waiting. Empty is the
+	// bootstrap project.
+	ProjectUID string
 	// Claim runs on the account's transaction once the account row exists: it
 	// hands the photos the registering browser uploaded through links to the new
 	// account, so they are claimed if and only if the account commits. Nil claims
@@ -174,7 +180,7 @@ func (rg *Registration) Register(ctx context.Context, in RegisterInput, entry au
 	if err := rg.checkSecret(ctx, in.Secret); err != nil {
 		return User{}, err
 	}
-	return rg.register(ctx, in, entry, nil)
+	return rg.register(ctx, registrationProject(ctx), in, entry, nil)
 }
 
 // RegisterWithLink creates the account described by in exactly as Register
@@ -182,7 +188,9 @@ func (rg *Registration) Register(ctx context.Context, in RegisterInput, entry au
 // with grant, an upload link the caller already admitted, in place of the
 // shared secret. Only the secret check is replaced: registration must still be
 // switched on, though it may be on without a secret, because the link is the
-// lock. The entry's details name the link, and grant.Claim runs on the account's
+// lock. Everything happens in the link's project (grant.ProjectUID): its
+// registration switch, the new membership and the approvers told about it. The
+// entry's details name the link, and grant.Claim runs on the account's
 // transaction so the photos the person uploaded become theirs atomically.
 //
 // It returns ErrRegistrationClosed when registration is switched off, and the
@@ -190,7 +198,11 @@ func (rg *Registration) Register(ctx context.Context, in RegisterInput, entry au
 func (rg *Registration) RegisterWithLink(
 	ctx context.Context, in RegisterInput, grant LinkGrant, entry audit.Entry,
 ) (User, error) {
-	stored, err := rg.settings.Get(ctx, registrationProject(ctx))
+	projectUID := grant.ProjectUID
+	if projectUID == "" {
+		projectUID = registrationProject(ctx)
+	}
+	stored, err := rg.settings.Get(ctx, projectUID)
 	if err != nil {
 		return User{}, fmt.Errorf("auth: reading the registration settings: %w", err)
 	}
@@ -201,7 +213,7 @@ func (rg *Registration) RegisterWithLink(
 		entry.Details = map[string]any{}
 	}
 	entry.Details["upload_link"] = grant.LinkUID
-	user, err := rg.register(ctx, in, entry, grant.Claim)
+	user, err := rg.register(ctx, projectUID, in, entry, grant.Claim)
 	if err != nil {
 		return User{}, err
 	}
@@ -212,10 +224,11 @@ func (rg *Registration) RegisterWithLink(
 }
 
 // register is the account creation both registration paths share once their
-// gate let the request through. claim, when not nil, runs on the account's
-// transaction after the account row exists.
+// gate let the request through: the account joins projectUID, unapproved.
+// claim, when not nil, runs on the account's transaction after the account row
+// exists.
 func (rg *Registration) register(
-	ctx context.Context, in RegisterInput, entry audit.Entry,
+	ctx context.Context, projectUID string, in RegisterInput, entry audit.Entry,
 	claim func(ctx context.Context, tx pgx.Tx, userUID string) error,
 ) (User, error) {
 	user, err := rg.svc.prepareRegistration(CreateUserInput{
@@ -232,11 +245,12 @@ func (rg *Registration) register(
 	if err != nil {
 		return User{}, err
 	}
+	user.joinProject = projectUID
 
 	// Read before the transaction opens: the recipients are unrelated rows and
 	// holding them under the insert would only lengthen it. A failure here costs
 	// the notification, not the registration.
-	recipients := rg.approvalRecipients(ctx)
+	recipients := rg.approvalRecipients(ctx, projectUID)
 
 	entry.ActorUID = user.UID
 	entry.TargetUID = user.UID
@@ -245,6 +259,9 @@ func (rg *Registration) register(
 	}
 	entry.Details["username"] = user.Username
 	entry.Details["role"] = string(user.AccountRole)
+	if entry.ProjectUID == "" {
+		entry.ProjectUID = projectUID
+	}
 
 	if err := rg.svc.store.CreateUserAuditedWith(ctx, user, entry,
 		func(ctx context.Context, tx pgx.Tx) error {
@@ -256,7 +273,7 @@ func (rg *Registration) register(
 			if err := rg.scheduleConfirmation(ctx, tx, user); err != nil {
 				return err
 			}
-			rg.notifyApprovers(ctx, tx, user, recipients)
+			rg.notifyApprovers(ctx, tx, projectUID, user, recipients)
 			return nil
 		}); err != nil {
 		return User{}, err
@@ -293,8 +310,8 @@ func (rg *Registration) checkSecret(ctx context.Context, secret string) error {
 // the person's own confirmation is what matters, and an instance with no
 // reachable administrator must still accept registrations — so a failure here is
 // logged and the registration goes on.
-func (rg *Registration) approvalRecipients(ctx context.Context) []User {
-	recipients, err := rg.svc.store.ListApprovalRecipients(ctx)
+func (rg *Registration) approvalRecipients(ctx context.Context, projectUID string) []User {
+	recipients, err := rg.svc.store.ListApprovalRecipients(ctx, projectUID)
 	if err != nil {
 		rg.log.WarnContext(ctx, "registration: could not read the accounts to notify",
 			slog.String("error", err.Error()))
@@ -328,14 +345,16 @@ func (rg *Registration) scheduleConfirmation(ctx context.Context, tx pgx.Tx, use
 // inside a PostgreSQL transaction aborts all of it, so without one a single
 // broken notification would take the account down with it. A Registration
 // built without a Notifier notifies nobody.
-func (rg *Registration) notifyApprovers(ctx context.Context, tx pgx.Tx, user User, recipients []User) {
+func (rg *Registration) notifyApprovers(
+	ctx context.Context, tx pgx.Tx, projectUID string, user User, recipients []User,
+) {
 	if rg.notify == nil {
 		return
 	}
 	msg := rg.pendingMessage(user)
 	// The notification lands in the inbox of the project the registration is
 	// for, and its approval link opens there.
-	msg.ProjectUID = registrationProject(ctx)
+	msg.ProjectUID = projectUID
 	for _, recipient := range recipients {
 		err := inSavepoint(ctx, tx, func(savepoint pgx.Tx) error {
 			if _, err := rg.notify.Deliver(ctx, savepoint, recipient.UID, msg); err != nil {

@@ -197,6 +197,13 @@ func parseR2Endpoint(endpoint string) (host string, secure bool, err error) {
 func (r *R2) Store(
 	ctx context.Context, src io.Reader, takenAt time.Time, originalName string,
 ) (StoredFile, error) {
+	return r.StoreUnder(ctx, src, "", takenAt, originalName)
+}
+
+// StoreUnder is Store with the object keyed under prefix (see PrefixStorer).
+func (r *R2) StoreUnder(
+	ctx context.Context, src io.Reader, prefix string, takenAt time.Time, originalName string,
+) (StoredFile, error) {
 	tmp, err := streamToTemp(ctx, r.tempPath, src)
 	if err != nil {
 		return StoredFile{}, err
@@ -204,7 +211,7 @@ func (r *R2) Store(
 	defer func() { _ = os.Remove(tmp.Path) }()
 
 	name := sanitizeName(originalName, tmp.Hash)
-	key, existed, err := r.resolveKey(ctx, relDirFor(takenAt), name, tmp.Hash)
+	key, existed, err := r.resolveKey(ctx, prefixedDir(prefix, relDirFor(takenAt)), name, tmp.Hash)
 	if err != nil {
 		return StoredFile{}, err
 	}

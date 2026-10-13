@@ -75,7 +75,7 @@ func TestDigests_whoGetsOne(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	// The fixture's actor opens every task; approve them so they can be waited on.
-	if _, err := f.db.Pool().Exec(ctx, `UPDATE users SET approved_at = now() WHERE uid = $1`, actor); err != nil {
+	if _, err := f.db.Pool().Exec(ctx, `UPDATE project_members SET approved_at = now() WHERE user_uid = $1`, actor); err != nil {
 		t.Fatalf("approving the actor: %v", err)
 	}
 	agent := f.makeAccount(t, "us-agent", "agent", false)
@@ -150,7 +150,7 @@ func TestDigests_onlyWhenSomethingChanged(t *testing.T) {
 	// "nothing newer than the stamp" includes the activity it was taken from):
 	// nothing new for them, the agent (never stamped) is still due.
 	stamp := digestFor(digests, person).NewestActivityAt
-	if err := f.tasks.MarkDigested(ctx, person, stamp); err != nil {
+	if err := f.tasks.MarkDigested(ctx, project.BootstrapUID, person, stamp); err != nil {
 		t.Fatalf("MarkDigested: %v", err)
 	}
 	digests, err = f.tasks.Digests(ctx)
@@ -161,7 +161,7 @@ func TestDigests_onlyWhenSomethingChanged(t *testing.T) {
 
 	// A stamp older than the activity is not "nothing new": the digest reports
 	// it, and carries the stamp it was compared with.
-	if err := f.tasks.MarkDigested(ctx, person, stamp.Add(-time.Hour)); err != nil {
+	if err := f.tasks.MarkDigested(ctx, project.BootstrapUID, person, stamp.Add(-time.Hour)); err != nil {
 		t.Fatalf("MarkDigested (older): %v", err)
 	}
 	digests, err = f.tasks.Digests(ctx)
@@ -177,7 +177,7 @@ func TestDigests_onlyWhenSomethingChanged(t *testing.T) {
 	// the person on it hears about it, and the digest lists both tasks — the
 	// whole queue, not just what is new.
 	for _, uid := range []string{agent, person} {
-		if err := f.tasks.MarkDigested(ctx, uid, stamp); err != nil {
+		if err := f.tasks.MarkDigested(ctx, project.BootstrapUID, uid, stamp); err != nil {
 			t.Fatalf("MarkDigested(%s): %v", uid, err)
 		}
 	}
@@ -194,9 +194,9 @@ func TestDigests_onlyWhenSomethingChanged(t *testing.T) {
 		t.Errorf("person's digest tasks = %+v, want both, newest first", got.Tasks)
 	}
 
-	// Stamping an unknown account is not an error: it may have been deleted
-	// between the read and the stamp.
-	if err := f.tasks.MarkDigested(ctx, "us-gone", stamp); err != nil {
+	// Stamping an unknown membership is not an error: the account may have been
+	// deleted between the read and the stamp.
+	if err := f.tasks.MarkDigested(ctx, project.BootstrapUID, "us-gone", stamp); err != nil {
 		t.Errorf("MarkDigested(unknown) = %v, want nil", err)
 	}
 }

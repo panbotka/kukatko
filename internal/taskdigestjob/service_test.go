@@ -29,29 +29,48 @@ func (fakeExec) QueryRow(context.Context, string, ...any) pgx.Row {
 	panic("fakeExec.QueryRow must not be called")
 }
 
-// fakeSource is a scripted Source: the digests it hands out and the stamps it
-// received.
+// fakeSource is a scripted Source: the digests it hands out, keyed by
+// "<project>/<user>", and the stamps it received under the same keys.
 type fakeSource struct {
-	digests  []phototask.Digest
+	digests  map[string]phototask.Digest
 	err      error
 	stampErr error
 	stamps   map[string]time.Time
 }
 
-// Digests returns the scripted digests or error.
-func (f *fakeSource) Digests(context.Context) ([]phototask.Digest, error) {
-	return f.digests, f.err
+// key is how fakeSource files a (project, person) pair.
+func key(projectUID, userUID string) string { return projectUID + "/" + userUID }
+
+// with returns a source holding ds, each filed under its own pair.
+func with(ds ...phototask.Digest) *fakeSource {
+	f := &fakeSource{digests: map[string]phototask.Digest{}}
+	for _, d := range ds {
+		f.digests[key(d.ProjectUID, d.UserUID)] = d
+	}
+	return f
+}
+
+// DigestFor returns the scripted digest of the pair, nil when there is none.
+func (f *fakeSource) DigestFor(_ context.Context, projectUID, userUID string) (*phototask.Digest, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	d, ok := f.digests[key(projectUID, userUID)]
+	if !ok {
+		return nil, nil //nolint:nilnil // the Source contract: nil digest = nothing due
+	}
+	return &d, nil
 }
 
 // MarkDigested records the stamp, or fails when scripted to.
-func (f *fakeSource) MarkDigested(_ context.Context, uid string, at time.Time) error {
+func (f *fakeSource) MarkDigested(_ context.Context, projectUID, uid string, at time.Time) error {
 	if f.stampErr != nil {
 		return f.stampErr
 	}
 	if f.stamps == nil {
 		f.stamps = map[string]time.Time{}
 	}
-	f.stamps[uid] = at
+	f.stamps[key(projectUID, uid)] = at
 	return nil
 }
 
@@ -103,9 +122,13 @@ func newService(t *testing.T, source *fakeSource, enabled bool) (*Service, *queu
 	return svc, q
 }
 
-// digest builds one person's digest over n tasks, listing at most listed.
-func digest(uid, email string, n, listed int) phototask.Digest {
-	d := phototask.Digest{UserUID: uid, Email: email, DisplayName: "Osoba " + uid, Total: n}
+// digest builds one person's digest of project (slug = its uid, name
+// "Knihovna <uid>") over n tasks, listing at most listed.
+func digest(projectUID, uid, email string, n, listed int) phototask.Digest {
+	d := phototask.Digest{
+		ProjectUID: projectUID, ProjectSlug: projectUID, ProjectName: "Knihovna " + projectUID,
+		UserUID: uid, Email: email, DisplayName: "Osoba " + uid, Total: n,
+	}
 	for i := range listed {
 		d.Tasks = append(d.Tasks, phototask.DigestTask{
 			UID: uid + "-t" + string(rune('a'+i)), Title: "Otázka " + string(rune('A'+i)),
@@ -115,26 +138,33 @@ func digest(uid, email string, n, listed int) phototask.Digest {
 	return d
 }
 
-// TestRun_oneMailPerPerson verifies the happy path end to end: every person
-// the source says is due gets exactly one mail — rendered through the real
-// mail_send handler into the fake mailer — with the subject counting their
-// tasks and the links built on the public base URL, and is stamped with the
-// fixed clock after the mail was scheduled.
-func TestRun_oneMailPerPerson(t *testing.T) {
+// run is Run that fails the test on an error.
+func run(t *testing.T, svc *Service, projectUID, userUID string) Outcome {
+	t.Helper()
+	outcome, err := svc.Run(context.Background(), projectUID, userUID)
+	if err != nil {
+		t.Fatalf("Run(%s, %s): %v", projectUID, userUID, err)
+	}
+	return outcome
+}
+
+// TestRun_onePairOneMail verifies the happy path end to end: the pair the job
+// names gets exactly one mail — rendered through the real mail_send handler
+// into the fake mailer — with the subject counting their tasks, the project's
+// name heading the list and every link inside the project (/p/<slug>/) on the
+// public base URL, and that membership is stamped with the fixed clock after
+// the mail was scheduled.
+func TestRun_onePairOneMail(t *testing.T) {
 	t.Parallel()
 
-	source := &fakeSource{digests: []phototask.Digest{
-		digest("us-a", "a@example.com", 2, 2),
-		digest("us-b", "b@example.com", 25, 20),
-	}}
+	source := with(digest("v", "us-a", "a@example.com", 2, 2), digest("v", "us-b", "b@example.com", 25, 20))
 	svc, q := newService(t, source, true)
 
-	res, err := svc.Run(context.Background())
-	if err != nil {
-		t.Fatalf("Run: %v", err)
+	if got := run(t, svc, "v", "us-a"); got != OutcomeSent {
+		t.Errorf("outcome = %q, want sent", got)
 	}
-	if res != (Result{Sent: 2}) {
-		t.Errorf("Result = %+v, want 2 sent", res)
+	if got := run(t, svc, "v", "us-b"); got != OutcomeSent {
+		t.Errorf("outcome = %q, want sent", got)
 	}
 	for i, exec := range q.exec {
 		if _, ok := exec.(fakeExec); !ok {
@@ -149,41 +179,70 @@ func TestRun_oneMailPerPerson(t *testing.T) {
 	if sent[0].To != "a@example.com" || sent[0].Subject != "Čekají na tebe 2 úkoly" {
 		t.Errorf("first mail = %q %q, want a's two tasks", sent[0].To, sent[0].Subject)
 	}
-	if !strings.Contains(sent[0].Body, "- Otázka A (čeká na odpověď)\n  https://kukatko.example.com/tasks/us-a-ta\n") {
-		t.Errorf("first body = %q, want the task line with its absolute link", sent[0].Body)
+	if !strings.Contains(sent[0].Body, "Projekt Knihovna v\n\n- Otázka A (čeká na odpověď)\n"+
+		"  https://kukatko.example.com/p/v/tasks/us-a-ta\n") {
+		t.Errorf("first body = %q, want the project heading and the task line with its link", sent[0].Body)
 	}
-	if !strings.Contains(sent[0].Body, "https://kukatko.example.com/tasks?waiting=1\n") {
-		t.Errorf("first body = %q, want the link to the waiting queue", sent[0].Body)
-	}
-	if sent[1].To != "b@example.com" || sent[1].Subject != "Čeká na tebe 25 úkolů" {
-		t.Errorf("second mail = %q %q, want b's 25 tasks", sent[1].To, sent[1].Subject)
+	if !strings.Contains(sent[0].Body, "https://kukatko.example.com/p/v/tasks?waiting=1\n") {
+		t.Errorf("first body = %q, want the link to the project's waiting queue", sent[0].Body)
 	}
 	if !strings.Contains(sent[1].Body, "…a dalších 5 úkolů.\n") {
 		t.Errorf("second body = %q, want the count of the unlisted rest", sent[1].Body)
 	}
-
 	for _, uid := range []string{"us-a", "us-b"} {
-		if got, ok := source.stamps[uid]; !ok || !got.Equal(pinned) {
+		if got, ok := source.stamps[key("v", uid)]; !ok || !got.Equal(pinned) {
 			t.Errorf("stamp for %s = %v (%v), want the fixed clock %v", uid, got, ok, pinned)
 		}
 	}
 }
 
-// TestRun_nothingNewSendsNothing verifies a source with nobody due — the store's
-// answer when no waiting task moved past anybody's stamp — schedules no mail
-// and stamps nobody.
+// TestRun_twoProjectsTwoMails verifies a person in two projects with something
+// due in each gets two jobs' worth of mail: one per project, each headed with
+// its project and linking into it, each stamping only its own membership.
+func TestRun_twoProjectsTwoMails(t *testing.T) {
+	t.Parallel()
+
+	source := with(digest("pa", "us-a", "a@example.com", 1, 1), digest("pb", "us-a", "a@example.com", 1, 1))
+	svc, q := newService(t, source, true)
+	for _, projectUID := range []string{"pa", "pb"} {
+		payload, _ := json.Marshal(jobs.TaskDigestPayload{ProjectUID: projectUID, UserUID: "us-a"})
+		if err := svc.Handle(context.Background(), jobs.Job{ID: 1, Type: jobs.TypeTaskDigest, Payload: payload}); err != nil {
+			t.Fatalf("Handle(%s): %v", projectUID, err)
+		}
+	}
+	sent := q.deliver(t)
+	if len(sent) != 2 {
+		t.Fatalf("delivered %d mails, want one per project", len(sent))
+	}
+	for i, projectUID := range []string{"pa", "pb"} {
+		if !strings.Contains(sent[i].Body, "Projekt Knihovna "+projectUID+"\n") ||
+			!strings.Contains(sent[i].Body, "/p/"+projectUID+"/tasks/") {
+			t.Errorf("mail %d = %q, want %s's heading and links", i, sent[i].Body, projectUID)
+		}
+		if _, ok := source.stamps[key(projectUID, "us-a")]; !ok {
+			t.Errorf("membership of %s not stamped", projectUID)
+		}
+	}
+}
+
+// TestRun_nothingNewSendsNothing verifies a pair with nothing due — the store's
+// answer when no waiting task moved past the stamp — and a legacy job naming no
+// pair schedule no mail and stamp nobody.
 func TestRun_nothingNewSendsNothing(t *testing.T) {
 	t.Parallel()
 
-	source := &fakeSource{}
+	source := with(digest("v", "us-a", "a@example.com", 1, 1))
 	svc, q := newService(t, source, true)
-
-	res, err := svc.Run(context.Background())
-	if err != nil {
-		t.Fatalf("Run: %v", err)
+	for _, pair := range [][2]string{{"v", "us-other"}, {"other", "us-a"}, {"", ""}} {
+		if got := run(t, svc, pair[0], pair[1]); got != OutcomeNothing {
+			t.Errorf("Run(%v) = %q, want nothing", pair, got)
+		}
 	}
-	if res != (Result{}) || len(q.jobs) != 0 || len(source.stamps) != 0 {
-		t.Errorf("Result = %+v, %d jobs, %d stamps; want nothing at all", res, len(q.jobs), len(source.stamps))
+	if err := svc.Handle(context.Background(), jobs.Job{ID: 3, Type: jobs.TypeTaskDigest}); err != nil {
+		t.Errorf("Handle(legacy job) = %v, want nil", err)
+	}
+	if len(q.jobs) != 0 || len(source.stamps) != 0 {
+		t.Errorf("%d jobs, %d stamps; want nothing at all", len(q.jobs), len(source.stamps))
 	}
 }
 
@@ -193,54 +252,37 @@ func TestRun_nothingNewSendsNothing(t *testing.T) {
 func TestRun_disabledMailSendsAndStampsNothing(t *testing.T) {
 	t.Parallel()
 
-	source := &fakeSource{digests: []phototask.Digest{digest("us-a", "a@example.com", 1, 1)}}
+	source := with(digest("v", "us-a", "a@example.com", 1, 1))
 	svc, q := newService(t, source, false)
-
-	res, err := svc.Run(context.Background())
-	if err != nil {
-		t.Fatalf("Run: %v", err)
+	if got := run(t, svc, "v", "us-a"); got != OutcomeMailOff {
+		t.Errorf("outcome = %q, want mail_off", got)
 	}
-	if res != (Result{}) || len(q.jobs) != 0 || len(source.stamps) != 0 {
-		t.Errorf("Result = %+v, %d jobs, %d stamps; want nothing at all", res, len(q.jobs), len(source.stamps))
+	if len(q.jobs) != 0 || len(source.stamps) != 0 {
+		t.Errorf("%d jobs, %d stamps; want nothing at all", len(q.jobs), len(source.stamps))
 	}
 }
 
 // TestRun_skipsWhoCannotBeMailed verifies a placeholder or missing address is
-// skipped without stamping — they hear the news once the address is fixed — and
-// without failing the run for everybody else.
+// skipped without stamping — they hear the news once the address is fixed —
+// and without an error the queue would retry.
 func TestRun_skipsWhoCannotBeMailed(t *testing.T) {
 	t.Parallel()
 
-	source := &fakeSource{digests: []phototask.Digest{
-		digest("us-placeholder", "import-1@kukatko.invalid", 1, 1),
-		digest("us-blank", "", 1, 1),
-		digest("us-real", "real@example.com", 1, 1),
-	}}
+	source := with(digest("v", "us-placeholder", "import-1@kukatko.invalid", 1, 1), digest("v", "us-blank", "", 1, 1))
 	svc, q := newService(t, source, true)
-
-	res, err := svc.Run(context.Background())
-	if err != nil {
-		t.Fatalf("Run: %v", err)
+	for _, uid := range []string{"us-placeholder", "us-blank"} {
+		if got := run(t, svc, "v", uid); got != OutcomeSkipped {
+			t.Errorf("Run(%s) = %q, want skipped", uid, got)
+		}
 	}
-	if res != (Result{Sent: 1, Skipped: 2}) {
-		t.Errorf("Result = %+v, want 1 sent and 2 skipped", res)
-	}
-	sent := q.deliver(t)
-	if len(sent) != 1 || sent[0].To != "real@example.com" {
-		t.Errorf("delivered %v, want only the real address", sent)
-	}
-	if _, ok := source.stamps["us-placeholder"]; ok {
-		t.Error("the placeholder account was stamped; want it left for the day its address is fixed")
-	}
-	if _, ok := source.stamps["us-real"]; !ok {
-		t.Error("the real account was not stamped")
+	if len(q.jobs) != 0 || len(source.stamps) != 0 {
+		t.Errorf("%d jobs, %d stamps; want nothing for addresses that cannot be mailed", len(q.jobs), len(source.stamps))
 	}
 }
 
-// TestRun_reportsFailures verifies a source that cannot be read fails the run
-// outright, while a queue or stamp failure for one person is counted, leaves
-// that person unstamped, does not stop the others, and comes back as
-// ErrPartialRun so the queue retries.
+// TestRun_reportsFailures verifies a source that cannot be read, a queue that
+// refuses and a stamp that fails each come back as an error the queue retries,
+// and that a refused mail stamps nobody.
 func TestRun_reportsFailures(t *testing.T) {
 	t.Parallel()
 
@@ -248,7 +290,7 @@ func TestRun_reportsFailures(t *testing.T) {
 		t.Parallel()
 		broken := errors.New("connection refused")
 		svc, q := newService(t, &fakeSource{err: broken}, true)
-		if _, err := svc.Run(context.Background()); !errors.Is(err, broken) {
+		if _, err := svc.Run(context.Background(), "v", "us-a"); !errors.Is(err, broken) {
 			t.Errorf("Run = %v, want it to wrap %v", err, broken)
 		}
 		if len(q.jobs) != 0 {
@@ -258,56 +300,36 @@ func TestRun_reportsFailures(t *testing.T) {
 
 	t.Run("queue refuses", func(t *testing.T) {
 		t.Parallel()
-		source := &fakeSource{digests: []phototask.Digest{digest("us-a", "a@example.com", 1, 1)}}
+		source := with(digest("v", "us-a", "a@example.com", 1, 1))
 		svc, q := newService(t, source, true)
 		q.err = errors.New("queue is full")
-		res, err := svc.Run(context.Background())
-		if !errors.Is(err, ErrPartialRun) {
-			t.Errorf("Run = %v, want ErrPartialRun", err)
+		if _, err := svc.Run(context.Background(), "v", "us-a"); !errors.Is(err, q.err) {
+			t.Errorf("Run = %v, want it to wrap %v", err, q.err)
 		}
-		if res != (Result{Failed: 1}) || len(source.stamps) != 0 {
-			t.Errorf("Result = %+v with %d stamps, want 1 failed and nobody stamped", res, len(source.stamps))
+		if len(source.stamps) != 0 {
+			t.Errorf("%d stamps, want nobody stamped", len(source.stamps))
 		}
 	})
 
 	t.Run("stamp fails", func(t *testing.T) {
 		t.Parallel()
-		source := &fakeSource{
-			digests:  []phototask.Digest{digest("us-a", "a@example.com", 1, 1)},
-			stampErr: errors.New("users table locked"),
-		}
+		source := with(digest("v", "us-a", "a@example.com", 1, 1))
+		source.stampErr = errors.New("project_members locked")
 		svc, q := newService(t, source, true)
-		res, err := svc.Run(context.Background())
-		if !errors.Is(err, ErrPartialRun) {
-			t.Errorf("Run = %v, want ErrPartialRun", err)
-		}
 		// The mail was scheduled before the stamp failed: that is the safe order
-		// (a repeat beats a silence), and the result says so.
-		if res != (Result{Failed: 1}) || len(q.jobs) != 1 {
-			t.Errorf("Result = %+v with %d jobs, want 1 failed after the mail was scheduled", res, len(q.jobs))
+		// (a repeat beats a silence).
+		if _, err := svc.Run(context.Background(), "v", "us-a"); !errors.Is(err, source.stampErr) || len(q.jobs) != 1 {
+			t.Errorf("Run = %v with %d jobs, want the stamp error after the mail was scheduled", err, len(q.jobs))
 		}
 	})
-}
 
-// TestHandle_runsAndReportsTheError verifies the worker entry point runs the
-// digest and passes a partial run's error back to the queue.
-func TestHandle_runsAndReportsTheError(t *testing.T) {
-	t.Parallel()
-
-	source := &fakeSource{digests: []phototask.Digest{digest("us-a", "a@example.com", 1, 1)}}
-	svc, q := newService(t, source, true)
-	if err := svc.Handle(context.Background(), jobs.Job{ID: 7, Type: jobs.TypeTaskDigest}); err != nil {
-		t.Fatalf("Handle: %v", err)
-	}
-	if len(q.jobs) != 1 {
-		t.Errorf("%d jobs scheduled, want 1", len(q.jobs))
-	}
-
-	q.err = errors.New("queue is full")
-	source.stamps = nil
-	if err := svc.Handle(context.Background(), jobs.Job{ID: 8}); !errors.Is(err, ErrPartialRun) {
-		t.Errorf("Handle with a broken queue = %v, want ErrPartialRun", err)
-	}
+	t.Run("payload unreadable", func(t *testing.T) {
+		t.Parallel()
+		svc, _ := newService(t, with(), true)
+		if err := svc.Handle(context.Background(), jobs.Job{ID: 9, Payload: []byte("{")}); err == nil {
+			t.Error("Handle(broken payload) = nil, want an error")
+		}
+	})
 }
 
 // TestNew_requiresItsCollaborators verifies a missing Source, Mail or Exec is
@@ -337,8 +359,9 @@ func TestNew_requiresItsCollaborators(t *testing.T) {
 	}
 }
 
-// TestURLs verifies the links are built on the public base with a tolerated
-// trailing slash, and degrade to site-relative paths without one.
+// TestURLs verifies the links lead into the project (/p/<slug>/) on the public
+// base with a tolerated trailing slash, and degrade to site-relative paths
+// without one.
 func TestURLs(t *testing.T) {
 	t.Parallel()
 
@@ -347,15 +370,15 @@ func TestURLs(t *testing.T) {
 		wantTask  string
 		wantQueue string
 	}{
-		{"https://kukatko.example.com", "https://kukatko.example.com/tasks/tk-1", "https://kukatko.example.com/tasks?waiting=1"},
-		{"https://kukatko.example.com/ ", "https://kukatko.example.com/tasks/tk-1", "https://kukatko.example.com/tasks?waiting=1"},
-		{"", "/tasks/tk-1", "/tasks?waiting=1"},
+		{"https://kukatko.example.com", "https://kukatko.example.com/p/v/tasks/tk-1", "https://kukatko.example.com/p/v/tasks?waiting=1"},
+		{"https://kukatko.example.com/ ", "https://kukatko.example.com/p/v/tasks/tk-1", "https://kukatko.example.com/p/v/tasks?waiting=1"},
+		{"", "/p/v/tasks/tk-1", "/p/v/tasks?waiting=1"},
 	}
 	for _, tt := range tests {
-		if got := TaskURL(tt.base, "tk-1"); got != tt.wantTask {
+		if got := TaskURL(tt.base, "v", "tk-1"); got != tt.wantTask {
 			t.Errorf("TaskURL(%q) = %q, want %q", tt.base, got, tt.wantTask)
 		}
-		if got := QueueURL(tt.base); got != tt.wantQueue {
+		if got := QueueURL(tt.base, "v"); got != tt.wantQueue {
 			t.Errorf("QueueURL(%q) = %q, want %q", tt.base, got, tt.wantQueue)
 		}
 	}

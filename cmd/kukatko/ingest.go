@@ -10,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/ratelimit"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/uploadlink"
@@ -102,6 +103,7 @@ func buildUploadLinkAPI(
 	return uploadlinkapi.NewAPI(uploadlinkapi.Config{
 		Store:             uploadlink.NewStore(db.Pool()),
 		Ingest:            svc,
+		Projects:          project.NewStore(db.Pool()),
 		Sidecar:           sidecar,
 		RequireCurator:    authAPI.RequireCurator,
 		OptionalAuth:      authAPI.OptionalAuth,

@@ -128,7 +128,9 @@ func normalizeSubjectUID(uid *string) *string {
 //
 // The same statement makes the account a member of the project $11 with the
 // role $12 — approved exactly when the account is — unless $12 is empty, which
-// creates an account with no membership at all.
+// creates an account with no membership at all. The linked person $9 is copied
+// onto the membership too when it is a person of that project (memberSubjectSQL):
+// person:me reads the membership, the users column is a transition copy.
 const insertUserQuery = `WITH new_user AS (
 	INSERT INTO users
 		(uid, username, display_name, email, password_hash, role, disabled, note, subject_uid,
@@ -136,17 +138,31 @@ const insertUserQuery = `WITH new_user AS (
 	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	RETURNING uid, approved_at
 )
-INSERT INTO project_members (project_uid, user_uid, role, approved_at)
-SELECT $11::text, uid, $12::text, approved_at FROM new_user WHERE $12::text <> ''`
+INSERT INTO project_members (project_uid, user_uid, role, approved_at, subject_uid)
+SELECT $11::text, uid, $12::text, approved_at, ` + memberSubjectSQL + ` FROM new_user WHERE $12::text <> ''`
+
+// memberSubjectSQL is the linked person ($9) as a membership of the project
+// ($11) may hold it: the subject when it belongs to that project, NULL
+// otherwise — a person is a row of one project, so another project's subject
+// is nobody here.
+const memberSubjectSQL = `(SELECT s.uid FROM subjects s WHERE s.uid = $9::text AND s.project_id = $11::text)`
+
+// projectToJoin returns the project a new account's membership is created in:
+// u.joinProject, or the bootstrap project when the caller named none.
+func projectToJoin(u User) string {
+	if u.joinProject != "" {
+		return u.joinProject
+	}
+	return project.BootstrapUID
+}
 
 // insertUserArgs returns the arguments of insertUserQuery in its parameter
 // order, so the plain and audited insert paths cannot drift apart. The
-// membership goes into the bootstrap project (transition: the project the
-// account is created in will come from the request).
+// membership goes into projectToJoin(u).
 func insertUserArgs(u User) []any {
 	return []any{
 		u.UID, u.Username, u.DisplayName, u.Email, u.PasswordHash, u.Role, u.Disabled, u.Note,
-		normalizeSubjectUID(u.SubjectUID), u.ApprovedAt, project.BootstrapUID, string(u.ProjectRole),
+		normalizeSubjectUID(u.SubjectUID), u.ApprovedAt, projectToJoin(u), string(u.ProjectRole),
 	}
 }
 
@@ -256,10 +272,15 @@ func (s *Store) ListUsers(ctx context.Context, filter UserFilter) ([]User, error
 // project $8 to $9, creating the membership (approved exactly when the account
 // is) when there is none. RETURNING still sees the old membership — callers
 // patch the result with withProjectRole.
+//
+// The linked person $7 is mirrored onto that membership when it is a person of
+// the project $8, and cleared there otherwise (person:me reads the membership).
 const updateUserProfileQuery = `WITH member AS (
-	INSERT INTO project_members (project_uid, user_uid, role, approved_at)
-	SELECT $8::text, uid, $9::text, approved_at FROM users WHERE uid = $1
-	ON CONFLICT (project_uid, user_uid) DO UPDATE SET role = EXCLUDED.role
+	INSERT INTO project_members (project_uid, user_uid, role, approved_at, subject_uid)
+	SELECT $8::text, uid, $9::text, approved_at,
+		(SELECT s.uid FROM subjects s WHERE s.uid = $7::text AND s.project_id = $8::text)
+	FROM users WHERE uid = $1
+	ON CONFLICT (project_uid, user_uid) DO UPDATE SET role = EXCLUDED.role, subject_uid = EXCLUDED.subject_uid
 )
 UPDATE users SET display_name = $2, email = $3, role = $4, disabled = $5,
 		note = COALESCE($6::text, note), subject_uid = $7, updated_at = now()
@@ -278,10 +299,20 @@ func updateUserProfileArgs(uid string, in UpdateUserInput) []any {
 // setUserSubjectQuery points one account at a person of the library, or clears
 // the link when the argument is NULL, and returns the refreshed row.
 //
+// The link is written onto the account's membership of the project $3 too —
+// that is the copy person:me and the what's-new digest read — when the person
+// is one of that project's (NULL clears it); the users column is the
+// transition copy the account page and the profile picture still read.
+//
 // It leaves updated_at alone on purpose. The user-administration screens read
 // that column as "an administrator edited this profile", and somebody saying who
 // they are on their own account page is not that.
-const setUserSubjectQuery = `UPDATE users SET subject_uid = $2
+const setUserSubjectQuery = `WITH member AS (
+	UPDATE project_members SET subject_uid =
+		(SELECT s.uid FROM subjects s WHERE s.uid = $2::text AND s.project_id = $3::text)
+	WHERE user_uid = $1 AND project_uid = $3
+)
+UPDATE users SET subject_uid = $2
 	WHERE uid = $1 RETURNING ` + userColumns
 
 // setUserDisabledQuery flips the disabled flag of one user and returns the
@@ -309,10 +340,17 @@ func (s *Store) UpdateUserProfile(ctx context.Context, uid string, in UpdateUser
 // ErrUserNotFound if no such account exists, or ErrSubjectNotFound when the UID
 // names no person in the library.
 //
+// The membership of projectUID (empty = the bootstrap project, the transition
+// default of the unprefixed account routes) carries the same link when the
+// person belongs to that project.
+//
 // It is deliberately outside the maintainer guard: the link carries no
 // permission and cannot strand the instance.
-func (s *Store) SetUserSubject(ctx context.Context, uid string, subjectUID *string) (User, error) {
-	user, err := scanUser(s.pool.QueryRow(ctx, setUserSubjectQuery, uid, normalizeSubjectUID(subjectUID)))
+func (s *Store) SetUserSubject(ctx context.Context, projectUID, uid string, subjectUID *string) (User, error) {
+	if projectUID == "" {
+		projectUID = project.BootstrapUID
+	}
+	user, err := scanUser(s.pool.QueryRow(ctx, setUserSubjectQuery, uid, normalizeSubjectUID(subjectUID), projectUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return User{}, ErrUserNotFound

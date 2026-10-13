@@ -16,9 +16,10 @@ import (
 const noticePersonMeUnlinked = "person_me_unlinked"
 
 // applyMeTokens resolves the query language's caller-dependent values against
-// user — `person:me` and `family:me` against their linked subject, `uploader:me`
-// against their own account (see internal/personme) — and returns the notices
-// the response should carry.
+// user — `person:me` and `family:me` against linked, the person the caller's
+// membership of the request's project names (auth.LinkedSubjectFromContext),
+// `uploader:me` against their own account (see internal/personme) — and
+// returns the notices the response should carry.
 //
 // The two live in one function because they must never be resolved apart: every
 // handler that parses the query language calls this, so both tokens mean the
@@ -29,9 +30,9 @@ const noticePersonMeUnlinked = "person_me_unlinked"
 // params.MatchNone is set — the page comes back empty rather than silently
 // widening to the whole library — and the returned notice says why. `uploader:me`
 // has no such failure: it names the account that authenticated the request.
-func applyMeTokens(params *photos.ListParams, user auth.User) []string {
+func applyMeTokens(params *photos.ListParams, user auth.User, linked *string) []string {
 	personme.ResolveUploader(params.QueryFilters, user.UID)
-	used, resolved := personme.Resolve(params.QueryFilters, user.SubjectUID)
+	used, resolved := personme.Resolve(params.QueryFilters, linked)
 	if !used || resolved {
 		return nil
 	}

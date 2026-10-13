@@ -66,6 +66,13 @@ func NewFS(root string) (*FS, error) {
 func (s *FS) Store(
 	ctx context.Context, src io.Reader, takenAt time.Time, originalName string,
 ) (StoredFile, error) {
+	return s.StoreUnder(ctx, src, "", takenAt, originalName)
+}
+
+// StoreUnder is Store with the file placed under prefix (see PrefixStorer).
+func (s *FS) StoreUnder(
+	ctx context.Context, src io.Reader, prefix string, takenAt time.Time, originalName string,
+) (StoredFile, error) {
 	tmp, err := streamToTemp(ctx, s.tmpDir, src)
 	if err != nil {
 		return StoredFile{}, err
@@ -73,7 +80,7 @@ func (s *FS) Store(
 	defer func() { _ = os.Remove(tmp.Path) }()
 
 	name := sanitizeName(originalName, tmp.Hash)
-	relDir := relDirFor(takenAt)
+	relDir := prefixedDir(prefix, relDirFor(takenAt))
 	relPath, existed, err := s.linkIntoPlace(tmp.Path, relDir, name, tmp.Hash)
 	if err != nil {
 		return StoredFile{}, err

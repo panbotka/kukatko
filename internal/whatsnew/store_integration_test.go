@@ -3,7 +3,6 @@
 package whatsnew_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -40,7 +39,7 @@ func newEnv(t *testing.T) *env {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
 	return &env{
-		store: whatsnew.NewStore(db.Pool(), bootstrapTasks{phototask.NewStore(db.Pool())}).WithGap(testGap),
+		store: whatsnew.NewStore(db.Pool(), phototask.NewStore(db.Pool())).WithGap(testGap),
 		db:    db,
 		now:   time.Date(2026, 9, 6, 9, 0, 0, 0, time.UTC),
 	}
@@ -59,22 +58,25 @@ func (e *env) advance(d time.Duration) {
 	e.now = e.now.Add(d)
 }
 
-// summary reads the digest for a user at the current clock, failing the test on
-// error.
+// summary reads the digest of the bootstrap project — where these fixtures
+// write — for a user at the current clock, failing the test on error.
 func (e *env) summary(t *testing.T, userUID string) whatsnew.Summary {
 	t.Helper()
-	got, err := e.store.Summary(t.Context(), userUID, e.now)
+	got, err := e.store.Summary(t.Context(), project.BootstrapUID, userUID, e.now)
 	if err != nil {
 		t.Fatalf("Summary(%s): %v", userUID, err)
 	}
 	return got
 }
 
-// addUser creates an account whose uid is also its username.
+// addUser creates an account whose uid is also its username, a member of the
+// bootstrap project (the visit bookkeeping lives on the membership).
 func (e *env) addUser(t *testing.T, uid string) {
 	t.Helper()
 	e.exec(t, `INSERT INTO users (uid, username, email, password_hash, role)
 	           VALUES ($1, $2, $2||'@example.test', 'x', 'user')`, uid, uid)
+	e.exec(t, `INSERT INTO project_members (project_uid, user_uid, role, approved_at)
+	           VALUES ($1, $2, 'viewer', now())`, project.BootstrapUID, uid)
 }
 
 // addPhoto inserts a live library photo uploaded by uploader (empty = nobody, as
@@ -280,7 +282,7 @@ func TestMinePhotosExcludesOwnUploads(t *testing.T) {
 	env.addUser(t, "usr-a")
 	env.addUser(t, "usr-b")
 	env.addSubject(t, "su-me", "Anna", env.now.Add(-time.Hour))
-	env.exec(t, `UPDATE users SET subject_uid = 'su-me' WHERE uid = 'usr-a'`)
+	env.exec(t, `UPDATE project_members SET subject_uid = 'su-me' WHERE user_uid = 'usr-a'`)
 	env.openVisits(t, "usr-a")
 
 	at := env.now.Add(-time.Second)
@@ -331,18 +333,20 @@ func TestCountsStayIndexBacked(t *testing.T) {
 // so the plan test asks the planner exactly what production asks it.
 var countPlans = map[string]string{
 	"photos": `SELECT count(*) FROM photos
-        WHERE created_at > $1 AND archived_at IS NULL
+        WHERE created_at > $1 AND project_id = $3 AND archived_at IS NULL
           AND (stack_uid IS NULL OR stack_primary)
           AND NOT hidden_from_library
           AND uploaded_by IS DISTINCT FROM $2`,
-	"comments": `SELECT count(*) FROM comments
-        WHERE created_at > $1 AND deleted_at IS NULL
-          AND author_uid IS DISTINCT FROM $2`,
+	"comments": `SELECT count(*) FROM comments c
+        WHERE c.created_at > $1 AND c.deleted_at IS NULL
+          AND c.photo_uid IS NOT NULL
+          AND c.author_uid IS DISTINCT FROM $2
+          AND EXISTS (SELECT 1 FROM photos cp WHERE cp.uid = c.photo_uid AND cp.project_id = $3)`,
 	"albums": `SELECT count(*) FROM albums
-        WHERE created_at > $1 AND type = 'album'
+        WHERE created_at > $1 AND type = 'album' AND project_id = $3
           AND created_by IS DISTINCT FROM $2`,
 	"subjects": `SELECT count(*) FROM subjects
-        WHERE created_at > $1 AND name <> ''`,
+        WHERE created_at > $1 AND name <> '' AND project_id = $3`,
 }
 
 // plan returns the query plan of one count subquery over a window that holds
@@ -351,10 +355,13 @@ func (e *env) plan(t *testing.T, table string) string {
 	t.Helper()
 	sql := countPlans[table]
 	// The subjects subquery names no reader — subjects have no creator — so it
-	// takes the range parameter alone.
+	// takes the range and the project only, renumbered to $1 and $2.
 	args := []any{e.now.Add(-time.Hour)}
 	if strings.Contains(sql, "$2") {
-		args = append(args, "usr-a")
+		args = append(args, "usr-a", project.BootstrapUID)
+	} else {
+		sql = strings.ReplaceAll(sql, "$3", "$2")
+		args = append(args, project.BootstrapUID)
 	}
 	rows, err := e.db.Pool().Query(t.Context(), "EXPLAIN "+sql, args...)
 	if err != nil {
@@ -373,17 +380,4 @@ func (e *env) plan(t *testing.T, table string) string {
 		t.Fatalf("reading plan: %v", err)
 	}
 	return b.String()
-}
-
-// bootstrapTasks is the task store as the digest's caller-only TaskCounter,
-// counting in the bootstrap project — where these fixtures write — the way the
-// server's adapter counts in the request's project.
-type bootstrapTasks struct {
-	tasks *phototask.Store
-}
-
-// WaitingOnMe returns how many of the bootstrap project's open tasks wait on
-// callerUID.
-func (b bootstrapTasks) WaitingOnMe(ctx context.Context, callerUID string) (int, error) {
-	return b.tasks.WaitingOnMe(ctx, project.BootstrapUID, callerUID) //nolint:wrapcheck // a test adapter
 }

@@ -63,7 +63,9 @@ to `## Package map` in `CLAUDE.md`.
   project (chi param `{project}`, else the bootstrap slug — transition), the guards' `enterProject`
   decides access after authentication (unknown/foreign/deactivated → identical 404, unapproved → 403
   `pending_approval`, maintainer → `admin` + `obs.SetActorRole("maintainer")`), throttles
-  `TouchLastProject` to once a minute per account, and the principal carries `project` + `projectRole`.
+  `TouchLastProject` to once a minute per account, and the principal carries `project` + `projectRole` +
+  `projectSubject` (the membership's `subject_uid`, read for a maintainer too when it has a membership;
+  **`LinkedSubjectFromContext(ctx)`** is what `person:me`/`family:me` resolve to).
   `WithProject` also records the prefix the request came through: **`APIBase(ctx)`** (`apibase.go`) is
   `/api/v1/p/<slug>` under the project prefix and `APIBasePath` (`/api/v1`) through the transition alias,
   an instance-wide route or a router without `WithProject`; every handler that links to another
@@ -103,9 +105,13 @@ to `## Package map` in `CLAUDE.md`.
   explicitly** because `kukatko maintenance reset` has to drop and restore it around its truncation — see
   `internal/reset`. It is carried on `auth.User` as `SubjectUID *string` and — unlike `Note` — **is**
   serialised into the login/`/auth/me` payloads, deliberately: the client needs it for the "my photos"
-  entry, for `person:me` and for the account's avatar. `Store.SetUserSubject` is the self-service write
-  behind `PUT /auth/subject` (outside the maintainer guard: the link carries no permission), while the
-  admin create/update paths take it as part of the replaced profile and record it in their audit entries;
+  entry and for the account's avatar. `Store.SetUserSubject(ctx, projectUID, uid, subject)` is the
+  self-service write behind `PUT /auth/subject` (outside the maintainer guard: the link carries no
+  permission), while the admin create/update paths take it as part of the replaced profile and record it in
+  their audit entries; **every one of these writers also mirrors the link onto the membership** (of the
+  request's project for `/auth/subject`, of the bootstrap project for the admin paths) when the person
+  belongs to that project — `person:me` and the what's-new digest read `project_members.subject_uid`, the
+  users column is the transition copy the account page and the profile picture still read;
   a UID naming no subject surfaces as `ErrSubjectNotFound` (SQLSTATE 23503 → 400).
   **`users.approved_at` / `users.welcome_seen_at`** (migration `0064_users_approval_welcome.sql`) are two
   nullable timestamps: when an administrator let the account in (`NULL` = registered, waiting for one)
@@ -141,7 +147,11 @@ to `## Package map` in `CLAUDE.md`.
   `uploadlinkapi.RegistrationGate`; `RegisterInput.UploadLink` / the body's `upload_link`) replaces the
   secret — registration must still be enabled, a dead or unknown link is `ErrRegistrationLink` — and its
   `Claim` runs inside the same `alongside` transaction (claiming the photos the browser uploaded), its
-  `Committed` after it. The account is
+  `Committed` after it. **Everything of a link registration happens in the link's project**
+  (`LinkGrant.ProjectUID`, empty = bootstrap): its settings decide whether registration is open, the new
+  account's membership is created there only (the unexported `User.joinProject`, read by
+  `insertUserArgs`/`projectToJoin`), the entry's `ProjectUID` names it and `ListApprovalRecipients(ctx,
+  projectUID)` picks its admins (plus the maintainers) to notify. The account is
   built by `prepareRegistration` (role `viewer`, `ApprovedAt` nil) and written by
   `Store.CreateUserAuditedWith` — `CreateUserAudited` plus an `alongside` hook that runs on the **same
   transaction**, which is how the mails are enqueued: a rolled-back registration schedules
@@ -774,6 +784,11 @@ to `## Package map` in `CLAUDE.md`.
   stay zero-copy; `R2` downloads the object into `storage.temp_path` with the **extension preserved**
   (`imgconvert` dispatches RAW/video by it) and `cleanup` (idempotent via `sync.Once`) deletes it —
   even on the error path, where the partial file is deleted immediately.
+  **`PrefixStorer`** (optional, both backends) is `Store` under a key prefix:
+  `StoreUnder(ctx, src, prefix, takenAt, name)` publishes at `<prefix>/YYYY/MM/<name>` (the prefix confined
+  by `prefixedDir`: no `..`, no stray slashes), collisions and `ErrAlreadyExists` judged inside the prefix
+  only; `Store` is `StoreUnder` with `""`. It is how a project with its own storage prefix
+  (`projects/<uid>/`) keeps its originals apart, so two projects never share a key.
   **`KeyLister`** is an **optional** capability alongside `Storage`, satisfied by both backends
   (`FS.Keys` walks the root and skips the `.tmp` staging dir; `R2.Keys` lists the bucket recursively via
   minio-go's own paging and skips directory markers): `Keys(ctx, yield)` streams the key of **everything the
@@ -1201,7 +1216,12 @@ to `## Package map` in `CLAUDE.md`.
   `imgconvert.ReserveDecode` to the pre-store decode (`verifyPixels`, whose reservation rides in `stagedPixels`
   and is released by `done()` right after the hashes — before the thumbnailer decodes again) and to the pHash
   decode; a rejected source becomes a `phash_failed` warning, the photo is still catalogued; the blurhash is
-  encoded with `blurhash.EncodeOriented`, which orients the 64-px working copy instead of the full bitmap) with **`IngestFile(ctx,src,Request{Filename,UploadedBy,Sidecar})`** (the full form;
+  encoded with `blurhash.EncodeOriented`, which orients the 64-px working copy instead of the full bitmap) with **`IngestFile(ctx,src,Request{Filename,UploadedBy,ProjectUID,StoragePrefix,Sidecar})`** (the full form;
+  `ProjectUID` confines the dedup lookup to that project (`GetByFileHashInProject`) and creates the row
+  there (`Photo.ProjectID` → `photos.Store.Create` writes `project_id`), `StoragePrefix` publishes the
+  original through `storage.PrefixStorer` (a store without it refuses a prefixed upload rather than share
+  an unprefixed key); both empty = the transition default, the bootstrap project at the root — the public
+  upload-link route passes its link's project, the other callers follow in the ingest-scoping step;
   `Ingest(ctx,src,filename,uploadedBy)` = a thin wrapper for an upload without a sidecar) `→ FileResult`
   — streams to a temp +
   SHA256, **`admit`** (`sniff.go`: is the content media at all? The leading 512 bytes are matched against
@@ -3819,14 +3839,18 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   participants and in the trail, from one handed over afterwards; `uniqueUIDs` drops blanks and repeats
   so asking the same person twice asks them once, and an unknown account fails the whole transaction
   (`ErrUserNotFound`) rather than leaving half a hand-over; **the daily
-  digest's two reads** (`digest.go`): `Digests(ctx)` → `[]Digest{UserUID,Email,DisplayName,Total,Tasks
+  digest's reads** (`digest.go`), **per (project, person)**: `Digests(ctx)` →
+  `[]Digest{ProjectUID,ProjectSlug,ProjectName,UserUID,Email,DisplayName,Total,Tasks
   (≤ DigestLimit = 20, newest activity first),NewestActivityAt,DigestedAt}` — the listing's `waitingSQL`
   turned inside out, one query over every participant of every open task (reusing `activityJoin`, so the
-  mail and the „Na mně" filter can never disagree about whose move it is), restricted to accounts that
-  can sign in (`NOT disabled AND approved_at IS NOT NULL`) and to people with a waiting task whose activity
-  is newer than `users.task_digest_at` (migration `0084_users_task_digest.sql`; NULL = never written to),
-  and `MarkDigested(ctx, uid, at)` which stamps that column without touching `updated_at`; consumed by
-  `internal/taskdigestjob`;
+  mail and the „Na mně" filter can never disagree about whose move it is), grouped by the task's project
+  and the participant, restricted to enabled accounts with an **approved membership** of that (active)
+  project and to pairs with a waiting task whose activity is newer than **`project_members.task_digest_at`**
+  (the membership's watermark; `users.task_digest_at` from migration 0084 is a transition copy nobody
+  writes; NULL = never written to); `DigestTargets(ctx)` → the `[]DigestTarget{ProjectUID,UserUID}` the
+  daily scheduler enqueues one job for each; `DigestFor(ctx, projectUID, userUID)` → that one pair's
+  digest or nil (both required); and `MarkDigested(ctx, projectUID, uid, at)` which stamps the membership
+  (an unknown membership is not an error); consumed by `internal/taskdigestjob`;
   **who is on a task** (`participants.go`, table `photo_task_participants` from migration
   `0081_photo_task_participants.sql`): `Participant{UserUID,Name,JoinedAt,AddedByUID,AddedByName}`,
   `Participants`/`Assign`/`Unassign`/`Join`, `Filter.ParticipantUID`, and — the part that makes the list
@@ -3865,8 +3889,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   open states, so the navigation badge, the chips and the lists behind them are one predicate;
   `summarySQL` is *built* from `States` (`buildSummarySQL`, guarded by a unit test) so a sixth state could
   not be forgotten. `WaitingOnMe(ctx, projectUID, callerUID)` is the same query narrowed to the one number
-  `internal/whatsnew` asks for — through `cmd/kukatko`'s `requestTaskCounter`, which counts in the
-  request's project until the digest is scoped itself), `internal/phototaskapi/`
+  `internal/whatsnew` asks for (the store satisfies `whatsnew.TaskCounter` directly, counting in the
+  digest's project), `internal/phototaskapi/`
   (the HTTP API over tasks, their threads and their people; every handler passes the request's project
   (`projectOf(r)` = `auth.ProjectUIDFromContext`) to the task and comment stores, so through
   `/p/{project}/tasks/…` another project's task — its detail, edits, photos, participants (now a 404 instead
@@ -3956,14 +3980,20 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `Link.StateAt(now)` → `active|expired|revoked` (revoked wins); `Link.Code` is the readable code (`""`
   when unknown) and is tagged `json:"-"` — the HTTP layer decides per caller whether to show it.
   `Store` = `NewStore(pool)`:
-  `Create(ctx, NewLink, entry)` → the link **plus its plaintext code**, stored readably too (code collision → redraw via
+  **every management method takes `projectUID` after `ctx`** (empty = `ErrNoProject`; another project's
+  link = `ErrNotFound`, identical to a missing one; audited writes default the entry's `ProjectUID`):
+  `Create(ctx, projectUID, NewLink, entry)` → the link **plus its plaintext code**, stored readably too, with
+  `project_id` (code collision → redraw via
   `ON CONFLICT DO NOTHING`; `NewLink.Validate`: ≥ 1 target, ≤ 20 of each, title/note caps; a missing
-  album/label → `ErrTargetNotFound`), `Get`, `ByCode`, `List(ctx, creatorUID)` ("" = all; one query with
+  album/label — or one of another project, inserted only `WHERE project_id` matches — →
+  `ErrTargetNotFound`, nothing written), `Get(ctx, projectUID, uid)`, `ByCode` (**instance-wide**: the public
+  routes' lookup, which learns the project from `Link.ProjectUID`, `json:"-"`), `List(ctx, projectUID,
+  creatorUID)` ("" = all of the project; one query with
   the creator name and both target lists as JSON), `Extend` (`ErrRevoked` for a revoked link),
-  `Revoke` (idempotent, a second revoke writes no audit), `RestoreCode(ctx, uid, code, entry)`
+  `Revoke` (idempotent, a second revoke writes no audit), `RestoreCode(ctx, projectUID, uid, code, entry)`
   (`recode.go`: stores `code` only when its hash equals `code_hash` — constant-time compare — else
-  `ErrCodeMismatch` with nothing changed; already readable = no-op without audit), `RotateCode(ctx, uid,
-  entry)` (a fresh code replaces `code_hash` and `code`, redrawn on a collision; the old URL dies) — both
+  `ErrCodeMismatch` with nothing changed; already readable = no-op without audit), `RotateCode(ctx,
+  projectUID, uid, entry)` (a fresh code replaces `code_hash` and `code`, redrawn on a collision; the old URL dies) — both
   lock the row and refuse a revoked link with `ErrRevoked` (an expired one is accepted),
   `ReserveUpload(ctx, uid, maxUploads, now)` — one file's slot of the lifetime cap, a single `UPDATE`
   bumping `upload_count` only while the link is not revoked, not expired at `now` and (unless 0) under the
@@ -3971,20 +4001,27 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `ErrNotFound` — `ReleaseUpload(ctx, uid)` (gives a slot back, floored at 0), `RecordUpload(ctx, Upload,
   entry)` — provenance row, `organize.AddPhotoTx`/`AttachLabelTx` into every target (manual label),
   `last_used_at` and the `upload_link.upload` audit entry in **one transaction** (it does not count: the
-  reservation did) — `AttributeSessionTx(ctx, tx, sessionHash,
-  userUID)` (on the registration's transaction: hands the session's **created**, still unowned photos to
-  the new account, once) and `Provenance(ctx, photoUID)` (the earliest link upload that created the photo
+  reservation did; the link-uid-keyed upload methods need no project, the link was resolved by code) —
+  `AttributeSessionTx(ctx, tx, projectUID, sessionHash, userUID)` (on the registration's transaction: hands
+  the session's **created**, still unowned photos **of that project's links** to the new account, once — a
+  registration into B never claims what the same browser uploaded into A) and `Provenance(ctx, photoUID)` (the earliest link upload that created the photo
   — link uid/title, typed name, when, and the attributed account `AccountUID`/`AccountName` (display
   name, fallback username; nil once deleted) — for the sidecar's `identity.upload_link` and the photo
   detail's `upload_link`); `RecordUpload`'s audit details carry the link's `link_title` (read by the
   `last_used_at` `UPDATE … RETURNING title`); every mutation audits in its own transaction)),
   `internal/uploadlinkapi/`
-  (the HTTP half: `NewAPI(Config{Store, Ingest, Sidecar, RequireCurator, OptionalAuth, CurrentUser?,
-  IPLimit, LinkLimit, MaxFileSize, MaxUploadsPerLink, DefaultDays, MaxDays, SecureCookies, Now?})` mounts
-  `/upload-links` (curator management incl. `restore-code` (422 on `ErrCodeMismatch`) and `new-code`; a
-  foreign link is 404 unless the caller is an admin, and the listing's `code`/`path` are set only by
-  `view(user, link)` for a link `canManage` allows) and the public
-  `/u/{code}` pair behind the per-IP limiter; the upload walks the multipart stream once (the `name`
+  (the HTTP half: `NewAPI(Config{Store, Ingest, Projects, Sidecar, RequireCurator, OptionalAuth,
+  CurrentUser?, CurrentRole?, CurrentProject?, IPLimit, LinkLimit, MaxFileSize, MaxUploadsPerLink,
+  DefaultDays, MaxDays, SecureCookies, Now?})` mounts
+  `/upload-links` **per project** (`RegisterManagementRoutes`, under `/p/{project}`: every route works in
+  the request's project, another project's link is the 404 a missing one gets; curator management incl.
+  `restore-code` (422 on `ErrCodeMismatch`) and `new-code`; somebody else's link is 404 unless the caller
+  is an admin of the project, and the listing's `code`/`path` are set only by
+  `view(user, link)` for a link `canManage` allows) and the public, **instance-level**
+  `/u/{code}` pair behind the per-IP limiter (`RegisterPublicRoutes`): `liveLink` resolves the link by code,
+  then its project through `Projects` (`*project.Store`; a missing or deactivated project = the unknown
+  link's 404) into a `liveTarget{Link, storagePrefix}`, and every file is ingested with
+  `ingest.Request{ProjectUID, StoragePrefix}` of **the link's project** (its audit entry names it too); the upload walks the multipart stream once (the `name`
   field must precede the files), refuses an extension `imgconvert.IsSupportedFormat` does not know (415,
   `Code: "unsupported_type"`; content that is not media is the pipeline's own 415 `not_media`),
   caps a request at `maxFilesPerRequest` = 50 file parts (refused ones count; the 51st is a 413 and ends
@@ -3997,8 +4034,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `kukatko_upload_session` cookie (`SessionCookieName`, path `/api/v1`) whose hash marks their photos —
   minted by the page's `GET /u/{code}`, not the first upload, since the page sends three files at once and
   each would otherwise start a session of its own (only the last cookie would survive in the browser). `RegistrationGate`
-  implements `auth.UploadLinkGate`: a live link admits `POST /auth/register` without the secret and its
-  `Claim` runs `uploadlink.AttributeSessionTx` on the account's transaction, `Committed` reschedules the
+  implements `auth.UploadLinkGate`: a live link admits `POST /auth/register` without the secret, its grant
+  names the link's project (`LinkGrant.ProjectUID` — the account joins that project only, an unapproved
+  viewer, under that project's registration switch and approvers) and its
+  `Claim` runs `uploadlink.AttributeSessionTx` for that project on the account's transaction, `Committed` reschedules the
   claimed photos' sidecars. Built by `buildUploadLinkAPI` inside `buildIngest` (it shares the signed-in
   upload's `ingest.Service`) and `uploadLinkGate` in `cmd/kukatko/auth.go`)),
   `internal/searchhistory/`
@@ -4102,8 +4141,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (**the returning-reader digest** behind the "what's new since your last visit" panel on the library home —
   a shared family library otherwise makes somebody else's evening of uploading invisible to the next person
   who opens the app; **read-only over the catalogue**, its single write is the visit bookkeeping on the
-  caller's own `users` row. **What a visit is** (migration `0053_user_visits.sql`, two nullable
-  `TIMESTAMPTZ` columns on `users`): `last_seen_at` is a heartbeat stamped to now on **every** summary read,
+  caller's own **membership** row. **Per project** (multi-tenancy): a visit is a visit to one project, so
+  the two timestamps and the linked person are read and written on `project_members` (the matching `users`
+  columns of migration 0053 are a transition copy nobody writes any more), and every count and list reads
+  only that project's rows (`photos`/`albums`/`subjects.project_id`; a comment through the photo it is on).
+  **What a visit is** (migration `0053_user_visits.sql` put two nullable
+  `TIMESTAMPTZ` columns on `users`; 0101 copied them per project onto `project_members`): `last_seen_at` is a heartbeat stamped to now on **every** summary read,
   `visit_reference_at` is the digest's "since" and moves **only** when a new visit begins — a gap of at least
   `VisitGap` (**6 h**) between two reads — taking the previous `last_seen_at` on that transition. Within one
   visit the reference does not move however often the page reloads (the "a refresh must not reset the panel"
@@ -4111,9 +4154,11 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (a new account does not want its whole library announced). Neither column touches `updated_at` — being here
   is not a profile edit. Since only this read stamps the heartbeat, "inactivity" means precisely
   "the library home was not opened". `Store` = `NewStore(pool)` (+ `WithGap(d)`, a copy with a shorter
-  threshold **for tests** — production never calls it): `Summary(ctx, userUID, now)` → `Summary{HasNews,
-  Since, Photos, MinePhotos, Comments, Albums[]{UID,Title}, AlbumCount, People[]{UID,Name}, PersonCount}`, the sentinel
-  `ErrUserNotFound` when the account vanished mid-request. It rotates the visit in **one** atomic
+  threshold **for tests** — production never calls it): `Summary(ctx, projectUID, userUID, now)` →
+  `Summary{HasNews, Since, Photos, MinePhotos, Comments, Albums[]{UID,Title}, AlbumCount, People[]{UID,Name},
+  PersonCount}`, `ErrNoProject` for an empty project, the sentinel
+  `ErrUserNotFound` when there is no membership to stamp (the account vanished mid-request, or a maintainer
+  entered a project it is not a member of — no bookkeeping there, no digest). It rotates the visit in **one** atomic
   `UPDATE … RETURNING` (two tabs loading at the same instant cannot both rotate: the second waits on the row
   lock and then sees a `last_seen_at` that is already now), then counts. **What counts:** photos under the
   library grid's own base filter (`archived_at IS NULL AND (stack_uid IS NULL OR stack_primary) AND NOT
@@ -4126,7 +4171,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   what happened, and the reason somebody who never opens the task list still meets the question they were
   meant to answer. It takes part in `counts.empty()` like the rest, so it can raise the panel on its own. **Since 2026-09-20 it is
   not a "since" count at all:** `NewStore(pool, tasks TaskCounter)` takes the task store (interface
-  `WaitingOnMe(ctx, callerUID)`; nil = the line is always zero) and `countSince` reads the caller's
+  `WaitingOnMe(ctx, projectUID, callerUID)`, satisfied by `*phototask.Store`; nil = the line is always zero) and `countSince` reads the caller's
   **`waiting_on_me`** from it — the queue's own "whose move is it" predicate (open, the reader on it,
   somebody else acted last) — because a question asked a fortnight ago is still theirs to answer and one
   opened yesterday that they already answered is not; the old `photo_tasks` subquery (state `question`,
@@ -4141,7 +4186,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   list can never name an album the count left out; when the exclusion empties every count the digest is the
   zero-value `Summary` and **no panel appears at all**. **`MinePhotos`** is the one line
   about the reader rather than about the library: the same photo predicate narrowed by a non-invalid marker
-  naming the account's linked person, read out of the very `UPDATE … RETURNING` that stamps the visit (the
+  naming the member's linked person in the project (`project_members.subject_uid`), read out of the very
+  `UPDATE … RETURNING` that stamps the visit (the
   row is already being written, so the link costs no second round trip) and skipped entirely for an
   unlinked account or a visit with no new photos at all. Being a strict subset of `Photos` it can never be
   the only news, so `counts.empty()` — and therefore `HasNews` — ignores it. Albums and people are capped at
@@ -4154,7 +4200,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `internal/whatsnewapi/`
   (a one-route HTTP API over it: the `Summarizer` interface (a subset of `whatsnew.Store`) → unit-testable
   with a fake; `NewAPI(Config{Store,RequireAuth,Now})` (`Now` defaults to `time.Now`, injectable so tests move
-  a visit forward without waiting) + `RegisterRoutes` mounts `GET /whats-new` behind **`RequireAuth`** —
+  a visit forward without waiting) + `RegisterRoutes` mounts `GET /whats-new` (project-scoped, the handler
+  passes `auth.ProjectUIDFromContext`) behind **`RequireAuth`** —
   every role including a **viewer**, since learning what the family added is not a curation power.
   **A GET that writes** on purpose: reading the digest is what stamps the visit, and a separate POST the
   client must remember to send would leave the reference wrong exactly when the tab was closed. Returns
@@ -5639,6 +5686,11 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   rewrites every `person:` **and `family:`**
   alternative whose text is exactly `me` — the negated `!me` included — to the caller's linked subject UID
   (both `Text` and `Pattern`, so the compiled LIKE cannot still match a person *named* "me"), in place.
+  The linked subject is **the caller's membership of the request's project** (`project_members.subject_uid`,
+  read by the auth guard when it admits the caller and exposed as `auth.LinkedSubjectFromContext`; nil for a
+  maintainer without a membership) — never the account-wide `users.subject_uid`: the same account is a
+  different person, or nobody, in each of its projects. `photoapi.applyMeTokens(params, user, linked)` and
+  the MCP caller (`caller.linked`) pass it.
   (both keys name a subject, so one pass rewrites both and they share one verdict).
   `resolved` is false only when the token was used by an account with **no** link, which the caller answers
   with an empty result and a reason: `internal/photoapi` sets `photos.ListParams.MatchNone` and returns the
@@ -5937,37 +5989,48 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     the queue until it is configured again. The worker gives `mail_send` its own single-slot pool.
 
 - **Daily tasks digest (`internal/taskdigestjob`):** the one message the task queue sends out of the app —
-  once a day, every person is mailed the open tasks whose move is theirs, so a question an agent opened
-  reaches the human it waits on. It is the `task_digest` job plus the scheduler that enqueues it, and it
-  sends nothing itself: every message is a `mail_send` job scheduled through `mailjob.Enqueuer`, so it
-  inherits the queue's retries and the mailer's address guard.
+  once a day, every person is mailed, **per project**, the open tasks of that project whose move is theirs,
+  so a question an agent opened reaches the human it waits on. It is the `task_digest` job plus the
+  scheduler that enqueues it, and it sends nothing itself: every message is a `mail_send` job scheduled
+  through `mailjob.Enqueuer`, so it inherits the queue's retries and the mailer's address guard.
+  - **The unit of work is a (project, person) pair.** The job's payload is `jobs.TaskDigestPayload{
+    ProjectUID, UserUID}` (`project_uid` + `user_uid`) and the dedup index keys on both (migration
+    `0107_task_digest_per_project.sql`); the watermark is the membership's `project_members.task_digest_at`.
+    A person in two projects gets two jobs and two mails, each headed with its project's name
+    (`mailer.TasksWaitingDigestData.ProjectName` → a `Projekt <name>` line above the list; absent for a
+    mail queued before projects existed) and linking inside it.
   - **`Service`** (`New(Config{Source,Mail,Exec,BaseURL,Clock,Logger})`, panicking on a missing `Source`/
-    `Mail`/`Exec`) is the handler. `Run` asks `Source.Digests` (satisfied by `*phototask.Store`) who is due,
-    and for each person schedules one mail on `Exec` (the pool — a digest is nobody's mutation) **and then
-    stamps** the account (`MarkDigested` with the clock), in that order: a stamp without a mail would
-    silence somebody, a mail without a stamp only repeats itself. A recipient the mailer refuses
-    (`ErrPlaceholderAddress` for a `.invalid` placeholder, `ErrInvalidAddress` for none) is **skipped and left
-    unstamped** — they hear the news once the address is fixed — and never fails the run; a queue or stamp
-    failure for one person is logged, counted and skipped over, and the run then returns `ErrPartialRun` so
-    the queue retries for the rest (the people it reached are stamped, so a retry repeats nothing). With
-    mail off (`Mail.Enabled()` false) nothing is scheduled **and nobody is stamped**. Links are
-    `TaskURL(base, uid)` = `<base>/tasks/{uid}` and `QueueURL(base)` = `<base>/tasks?waiting=1`, on
-    `mail.base_url` exactly as the password-reset link is (site-relative when it is empty).
-    `Result{Sent,Skipped,Failed}` is what `Handle` logs.
-  - **`Scheduler`** (`NewScheduler(SchedulerConfig{Enabled,Enqueuer,Hour,Clock,Logger})`) follows the trash
-    retention purge's shape — one goroutine for the life of the server, `Run` returning at once when
-    disabled — but enqueues the job rather than doing the work, so a run is retried, observable and
-    dead-lettered like every other. `NextRun(now, hour)` (pure, tested) is the next `hour:00:00 UTC`
-    strictly after `now`; a missed hour is not caught up. The enqueue is `jobs.Enqueuer.EnqueueTaskDigest`,
-    deduped on the queued state by `idx_jobs_task_digest_dedup` (migration 0084, the family-export
-    index's shape), so a restart straddling the hour cannot queue the same day twice.
+    `Mail`/`Exec`) is the handler. `Handle` decodes the pair (a legacy job with no payload does nothing —
+    the next daily run covers everybody) and `Run(ctx, projectUID, userUID)` asks `Source.DigestFor`
+    (satisfied by `*phototask.Store`) whether that pair is due, schedules one mail on `Exec` (the pool — a
+    digest is nobody's mutation) **and then stamps** the membership (`MarkDigested(ctx, projectUID, uid,
+    clock())`), in that order: a stamp without a mail would silence somebody, a mail without a stamp only
+    repeats itself. It returns an `Outcome` (`sent`/`nothing`/`skipped`/`mail_off`, logged by `Handle`). A
+    recipient the mailer refuses (`ErrPlaceholderAddress` for a `.invalid` placeholder,
+    `ErrInvalidAddress` for none) is **skipped and left unstamped** — they hear the news once the address is
+    fixed — and is not an error; a read, queue or stamp failure is the job's error, which the queue retries.
+    With mail off (`Mail.Enabled()` false) nothing is scheduled **and nobody is stamped**. Links are
+    `TaskURL(base, slug, uid)` = `<base>/p/<slug>/tasks/{uid}` and `QueueURL(base, slug)` =
+    `<base>/p/<slug>/tasks?waiting=1` (`project.AppPath`), on `mail.base_url` exactly as the password-reset
+    link is (site-relative when it is empty).
+  - **`Scheduler`** (`NewScheduler(SchedulerConfig{Enabled,Enqueuer,Targets,Hour,Clock,Logger})`, panicking
+    when enabled without `Enqueuer` or `Targets`) follows the trash retention purge's shape — one goroutine
+    for the life of the server, `Run` returning at once when disabled — but enqueues jobs rather than doing
+    the work, so a run is retried, observable and dead-lettered like every other. `NextRun(now, hour)`
+    (pure, tested) is the next `hour:00:00 UTC` strictly after `now`; a missed hour is not caught up. At
+    the hour, `Tick` reads `Targets.DigestTargets` (`*phototask.Store`: every due pair) and calls
+    `jobs.Enqueuer.EnqueueTaskDigest(ctx, projectUID, userUID)` once per pair (a refused pair does not
+    keep the others from theirs; the failures are joined and logged), deduped on the queued state per pair,
+    so a restart straddling the hour cannot queue the same day twice.
   - Wired in `cmd/kukatko` (`taskdigest.go`) **only when `tasks.digest.enabled` and `mail.enabled` are
     both true** — the handler is registered and the scheduler is live under the same `taskDigestOn` answer,
     so a job is never enqueued that nothing will claim. Configuration `tasks.digest.*`
     ([`OPERATIONS.md`](OPERATIONS.md)). Tests: the store query over a real database (who gets one, the
-    stamp, the cap), the service against the real `mailjob.Enqueuer` + `mail_send` handler + `mailer.Fake`
-    with a fixed clock (one mail per person, none when nothing is due, none when mail is off, the skip, the
-    partial run), and the scheduler's timing.
+    stamp, the cap, one digest per project with its own stamp and two queued jobs for a person in two
+    projects), the service against the real `mailjob.Enqueuer` + `mail_send` handler + `mailer.Fake` with a
+    fixed clock (one mail per pair with the project heading and `/p/<slug>/` links, two for two projects,
+    none when nothing is due or the job is legacy, none when mail is off, the skip, the failures), and the
+    scheduler's timing and per-pair fan-out.
 
 - **Web Push (`internal/push`):** the one way Kukátko sends a push notification, the same shape as
   `internal/mailer`. Its only caller is the `push_send` handler in `internal/pushjob`; the HTTP surface

@@ -127,41 +127,45 @@ func (a *API) enterProject(w http.ResponseWriter, r *http.Request, p principal) 
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return p, req.err
 	}
-	role, err := projectRoleOf(w, r, req, p.user)
+	role, subject, err := projectRoleOf(w, r, req, p.user)
 	if err != nil {
 		return p, err
 	}
-	p.project, p.projectRole = req.project, role
+	p.project, p.projectRole, p.projectSubject = req.project, role, subject
 	a.touchLastProject(r.Context(), req.store, p.user.UID, req.project.UID)
 	return p, nil
 }
 
 // projectRoleOf applies enterProject's maintainer, deactivation and membership
 // rules for user in req's project, writing any refusal to w and returning
-// errProjectDenied.
-func projectRoleOf(w http.ResponseWriter, r *http.Request, req projectRequest, user User) (project.Role, error) {
-	if user.Role.CanMaintain() {
-		obs.SetActorRole(r.Context(), string(RoleMaintainer))
-		return project.RoleAdmin, nil
-	}
-	if !req.project.Active {
-		writeError(w, http.StatusNotFound, projectNotFoundMessage)
-		return "", errProjectDenied
-	}
+// errProjectDenied. Alongside the role it returns the person the membership
+// says the caller is in that project ("this is me"), nil when there is none —
+// also for a maintainer who entered a project without being a member of it.
+func projectRoleOf(
+	w http.ResponseWriter, r *http.Request, req projectRequest, user User,
+) (project.Role, *string, error) {
 	member, err := req.store.Membership(r.Context(), req.project.UID, user.UID)
-	switch {
-	case errors.Is(err, project.ErrNotMember):
-		writeError(w, http.StatusNotFound, projectNotFoundMessage)
-		return "", errProjectDenied
-	case err != nil:
+	if err != nil && !errors.Is(err, project.ErrNotMember) {
 		slog.ErrorContext(r.Context(), "auth: reading the caller's membership", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
-		return "", fmt.Errorf("auth: reading the membership of %s: %w", user.UID, err)
+		return "", nil, fmt.Errorf("auth: reading the membership of %s: %w", user.UID, err)
+	}
+	if user.Role.CanMaintain() {
+		obs.SetActorRole(r.Context(), string(RoleMaintainer))
+		if member == nil {
+			return project.RoleAdmin, nil, nil
+		}
+		return project.RoleAdmin, member.SubjectUID, nil
+	}
+	switch {
+	case !req.project.Active, member == nil:
+		writeError(w, http.StatusNotFound, projectNotFoundMessage)
+		return "", nil, errProjectDenied
 	case member.ApprovedAt == nil:
 		writeError(w, http.StatusForbidden, ErrorPendingApproval)
-		return "", errProjectDenied
+		return "", nil, errProjectDenied
 	}
-	return member.Role, nil
+	return member.Role, member.SubjectUID, nil
 }
 
 // touchLastProject remembers projectUID as userUID's last project unless that
@@ -233,6 +237,20 @@ func ProjectUIDFromContext(ctx context.Context) string {
 		return p.UID
 	}
 	return ""
+}
+
+// LinkedSubjectFromContext returns the person the caller says it is in the
+// request's project — its membership's subject_uid, what `person:me` and
+// `family:me` resolve to — or nil when the membership names nobody, when the
+// caller (a maintainer) has no membership there, or when the request carries no
+// project context. It is never the account-wide users.subject_uid: who you are
+// is a fact about one project's people.
+func LinkedSubjectFromContext(ctx context.Context) *string {
+	p, ok := principalFromContext(ctx)
+	if !ok || p.project == nil {
+		return nil
+	}
+	return p.projectSubject
 }
 
 // ProjectRoleFromContext returns the caller's role in the request's project —

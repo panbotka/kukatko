@@ -16,6 +16,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/imgconvert"
 	"github.com/panbotka/kukatko/internal/ingest"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/uploadlink"
 )
 
@@ -164,24 +165,48 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, uploadResponse{Results: results})
 }
 
-// liveLink resolves the {code} link and returns it when it accepts uploads,
-// writing 404 for an unknown code, 410 for an expired or revoked link and 500
-// for a failed lookup otherwise.
-func (a *API) liveLink(w http.ResponseWriter, r *http.Request) (uploadlink.Link, bool) {
+// liveTarget is a live link together with what its project says about where
+// its uploads go: the object-store prefix of the link's project.
+type liveTarget struct {
+	uploadlink.Link
+	// storagePrefix is the link's project's storage prefix ("" for the
+	// bootstrap project).
+	storagePrefix string
+}
+
+// liveLink resolves the {code} link — instance-wide, by its code alone — and
+// returns it with its project's storage prefix when it accepts uploads,
+// writing 404 for an unknown code (and for a link whose project is gone or
+// deactivated, which is answered exactly like one), 410 for an expired or
+// revoked link and 500 for a failed lookup otherwise.
+func (a *API) liveLink(w http.ResponseWriter, r *http.Request) (liveTarget, bool) {
 	link, err := a.store.ByCode(r.Context(), chi.URLParam(r, "code"))
 	if errors.Is(err, uploadlink.ErrNotFound) {
 		writeError(w, http.StatusNotFound, uploadlink.ErrNotFound.Error())
-		return uploadlink.Link{}, false
+		return liveTarget{}, false
 	}
 	if err != nil {
 		a.serverError(w, r, "resolving upload link", err)
-		return uploadlink.Link{}, false
+		return liveTarget{}, false
+	}
+	target := liveTarget{Link: link}
+	if a.projects != nil {
+		p, err := a.projects.Get(r.Context(), link.ProjectUID)
+		if errors.Is(err, project.ErrNotFound) || (err == nil && !p.Active) {
+			writeError(w, http.StatusNotFound, uploadlink.ErrNotFound.Error())
+			return liveTarget{}, false
+		}
+		if err != nil {
+			a.serverError(w, r, "resolving the upload link's project", err)
+			return liveTarget{}, false
+		}
+		target.storagePrefix = p.StoragePrefix
 	}
 	if state := link.StateAt(a.now()); state != uploadlink.StateActive {
 		writeJSON(w, http.StatusGone, goneBody{Error: linkGoneMessage, State: state})
-		return uploadlink.Link{}, false
+		return liveTarget{}, false
 	}
-	return link, true
+	return target, true
 }
 
 // uploaderFor resolves who the upload is attributed to: the signed-in account,
@@ -234,7 +259,7 @@ func SessionHash(r *http.Request) string {
 // malformed stream. A file part past maxFilesPerRequest is refused and ends the
 // walk: nothing after it is read.
 func (a *API) ingestParts(
-	r *http.Request, reader *multipart.Reader, link uploadlink.Link, who uploader,
+	r *http.Request, reader *multipart.Reader, link liveTarget, who uploader,
 ) ([]ingest.FileResult, error) {
 	var results []ingest.FileResult
 	for {
@@ -284,7 +309,7 @@ func readName(part io.Reader) string {
 // last byte used to leave a photo with no record of the upload — no provenance,
 // not filed into the link's album, no audit entry — and a slot that was neither
 // used nor given back.
-func (a *API) ingestOne(r *http.Request, part *multipart.Part, link uploadlink.Link, who uploader) ingest.FileResult {
+func (a *API) ingestOne(r *http.Request, part *multipart.Part, link liveTarget, who uploader) ingest.FileResult {
 	filename := part.FileName()
 	if !imgconvert.IsSupportedFormat(path.Ext(filename)) {
 		// ingest.CodeUnsupportedType: the code the pipeline gives a type it refuses by
@@ -298,7 +323,12 @@ func (a *API) ingestOne(r *http.Request, part *multipart.Part, link uploadlink.L
 	if a.maxFileSize > 0 {
 		src = &cappedReader{src: part, remaining: a.maxFileSize}
 	}
-	res := a.ingest.IngestFile(r.Context(), src, ingest.Request{Filename: filename, UploadedBy: who.userUID})
+	// The photo goes into the link's project, under that project's prefix,
+	// whoever is uploading: the public route has no project of its own.
+	res := a.ingest.IngestFile(r.Context(), src, ingest.Request{
+		Filename: filename, UploadedBy: who.userUID,
+		ProjectUID: link.ProjectUID, StoragePrefix: link.storagePrefix,
+	})
 	if res.Outcome == ingest.OutcomeError || res.PhotoUID == "" {
 		a.release(r, link)
 		return res
@@ -318,7 +348,7 @@ func (a *API) ingestOne(r *http.Request, part *multipart.Part, link uploadlink.L
 // reservationRefused is the per-file result of a file whose cap slot the store
 // refused: 429 for a full link, the dead link's 410 for one revoked, expired or
 // deleted since the request began, 500 for a failed reservation.
-func (a *API) reservationRefused(r *http.Request, link uploadlink.Link, filename string, err error) ingest.FileResult {
+func (a *API) reservationRefused(r *http.Request, link liveTarget, filename string, err error) ingest.FileResult {
 	switch {
 	case errors.Is(err, uploadlink.ErrFull):
 		return refused(filename, http.StatusTooManyRequests, "", errLinkFull)
@@ -335,7 +365,7 @@ func (a *API) reservationRefused(r *http.Request, link uploadlink.Link, filename
 // release gives back the cap slot of a file that was not recorded. It outlives
 // the request's context — a client that hung up mid-file must not cost the link
 // a slot — and a failure only overcounts, so it is logged, not reported.
-func (a *API) release(r *http.Request, link uploadlink.Link) {
+func (a *API) release(r *http.Request, link liveTarget) {
 	ctx := context.WithoutCancel(r.Context())
 	if err := a.store.ReleaseUpload(ctx, link.UID); err != nil {
 		a.log.WarnContext(ctx, "uploadlinkapi: releasing an upload slot",
@@ -348,10 +378,11 @@ func (a *API) release(r *http.Request, link uploadlink.Link) {
 // new albums and labels. It runs on ctx — detached from the request by the
 // caller — and reads only the request's metadata (who, from where) off r.
 func (a *API) record(
-	ctx context.Context, r *http.Request, link uploadlink.Link, who uploader, res ingest.FileResult,
+	ctx context.Context, r *http.Request, link liveTarget, who uploader, res ingest.FileResult,
 ) error {
 	entry := audit.FromRequest(r, who.userUID).Entry(audit.ActionUploadLinkUpload, "", "",
 		map[string]any{"filename": res.Filename})
+	entry.ProjectUID = link.ProjectUID
 	err := a.store.RecordUpload(ctx, uploadlink.Upload{
 		LinkUID: link.UID, PhotoUID: res.PhotoUID, Created: res.Outcome == ingest.OutcomeCreated,
 		UploaderName: who.name, UploadedBy: who.userUID, SessionHash: who.sessionHash,

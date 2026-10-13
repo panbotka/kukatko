@@ -56,6 +56,13 @@ var photoColumns = strings.Join(photoInsertColumns, ", ") + ", created_at, updat
 var insertPhotoSQL = "INSERT INTO photos (" + strings.Join(photoInsertColumns, ", ") +
 	") VALUES (" + placeholders(len(photoInsertColumns)) + ") RETURNING " + photoColumns
 
+// insertPhotoInProjectSQL is insertPhotoSQL that also names the photo's
+// project, as the last parameter. Create uses it when the photo carries a
+// ProjectID; without one the column keeps its transitional default (the
+// bootstrap project).
+var insertPhotoInProjectSQL = "INSERT INTO photos (" + strings.Join(photoInsertColumns, ", ") +
+	", project_id) VALUES (" + placeholders(len(photoInsertColumns)+1) + ") RETURNING " + photoColumns
+
 // placeholders returns a comma-separated list of PostgreSQL positional
 // parameter placeholders "$1, $2, …, $n". It returns an empty string for n <= 0.
 func placeholders(n int) string {
@@ -166,9 +173,10 @@ func takenAtPrecisionOrDay(precision string) string {
 }
 
 // Create inserts p and returns it refreshed with the database-assigned values
-// (a generated UID when p.UID is empty, plus created_at/updated_at). It returns
-// ErrFileHashTaken if an identical original is already catalogued, or a wrapped
-// error otherwise.
+// (a generated UID when p.UID is empty, plus created_at/updated_at). The photo
+// goes into p.ProjectID, or — when that is empty — the column's transitional
+// default, the bootstrap project. It returns ErrFileHashTaken if an identical
+// original is already catalogued in that project, or a wrapped error otherwise.
 func (s *Store) Create(ctx context.Context, p Photo) (Photo, error) {
 	if p.UID == "" {
 		uid, err := newPhotoUID()
@@ -194,7 +202,12 @@ func (s *Store) Create(ctx context.Context, p Photo) (Photo, error) {
 		p.PhotoprismFileHash, p.PhotosorterUID, p.MetadataExtractedAt,
 		p.StackUID, p.StackPrimary, p.TitleEdited, p.HiddenFromLibrary, blurhashOrNil(p.Blurhash),
 	}
-	created, err := scanPhoto(s.pool.QueryRow(ctx, insertPhotoSQL, args...))
+	query := insertPhotoSQL
+	if p.ProjectID != "" {
+		query = insertPhotoInProjectSQL
+		args = append(args, p.ProjectID)
+	}
+	created, err := scanPhoto(s.pool.QueryRow(ctx, query, args...))
 	if err != nil {
 		if name, ok := isUniqueViolation(err); ok && strings.Contains(name, "file_hash") {
 			return Photo{}, ErrFileHashTaken

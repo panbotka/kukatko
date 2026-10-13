@@ -1,5 +1,5 @@
-// Package taskdigestjob sends every person one e-mail a day listing the open
-// tasks whose move is theirs.
+// Package taskdigestjob sends every person one e-mail a day per project listing
+// the open tasks of that project whose move is theirs.
 //
 // An agent opens questions and review batches in the task queue for a human,
 // but nothing reached that human outside the app: the queue's "waiting on me"
@@ -11,13 +11,21 @@
 // Two rules keep it from becoming noise. It goes out once a day, at a
 // configured hour (the Scheduler here enqueues the job; the worker runs it).
 // And it is sent only when something changed: the store stamps when a person's
-// last digest was scheduled, and a person whose waiting tasks have not moved
-// past that stamp receives nothing. The store decides who is due
-// (phototask.Store.Digests); this package renders the decision into mail.
+// last digest of a project was scheduled (on the membership), and a person
+// whose waiting tasks have not moved past that stamp receives nothing. The
+// store decides who is due (phototask.Store.Digests); this package renders the
+// decision into mail.
+//
+// The work is per (project, person): the Scheduler enqueues one `task_digest`
+// job for every pair with something due, its payload naming both
+// (jobs.TaskDigestPayload), and the job sends that one mail — headed with the
+// project's name, its links under /p/<slug>/ — and stamps that one membership.
+// A person in two projects gets two mails, each about one library.
 package taskdigestjob
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -28,21 +36,17 @@ import (
 	"github.com/panbotka/kukatko/internal/mailer"
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/phototask"
+	"github.com/panbotka/kukatko/internal/project"
 )
-
-// ErrPartialRun indicates a run scheduled or stamped some digests but not all:
-// at least one enqueue or stamp failed. The people it reached are stamped and
-// will not hear the same thing twice, so the queue may retry the job for the
-// rest.
-var ErrPartialRun = errors.New("taskdigestjob: some digests were not scheduled")
 
 // Source is what the digest reads and stamps. It is satisfied by
 // *phototask.Store.
 type Source interface {
-	// Digests returns one entry per person who has something new to hear.
-	Digests(ctx context.Context) ([]phototask.Digest, error)
-	// MarkDigested records when a person's digest was scheduled.
-	MarkDigested(ctx context.Context, uid string, at time.Time) error
+	// DigestFor returns one person's digest of one project, nil when nothing
+	// new waits on them there.
+	DigestFor(ctx context.Context, projectUID, userUID string) (*phototask.Digest, error)
+	// MarkDigested records when a person's digest of a project was scheduled.
+	MarkDigested(ctx context.Context, projectUID, uid string, at time.Time) error
 }
 
 // MailScheduler schedules the message. It is satisfied by *mailjob.Enqueuer.
@@ -106,70 +110,77 @@ func New(cfg Config) *Service {
 	}
 }
 
-// Result says what one run did: how many digests were scheduled, how many
-// people were skipped over an address that cannot be mailed, and how many
-// failed to schedule or stamp.
-type Result struct {
-	Sent    int
-	Skipped int
-	Failed  int
-}
+// Outcome says what one job did for its pair.
+type Outcome string
 
-// Handle is the worker.HandlerFunc for `task_digest` jobs. The payload is
-// empty — one run covers everybody — so it is not read. A failed run is an
-// ordinary error and the queue retries it; the people it did reach are stamped,
-// so a retry writes to the rest only.
+const (
+	// OutcomeSent is a digest scheduled and its membership stamped.
+	OutcomeSent Outcome = "sent"
+	// OutcomeNothing is a pair with nothing new to hear (or a legacy job naming
+	// no pair): no mail, no stamp.
+	OutcomeNothing Outcome = "nothing"
+	// OutcomeSkipped is a recipient the mailer would refuse (a placeholder in
+	// the reserved .invalid domain, or no address at all), left unstamped so
+	// they hear the news once their address is fixed.
+	OutcomeSkipped Outcome = "skipped"
+	// OutcomeMailOff is a run on an instance whose mail is switched off.
+	OutcomeMailOff Outcome = "mail_off"
+)
+
+// Handle is the worker.HandlerFunc for `task_digest` jobs. The payload names
+// the pair (jobs.TaskDigestPayload); a job queued before the payload existed
+// names none and does nothing — the next daily run covers everybody. A failure
+// to read, schedule or stamp is an ordinary error and the queue retries it.
 func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
-	res, err := s.Run(ctx)
+	var payload jobs.TaskDigestPayload
+	if len(job.Payload) > 0 {
+		if err := json.Unmarshal(job.Payload, &payload); err != nil {
+			return fmt.Errorf("taskdigestjob: decoding payload of job %d: %w", job.ID, err)
+		}
+	}
+	outcome, err := s.Run(ctx, payload.ProjectUID, payload.UserUID)
 	s.log.InfoContext(ctx, "task digest run",
-		slog.Int64("job_id", job.ID), slog.Int("sent", res.Sent),
-		slog.Int("skipped", res.Skipped), slog.Int("failed", res.Failed))
+		slog.Int64("job_id", job.ID), slog.String("project_uid", payload.ProjectUID),
+		slog.String("user_uid", payload.UserUID), slog.String("outcome", string(outcome)))
 	return err
 }
 
-// Run sends the digest once: for every person the source says is due, it
-// schedules one mail and stamps the account, in that order — a stamp without a
-// mail would silence somebody, a mail without a stamp only repeats itself. A
-// recipient the mailer would refuse (a placeholder in the reserved .invalid
-// domain, or no address at all) is skipped and left unstamped, so they hear
-// the news once their address is fixed; the skip never fails the run. With
-// mail switched off nothing is scheduled and nobody is stamped.
-//
-// A failure to schedule or stamp one person is logged and counted, and the
-// run goes on to the next; it then returns ErrPartialRun so the queue retries
-// for those it missed.
-func (s *Service) Run(ctx context.Context) (Result, error) {
+// Run sends userUID's digest of projectUID once: when the source says it is
+// due, it schedules the mail and stamps the membership, in that order — a stamp
+// without a mail would silence somebody, a mail without a stamp only repeats
+// itself. A recipient the mailer would refuse is skipped and left unstamped;
+// the skip is not an error. With mail switched off nothing is scheduled and
+// nobody is stamped. An empty projectUID or userUID (a legacy job) does
+// nothing.
+func (s *Service) Run(ctx context.Context, projectUID, userUID string) (Outcome, error) {
 	if !s.mail.Enabled() {
 		s.log.InfoContext(ctx, "task digest not sent: mail is disabled")
-		return Result{}, nil
+		return OutcomeMailOff, nil
 	}
-	digests, err := s.source.Digests(ctx)
+	if projectUID == "" || userUID == "" {
+		return OutcomeNothing, nil
+	}
+	d, err := s.source.DigestFor(ctx, projectUID, userUID)
 	if err != nil {
-		return Result{}, fmt.Errorf("taskdigestjob: reading who is due: %w", err)
+		return "", fmt.Errorf("taskdigestjob: reading the digest of %s in %s: %w", userUID, projectUID, err)
 	}
-	var res Result
-	for _, d := range digests {
-		switch err := s.send(ctx, d); {
-		case err == nil:
-			res.Sent++
-		case errors.Is(err, mailer.ErrInvalidAddress), errors.Is(err, mailer.ErrPlaceholderAddress):
-			res.Skipped++
-			s.log.DebugContext(ctx, "task digest skipped: recipient cannot be mailed",
-				slog.String("user_uid", d.UserUID), slog.String("error", err.Error()))
-		default:
-			res.Failed++
-			s.log.WarnContext(ctx, "task digest not scheduled",
-				slog.String("user_uid", d.UserUID), slog.String("error", err.Error()))
-		}
+	if d == nil {
+		return OutcomeNothing, nil
 	}
-	if res.Failed > 0 {
-		return res, fmt.Errorf("%w: %d of %d", ErrPartialRun, res.Failed, len(digests))
+	switch err := s.send(ctx, *d); {
+	case err == nil:
+		return OutcomeSent, nil
+	case errors.Is(err, mailer.ErrInvalidAddress), errors.Is(err, mailer.ErrPlaceholderAddress):
+		s.log.DebugContext(ctx, "task digest skipped: recipient cannot be mailed",
+			slog.String("user_uid", d.UserUID), slog.String("error", err.Error()))
+		return OutcomeSkipped, nil
+	default:
+		return "", fmt.Errorf("taskdigestjob: digest of %s in %s: %w", userUID, projectUID, err)
 	}
-	return res, nil
 }
 
-// send schedules one person's digest and stamps their account. It returns the
-// mailer's typed error, unwrapped by nothing, for an address that cannot be
+// send schedules one person's digest and stamps their membership. It returns
+// the mailer's typed error, unwrapped by nothing, for an address that cannot be
 // mailed, so Run can tell a skip from a failure.
 func (s *Service) send(ctx context.Context, d phototask.Digest) error {
 	if err := mailer.ValidateAddress(d.Email); err != nil {
@@ -179,26 +190,28 @@ func (s *Service) send(ctx context.Context, d phototask.Digest) error {
 	if err := s.mail.Enqueue(ctx, s.exec, mail); err != nil {
 		return fmt.Errorf("scheduling the mail: %w", err)
 	}
-	if err := s.source.MarkDigested(ctx, d.UserUID, s.clock()); err != nil {
-		return fmt.Errorf("stamping the account: %w", err)
+	if err := s.source.MarkDigested(ctx, d.ProjectUID, d.UserUID, s.clock()); err != nil {
+		return fmt.Errorf("stamping the membership: %w", err)
 	}
 	return nil
 }
 
-// dataFor turns a digest into what the template needs: the person, the count,
-// the listed tasks with their links, and the link to the whole queue.
+// dataFor turns a digest into what the template needs: the person, the
+// project's name, the count, the listed tasks with their links, and the link to
+// the whole queue — every link inside the project (/p/<slug>/…).
 func (s *Service) dataFor(d phototask.Digest) mailer.TasksWaitingDigestData {
 	tasks := make([]mailer.DigestTask, 0, len(d.Tasks))
 	for _, t := range d.Tasks {
 		tasks = append(tasks, mailer.DigestTask{
-			Title: t.Title, State: string(t.State), URL: TaskURL(s.baseURL, t.UID),
+			Title: t.Title, State: string(t.State), URL: TaskURL(s.baseURL, d.ProjectSlug, t.UID),
 		})
 	}
 	return mailer.TasksWaitingDigestData{
 		DisplayName: d.DisplayName,
+		ProjectName: d.ProjectName,
 		Total:       d.Total,
 		Tasks:       tasks,
-		QueueURL:    QueueURL(s.baseURL),
+		QueueURL:    QueueURL(s.baseURL, d.ProjectSlug),
 	}
 }
 
@@ -208,15 +221,15 @@ const (
 	waitingPath = tasksPath + "?waiting=1"
 )
 
-// TaskURL is the absolute address of a task's page under base, or the
-// site-relative path when base is empty. A trailing slash on base is
-// tolerated.
-func TaskURL(base, uid string) string {
-	return strings.TrimRight(strings.TrimSpace(base), "/") + tasksPath + "/" + uid
+// TaskURL is the absolute address of a task's page inside the project slug
+// (/p/<slug>/tasks/<uid>) under base, or the site-relative path when base is
+// empty. A trailing slash on base is tolerated.
+func TaskURL(base, slug, uid string) string {
+	return strings.TrimRight(strings.TrimSpace(base), "/") + project.AppPath(slug, tasksPath+"/"+uid)
 }
 
-// QueueURL is the address of the queue filtered to what waits on the reader,
-// under base (site-relative when base is empty).
-func QueueURL(base string) string {
-	return strings.TrimRight(strings.TrimSpace(base), "/") + waitingPath
+// QueueURL is the address of the project's queue filtered to what waits on the
+// reader, under base (site-relative when base is empty).
+func QueueURL(base, slug string) string {
+	return strings.TrimRight(strings.TrimSpace(base), "/") + project.AppPath(slug, waitingPath)
 }

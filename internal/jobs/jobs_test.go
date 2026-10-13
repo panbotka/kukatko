@@ -221,24 +221,32 @@ func TestEnqueueFamilyExport_reportsOtherFailures(t *testing.T) {
 	}
 }
 
-// TestEnqueueTaskDigest_isImmediateAndUnkeyed verifies the digest enqueue maps
-// to TypeTaskDigest with no payload — one run covers everybody — and no delay:
-// the scheduler calling it has already waited for the configured hour.
-func TestEnqueueTaskDigest_isImmediateAndUnkeyed(t *testing.T) {
+// TestEnqueueTaskDigest_isImmediateAndKeyedByPair verifies the digest enqueue
+// maps to TypeTaskDigest with the (project, person) pair as its payload and no
+// delay — the scheduler calling it has already waited for the configured hour —
+// and refuses a pair with either half missing.
+func TestEnqueueTaskDigest_isImmediateAndKeyedByPair(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeEnqueuer{}
-	if err := (&Enqueuer{store: fake}).EnqueueTaskDigest(context.Background()); err != nil {
+	if err := (&Enqueuer{store: fake}).EnqueueTaskDigest(context.Background(), "pj_a", "us_a"); err != nil {
 		t.Fatalf("EnqueueTaskDigest: %v", err)
 	}
 	if fake.lastType != TypeTaskDigest {
 		t.Errorf("lastType = %q, want %q", fake.lastType, TypeTaskDigest)
 	}
-	if len(fake.lastPayload) != 0 {
-		t.Errorf("payload = %s, want none", fake.lastPayload)
+	var payload TaskDigestPayload
+	if err := json.Unmarshal(fake.lastPayload, &payload); err != nil ||
+		payload != (TaskDigestPayload{ProjectUID: "pj_a", UserUID: "us_a"}) {
+		t.Errorf("payload = %s (%v), want the pair", fake.lastPayload, err)
 	}
 	if fake.lastOpts.RunAfter != nil {
 		t.Errorf("RunAfter = %v, want nil (run at once)", *fake.lastOpts.RunAfter)
+	}
+	for _, pair := range [][2]string{{"", "us_a"}, {"pj_a", ""}} {
+		if err := (&Enqueuer{store: &fakeEnqueuer{}}).EnqueueTaskDigest(context.Background(), pair[0], pair[1]); err == nil {
+			t.Errorf("EnqueueTaskDigest(%q, %q) = nil, want a refusal", pair[0], pair[1])
+		}
 	}
 }
 
@@ -248,11 +256,11 @@ func TestEnqueueTaskDigest_isImmediateAndUnkeyed(t *testing.T) {
 func TestEnqueueTaskDigest_duplicateIsNotAnError(t *testing.T) {
 	t.Parallel()
 
-	if err := (&Enqueuer{store: &fakeEnqueuer{err: ErrDuplicate}}).EnqueueTaskDigest(context.Background()); err != nil {
+	if err := (&Enqueuer{store: &fakeEnqueuer{err: ErrDuplicate}}).EnqueueTaskDigest(context.Background(), "pj", "us"); err != nil {
 		t.Errorf("EnqueueTaskDigest with a job already queued = %v, want nil", err)
 	}
 	broken := errors.New("connection refused")
-	if err := (&Enqueuer{store: &fakeEnqueuer{err: broken}}).EnqueueTaskDigest(context.Background()); !errors.Is(err, broken) {
+	if err := (&Enqueuer{store: &fakeEnqueuer{err: broken}}).EnqueueTaskDigest(context.Background(), "pj", "us"); !errors.Is(err, broken) {
 		t.Errorf("EnqueueTaskDigest = %v, want it to wrap %v", err, broken)
 	}
 }

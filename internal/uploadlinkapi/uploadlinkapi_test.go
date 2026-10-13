@@ -58,7 +58,7 @@ type fakeStore struct {
 }
 
 // Create records in and returns the link with the test code.
-func (f *fakeStore) Create(_ context.Context, in uploadlink.NewLink, entry audit.Entry) (uploadlink.Link, string, error) {
+func (f *fakeStore) Create(_ context.Context, _ string, in uploadlink.NewLink, entry audit.Entry) (uploadlink.Link, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.createErr != nil {
@@ -70,7 +70,7 @@ func (f *fakeStore) Create(_ context.Context, in uploadlink.NewLink, entry audit
 }
 
 // Get returns the link when its UID matches.
-func (f *fakeStore) Get(_ context.Context, uid string) (uploadlink.Link, error) {
+func (f *fakeStore) Get(_ context.Context, _, uid string) (uploadlink.Link, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !f.hasLink || f.link.UID != uid {
@@ -90,7 +90,7 @@ func (f *fakeStore) ByCode(_ context.Context, code string) (uploadlink.Link, err
 }
 
 // List records the creator scope and returns the link.
-func (f *fakeStore) List(_ context.Context, creatorUID string) ([]uploadlink.Link, error) {
+func (f *fakeStore) List(_ context.Context, _, creatorUID string) ([]uploadlink.Link, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.listedFor = &creatorUID
@@ -101,7 +101,7 @@ func (f *fakeStore) List(_ context.Context, creatorUID string) ([]uploadlink.Lin
 }
 
 // Extend records the new expiry.
-func (f *fakeStore) Extend(_ context.Context, _ string, expiresAt time.Time, entry audit.Entry) (uploadlink.Link, error) {
+func (f *fakeStore) Extend(_ context.Context, _, _ string, expiresAt time.Time, entry audit.Entry) (uploadlink.Link, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.link.RevokedAt != nil {
@@ -113,7 +113,7 @@ func (f *fakeStore) Extend(_ context.Context, _ string, expiresAt time.Time, ent
 }
 
 // Revoke marks the link revoked.
-func (f *fakeStore) Revoke(_ context.Context, _ string, entry audit.Entry) (uploadlink.Link, error) {
+func (f *fakeStore) Revoke(_ context.Context, _, _ string, entry audit.Entry) (uploadlink.Link, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.revoked, f.entries = true, append(f.entries, entry)
@@ -124,7 +124,7 @@ func (f *fakeStore) Revoke(_ context.Context, _ string, entry audit.Entry) (uplo
 
 // RestoreCode stores code when it is the test code, as the real store does
 // when the hash matches.
-func (f *fakeStore) RestoreCode(_ context.Context, _, code string, entry audit.Entry) (uploadlink.Link, error) {
+func (f *fakeStore) RestoreCode(_ context.Context, _, _, code string, entry audit.Entry) (uploadlink.Link, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.link.RevokedAt != nil {
@@ -138,7 +138,7 @@ func (f *fakeStore) RestoreCode(_ context.Context, _, code string, entry audit.E
 }
 
 // RotateCode replaces the code with rotatedCode.
-func (f *fakeStore) RotateCode(_ context.Context, _ string, entry audit.Entry) (uploadlink.Link, error) {
+func (f *fakeStore) RotateCode(_ context.Context, _, _ string, entry audit.Entry) (uploadlink.Link, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.link.RevokedAt != nil {

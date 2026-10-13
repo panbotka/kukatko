@@ -225,12 +225,16 @@ type DigestTask struct {
 	URL   string
 }
 
-// TasksWaitingDigestData is what the daily digest needs: whom to greet, how
-// many tasks wait on them in total, the first of those tasks (the caller decides
-// how many; the template says "and N more" for the rest) and the link to the
-// full list.
+// TasksWaitingDigestData is what the daily digest needs: whom to greet, the
+// project the tasks are in, how many tasks wait on them there in total, the
+// first of those tasks (the caller decides how many; the template says "and N
+// more" for the rest) and the link to the full list.
 type TasksWaitingDigestData struct {
 	DisplayName string
+	// ProjectName heads the task list, so a person in several projects — who
+	// gets one digest per project — knows which library each mail is about.
+	// Empty (a mail queued before projects existed) leaves the heading out.
+	ProjectName string
 	Total       int
 	Tasks       []DigestTask
 	QueueURL    string
@@ -247,6 +251,9 @@ func RenderTasksWaitingDigest(d TasksWaitingDigestData) Rendered {
 		"",
 		"v Kukátku na tebe " + waitVerb(d.Total) + " " + taskCount(d.Total) + ":",
 		"",
+	}
+	if name := strings.TrimSpace(d.ProjectName); name != "" {
+		lines = append(lines, "Projekt "+name, "")
 	}
 	for _, task := range d.Tasks {
 		lines = append(lines,

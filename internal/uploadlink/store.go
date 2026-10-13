@@ -56,7 +56,8 @@ SELECT l.uid, l.title, l.note, l.created_by,
                  WHERE la.link_uid = l.uid), '[]'::json),
        COALESCE((SELECT json_agg(json_build_object('uid', b.uid, 'name', b.name) ORDER BY b.name, b.uid)
                  FROM upload_link_labels lb JOIN labels b ON b.uid = lb.label_uid
-                 WHERE lb.link_uid = l.uid), '[]'::json)
+                 WHERE lb.link_uid = l.uid), '[]'::json),
+       l.project_id
 FROM upload_links l
 LEFT JOIN users u ON u.uid = l.created_by`
 
@@ -69,7 +70,7 @@ func scanLink(r row) (Link, error) {
 	)
 	err := r.Scan(&link.UID, &link.Title, &link.Note, &link.CreatedBy, &link.CreatorName,
 		&link.CreatedAt, &link.ExpiresAt, &link.Code, &link.RevokedAt, &link.UploadCount, &link.LastUsedAt,
-		&albums, &labels)
+		&albums, &labels, &link.ProjectUID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Link{}, ErrNotFound
 	}
@@ -85,13 +86,20 @@ func scanLink(r row) (Link, error) {
 	return link, nil
 }
 
-// Get returns the link with uid, or ErrNotFound.
-func (s *Store) Get(ctx context.Context, uid string) (Link, error) {
-	return scanLink(s.pool.QueryRow(ctx, selectLinkSQL+" WHERE l.uid = $1", uid))
+// Get returns the link with uid in the project projectUID, or ErrNotFound —
+// also for another project's link, which is answered exactly like one that does
+// not exist. An empty projectUID is ErrNoProject.
+func (s *Store) Get(ctx context.Context, projectUID, uid string) (Link, error) {
+	if projectUID == "" {
+		return Link{}, ErrNoProject
+	}
+	return scanLink(s.pool.QueryRow(ctx, selectLinkSQL+" WHERE l.uid = $1 AND l.project_id = $2", uid, projectUID))
 }
 
-// ByCode returns the link whose short code is code, whatever its state, or
-// ErrNotFound. A code of the wrong shape is ErrNotFound without a query. The
+// ByCode returns the link whose short code is code, whatever its state and in
+// whichever project it is, or ErrNotFound. It is the instance-level lookup of
+// the public /u/{code} routes, which learn the project from the returned
+// Link.ProjectUID. A code of the wrong shape is ErrNotFound without a query. The
 // lookup goes through code_hash, so a pre-0091 link whose code was never
 // restored resolves exactly like one whose code is stored.
 func (s *Store) ByCode(ctx context.Context, code string) (Link, error) {
@@ -101,12 +109,17 @@ func (s *Store) ByCode(ctx context.Context, code string) (Link, error) {
 	return scanLink(s.pool.QueryRow(ctx, selectLinkSQL+" WHERE l.code_hash = $1", HashSecret(code)))
 }
 
-// List returns links newest first: those created by creatorUID, or every link
-// when creatorUID is empty (the administrator's view). No links yield an empty,
-// non-nil slice.
-func (s *Store) List(ctx context.Context, creatorUID string) ([]Link, error) {
-	query := selectLinkSQL + " WHERE ($1 = '' OR l.created_by = $1) ORDER BY l.created_at DESC, l.uid"
-	rows, err := s.pool.Query(ctx, query, creatorUID)
+// List returns the project's links newest first: those created by creatorUID,
+// or every link of the project when creatorUID is empty (the administrator's
+// view). No links yield an empty, non-nil slice; an empty projectUID is
+// ErrNoProject.
+func (s *Store) List(ctx context.Context, projectUID, creatorUID string) ([]Link, error) {
+	if projectUID == "" {
+		return nil, ErrNoProject
+	}
+	query := selectLinkSQL + " WHERE l.project_id = $2 AND ($1::text = '' OR l.created_by = $1::text)" +
+		" ORDER BY l.created_at DESC, l.uid"
+	rows, err := s.pool.Query(ctx, query, creatorUID, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("uploadlink: listing links: %w", err)
 	}
@@ -142,20 +155,25 @@ func (in NewLink) Validate() error {
 	return nil
 }
 
-// insertLinkSQL inserts a link unless its code hash collides, in which case it
-// returns no row and Create draws another code.
+// insertLinkSQL inserts a link into the project $8 unless its code hash
+// collides, in which case it returns no row and Create draws another code.
 const insertLinkSQL = `
-INSERT INTO upload_links (uid, code_hash, code, title, note, created_by, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO upload_links (uid, code_hash, code, title, note, created_by, expires_at, project_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (code_hash) DO NOTHING
 RETURNING uid`
 
-// Create stores the link in describes and returns it together with its
-// plaintext code, which the link also keeps readable (Link.Code). The link, its
-// targets and entry (whose TargetUID is stamped with the new link's UID) commit
-// together. It returns the Validate errors and ErrTargetNotFound for an album or
-// label that does not exist.
-func (s *Store) Create(ctx context.Context, in NewLink, entry audit.Entry) (Link, string, error) {
+// Create stores the link in describes in the project projectUID and returns it
+// together with its plaintext code, which the link also keeps readable
+// (Link.Code). The link, its targets and entry (whose TargetUID is stamped with
+// the new link's UID, ProjectUID defaulted to the project) commit together. It
+// returns ErrNoProject for an empty projectUID, the Validate errors and
+// ErrTargetNotFound for an album or label that does not exist in the project —
+// another project's is refused exactly like a missing one, nothing written.
+func (s *Store) Create(ctx context.Context, projectUID string, in NewLink, entry audit.Entry) (Link, string, error) {
+	if projectUID == "" {
+		return Link{}, "", ErrNoProject
+	}
 	if err := in.Validate(); err != nil {
 		return Link{}, "", err
 	}
@@ -165,29 +183,30 @@ func (s *Store) Create(ctx context.Context, in NewLink, entry audit.Entry) (Link
 	}
 	var code string
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
-		if code, err = insertLink(ctx, tx, uid, in); err != nil {
+		if code, err = insertLink(ctx, tx, projectUID, uid, in); err != nil {
 			return err
 		}
-		if err := insertTargets(ctx, tx, uid, in); err != nil {
+		if err := insertTargets(ctx, tx, projectUID, uid, in); err != nil {
 			return err
 		}
 		entry.TargetType = TargetType
 		entry.TargetUID = uid
-		return audit.Write(ctx, tx, entry)
+		return audit.Write(ctx, tx, inProject(entry, projectUID))
 	})
 	if err != nil {
 		return Link{}, "", err
 	}
-	link, err := s.Get(ctx, uid)
+	link, err := s.Get(ctx, projectUID, uid)
 	if err != nil {
 		return Link{}, "", err
 	}
 	return link, code, nil
 }
 
-// insertLink inserts the link row on tx under a fresh code, redrawing the code
-// on the (astronomically unlikely) collision, and returns the plaintext code.
-func insertLink(ctx context.Context, tx pgx.Tx, uid string, in NewLink) (string, error) {
+// insertLink inserts the link row into projectUID on tx under a fresh code,
+// redrawing the code on the (astronomically unlikely) collision, and returns
+// the plaintext code.
+func insertLink(ctx context.Context, tx pgx.Tx, projectUID, uid string, in NewLink) (string, error) {
 	for range codeAttempts {
 		code, err := NewCode()
 		if err != nil {
@@ -195,7 +214,7 @@ func insertLink(ctx context.Context, tx pgx.Tx, uid string, in NewLink) (string,
 		}
 		var got string
 		err = tx.QueryRow(ctx, insertLinkSQL, uid, HashSecret(code), code, in.Title, in.Note,
-			in.CreatedBy, in.ExpiresAt).Scan(&got)
+			in.CreatedBy, in.ExpiresAt, projectUID).Scan(&got)
 		if errors.Is(err, pgx.ErrNoRows) {
 			continue
 		}
@@ -207,20 +226,42 @@ func insertLink(ctx context.Context, tx pgx.Tx, uid string, in NewLink) (string,
 	return "", errors.New("uploadlink: could not draw a unique code")
 }
 
+// insertAlbumTargetSQL and insertLabelTargetSQL file one target of the link $1
+// only when the album or label $2 belongs to the link's project $3: another
+// project's row inserts nothing, which insertTargets reports as
+// ErrTargetNotFound, exactly like a missing one.
+const (
+	insertAlbumTargetSQL = `INSERT INTO upload_link_albums (link_uid, album_uid)
+SELECT $1, a.uid FROM albums a WHERE a.uid = $2 AND a.project_id = $3`
+	insertLabelTargetSQL = `INSERT INTO upload_link_labels (link_uid, label_uid)
+SELECT $1, b.uid FROM labels b WHERE b.uid = $2 AND b.project_id = $3`
+)
+
 // insertTargets stores the link's album and label targets on tx, translating a
-// missing album or label into ErrTargetNotFound.
-func insertTargets(ctx context.Context, tx pgx.Tx, uid string, in NewLink) error {
+// missing album or label — or one of another project — into ErrTargetNotFound.
+func insertTargets(ctx context.Context, tx pgx.Tx, projectUID, uid string, in NewLink) error {
 	for _, albumUID := range uniqueNonEmpty(in.AlbumUIDs) {
-		if _, err := tx.Exec(ctx,
-			"INSERT INTO upload_link_albums (link_uid, album_uid) VALUES ($1, $2)", uid, albumUID); err != nil {
-			return translateTargetFK(err)
+		if err := insertTarget(ctx, tx, insertAlbumTargetSQL, uid, albumUID, projectUID); err != nil {
+			return err
 		}
 	}
 	for _, labelUID := range uniqueNonEmpty(in.LabelUIDs) {
-		if _, err := tx.Exec(ctx,
-			"INSERT INTO upload_link_labels (link_uid, label_uid) VALUES ($1, $2)", uid, labelUID); err != nil {
-			return translateTargetFK(err)
+		if err := insertTarget(ctx, tx, insertLabelTargetSQL, uid, labelUID, projectUID); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// insertTarget runs one target insert, mapping "no row of the project" onto
+// ErrTargetNotFound.
+func insertTarget(ctx context.Context, tx pgx.Tx, query, linkUID, targetUID, projectUID string) error {
+	tag, err := tx.Exec(ctx, query, linkUID, targetUID, projectUID)
+	if err != nil {
+		return translateTargetFK(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrTargetNotFound
 	}
 	return nil
 }
@@ -235,18 +276,24 @@ func translateTargetFK(err error) error {
 	return fmt.Errorf("uploadlink: inserting target: %w", err)
 }
 
-// Extend moves the expiry of the link with uid to expiresAt and returns the
-// updated link. The change and entry (stamped with the old and new expiry)
-// commit together. It returns ErrNotFound for an unknown link and ErrRevoked for
-// a revoked one — revocation is final.
-func (s *Store) Extend(ctx context.Context, uid string, expiresAt time.Time, entry audit.Entry) (Link, error) {
+// Extend moves the expiry of the project's link with uid to expiresAt and
+// returns the updated link. The change and entry (stamped with the old and new
+// expiry) commit together. It returns ErrNotFound for an unknown link or one of
+// another project and ErrRevoked for a revoked one — revocation is final.
+func (s *Store) Extend(
+	ctx context.Context, projectUID, uid string, expiresAt time.Time, entry audit.Entry,
+) (Link, error) {
+	if projectUID == "" {
+		return Link{}, ErrNoProject
+	}
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		var (
 			old     time.Time
 			revoked *time.Time
 		)
-		err := tx.QueryRow(ctx, "SELECT expires_at, revoked_at FROM upload_links WHERE uid = $1 FOR UPDATE",
-			uid).Scan(&old, &revoked)
+		err := tx.QueryRow(ctx,
+			"SELECT expires_at, revoked_at FROM upload_links WHERE uid = $1 AND project_id = $2 FOR UPDATE",
+			uid, projectUID).Scan(&old, &revoked)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -263,21 +310,26 @@ func (s *Store) Extend(ctx context.Context, uid string, expiresAt time.Time, ent
 		entry.Details = withDetails(entry.Details, map[string]any{
 			"old_expires_at": old.UTC(), "new_expires_at": expiresAt.UTC(),
 		})
-		return audit.Write(ctx, tx, entry)
+		return audit.Write(ctx, tx, inProject(entry, projectUID))
 	})
 	if err != nil {
 		return Link{}, err
 	}
-	return s.Get(ctx, uid)
+	return s.Get(ctx, projectUID, uid)
 }
 
-// Revoke revokes the link with uid for good and returns it. Revoking an already
-// revoked link changes nothing and writes no audit entry; otherwise the change
-// and entry commit together. It returns ErrNotFound for an unknown link.
-func (s *Store) Revoke(ctx context.Context, uid string, entry audit.Entry) (Link, error) {
+// Revoke revokes the project's link with uid for good and returns it. Revoking
+// an already revoked link changes nothing and writes no audit entry; otherwise
+// the change and entry commit together. It returns ErrNotFound for an unknown
+// link or one of another project.
+func (s *Store) Revoke(ctx context.Context, projectUID, uid string, entry audit.Entry) (Link, error) {
+	if projectUID == "" {
+		return Link{}, ErrNoProject
+	}
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		var revoked *time.Time
-		err := tx.QueryRow(ctx, "SELECT revoked_at FROM upload_links WHERE uid = $1 FOR UPDATE", uid).Scan(&revoked)
+		err := tx.QueryRow(ctx, "SELECT revoked_at FROM upload_links WHERE uid = $1 AND project_id = $2 FOR UPDATE",
+			uid, projectUID).Scan(&revoked)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -291,12 +343,20 @@ func (s *Store) Revoke(ctx context.Context, uid string, entry audit.Entry) (Link
 			return fmt.Errorf("uploadlink: revoking link: %w", err)
 		}
 		entry.TargetType, entry.TargetUID = TargetType, uid
-		return audit.Write(ctx, tx, entry)
+		return audit.Write(ctx, tx, inProject(entry, projectUID))
 	})
 	if err != nil {
 		return Link{}, err
 	}
-	return s.Get(ctx, uid)
+	return s.Get(ctx, projectUID, uid)
+}
+
+// inProject returns entry with its ProjectUID defaulted to projectUID.
+func inProject(entry audit.Entry, projectUID string) audit.Entry {
+	if entry.ProjectUID == "" {
+		entry.ProjectUID = projectUID
+	}
+	return entry
 }
 
 // inTx runs fn in a transaction and commits it, rolling back when fn fails.

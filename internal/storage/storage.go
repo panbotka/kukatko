@@ -27,6 +27,8 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path"
+	"strings"
 	"time"
 )
 
@@ -124,6 +126,33 @@ type Storage interface {
 	// cleanup is never nil — it is a no-op even when Materialize fails — and is
 	// safe to call more than once.
 	Materialize(ctx context.Context, relPath string) (path string, cleanup func(), err error)
+}
+
+// PrefixStorer is Store under a key prefix: the original lands at
+// <prefix>/YYYY/MM/<name> instead of YYYY/MM/<name>, with the same collision
+// and ErrAlreadyExists rules applied inside the prefix only. It is how a
+// project with its own storage prefix ("projects/<uid>/") keeps its originals
+// apart from every other project's, so two projects never share a key. Both
+// backends implement it (*FS and *R2); an empty prefix is plain Store.
+//
+// It is deliberately not part of Storage, for the reason KeyLister gives: the
+// fakes of every consumer would have to grow it. The upload pipeline
+// type-asserts for it and refuses a prefixed upload on a store that cannot.
+type PrefixStorer interface {
+	// StoreUnder is Store with the key under prefix.
+	StoreUnder(
+		ctx context.Context, src io.Reader, prefix string, takenAt time.Time, originalName string,
+	) (StoredFile, error)
+}
+
+// prefixedDir returns relDir under prefix, the prefix confined to the store
+// (no "..", no leading or trailing slash); an empty prefix leaves relDir as is.
+func prefixedDir(prefix, relDir string) string {
+	clean := strings.Trim(confine(prefix), "/")
+	if clean == "" {
+		return relDir
+	}
+	return path.Join(clean, relDir)
 }
 
 // KeyLister enumerates every key a store holds, whether or not the catalogue

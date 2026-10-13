@@ -37,9 +37,10 @@ import (
 // Summarizer produces the digest for one account and stamps that account's visit
 // in the same call. whatsnew.Store satisfies it.
 type Summarizer interface {
-	// Summary returns the digest for userUID as of now, advancing the visit
-	// bookkeeping. It returns whatsnew.ErrUserNotFound if the account is gone.
-	Summary(ctx context.Context, userUID string, now time.Time) (whatsnew.Summary, error)
+	// Summary returns the digest of the project projectUID for userUID as of
+	// now, advancing that membership's visit bookkeeping. It returns
+	// whatsnew.ErrUserNotFound if the account has no membership to stamp.
+	Summary(ctx context.Context, projectUID, userUID string, now time.Time) (whatsnew.Summary, error)
 }
 
 // API exposes the what's-new endpoint over HTTP. The auth guard is supplied by
@@ -76,22 +77,22 @@ func NewAPI(cfg Config) *API {
 // the API base path (for example /api/v1). The route requires an authenticated
 // user of any role:
 //
-//	GET /whats-new  digest of the library since the caller's previous visit
+//	GET /whats-new  digest of the project since the caller's previous visit to it
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireAuth).Get("/whats-new", a.handleGet)
 }
 
-// handleGet returns the caller's digest and stamps their visit. An account that
-// vanished mid-request is reported as an empty digest rather than an error: the
-// request is already unauthenticated in every way that matters, and the panel
-// has nothing to say either way.
+// handleGet returns the caller's digest of the request's project and stamps
+// their visit to it. An account that vanished mid-request — or a maintainer
+// without a membership of the project — is reported as an empty digest rather
+// than an error: the panel has nothing to say either way.
 func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	summary, err := a.store.Summary(r.Context(), user.UID, a.now())
+	summary, err := a.store.Summary(r.Context(), auth.ProjectUIDFromContext(r.Context()), user.UID, a.now())
 	if errors.Is(err, whatsnew.ErrUserNotFound) {
 		writeJSON(w, http.StatusOK, whatsnew.Summary{})
 		return

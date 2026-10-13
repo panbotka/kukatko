@@ -533,7 +533,7 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	if !a.requireTaskScope(w, r, params) {
 		return
 	}
-	notices := applyMeTokens(&params, user)
+	notices := applyMeTokens(&params, user, auth.LinkedSubjectFromContext(r.Context()))
 	a.writeFavoritePage(w, r, user.UID, params, pageHints{unknown: unknown, notices: notices})
 }
 
@@ -608,7 +608,7 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 	// Scope the per-user rating filters, the query language's per-user filters
 	// and the rating sort to the caller.
 	params.RatedBy = &user.UID
-	notices := applyMeTokens(&params, user)
+	notices := applyMeTokens(&params, user, auth.LinkedSubjectFromContext(r.Context()))
 	hints := pageHints{unknown: unknown, notices: notices}
 	// The ranked search matches free text through the full-text vector; the
 	// substring filter and its negations belong to the list path only.

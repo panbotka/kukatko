@@ -25,7 +25,7 @@ type fakeStore struct {
 }
 
 // Summary records the call and returns an empty digest.
-func (f *fakeStore) Summary(context.Context, string, time.Time) (whatsnew.Summary, error) {
+func (f *fakeStore) Summary(context.Context, string, string, time.Time) (whatsnew.Summary, error) {
 	f.calls++
 	return whatsnew.Summary{}, nil
 }

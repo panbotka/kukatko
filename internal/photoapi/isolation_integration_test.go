@@ -226,3 +226,38 @@ func TestPhotoList_foreignTaskScopeIsMissing(t *testing.T) {
 		t.Fatalf("B's task listing = %d %+v, want 200 and B's photo", own.StatusCode, page.Photos)
 	}
 }
+
+// TestPersonMe_resolvesTheProjectsOwnLink makes A's member a member of B as
+// well, linked to A's person in A and to B's person in B, and asks both
+// prefixes for `person:me`: each answers with its own project's photo of its
+// own person. Unlinked in B, the same account gets nothing there and the
+// reason, however it is linked in A — the link is a fact about one project.
+func TestPersonMe_resolvesTheProjectsOwnLink(t *testing.T) {
+	e := newEnv(t)
+	pool := e.db.Pool()
+	f := projecttest.Seed(t, pool)
+	link := func(projectUID, subjectUID any) {
+		t.Helper()
+		if _, err := pool.Exec(t.Context(), `INSERT INTO project_members (project_uid, user_uid, role, approved_at, subject_uid)
+			VALUES ($1, $2, 'viewer', now(), $3)
+			ON CONFLICT (project_uid, user_uid) DO UPDATE SET subject_uid = EXCLUDED.subject_uid`,
+			projectUID, f.A.UserUID, subjectUID); err != nil {
+			t.Fatalf("linking the member in %v: %v", projectUID, err)
+		}
+	}
+	link(f.A.ProjectUID, f.A.SubjectUID)
+	link(f.B.ProjectUID, nil)
+	client := f.ClientFor(t, e.server, projecttest.SideA)
+	query := "photos?q=" + url.QueryEscape("person:me")
+
+	assertBodyHas(t, f.Get(t, client, f.PathFor(projecttest.SideA, query)), f.A.PhotoUID)
+	assertBodyHas(t, f.Get(t, client, f.PathFor(projecttest.SideB, query)), "person_me_unlinked")
+
+	link(f.B.ProjectUID, f.B.SubjectUID)
+	inB := f.Get(t, client, f.PathFor(projecttest.SideB, query))
+	f.AssertListExcludes(t, client, f.PathFor(projecttest.SideB, query), f.A.PhotoUID)
+	assertBodyHas(t, inB, f.B.PhotoUID)
+	if total := decodeTotal(t, f.Get(t, client, f.PathFor(projecttest.SideA, query))); total != 1 {
+		t.Errorf("person:me in A: total = %d, want 1 — A's photo of A's person only", total)
+	}
+}

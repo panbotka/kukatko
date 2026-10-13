@@ -378,7 +378,7 @@ func TestPicture_theLinkedSubjectIsTheDefault(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("creating the marker: %v", err)
 	}
-	if _, err := env.authStore.SetUserSubject(t.Context(), uid, &subject.UID); err != nil {
+	if _, err := env.authStore.SetUserSubject(t.Context(), "", uid, &subject.UID); err != nil {
 		t.Fatalf("linking the account: %v", err)
 	}
 

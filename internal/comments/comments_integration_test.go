@@ -435,7 +435,7 @@ func (f *fixture) makeSubject(t *testing.T, uid, name, coverPhotoUID string) str
 // linkUser points an account at a person of the library.
 func (f *fixture) linkUser(t *testing.T, userUID, subjectUID string) {
 	t.Helper()
-	if _, err := f.users.SetUserSubject(context.Background(), userUID, &subjectUID); err != nil {
+	if _, err := f.users.SetUserSubject(context.Background(), "", userUID, &subjectUID); err != nil {
 		t.Fatalf("linking %s to %s: %v", userUID, subjectUID, err)
 	}
 }

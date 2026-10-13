@@ -242,6 +242,16 @@ type Request struct {
 	// UploadedBy is the UID of the authenticated uploader (empty for
 	// anonymous/system imports).
 	UploadedBy string
+	// ProjectUID is the project the photo is catalogued in: the dedup looks for
+	// the same bytes in that project only, and the row is created there. Empty
+	// is the transition default — the bootstrap project, with the dedup lookup
+	// it always had — until every caller passes its project.
+	ProjectUID string
+	// StoragePrefix is that project's object-store prefix ("" for the bootstrap
+	// project, "projects/<uid>/" for every other one); the original's key is
+	// published under it, so two projects never share a key. A non-empty prefix
+	// needs a store that implements storage.PrefixStorer.
+	StoragePrefix string
 	// Sidecar is the metadata an export wrote *beside* the file (a Google Takeout
 	// JSON, an XMP), already read by the caller; nil when the file has none. It
 	// fills what the file's own EXIF does not carry — which, for a Takeout export
@@ -285,7 +295,7 @@ func (s *Service) IngestFile(ctx context.Context, src io.Reader, req Request) Fi
 		return errorResult(req.Filename, err)
 	}
 
-	if dup, ok := s.existingDuplicate(ctx, req.Filename, staged.hash); ok {
+	if dup, ok := s.existingDuplicate(ctx, req, staged.hash); ok {
 		return dup
 	}
 
@@ -304,12 +314,12 @@ func (s *Service) IngestFile(ctx context.Context, src io.Reader, req Request) Fi
 	}
 	applySidecar(&media, req.Sidecar)
 
-	stored, err := s.storeOriginal(ctx, staged, req.Filename, media.shared.TakenAt)
+	stored, err := s.storeOriginal(ctx, staged, req, media.shared.TakenAt)
 	if err != nil {
 		return errorResult(req.Filename, err)
 	}
 
-	photo, dup, err := s.catalogue(ctx, req.Filename, stored, media, req.UploadedBy)
+	photo, dup, err := s.catalogue(ctx, req, stored, media)
 	if err != nil {
 		return errorResult(req.Filename, err)
 	}
@@ -384,13 +394,25 @@ func (s *Service) stage(ctx context.Context, src io.Reader) (*stagedFile, error)
 // is an optimisation: the authoritative dedup is the file_hash unique constraint
 // at insert time, which also covers the concurrent-upload race this check cannot
 // see.
-func (s *Service) existingDuplicate(ctx context.Context, filename, hash string) (FileResult, bool) {
-	existing, err := s.photos.GetByFileHash(ctx, hash)
+//
+// The lookup is confined to req's project when it names one: the same bytes in
+// another project are not a duplicate, they become a photo of their own.
+func (s *Service) existingDuplicate(ctx context.Context, req Request, hash string) (FileResult, bool) {
+	existing, err := s.byFileHash(ctx, req.ProjectUID, hash)
 	if err != nil {
 		return FileResult{}, false
 	}
 	s.completeDuplicate(ctx, existing)
-	return duplicateResult(filename, existing.UID), true
+	return duplicateResult(req.Filename, existing.UID), true
+}
+
+// byFileHash returns the photo with hash in projectUID, or — for the
+// transition's empty project — in whichever project holds it.
+func (s *Service) byFileHash(ctx context.Context, projectUID, hash string) (photos.Photo, error) {
+	if projectUID == "" {
+		return s.photos.GetByFileHash(ctx, hash) //nolint:wrapcheck // callers only test for success
+	}
+	return s.photos.GetByFileHashInProject(ctx, projectUID, hash) //nolint:wrapcheck // callers only test for success
 }
 
 // completeDuplicate finishes the processing of an already-catalogued photo that
@@ -433,8 +455,12 @@ func (s *Service) completeDuplicate(ctx context.Context, photo photos.Photo) {
 // the photo's capture month (or the import month when unknown). A storage
 // ErrAlreadyExists is treated as success: the byte-identical file is already in
 // place and the catalogue step decides whether it is a duplicate.
+//
+// A request naming a storage prefix publishes under it (storage.PrefixStorer);
+// a store that cannot is refused rather than given the unprefixed key, which
+// another project could share.
 func (s *Service) storeOriginal(
-	ctx context.Context, staged *stagedFile, filename string, takenAt *time.Time,
+	ctx context.Context, staged *stagedFile, req Request, takenAt *time.Time,
 ) (storage.StoredFile, error) {
 	file, err := os.Open(staged.path) //nolint:gosec // G304: staged.path is our own freshly created temp file.
 	if err != nil {
@@ -446,7 +472,16 @@ func (s *Service) storeOriginal(
 	if takenAt != nil {
 		when = *takenAt
 	}
-	stored, err := s.storage.Store(ctx, file, when, filename)
+	var stored storage.StoredFile
+	if req.StoragePrefix == "" {
+		stored, err = s.storage.Store(ctx, file, when, req.Filename)
+	} else {
+		prefixed, ok := s.storage.(storage.PrefixStorer)
+		if !ok {
+			return storage.StoredFile{}, errors.New("ingest: the store cannot publish under a project prefix")
+		}
+		stored, err = prefixed.StoreUnder(ctx, file, req.StoragePrefix, when, req.Filename)
+	}
 	if err != nil && !errors.Is(err, storage.ErrAlreadyExists) {
 		return storage.StoredFile{}, fmt.Errorf("ingest: storing original: %w", err)
 	}
@@ -458,11 +493,13 @@ func (s *Service) storeOriginal(
 // inserted duplicate), it returns a duplicate FileResult via the second return
 // value instead of an error; the photo is returned only on a genuine create.
 func (s *Service) catalogue(
-	ctx context.Context, filename string, stored storage.StoredFile, media mediaMeta, uploadedBy string,
+	ctx context.Context, req Request, stored storage.StoredFile, media mediaMeta,
 ) (photos.Photo, *FileResult, error) {
-	created, err := s.photos.Create(ctx, buildPhoto(stored, media, filename, uploadedBy))
+	photo := buildPhoto(stored, media, req.Filename, req.UploadedBy)
+	photo.ProjectID = req.ProjectUID
+	created, err := s.photos.Create(ctx, photo)
 	if errors.Is(err, photos.ErrFileHashTaken) {
-		dup := s.resolveRace(ctx, filename, stored)
+		dup := s.resolveRace(ctx, req, stored)
 		return photos.Photo{}, &dup, nil
 	}
 	if err != nil {
@@ -482,8 +519,9 @@ func (s *Service) catalogue(
 // clean duplicate result. If this upload published its own distinct hard link
 // (a different filename than the winning photo's), that now-unreferenced link
 // is removed; a shared path is left untouched so the winner's file survives.
-func (s *Service) resolveRace(ctx context.Context, filename string, stored storage.StoredFile) FileResult {
-	existing, err := s.photos.GetByFileHash(ctx, stored.Hash)
+func (s *Service) resolveRace(ctx context.Context, req Request, stored storage.StoredFile) FileResult {
+	filename := req.Filename
+	existing, err := s.byFileHash(ctx, req.ProjectUID, stored.Hash)
 	if err != nil {
 		return duplicateResult(filename, "")
 	}

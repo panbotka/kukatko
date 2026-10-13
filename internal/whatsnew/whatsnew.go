@@ -26,12 +26,14 @@
 // album and comes back must see the same digest, not an empty one — otherwise
 // the panel destroys itself the moment it is used.
 //
-// So a visit is defined server-side by two timestamps on the account (migration
-// 0053_user_visits):
+// So a visit is defined server-side by two timestamps on the account's
+// membership of the project (project_members; migration 0053_user_visits put
+// them on users, 0101 copied them per project): a visit is a visit to one
+// project, and every count below reads only that project's rows.
 //
 // The digest also reports how many of the new photographs the reader is on,
 // which is the one line of it that is about them rather than about the library.
-// It needs the account's linked person (users.subject_uid), read in the same
+// It needs the member's linked person (project_members.subject_uid), read in the same
 // statement that stamps the visit — see [Store.Summary].
 //
 //   - last_seen_at is stamped to now on every summary read. It is a heartbeat:
@@ -66,7 +68,7 @@
 // proportional to what is new rather than to the size of the library; the tasks
 // line is one pass over the (small) task table. The package only reads the
 // catalogue; the sole write it makes is the visit bookkeeping on the caller's
-// own account row.
+// own membership row.
 package whatsnew
 
 import (
@@ -74,10 +76,15 @@ import (
 	"time"
 )
 
-// ErrUserNotFound indicates the account the summary was requested for no longer
-// exists — it was deleted between authenticating the request and stamping the
-// visit. Callers treat it as "no digest" rather than as a failure.
+// ErrUserNotFound indicates the account the summary was requested for has no
+// membership of the project to stamp: it was deleted between authenticating the
+// request and stamping the visit, or it is a maintainer who entered a project it
+// is not a member of. Callers treat it as "no digest" rather than as a failure.
 var ErrUserNotFound = errors.New("whatsnew: user not found")
+
+// ErrNoProject is returned when a summary is requested without a project: the
+// digest is always about one project and is never defaulted.
+var ErrNoProject = errors.New("whatsnew: no project given")
 
 // VisitGap is how long an account must go without reading the summary before the
 // next read counts as a new visit and rotates the reference point.

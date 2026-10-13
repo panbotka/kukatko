@@ -203,11 +203,11 @@ func (a *API) searchParams(c caller, in searchPhotosIn) (photos.ListParams, bool
 		return photos.ListParams{}, false,
 			fmt.Errorf("query is too complex: %d conditions exceed the limit of %d", n, query.MaxComplexity)
 	}
-	// `person:me` means the person the token's own account says it is, exactly as
-	// it does in the web UI. An agent whose user has never linked an account to a
+	// `person:me` means the person the token's own account says it is in this
+	// project, exactly as it does in the web UI. An agent whose user has never linked an account to a
 	// person gets told so: silently returning the whole library instead would be
 	// the one answer that reads as a fact and is not one.
-	if _, resolved := personme.Resolve(parsed.Filters, c.user.SubjectUID); !resolved {
+	if _, resolved := personme.Resolve(parsed.Filters, c.linked); !resolved {
 		return photos.ListParams{}, false, errPersonMeUnlinked
 	}
 	// `uploader:me` is the same promise about the other end of the photo: what

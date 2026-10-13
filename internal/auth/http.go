@@ -247,6 +247,9 @@ type principal struct {
 	// projectRole is the caller's role in project — project.RoleAdmin for a
 	// maintainer — or the zero value outside a project context.
 	projectRole project.Role
+	// projectSubject is the person the caller's membership of project names
+	// ("this is me"), or nil.
+	projectSubject *string
 }
 
 // contextKey is an unexported type for context keys defined in this package, so

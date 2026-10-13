@@ -2,15 +2,26 @@ package taskdigestjob
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/panbotka/kukatko/internal/phototask"
 )
 
 // DigestEnqueuer puts one `task_digest` job on the queue. It is satisfied by
 // *jobs.Enqueuer.
 type DigestEnqueuer interface {
-	// EnqueueTaskDigest schedules one run of the digest.
-	EnqueueTaskDigest(ctx context.Context) error
+	// EnqueueTaskDigest schedules the digest of one person in one project.
+	EnqueueTaskDigest(ctx context.Context, projectUID, userUID string) error
+}
+
+// TargetSource names the (project, person) pairs that have a digest due. It is
+// satisfied by *phototask.Store.
+type TargetSource interface {
+	// DigestTargets returns every pair with something new waiting on it.
+	DigestTargets(ctx context.Context) ([]phototask.DigestTarget, error)
 }
 
 // SchedulerConfig bundles what the daily scheduler needs.
@@ -18,8 +29,10 @@ type SchedulerConfig struct {
 	// Enabled mirrors tasks.digest.enabled AND mail.enabled: with either off
 	// the scheduler is inert.
 	Enabled bool
-	// Enqueuer schedules the job; required when Enabled.
+	// Enqueuer schedules the jobs; required when Enabled.
 	Enqueuer DigestEnqueuer
+	// Targets names the pairs to enqueue a job for; required when Enabled.
+	Targets TargetSource
 	// Hour is the UTC hour of the day (0–23) the job is enqueued at.
 	Hour int
 	// Clock reads the current time; nil uses the wall clock.
@@ -28,7 +41,9 @@ type SchedulerConfig struct {
 	Logger *slog.Logger
 }
 
-// Scheduler enqueues the `task_digest` job once a day at the configured hour.
+// Scheduler enqueues the `task_digest` jobs once a day at the configured hour:
+// one per (project, person) pair the store says has something due, so each
+// project's digest is sent, retried and stamped on its own.
 // It follows the trash retention purge's shape — a goroutine for the lifetime
 // of the server, inert when the feature is off — but enqueues a job rather
 // than doing the work, so the run is retried, observable and dead-lettered like
@@ -39,6 +54,7 @@ type SchedulerConfig struct {
 type Scheduler struct {
 	enabled  bool
 	enqueuer DigestEnqueuer
+	targets  TargetSource
 	hour     int
 	clock    func() time.Time
 	log      *slog.Logger
@@ -46,10 +62,11 @@ type Scheduler struct {
 
 // NewScheduler builds a Scheduler from cfg, defaulting Clock to the wall
 // clock and Logger to slog.Default(). It panics when enabled without an
-// enqueuer — a scheduler that fires into nothing is a wiring bug.
+// enqueuer or a target source — a scheduler that fires into nothing is a
+// wiring bug.
 func NewScheduler(cfg SchedulerConfig) *Scheduler {
-	if cfg.Enabled && cfg.Enqueuer == nil {
-		panic("taskdigestjob: NewScheduler requires an Enqueuer when enabled")
+	if cfg.Enabled && (cfg.Enqueuer == nil || cfg.Targets == nil) {
+		panic("taskdigestjob: NewScheduler requires an Enqueuer and Targets when enabled")
 	}
 	clock := cfg.Clock
 	if clock == nil {
@@ -59,7 +76,9 @@ func NewScheduler(cfg SchedulerConfig) *Scheduler {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Scheduler{enabled: cfg.Enabled, enqueuer: cfg.Enqueuer, hour: cfg.Hour, clock: clock, log: log}
+	return &Scheduler{
+		enabled: cfg.Enabled, enqueuer: cfg.Enqueuer, targets: cfg.Targets, hour: cfg.Hour, clock: clock, log: log,
+	}
 }
 
 // NextRun returns the first instant strictly after now at which the clock reads
@@ -97,15 +116,42 @@ func (s *Scheduler) Run(ctx context.Context) {
 	}
 }
 
-// tick enqueues one run and logs the outcome, swallowing the error (other than
-// to log it) so a transient queue failure never stops the loop.
+// tick enqueues one job per due (project, person) pair and logs the outcome,
+// swallowing errors (other than to log them) so a transient failure never
+// stops the loop. A failed enqueue of one pair does not keep the others from
+// theirs.
 func (s *Scheduler) tick(ctx context.Context) {
-	if err := s.enqueuer.EnqueueTaskDigest(ctx); err != nil {
+	enqueued, err := s.Tick(ctx)
+	if err != nil {
 		if ctx.Err() != nil {
 			return
 		}
-		s.log.WarnContext(ctx, "task digest: enqueue failed", slog.String("error", err.Error()))
+		s.log.WarnContext(ctx, "task digest: enqueue failed", slog.Int("enqueued", enqueued),
+			slog.String("error", err.Error()))
 		return
 	}
-	s.log.InfoContext(ctx, "task digest: job enqueued")
+	s.log.InfoContext(ctx, "task digest: jobs enqueued", slog.Int("enqueued", enqueued))
+}
+
+// Tick enqueues one `task_digest` job for every (project, person) pair with a
+// digest due and returns how many it enqueued (a pair already queued counts:
+// the enqueue is a no-op for it). It goes on past a failed pair and returns
+// the failures joined.
+func (s *Scheduler) Tick(ctx context.Context) (int, error) {
+	targets, err := s.targets.DigestTargets(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("taskdigestjob: reading who is due: %w", err)
+	}
+	var (
+		enqueued int
+		errs     []error
+	)
+	for _, target := range targets {
+		if err := s.enqueuer.EnqueueTaskDigest(ctx, target.ProjectUID, target.UserUID); err != nil {
+			errs = append(errs, fmt.Errorf("enqueuing the digest of %s in %s: %w", target.UserUID, target.ProjectUID, err))
+			continue
+		}
+		enqueued++
+	}
+	return enqueued, errors.Join(errs...)
 }

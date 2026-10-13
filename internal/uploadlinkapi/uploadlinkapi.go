@@ -31,22 +31,25 @@ import (
 
 // Store is the subset of uploadlink.Store the endpoints need.
 type Store interface {
-	// Create stores a link and returns it with its plaintext code.
-	Create(ctx context.Context, in uploadlink.NewLink, entry audit.Entry) (uploadlink.Link, string, error)
-	// Get returns one link by UID, or uploadlink.ErrNotFound.
-	Get(ctx context.Context, uid string) (uploadlink.Link, error)
-	// ByCode returns the link a short code names, or uploadlink.ErrNotFound.
+	// Create stores a link in a project and returns it with its plaintext code.
+	Create(
+		ctx context.Context, projectUID string, in uploadlink.NewLink, entry audit.Entry,
+	) (uploadlink.Link, string, error)
+	// Get returns one of the project's links by UID, or uploadlink.ErrNotFound.
+	Get(ctx context.Context, projectUID, uid string) (uploadlink.Link, error)
+	// ByCode returns the link a short code names, in whichever project, or
+	// uploadlink.ErrNotFound.
 	ByCode(ctx context.Context, code string) (uploadlink.Link, error)
-	// List returns the links creatorUID made, or every link for "".
-	List(ctx context.Context, creatorUID string) ([]uploadlink.Link, error)
+	// List returns the project's links creatorUID made, or all of them for "".
+	List(ctx context.Context, projectUID, creatorUID string) ([]uploadlink.Link, error)
 	// Extend moves a link's expiry.
-	Extend(ctx context.Context, uid string, expiresAt time.Time, entry audit.Entry) (uploadlink.Link, error)
+	Extend(ctx context.Context, projectUID, uid string, expiresAt time.Time, entry audit.Entry) (uploadlink.Link, error)
 	// Revoke revokes a link for good.
-	Revoke(ctx context.Context, uid string, entry audit.Entry) (uploadlink.Link, error)
+	Revoke(ctx context.Context, projectUID, uid string, entry audit.Entry) (uploadlink.Link, error)
 	// RestoreCode stores a pre-0091 link's code once it matches the stored hash.
-	RestoreCode(ctx context.Context, uid, code string, entry audit.Entry) (uploadlink.Link, error)
+	RestoreCode(ctx context.Context, projectUID, uid, code string, entry audit.Entry) (uploadlink.Link, error)
 	// RotateCode replaces a link's code with a fresh one.
-	RotateCode(ctx context.Context, uid string, entry audit.Entry) (uploadlink.Link, error)
+	RotateCode(ctx context.Context, projectUID, uid string, entry audit.Entry) (uploadlink.Link, error)
 	// ReserveUpload takes one slot of a link's file cap while the link is live,
 	// atomically; it refuses with uploadlink.ErrFull, ErrRevoked, ErrExpired or
 	// ErrNotFound.
@@ -64,6 +67,13 @@ type Ingester interface {
 	IngestFile(ctx context.Context, src io.Reader, req ingest.Request) ingest.FileResult
 }
 
+// ProjectResolver reads the project a link files into. It is satisfied by
+// *project.Store.
+type ProjectResolver interface {
+	// Get returns the project with uid, or project.ErrNotFound.
+	Get(ctx context.Context, uid string) (*project.Project, error)
+}
+
 // SidecarEnqueuer schedules a rewrite of a photo's metadata sidecar, which a
 // photo filed into new albums and labels needs. It is satisfied by jobs.Enqueuer.
 type SidecarEnqueuer interface {
@@ -77,6 +87,11 @@ type Config struct {
 	Store Store
 	// Ingest runs the uploaded files through the pipeline (required).
 	Ingest Ingester
+	// Projects resolves the project of a link the public routes found by its
+	// code: the upload is ingested into that project under its storage prefix,
+	// and a link of a deactivated project answers like an unknown one. Nil
+	// ingests into the link's project with no prefix (tests with fakes).
+	Projects ProjectResolver
 	// Sidecar reschedules the sidecar of every photo an upload filed; nil
 	// schedules none.
 	Sidecar SidecarEnqueuer
@@ -91,6 +106,10 @@ type Config struct {
 	// CurrentRole resolves the caller's role in the request's project; nil uses
 	// auth.ProjectRoleFromContext. Tests inject a fake.
 	CurrentRole func(r *http.Request) project.Role
+	// CurrentProject resolves the uid of the request's project, which every
+	// management route works in; nil uses auth.ProjectUIDFromContext. Tests
+	// inject a fake.
+	CurrentProject func(r *http.Request) string
 	// IPLimit throttles the public routes per client IP; nil throttles nothing.
 	IPLimit *ratelimit.Limiter
 	// LinkLimit throttles the uploads through one link, keyed by the link; nil
@@ -125,11 +144,13 @@ const (
 type API struct {
 	store          Store
 	ingest         Ingester
+	projects       ProjectResolver
 	sidecar        SidecarEnqueuer
 	requireCurator func(http.Handler) http.Handler
 	optionalAuth   func(http.Handler) http.Handler
 	currentUser    func(r *http.Request) (auth.User, bool)
 	currentRole    func(r *http.Request) project.Role
+	currentProject func(r *http.Request) string
 	ipLimit        *ratelimit.Limiter
 	linkLimit      *ratelimit.Limiter
 	maxFileSize    int64
@@ -146,19 +167,15 @@ type API struct {
 // whether throttling is configured.
 func NewAPI(cfg Config) *API {
 	a := &API{
-		store: cfg.Store, ingest: cfg.Ingest, sidecar: cfg.Sidecar,
+		store: cfg.Store, ingest: cfg.Ingest, projects: cfg.Projects, sidecar: cfg.Sidecar,
 		requireCurator: cfg.RequireCurator, optionalAuth: cfg.OptionalAuth,
-		currentUser: cfg.CurrentUser, currentRole: cfg.CurrentRole, ipLimit: cfg.IPLimit, linkLimit: cfg.LinkLimit,
+		currentUser: cfg.CurrentUser, currentRole: cfg.CurrentRole, currentProject: cfg.CurrentProject,
+		ipLimit: cfg.IPLimit, linkLimit: cfg.LinkLimit,
 		maxFileSize: cfg.MaxFileSize, maxUploads: cfg.MaxUploadsPerLink,
 		defaultDays: cfg.DefaultDays, maxDays: cfg.MaxDays,
 		secureCookies: cfg.SecureCookies, now: cfg.Now, log: cfg.Logger,
 	}
-	if a.currentUser == nil {
-		a.currentUser = func(r *http.Request) (auth.User, bool) { return auth.UserFromContext(r.Context()) }
-	}
-	if a.currentRole == nil {
-		a.currentRole = func(r *http.Request) project.Role { return auth.ProjectRoleFromContext(r.Context()) }
-	}
+	a.defaultCallerResolvers()
 	if a.ipLimit == nil {
 		a.ipLimit = ratelimit.New(0, 0)
 	}
@@ -180,10 +197,24 @@ func NewAPI(cfg Config) *API {
 	return a
 }
 
+// defaultCallerResolvers fills the caller resolvers cfg left nil with the
+// ones reading the request's auth context.
+func (a *API) defaultCallerResolvers() {
+	if a.currentUser == nil {
+		a.currentUser = func(r *http.Request) (auth.User, bool) { return auth.UserFromContext(r.Context()) }
+	}
+	if a.currentRole == nil {
+		a.currentRole = func(r *http.Request) project.Role { return auth.ProjectRoleFromContext(r.Context()) }
+	}
+	if a.currentProject == nil {
+		a.currentProject = func(r *http.Request) string { return auth.ProjectUIDFromContext(r.Context()) }
+	}
+}
+
 // RegisterRoutes mounts the routes onto r, which the caller has scoped under the
 // API base path (for example /api/v1):
 //
-//	GET  /upload-links                     RequireCurator   own links (an admin's: all), with their codes
+//	GET  /upload-links                     RequireCurator   own links of the project (an admin's: all), with codes
 //	POST /upload-links                     RequireCurator   create
 //	POST /upload-links/{uid}/extend        RequireCurator   creator or admin
 //	POST /upload-links/{uid}/revoke        RequireCurator   creator or admin
@@ -198,8 +229,10 @@ func NewAPI(cfg Config) *API {
 //
 // The server mounts the two halves apart: RegisterManagementRoutes with the
 // project-scoped API (under /api/v1/p/{project} and its transition alias),
-// RegisterPublicRoutes once — a public link will resolve its own project from
-// the link row.
+// where every route works in the request's project and another project's link
+// is a 404; RegisterPublicRoutes once, instance-level — a public link resolves
+// its own project from the link row (upload_links.project_id) and files the
+// upload into it, under that project's storage prefix.
 func (a *API) RegisterRoutes(r chi.Router) {
 	a.RegisterManagementRoutes(r)
 	a.RegisterPublicRoutes(r)

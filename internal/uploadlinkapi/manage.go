@@ -96,8 +96,8 @@ func canManage(user auth.User, role project.Role, link uploadlink.Link) bool {
 	return role.IsAdmin() || (link.CreatedBy != nil && *link.CreatedBy == user.UID)
 }
 
-// handleList writes the caller's links — or, for an administrator, everybody's —
-// newest first.
+// handleList writes the caller's links of the request's project — or, for an
+// administrator of it, everybody's there — newest first.
 func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	user, ok := a.currentUser(r)
 	if !ok {
@@ -108,7 +108,7 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	if a.currentRole(r).IsAdmin() {
 		creator = ""
 	}
-	links, err := a.store.List(r.Context(), creator)
+	links, err := a.store.List(r.Context(), a.currentProject(r), creator)
 	if err != nil {
 		a.serverError(w, r, "listing upload links", err)
 		return
@@ -147,7 +147,7 @@ func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
 		"title": in.Title, "album_uids": in.AlbumUIDs, "label_uids": in.LabelUIDs,
 		"expires_at": in.ExpiresAt.UTC(),
 	})
-	link, code, err := a.store.Create(r.Context(), in, entry)
+	link, code, err := a.store.Create(r.Context(), a.currentProject(r), in, entry)
 	if err != nil {
 		a.writeStoreError(w, r, "creating upload link", err)
 		return
@@ -176,7 +176,7 @@ func (a *API) handleExtend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entry := audit.FromRequest(r, user.UID).Entry(audit.ActionUploadLinkExtend, "", "", nil)
-	updated, err := a.store.Extend(r.Context(), link.UID, a.now().Add(time.Duration(days)*day), entry)
+	updated, err := a.store.Extend(r.Context(), link.ProjectUID, link.UID, a.now().Add(time.Duration(days)*day), entry)
 	if err != nil {
 		a.writeStoreError(w, r, "extending upload link", err)
 		return
@@ -194,7 +194,7 @@ func (a *API) handleRevoke(w http.ResponseWriter, r *http.Request) {
 	}
 	entry := audit.FromRequest(r, user.UID).Entry(audit.ActionUploadLinkRevoke, "", "",
 		map[string]any{"title": link.Title})
-	updated, err := a.store.Revoke(r.Context(), link.UID, entry)
+	updated, err := a.store.Revoke(r.Context(), link.ProjectUID, link.UID, entry)
 	if err != nil {
 		a.writeStoreError(w, r, "revoking upload link", err)
 		return
@@ -219,7 +219,7 @@ func (a *API) handleRestoreCode(w http.ResponseWriter, r *http.Request) {
 	}
 	entry := audit.FromRequest(r, user.UID).Entry(audit.ActionUploadLinkRestoreCode, "", "",
 		map[string]any{"title": link.Title})
-	updated, err := a.store.RestoreCode(r.Context(), link.UID, trimmed(req.Code), entry)
+	updated, err := a.store.RestoreCode(r.Context(), link.ProjectUID, link.UID, trimmed(req.Code), entry)
 	if err != nil {
 		a.writeStoreError(w, r, "restoring upload link code", err)
 		return
@@ -237,7 +237,7 @@ func (a *API) handleNewCode(w http.ResponseWriter, r *http.Request) {
 	}
 	entry := audit.FromRequest(r, user.UID).Entry(audit.ActionUploadLinkRotateCode, "", "",
 		map[string]any{"title": link.Title, "had_code": link.Code != ""})
-	updated, err := a.store.RotateCode(r.Context(), link.UID, entry)
+	updated, err := a.store.RotateCode(r.Context(), link.ProjectUID, link.UID, entry)
 	if err != nil {
 		a.writeStoreError(w, r, "replacing upload link code", err)
 		return
@@ -248,14 +248,15 @@ func (a *API) handleNewCode(w http.ResponseWriter, r *http.Request) {
 // ownedLink resolves the {uid} link for a caller who may manage it — its
 // creator or an administrator — writing the error response and returning false
 // otherwise. Somebody else's link is a 404, never a 403, so the management
-// routes do not confirm that a UID exists.
+// routes do not confirm that a UID exists; so is another project's link, which
+// the store answers exactly like a missing one.
 func (a *API) ownedLink(w http.ResponseWriter, r *http.Request) (auth.User, uploadlink.Link, bool) {
 	user, ok := a.currentUser(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return auth.User{}, uploadlink.Link{}, false
 	}
-	link, err := a.store.Get(r.Context(), chi.URLParam(r, "uid"))
+	link, err := a.store.Get(r.Context(), a.currentProject(r), chi.URLParam(r, "uid"))
 	if err != nil {
 		a.writeStoreError(w, r, "reading upload link", err)
 		return auth.User{}, uploadlink.Link{}, false

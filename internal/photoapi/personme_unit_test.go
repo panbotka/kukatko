@@ -8,14 +8,16 @@ import (
 	"github.com/panbotka/kukatko/internal/query"
 )
 
-// userLinkedTo builds a caller whose account names subjectUID as the person it
-// is; an empty subjectUID builds an unlinked one.
-func userLinkedTo(subjectUID string) auth.User {
-	u := auth.User{UID: "usr1"}
-	if subjectUID != "" {
-		u.SubjectUID = &subjectUID
+// caller is the account every case resolves the tokens for.
+var caller = auth.User{UID: "usr1"}
+
+// linkedTo returns the linked subject a membership naming subjectUID carries;
+// an empty subjectUID is an unlinked membership.
+func linkedTo(subjectUID string) *string {
+	if subjectUID == "" {
+		return nil
 	}
-	return u
+	return &subjectUID
 }
 
 // personTexts returns the value texts of the params' person filters, which is
@@ -75,7 +77,7 @@ func TestApplyMeTokens_person(t *testing.T) {
 			t.Parallel()
 			params := photos.ListParams{QueryFilters: query.Parse(tt.q).Filters}
 
-			notices := applyMeTokens(&params, userLinkedTo(tt.subjectUID))
+			notices := applyMeTokens(&params, caller, linkedTo(tt.subjectUID))
 
 			if len(notices) != len(tt.wantNotices) {
 				t.Fatalf("applyMeTokens(%q) notices = %v, want %v", tt.q, notices, tt.wantNotices)
@@ -155,7 +157,7 @@ func TestApplyMeTokens_uploader(t *testing.T) {
 			t.Parallel()
 			params := photos.ListParams{QueryFilters: query.Parse(tt.q).Filters}
 
-			notices := applyMeTokens(&params, userLinkedTo("sub123"))
+			notices := applyMeTokens(&params, caller, linkedTo("sub123"))
 
 			if len(notices) != 0 {
 				t.Errorf("applyMeTokens(%q) notices = %v, want none", tt.q, notices)

@@ -24,8 +24,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `GET /users`, `/import/*`, `/process/*` and `/mcp`.
 - **Instance-wide, mounted once without the prefix:** `/auth/*` (incl. `/auth/picture`),
   `/admin/users`, `/users/{uid}/avatar`, `/push/*`, `/jobs`, `/system`, `/backup`, `/maintenance`,
-  `/restore`, `/audit`, the public `/u/{code}` (for now against `v`; the link will name its own
-  project), plus `/metrics` and `/healthz` outside `/api/v1`.
+  `/restore`, `/audit`, the public `/u/{code}` (no prefix: **the link resolves its own project** from
+  `upload_links.project_id` and files the upload there), plus `/metrics` and `/healthz` outside
+  `/api/v1`.
 - **Unknown or foreign project:** `/api/v1/p/<slug>/…` with a slug nobody uses, a project the caller is
   no member of, or a deactivated one (non-maintainer) answers **404 `{"error":"project not found"}`**,
   byte-for-byte the same in all three cases (see *Project resolution* below).
@@ -130,8 +131,12 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   **Which person the account is:** every user payload — login, `/auth/me` and the admin listings —
   carries **`subject_uid`**, the subject of the library this account belongs to, or `null`. Unlike
   `note` it *is* in the login and `/auth/me` payloads, deliberately: the client cannot render the
-  "my photos" entry, resolve `person:me` in a link or draw the account's face without it, and it is
-  the caller's own fact about themselves. **Several accounts may name the same subject** (a shared
+  "my photos" entry or draw the account's face without it, and it is the caller's own fact about
+  themselves. `PUT /auth/subject` writes it on the account **and on the caller's membership of the
+  request's project** (the bootstrap one through the unprefixed route) when the person belongs to that
+  project; **`person:me`/`family:me` resolve the membership's link** (`project_members.subject_uid`) of
+  the project the query runs in, so the same account is a different person — or nobody — in each of its
+  projects. **Several accounts may name the same subject** (a shared
   family login and a personal one are both that person), and **deleting the subject clears the link**
   (`ON DELETE SET NULL`), so every reader must survive `null` — the common case.
   Self-service: **`PUT /auth/subject`** (`RequireAuth`, any role) with `{"subject_uid": "sub…"}` or
@@ -231,12 +236,15 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   audit entry names the new account as **both actor and target**: nobody else was involved.
   **Registering through an upload link.** The body may carry `upload_link` (a link's short code) in
   place of `secret`: a live link stands in for the shared secret — and only for it (registration must
-  still be switched on, the account is still an unapproved viewer, the same mails, pushes and audit
-  entry, whose details gain `upload_link: <link uid>`). An unknown, expired or revoked link is **403**
+  still be switched on **in the link's project**, the account is still an unapproved viewer, the same mails,
+  pushes and audit entry, whose details gain `upload_link: <link uid>`). The registration happens **in the
+  link's project**: the account becomes a member of that project only (viewer, approval pending), and that
+  project's admins (plus the maintainers) are the ones told. An unknown, expired or revoked link is **403**
   `auth: the upload link is not valid` (one answer for all three). In the account's transaction the
   photos this browser's anonymous upload session (`kukatko_upload_session` cookie, see the Upload Links
-  API) **created** through any link are attributed to the new account (`photos.uploaded_by`, only where
-  still unowned); their sidecars are rescheduled after the commit. The gate is
+  API) **created** through a link **of that project** are attributed to the new account
+  (`photos.uploaded_by`, only where still unowned; what the same browser uploaded into another project is
+  not claimed); their sidecars are rescheduled after the commit. The gate is
   `uploadlinkapi.RegistrationGate` behind the `auth.UploadLinkGate` interface.
   **`POST /admin/users/{uid}/approve` (admin) — letting a waiting account in.** No body; **200**
   returns the updated account (the admin view, `note` included) with `approved_at` filled from the
@@ -2028,8 +2036,12 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
 - **Upload Links API (`/api/v1/p/{project}`, `internal/uploadlinkapi` + `internal/uploadlink`):** short links
   (`/u/<code>`; the public `GET|POST /api/v1/u/{code}…` pair is instance-wide, only the management is
   project-scoped) through which anybody — signed in or not — uploads photos into preset albums and labels.
-  **Management (`RequireCurator`):** `GET /upload-links` → `{links:[…], default_days, max_days}`, the
-  caller's own links newest-first (an **admin/maintainer sees all**); each link is
+  **Management (`RequireCurator`, per project):** every route works in the request's project — a link is
+  created there (its albums and labels must be the project's: another project's album is the unknown
+  album's 400), listed there, and **another project's link is the 404 a missing one gets** on every
+  `{uid}` route, nothing changed. `GET /upload-links` → `{links:[…], default_days, max_days}`, the
+  caller's own links of the project newest-first (an **admin of the project / maintainer sees all of
+  them**); each link is
   `{uid,title,note,created_by,created_by_name,created_at,expires_at,revoked_at,upload_count,
   last_used_at,albums:[{uid,name}],labels:[{uid,name}],state,code?,path?}` with `state` ∈
   `active|expired|revoked`. **`code`/`path`** (`"/u/<code>"`) are present only on a link the caller
@@ -2058,7 +2070,11 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `upload_link.create|extend|revoke|restore_code|rotate_code` in its transaction (details: title,
   targets, expiry, `had_code` for a new code — never a code).
   **Public (no session; per-IP `ratelimit.upload_link` ahead of everything):** the code is 8 characters
-  from a 55-symbol unambiguous alphabet (~46 bits); a malformed one is a 404 without a lookup.
+  from a 55-symbol unambiguous alphabet (~46 bits); a malformed one is a 404 without a lookup. The routes
+  carry no project: **the link row names it** (`upload_links.project_id`) — a link whose project is
+  deactivated is the unknown link's 404 — and every file is ingested **into that project** (the dedup looks
+  for the same bytes there only; the original is stored under that project's storage prefix), filed into
+  its albums and labels and audited under it.
   `GET /u/{code}` → 200 `{title, note, albums:[names], labels:[names], expires_at}` — names only, no
   UIDs, counts, creator or photos; for an anonymous visitor (`OptionalAuth`) it also **starts the upload
   session** (sets the `kukatko_upload_session` cookie when absent), because the page then uploads several
@@ -2171,8 +2187,12 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   every non-failure case (never 404/204, one shape to parse). A store failure → 500.
   **Readable by every role, viewers included.** `since` is RFC3339 and stays **constant for the whole
   visit**, which is what makes it a stable key for the client-side dismissal.
-  **This GET writes:** reading the digest stamps the caller's visit (`users.last_seen_at`, and
-  `users.visit_reference_at` when a new visit begins — see migration `0053_user_visits.sql` and
+  **Per project:** the digest counts only the request's project — its photos, albums, named people and the
+  comments on its photos, and its tasks — and the visit is a visit **to that project**.
+  **This GET writes:** reading the digest stamps the caller's visit on their **membership** of the project
+  (`project_members.last_seen_at`, and `visit_reference_at` when a new visit begins — the `users` columns of
+  migration `0053_user_visits.sql` are a transition copy nobody writes any more; a maintainer without a
+  membership gets `has_news:false` and nothing is stamped — see
   `internal/whatsnew` in `docs/PACKAGES.md` for the two-timestamp mechanism and the **6 h** inactivity
   threshold). It must therefore be issued **once per library-home load and never polled**. Counts mirror the
   library grid (live, non-hidden, stack-primary photos; live comments; hand-curated albums; named subjects
@@ -2180,8 +2200,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   never reported back to them, while work whose actor was deleted stays news to everybody and newly named
   subjects are news to everybody because the schema records no creator for them. `albums`/`people` are capped
   at 6 links while `album_count`/`person_count` report the true totals. **`mine_photos`** counts how many of those new photos the reader themselves is on, via the
-  subject their account is linked to (`users.subject_uid`, read in the same statement that stamps the
-  visit) and a non-invalid marker. It is **0** both for an unlinked account and for a visit where none
+  subject their membership of the project is linked to (`project_members.subject_uid`, read in the same
+  statement that stamps the visit) and a non-invalid marker. It is **0** both for an unlinked account and for a visit where none
   of the new photographs was of them, and the client shows no line for it either way; being a subset of
   `photos` it can never be the only news, so it does not affect `has_news`. Mounted by `server.WithAPI` (`buildWhatsNewAPI` in `cmd/kukatko/whatsnew.go`).
 - **Notification API (`/api/v1/p/{project}` for `/notifications/*`, `/api/v1` for the instance-wide

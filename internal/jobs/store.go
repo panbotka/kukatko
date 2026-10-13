@@ -58,8 +58,9 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // 0044) keys the per-photo types on (type, payload ->> 'photo_uid'); the
 // library-wide genealogy export idx_jobs_family_export_dedup keys on the
 // payload's project_uid (migration 0106, on the type alone before it); the
-// library-wide types idx_jobs_task_digest_dedup (migration 0084) and
-// idx_jobs_notification_purge_dedup (migration 0096) key on the type alone, since
+// task digest idx_jobs_task_digest_dedup keys on the payload's project_uid and
+// user_uid (migration 0107, on the type alone before it); the library-wide
+// idx_jobs_notification_purge_dedup (migration 0096) keys on the type alone, since
 // their payloads name no photo and NULLs would otherwise be distinct. The
 // per-account tag_notify job (idx_jobs_tag_notify_dedup, migration 0089) keys
 // on the payload's user_uid for the same reason, and the per-album
