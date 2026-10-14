@@ -46,7 +46,7 @@ type source struct {
 // 10.9 GB and take the host down with it. It costs little recall — the vote rule
 // clamps at five agreeing exemplars, which hundreds supply as well as thousands.
 func (s *Service) loadSource(ctx context.Context, projectUID, subjectUID string) (source, error) {
-	sample, err := s.faces.SampleFacesBySubject(ctx, subjectUID, s.maxExemplars)
+	sample, err := s.faces.SampleFacesBySubject(ctx, projectUID, subjectUID, s.maxExemplars)
 	if err != nil {
 		return source{}, fmt.Errorf("sampling faces for subject %s: %w", subjectUID, err)
 	}

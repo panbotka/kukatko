@@ -43,7 +43,7 @@ func TestFacesLifecycle(t *testing.T) {
 		t.Fatalf("SaveFaces: %v", err)
 	}
 
-	got, err := store.ListFaces(ctx, uid)
+	got, err := store.ListFaces(ctx, project.BootstrapUID, uid)
 	if err != nil {
 		t.Fatalf("ListFaces: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestFacesLifecycle(t *testing.T) {
 	if err != nil || deleted != 2 {
 		t.Fatalf("DeleteFaces = %d, %v; want 2, nil", deleted, err)
 	}
-	if remaining, _ := store.ListFaces(ctx, uid); len(remaining) != 0 {
+	if remaining, _ := store.ListFaces(ctx, project.BootstrapUID, uid); len(remaining) != 0 {
 		t.Errorf("faces survived delete: %d", len(remaining))
 	}
 }
@@ -88,7 +88,7 @@ func TestSaveFaces_replaceIdempotent(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveFaces second: %v", err)
 	}
-	got, err := store.ListFaces(ctx, uid)
+	got, err := store.ListFaces(ctx, project.BootstrapUID, uid)
 	if err != nil || len(got) != 1 {
 		t.Fatalf("ListFaces after replace = %d faces, %v; want 1", len(got), err)
 	}
@@ -107,7 +107,7 @@ func TestSaveFaces_duplicateIndex(t *testing.T) {
 	if !errors.Is(err, vectors.ErrFaceIndexTaken) {
 		t.Fatalf("SaveFaces duplicate index = %v, want ErrFaceIndexTaken", err)
 	}
-	if got, _ := store.ListFaces(ctx, uid); len(got) != 0 {
+	if got, _ := store.ListFaces(ctx, project.BootstrapUID, uid); len(got) != 0 {
 		t.Errorf("failed SaveFaces left rows behind: %d", len(got))
 	}
 }
@@ -198,7 +198,7 @@ func TestListFacesBySubject(t *testing.T) {
 		t.Fatalf("SaveFaces p2: %v", err)
 	}
 
-	got, err := store.ListFacesBySubject(ctx, alice)
+	got, err := store.ListFacesBySubject(ctx, project.BootstrapUID, alice)
 	if err != nil {
 		t.Fatalf("ListFacesBySubject: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestListFacesBySubject(t *testing.T) {
 		t.Errorf("faces not ordered by photo_uid: %s, %s", got[0].PhotoUID, got[1].PhotoUID)
 	}
 
-	if none, _ := store.ListFacesBySubject(ctx, "su_nobody"); len(none) != 0 {
+	if none, _ := store.ListFacesBySubject(ctx, project.BootstrapUID, "su_nobody"); len(none) != 0 {
 		t.Errorf("ListFacesBySubject(nobody) = %d, want 0", len(none))
 	}
 }
@@ -234,7 +234,7 @@ func TestFacesCascadeDelete(t *testing.T) {
 	if err := photoStore.Delete(ctx, uid); err != nil {
 		t.Fatalf("Delete photo: %v", err)
 	}
-	if got, _ := store.ListFaces(ctx, uid); len(got) != 0 {
+	if got, _ := store.ListFaces(ctx, project.BootstrapUID, uid); len(got) != 0 {
 		t.Errorf("faces survived photo delete: %d", len(got))
 	}
 }
@@ -258,7 +258,7 @@ func TestSampleFacesBySubject(t *testing.T) {
 		}
 	}
 
-	all, err := store.SampleFacesBySubject(ctx, subject, 100)
+	all, err := store.SampleFacesBySubject(ctx, project.BootstrapUID, subject, 100)
 	if err != nil {
 		t.Fatalf("SampleFacesBySubject(limit 100): %v", err)
 	}
@@ -267,7 +267,7 @@ func TestSampleFacesBySubject(t *testing.T) {
 			len(all.Faces), all.Total, all.Photos)
 	}
 
-	sample, err := store.SampleFacesBySubject(ctx, subject, 4)
+	sample, err := store.SampleFacesBySubject(ctx, project.BootstrapUID, subject, 4)
 	if err != nil {
 		t.Fatalf("SampleFacesBySubject(limit 4): %v", err)
 	}
@@ -283,7 +283,7 @@ func TestSampleFacesBySubject(t *testing.T) {
 	}
 	// A sample must be spread across the ordered set, not its first rows: with a
 	// quarter of the rows kept, the last one has to come from the tail.
-	ordered, err := store.ListFacesBySubject(ctx, subject)
+	ordered, err := store.ListFacesBySubject(ctx, project.BootstrapUID, subject)
 	if err != nil {
 		t.Fatalf("ListFacesBySubject: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestSampleFacesBySubject(t *testing.T) {
 			last.PhotoUID, last.FaceIndex, tail.PhotoUID, tail.FaceIndex)
 	}
 
-	unbounded, err := store.SampleFacesBySubject(ctx, subject, 0)
+	unbounded, err := store.SampleFacesBySubject(ctx, project.BootstrapUID, subject, 0)
 	if err != nil {
 		t.Fatalf("SampleFacesBySubject(limit 0): %v", err)
 	}
@@ -303,7 +303,7 @@ func TestSampleFacesBySubject(t *testing.T) {
 		t.Errorf("limit 0 = %d faces, want all 12", len(unbounded.Faces))
 	}
 
-	none, err := store.SampleFacesBySubject(ctx, "su_nobody", 4)
+	none, err := store.SampleFacesBySubject(ctx, project.BootstrapUID, "su_nobody", 4)
 	if err != nil || len(none.Faces) != 0 || none.Total != 0 || none.Photos != 0 {
 		t.Errorf("SampleFacesBySubject(nobody) = %+v, %v; want an empty result", none, err)
 	}

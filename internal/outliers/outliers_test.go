@@ -21,7 +21,7 @@ type fakeFaces struct {
 }
 
 // ListFacesBySubject returns the canned faces and error regardless of subject.
-func (f fakeFaces) ListFacesBySubject(_ context.Context, _ string) ([]vectors.Face, error) {
+func (f fakeFaces) ListFacesBySubject(_ context.Context, _, _ string) ([]vectors.Face, error) {
 	return f.faces, f.err
 }
 

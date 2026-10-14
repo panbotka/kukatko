@@ -41,7 +41,7 @@ func TestPurgeExpired_repairsStack(t *testing.T) {
 		t.Fatalf("result = %+v, want {Purged:1 Failed:0}", res)
 	}
 
-	survivor, err := env.store.GetByUID(ctx, sibling.UID)
+	survivor, err := env.store.GetAcrossProjects(ctx, sibling.UID)
 	if err != nil {
 		t.Fatalf("sibling gone after purge: %v", err)
 	}

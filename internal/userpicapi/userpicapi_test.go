@@ -38,29 +38,23 @@ func (f fakePictures) SetPhoto(context.Context, userpic.Viewer, string) error { 
 
 func (f fakePictures) Clear(context.Context, string) error { return nil }
 
-// fakePhotos hands back one catalogued photo whatever uid is asked for.
-type fakePhotos struct{ photo photos.Photo }
+// picked is the photo record the fake chain hands over, already authorized.
+var picked = photos.Photo{UID: "p1", FileHash: "abc"}
 
-func (f fakePhotos) GetByUID(_ context.Context, uid string) (photos.Photo, error) {
-	if f.photo.UID == "" {
-		return photos.Photo{}, photos.ErrPhotoNotFound
-	}
-	f.photo.UID = uid
-	return f.photo, nil
-}
-
-// fakeRenderer stands in for the avatar renderer, recording the face box it was
-// handed so a test can prove an inherited face is cut as a face and a picked
-// photo whole.
+// fakeRenderer stands in for the avatar renderer, recording the photo and face
+// box it was handed so a test can prove the chain's record is the one rendered,
+// an inherited face is cut as a face and a picked photo whole.
 type fakeRenderer struct {
-	data []byte
-	etag string
-	face *avatar.Box
+	data  []byte
+	etag  string
+	photo photos.Photo
+	face  *avatar.Box
 }
 
 func (f *fakeRenderer) Open(
-	_ context.Context, _ photos.Photo, face *avatar.Box,
+	_ context.Context, photo photos.Photo, face *avatar.Box,
 ) (io.ReadCloser, string, error) {
+	f.photo = photo
 	f.face = face
 	return io.NopCloser(bytes.NewReader(f.data)), f.etag, nil
 }
@@ -71,12 +65,11 @@ func passThroughGuard(next http.Handler) http.Handler { return next }
 
 // route builds a router over the API and returns it with the renderer, so a test
 // can inspect what the renderer was asked for.
-func route(t *testing.T, pictures userpicapi.Pictures, photo photos.Photo) (chi.Router, *fakeRenderer) {
+func route(t *testing.T, pictures userpicapi.Pictures) (chi.Router, *fakeRenderer) {
 	t.Helper()
 	renderer := &fakeRenderer{data: []byte("rendered-jpeg"), etag: `"rendered"`}
 	api := userpicapi.NewAPI(userpicapi.Config{
 		Pictures:    pictures,
-		Photos:      fakePhotos{photo: photo},
 		Renderer:    renderer,
 		RequireAuth: passThroughGuard,
 	})
@@ -100,7 +93,7 @@ func get(t *testing.T, router chi.Router, etag string) *httptest.ResponseRecorde
 func TestAvatar_anAccountWithNoPictureIs404(t *testing.T) {
 	t.Parallel()
 
-	router, _ := route(t, fakePictures{origin: userpic.OriginNone, err: userpic.ErrNoPicture}, photos.Photo{})
+	router, _ := route(t, fakePictures{origin: userpic.OriginNone, err: userpic.ErrNoPicture})
 	if rec := get(t, router, ""); rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404 (%s)", rec.Code, rec.Body.String())
 	}
@@ -115,8 +108,7 @@ func TestAvatar_aPictureThatIsNotTheCallersStaysCacheable(t *testing.T) {
 	t.Parallel()
 
 	router, _ := route(t,
-		fakePictures{source: userpic.Source{Upload: []byte("stored")}, origin: userpic.OriginUpload},
-		photos.Photo{})
+		fakePictures{source: userpic.Source{Upload: []byte("stored")}, origin: userpic.OriginUpload})
 
 	rec := get(t, router, "")
 	if got, want := rec.Header().Get("Cache-Control"), "private, max-age=600, must-revalidate"; got != want {
@@ -129,7 +121,7 @@ func TestAvatar_anUploadIsServedFromItsStoredBytes(t *testing.T) {
 
 	stored := []byte("stored-jpeg-bytes")
 	router, renderer := route(t,
-		fakePictures{source: userpic.Source{Upload: stored}, origin: userpic.OriginUpload}, photos.Photo{})
+		fakePictures{source: userpic.Source{Upload: stored}, origin: userpic.OriginUpload})
 
 	rec := get(t, router, "")
 	if rec.Code != http.StatusOK {
@@ -162,8 +154,7 @@ func TestAvatar_aPickedPhotoIsCutWhole(t *testing.T) {
 	t.Parallel()
 
 	router, renderer := route(t,
-		fakePictures{source: userpic.Source{PhotoUID: "p1"}, origin: userpic.OriginPhoto},
-		photos.Photo{UID: "p1", FileHash: "abc"})
+		fakePictures{source: userpic.Source{PhotoUID: "p1", Photo: picked}, origin: userpic.OriginPhoto})
 
 	rec := get(t, router, "")
 	if rec.Code != http.StatusOK {
@@ -175,6 +166,9 @@ func TestAvatar_aPickedPhotoIsCutWhole(t *testing.T) {
 	if renderer.face != nil {
 		t.Errorf("a picked photo was cut to face box %+v, want the whole frame", renderer.face)
 	}
+	if renderer.photo.UID != picked.UID || renderer.photo.FileHash != picked.FileHash {
+		t.Errorf("renderer got photo %+v, want the record the chain resolved", renderer.photo)
+	}
 	if rec.Header().Get("ETag") != `"rendered"` {
 		t.Errorf("ETag = %q, want the renderer's", rec.Header().Get("ETag"))
 	}
@@ -185,8 +179,7 @@ func TestAvatar_anInheritedFaceIsCutAsAFace(t *testing.T) {
 
 	box := userpic.Box{X: 0.5, Y: 0.25, W: 0.1, H: 0.12}
 	router, renderer := route(t,
-		fakePictures{source: userpic.Source{PhotoUID: "p1", Face: &box}, origin: userpic.OriginSubject},
-		photos.Photo{UID: "p1", FileHash: "abc"})
+		fakePictures{source: userpic.Source{PhotoUID: "p1", Photo: picked, Face: &box}, origin: userpic.OriginSubject})
 
 	if rec := get(t, router, ""); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
@@ -196,23 +189,12 @@ func TestAvatar_anInheritedFaceIsCutAsAFace(t *testing.T) {
 	}
 }
 
-func TestAvatar_aPhotoThatVanishedBetweenResolveAndReadIs404(t *testing.T) {
-	t.Parallel()
-
-	router, _ := route(t,
-		fakePictures{source: userpic.Source{PhotoUID: "p1"}, origin: userpic.OriginPhoto}, photos.Photo{})
-	if rec := get(t, router, ""); rec.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want 404 (%s)", rec.Code, rec.Body.String())
-	}
-}
-
 func TestAvatar_withoutARendererAPhotoIs503ButAnUploadStillWorks(t *testing.T) {
 	t.Parallel()
 
 	build := func(source userpic.Source) chi.Router {
 		api := userpicapi.NewAPI(userpicapi.Config{
 			Pictures:    fakePictures{source: source, origin: userpic.OriginPhoto},
-			Photos:      fakePhotos{photo: photos.Photo{UID: "p1", FileHash: "abc"}},
 			RequireAuth: passThroughGuard,
 		})
 		router := chi.NewRouter()
@@ -220,7 +202,7 @@ func TestAvatar_withoutARendererAPhotoIs503ButAnUploadStillWorks(t *testing.T) {
 		return router
 	}
 
-	if rec := get(t, build(userpic.Source{PhotoUID: "p1"}), ""); rec.Code != http.StatusServiceUnavailable {
+	if rec := get(t, build(userpic.Source{PhotoUID: "p1", Photo: picked}), ""); rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503 (%s)", rec.Code, rec.Body.String())
 	}
 	if rec := get(t, build(userpic.Source{Upload: []byte("bytes")}), ""); rec.Code != http.StatusOK {

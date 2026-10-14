@@ -3,9 +3,11 @@
 package review_test
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -65,8 +67,9 @@ func plantBandCandidates(t *testing.T, pool *pgxpool.Pool, f *projecttest.Fixtur
 }
 
 // isolationService composes the review game over the real stores of pool,
-// asking about faces and outliers only.
-func isolationService(pool *pgxpool.Pool) *review.Service {
+// asking about faces and outliers only, with scope as the proof of an answer's
+// targets (the real review.NewScopeStore unless a test replaces it).
+func isolationService(pool *pgxpool.Pool, scope review.Scope) *review.Service {
 	faces := vectors.NewStore(pool)
 	peopleStore := people.NewStore(pool)
 	photoStore := photos.NewStore(pool)
@@ -87,7 +90,7 @@ func isolationService(pool *pgxpool.Pool) *review.Service {
 		Faces:    faces,
 		Feedback: feedbackStore,
 		Assigner: facematch.New(facematch.Config{Photos: photoStore, Faces: faces, People: peopleStore}),
-		Scope:    review.NewScopeStore(pool),
+		Scope:    scope,
 		Outliers: outliers.New(outliers.Config{Faces: faces, People: peopleStore, Feedback: feedbackStore}),
 		Subjects: peopleStore,
 		Photos:   photoStore,
@@ -108,7 +111,7 @@ func TestQueue_neverCrossesProjects(t *testing.T) {
 	pool := db.Pool()
 	f := projecttest.Seed(t, pool)
 	candidatesOf := plantBandCandidates(t, pool, f)
-	svc := isolationService(pool)
+	svc := isolationService(pool, review.NewScopeStore(pool))
 
 	queue := func(projectUID string) ([]string, error) {
 		res, err := svc.Queue(t.Context(), projectUID, f.A.UserUID, review.SourcePeople, 100)
@@ -144,5 +147,107 @@ func TestQueue_neverCrossesProjects(t *testing.T) {
 	}
 	if _, err := svc.Queue(t.Context(), "", f.A.UserUID, review.SourcePeople, 100); !errors.Is(err, review.ErrNoProject) {
 		t.Errorf("Queue without a project = %v, want review.ErrNoProject", err)
+	}
+}
+
+// everythingInProject is a Scope that vouches for every uid in every project —
+// the up-front proof gone wrong. With it nothing stands between an answer and
+// the face read but the read's own project predicate.
+type everythingInProject struct{}
+
+// all answers every uid as belonging to the project.
+func all(uids []string) map[string]bool {
+	out := make(map[string]bool, len(uids))
+	for _, uid := range uids {
+		out[uid] = true
+	}
+	return out
+}
+
+// PhotosInProject vouches for every photo.
+func (everythingInProject) PhotosInProject(_ context.Context, _ string, uids []string) (map[string]bool, error) {
+	return all(uids), nil
+}
+
+// SubjectsInProject vouches for every subject.
+func (everythingInProject) SubjectsInProject(_ context.Context, _ string, uids []string) (map[string]bool, error) {
+	return all(uids), nil
+}
+
+// LabelsInProject vouches for every label.
+func (everythingInProject) LabelsInProject(_ context.Context, _ string, uids []string) (map[string]bool, error) {
+	return all(uids), nil
+}
+
+// TestAnswer_foreignFaceReadIsScopedEvenWithoutTheProof has B's player answer
+// about A's real faces — an unnamed one and one already carrying A's person —
+// with the question-level proof replaced by one that vouches for anything. The
+// face is still read inside B, so every answer is exactly what a question about
+// a photo that exists nowhere gets — "gone" — where an unscoped read would have
+// told B that face 2 exists and already belongs to A's person ("assigned"). A's
+// faces keep their identities and no marker is drawn on A's photo: the review
+// game's face read no longer depends on the order its caller checks things in.
+func TestAnswer_foreignFaceReadIsScopedEvenWithoutTheProof(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	pool := db.Pool()
+	f := projecttest.Seed(t, pool)
+	if err := vectors.NewStore(pool).SaveFaces(t.Context(), f.A.PhotoUID, []vectors.Face{
+		{FaceIndex: 1, Vector: vec(map[int]float32{3: 1}), BBox: reviewableBox, DetScore: 0.9},
+		{
+			FaceIndex: 2, Vector: vec(map[int]float32{4: 1}), BBox: [4]float64{0.6, 0.1, 0.2, 0.2}, DetScore: 0.9,
+			SubjectUID: &f.A.SubjectUID, MarkerUID: &f.A.MarkerUID,
+		},
+	}); err != nil {
+		t.Fatalf("SaveFaces: %v", err)
+	}
+	svc := isolationService(pool, everythingInProject{})
+	missing := projecttest.MissingUID("ph")
+
+	for _, tt := range []struct {
+		name    string
+		kind    string
+		index   int
+		subject string
+		answer  review.Answer
+	}{
+		{name: "yes about A's unnamed face", kind: "face", index: 1, subject: f.B.SubjectUID, answer: review.AnswerYes},
+		{name: "yes guessing A's named face", kind: "face", index: 2, subject: f.A.SubjectUID, answer: review.AnswerYes},
+		{name: "outlier no about A's named face", kind: "outlier", index: 2, subject: f.A.SubjectUID, answer: review.AnswerNo},
+	} {
+		foreign, err := svc.Answer(t.Context(), f.B.ProjectUID, f.B.UserUID,
+			fmt.Sprintf("%s:%s:%d:%s", tt.kind, f.A.PhotoUID, tt.index, tt.subject), tt.answer, reviewMeta)
+		if err != nil {
+			t.Fatalf("%s from B: %v", tt.name, err)
+		}
+		nowhere, err := svc.Answer(t.Context(), f.B.ProjectUID, f.B.UserUID,
+			fmt.Sprintf("%s:%s:%d:%s", tt.kind, missing, tt.index, tt.subject), tt.answer, reviewMeta)
+		if err != nil {
+			t.Fatalf("%s about a missing photo: %v", tt.name, err)
+		}
+		if foreign.Result != "gone" || foreign.Result != nowhere.Result {
+			t.Errorf("%s from B = %q, a missing photo = %q; want both \"gone\"", tt.name, foreign.Result, nowhere.Result)
+		}
+	}
+
+	var markers, unnamedAssigned, namedKept int
+	if err := pool.QueryRow(t.Context(), `SELECT
+		(SELECT count(*) FROM markers WHERE photo_uid = $1 AND uid <> $2),
+		(SELECT count(*) FROM faces WHERE photo_uid = $1 AND face_index = 1 AND subject_uid IS NOT NULL),
+		(SELECT count(*) FROM faces WHERE photo_uid = $1 AND face_index = 2 AND subject_uid = $3)`,
+		f.A.PhotoUID, f.A.MarkerUID, f.A.SubjectUID).Scan(&markers, &unnamedAssigned, &namedKept); err != nil {
+		t.Fatalf("counting A's markers and faces: %v", err)
+	}
+	if markers != 0 || unnamedAssigned != 0 || namedKept != 1 {
+		t.Errorf("after B's answers A's photo has %d new markers, unnamed face assigned %d, named face kept %d; "+
+			"want 0, 0, 1", markers, unnamedAssigned, namedKept)
+	}
+	var subjectOfMarker *string
+	if err := pool.QueryRow(t.Context(), "SELECT subject_uid FROM markers WHERE uid = $1",
+		f.A.MarkerUID).Scan(&subjectOfMarker); err != nil {
+		t.Fatalf("reading A's marker: %v", err)
+	}
+	if subjectOfMarker == nil || *subjectOfMarker != f.A.SubjectUID {
+		t.Errorf("A's marker names %v after B's answers, want A's person %s still", subjectOfMarker, f.A.SubjectUID)
 	}
 }

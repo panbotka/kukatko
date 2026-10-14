@@ -176,7 +176,7 @@ func TestEmbed_computesStoresAndIsIdempotent(t *testing.T) {
 	if err := svc.Embed(ctx, photo.UID); err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
-	got, err := h.vectors.GetEmbedding(ctx, photo.UID)
+	got, err := h.vectors.GetEmbedding(ctx, photo.ProjectID, photo.UID)
 	if err != nil {
 		t.Fatalf("GetEmbedding: %v", err)
 	}

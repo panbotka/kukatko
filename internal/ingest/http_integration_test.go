@@ -282,7 +282,7 @@ func TestHTTPUpload_viewerCreatesPhotos(t *testing.T) {
 	if len(results) != 1 || results[0].Outcome != ingest.OutcomeCreated || results[0].PhotoUID == "" {
 		t.Fatalf("results = %+v, want one created photo with a UID", results)
 	}
-	photo, err := env.photos.GetByUID(t.Context(), results[0].PhotoUID)
+	photo, err := env.photos.GetAcrossProjects(t.Context(), results[0].PhotoUID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}

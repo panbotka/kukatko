@@ -47,7 +47,7 @@ func TestIngest_enqueuesPlacesForGeotaggedUpload(t *testing.T) {
 
 	// The coordinates really did land on the photo — otherwise the assertion
 	// below would pass for the wrong reason.
-	photo, err := env.store.GetByUID(ctx, geotagged.PhotoUID)
+	photo, err := env.store.GetAcrossProjects(ctx, geotagged.PhotoUID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestIngest_noPlacesWithoutGeocoding(t *testing.T) {
 	if len(res.Warnings) != 0 {
 		t.Errorf("warnings = %+v, want none", res.Warnings)
 	}
-	photo, err := env.store.GetByUID(t.Context(), res.PhotoUID)
+	photo, err := env.store.GetAcrossProjects(t.Context(), res.PhotoUID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}

@@ -29,7 +29,7 @@ func TestBlurhashRoundTrip(t *testing.T) {
 	if err := store.SaveBlurhash(ctx, created.UID, hash); err != nil {
 		t.Fatalf("SaveBlurhash: %v", err)
 	}
-	got, err := store.GetByUID(ctx, created.UID)
+	got, err := store.GetAcrossProjects(ctx, created.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestBlurhashRoundTrip(t *testing.T) {
 	if err := store.SaveBlurhash(ctx, created.UID, ""); err != nil {
 		t.Fatalf("SaveBlurhash(clear): %v", err)
 	}
-	cleared, err := store.GetByUID(ctx, created.UID)
+	cleared, err := store.GetAcrossProjects(ctx, created.UID)
 	if err != nil {
 		t.Fatalf("GetByUID after clear: %v", err)
 	}

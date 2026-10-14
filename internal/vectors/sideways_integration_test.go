@@ -123,7 +123,7 @@ func TestSidewaysDetections_redetectionRetiresTheRow(t *testing.T) {
 	if detected, _ := store.FacesDetected(ctx, uid); detected {
 		t.Error("photo still counts as detected after clearing its record")
 	}
-	if faces, _ := store.ListFaces(ctx, uid); len(faces) != 1 {
+	if faces, _ := store.ListFaces(ctx, project.BootstrapUID, uid); len(faces) != 1 {
 		t.Errorf("faces after clearing = %d, want the existing box kept until re-detection", len(faces))
 	}
 	if listed, _ := store.ListSidewaysDetections(ctx); len(listed) != 0 {

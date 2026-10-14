@@ -302,7 +302,7 @@ func photoByName(t *testing.T, env *testEnv, name string) photos.Photo {
 	if err != nil {
 		t.Fatalf("looking up photo %q: %v", name, err)
 	}
-	photo, err := env.photos.GetByUID(t.Context(), uid)
+	photo, err := env.photos.GetAcrossProjects(t.Context(), uid)
 	if err != nil {
 		t.Fatalf("GetByUID(%s): %v", uid, err)
 	}

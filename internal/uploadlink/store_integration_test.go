@@ -397,7 +397,7 @@ func TestAttributeSessionTx(t *testing.T) {
 	if len(claimed) != 1 || claimed[0] != f.photo {
 		t.Fatalf("claimed = %v, want only %s", claimed, f.photo)
 	}
-	photo, err := f.photos.GetByUID(ctx, f.photo)
+	photo, err := f.photos.GetAcrossProjects(ctx, f.photo)
 	if err != nil || photo.UploadedBy == nil || *photo.UploadedBy != f.curator {
 		t.Errorf("uploaded_by = %v, %v", photo.UploadedBy, err)
 	}

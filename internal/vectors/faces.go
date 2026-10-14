@@ -26,28 +26,32 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
         (SELECT project_id FROM photos WHERE uid = $14))
 RETURNING id, created_at`
 
-// listFacesSQL reads every face of a photo in face_index order.
+// faceColumns is the column list every face read selects, in scanFace order.
+const faceColumns = `id, photo_uid, face_index, embedding, bbox, det_score, model, dim, created_at,
+       marker_uid, subject_uid, subject_name, photo_width, photo_height, orientation, project_id`
+
+// listFacesSQL reads every face of a photo of one project ($2) in face_index
+// order; a photo of another project has none.
 const listFacesSQL = `
-SELECT id, photo_uid, face_index, embedding, bbox, det_score, model, dim, created_at,
-       marker_uid, subject_uid, subject_name, photo_width, photo_height, orientation, project_id
+SELECT ` + faceColumns + `
 FROM faces
-WHERE photo_uid = $1
+WHERE photo_uid = $1 AND project_id = $2
 ORDER BY face_index`
 
-// listFacesBySubjectSQL reads every face cached as belonging to a subject, in a
-// deterministic (photo_uid, face_index) order so callers ranking by distance get
-// a stable tie-break.
+// listFacesBySubjectSQL reads every face of one project ($2) cached as belonging
+// to a subject, in a deterministic (photo_uid, face_index) order so callers
+// ranking by distance get a stable tie-break.
 const listFacesBySubjectSQL = `
-SELECT id, photo_uid, face_index, embedding, bbox, det_score, model, dim, created_at,
-       marker_uid, subject_uid, subject_name, photo_width, photo_height, orientation, project_id
+SELECT ` + faceColumns + `
 FROM faces
-WHERE subject_uid = $1
+WHERE subject_uid = $1 AND project_id = $2
 ORDER BY photo_uid, face_index`
 
 // sampleFacesBySubjectSQL reads at most $2 of a subject's faces, evenly spread
 // across the same deterministic (photo_uid, face_index) order listFacesBySubjectSQL
 // uses, and carries the two totals a sample cannot be counted from: how many faces
-// the subject has and over how many distinct photos.
+// the subject has and over how many distinct photos. Only faces of the project
+// $3 are read.
 //
 // The stride is the classic even-selection predicate: a row is kept when it is the
 // one at which floor(rn·limit/total) steps up, which picks exactly $2 rows spread
@@ -68,7 +72,7 @@ WITH ranked AS (
            count(*) OVER () AS total,
            dense_rank() OVER (ORDER BY photo_uid) AS photo_rank
     FROM faces
-    WHERE subject_uid = $1
+    WHERE subject_uid = $1 AND project_id = $3
 ), tallied AS (
     SELECT ranked.*, max(photo_rank) OVER () AS photos FROM ranked
 )
@@ -82,15 +86,17 @@ ORDER BY photo_uid, face_index`
 
 // facesByKeysSQL selects the face rows identified by the two parallel arrays of
 // photo uids and face indexes, joined via unnest so a whole batch of keys is
-// fetched in one round-trip. Keys with no matching row simply produce no output
-// row, so the result may be shorter than the input and its order is unspecified.
+// fetched in one round-trip. Keys with no matching row — and keys naming a face
+// of another project than $3 — simply produce no output row, so the result may
+// be shorter than the input and its order is unspecified.
 const facesByKeysSQL = `
 SELECT f.id, f.photo_uid, f.face_index, f.embedding, f.bbox, f.det_score, f.model, f.dim,
        f.created_at, f.marker_uid, f.subject_uid, f.subject_name,
        f.photo_width, f.photo_height, f.orientation, f.project_id
 FROM faces f
 JOIN unnest($1::text[], $2::int[]) AS k(photo_uid, face_index)
-  ON k.photo_uid = f.photo_uid AND k.face_index = f.face_index`
+  ON k.photo_uid = f.photo_uid AND k.face_index = f.face_index
+WHERE f.project_id = $3`
 
 // SaveFaces replaces all faces of photoUID with the supplied set, atomically:
 // existing rows are deleted and the new ones inserted in one transaction, so
@@ -295,18 +301,30 @@ func insertFaces(ctx context.Context, tx pgx.Tx, photoUID string, faces []Face) 
 	return nil
 }
 
-// ListFaces returns every face stored for photoUID, ordered by face_index. A
-// photo with no faces yields an empty slice and a nil error.
-func (s *Store) ListFaces(ctx context.Context, photoUID string) ([]Face, error) {
-	return s.queryFaces(ctx, listFacesSQL, photoUID)
+// ListFaces returns every face stored for photoUID inside the project
+// projectUID, ordered by face_index. A photo with no faces — and a photo of
+// another project, which is answered exactly alike — yields an empty slice and a
+// nil error. An empty projectUID is ErrNoProject. The statement names the
+// project itself, so a caller that forgot to prove the photo first still reads
+// nothing foreign.
+func (s *Store) ListFaces(ctx context.Context, projectUID, photoUID string) ([]Face, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	return s.queryFaces(ctx, listFacesSQL, photoUID, projectUID)
 }
 
-// ListFacesBySubject returns every face cached as assigned to subjectUID, ordered
-// deterministically by (photo_uid, face_index). A subject with no assigned faces
-// yields an empty slice and a nil error. It backs per-person outlier detection,
-// which ranks these faces by distance from their centroid.
-func (s *Store) ListFacesBySubject(ctx context.Context, subjectUID string) ([]Face, error) {
-	return s.queryFaces(ctx, listFacesBySubjectSQL, subjectUID)
+// ListFacesBySubject returns every face of the project projectUID cached as
+// assigned to subjectUID, ordered deterministically by (photo_uid, face_index).
+// A subject with no assigned faces — or a subject of another project — yields
+// an empty slice and a nil error; an empty projectUID is ErrNoProject. It backs
+// per-person outlier detection, which ranks these faces by distance from their
+// centroid.
+func (s *Store) ListFacesBySubject(ctx context.Context, projectUID, subjectUID string) ([]Face, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	return s.queryFaces(ctx, listFacesBySubjectSQL, subjectUID, projectUID)
 }
 
 // countMarkersWithoutFaceSQL counts a subject's valid face markers that no
@@ -337,20 +355,25 @@ func (s *Store) CountMarkersWithoutFace(ctx context.Context, subjectUID string) 
 	return count, nil
 }
 
-// FacesByKeys returns the face rows identified by the given (photo_uid, face_index)
-// keys, in an unspecified order. Keys with no matching row — for example a face
-// removed by a later re-detection — are simply absent from the result, so the
+// FacesByKeys returns the face rows of the project projectUID identified by the
+// given (photo_uid, face_index) keys, in an unspecified order. Keys with no
+// matching row — for example a face removed by a later re-detection, or a face of
+// another project, which is answered exactly alike — are simply absent from the
+// result, so the
 // caller must tolerate a slice shorter than keys and index it by key rather than by
 // position. An empty keys slice yields a nil slice and a nil error. It backs the
 // untagged-person candidate search, which needs the embeddings of an already
 // filtered candidate set to apply the negative-exemplar rule in one query instead
-// of an N+1 of per-photo lookups.
-func (s *Store) FacesByKeys(ctx context.Context, keys []FaceKey) ([]Face, error) {
+// of an N+1 of per-photo lookups. An empty projectUID is ErrNoProject.
+func (s *Store) FacesByKeys(ctx context.Context, projectUID string, keys []FaceKey) ([]Face, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	if len(keys) == 0 {
 		return nil, nil
 	}
 	photoUIDs, indexes := splitFaceKeys(keys)
-	rows, err := s.pool.Query(ctx, facesByKeysSQL, photoUIDs, indexes)
+	rows, err := s.pool.Query(ctx, facesByKeysSQL, photoUIDs, indexes, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("listing faces by keys: %w", err)
 	}
@@ -383,18 +406,25 @@ type SubjectFaces struct {
 	Photos int
 }
 
-// SampleFacesBySubject returns at most limit of subjectUID's faces, spread evenly
+// SampleFacesBySubject returns at most limit of subjectUID's faces in the project
+// projectUID, spread evenly
 // across the deterministic (photo_uid, face_index) order rather than taken from its
 // head, together with the subject's true face and photo totals. A non-positive limit
 // returns every face, matching ListFacesBySubject. A subject with no assigned faces
-// yields a zero SubjectFaces and a nil error.
+// yields a zero SubjectFaces and a nil error, and so does a subject of another
+// project; an empty projectUID is ErrNoProject.
 //
 // It backs the untagged-face candidate search, whose cost per request is one kNN per
 // exemplar: the sample is what keeps a person tagged on thousands of photos from
 // putting a single request's memory on the library's growth curve, while the totals
 // keep the summary the search reports honest about what was sampled from.
-func (s *Store) SampleFacesBySubject(ctx context.Context, subjectUID string, limit int) (SubjectFaces, error) {
-	rows, err := s.pool.Query(ctx, sampleFacesBySubjectSQL, subjectUID, limit)
+func (s *Store) SampleFacesBySubject(
+	ctx context.Context, projectUID, subjectUID string, limit int,
+) (SubjectFaces, error) {
+	if err := requireProject(projectUID); err != nil {
+		return SubjectFaces{}, err
+	}
+	rows, err := s.pool.Query(ctx, sampleFacesBySubjectSQL, subjectUID, limit, projectUID)
 	if err != nil {
 		return SubjectFaces{}, fmt.Errorf("sampling faces for subject %s: %w", subjectUID, err)
 	}
@@ -438,11 +468,13 @@ func scanSampledFace(rows pgx.Rows) (Face, int, int, error) {
 	return face, total, photos, nil
 }
 
-// queryFaces runs a face-listing query with a single argument and scans every row
-// into a Face via scanFace. It backs ListFaces and ListFacesBySubject, whose only
-// difference is the WHERE clause; an empty result yields a nil slice, nil error.
-func (s *Store) queryFaces(ctx context.Context, query, arg string) ([]Face, error) {
-	rows, err := s.pool.Query(ctx, query, arg)
+// queryFaces runs a face-listing query keyed by arg ($1, a photo or subject uid,
+// named in errors) plus any further arguments, and scans every row into a Face
+// via scanFace. It backs ListFaces and ListFacesBySubject,
+// whose only difference is the WHERE clause; an empty result yields a nil slice,
+// nil error.
+func (s *Store) queryFaces(ctx context.Context, query, arg string, more ...any) ([]Face, error) {
+	rows, err := s.pool.Query(ctx, query, append([]any{arg}, more...)...)
 	if err != nil {
 		return nil, fmt.Errorf("listing faces for %s: %w", arg, err)
 	}

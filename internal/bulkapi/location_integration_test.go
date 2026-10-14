@@ -35,7 +35,7 @@ func (e *env) seedPlacedPhoto(t *testing.T, hash string, lat, lng float64) strin
 // provenance.
 func assertLocation(t *testing.T, ctx context.Context, env *env, uid string, lat, lng float64, source string) {
 	t.Helper()
-	photo, err := env.photos.GetByUID(ctx, uid)
+	photo, err := env.photos.GetAcrossProjects(ctx, uid)
 	if err != nil {
 		t.Fatalf("get %s: %v", uid, err)
 	}

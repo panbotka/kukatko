@@ -174,7 +174,7 @@ func TestEmbed_previewOnlyInTheBucket(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Errorf("sidecar calls = %d, want 1", calls.Load())
 	}
-	if _, err := h.vectors.GetEmbedding(ctx, photo.UID); err != nil {
+	if _, err := h.vectors.GetEmbedding(ctx, photo.ProjectID, photo.UID); err != nil {
 		t.Fatalf("GetEmbedding after Embed: %v", err)
 	}
 

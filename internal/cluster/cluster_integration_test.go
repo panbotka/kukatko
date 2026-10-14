@@ -197,7 +197,7 @@ func TestAssignCluster_CreatesMarkersForAllFaces(t *testing.T) {
 		if len(markers) != 1 || markers[0].SubjectUID == nil || *markers[0].SubjectUID != result.Subject.UID {
 			t.Fatalf("photo %s markers = %+v, want one assigned to %s", uid, markers, result.Subject.UID)
 		}
-		faces, fErr := env.vectors.ListFaces(ctx, uid)
+		faces, fErr := env.vectors.ListFaces(ctx, project.BootstrapUID, uid)
 		if fErr != nil {
 			t.Fatalf("ListFaces %s: %v", uid, fErr)
 		}
@@ -353,7 +353,7 @@ func containsCluster(views []cluster.View, uid string, size int) bool {
 // subject (it was named and not pulled back into clustering).
 func assertAssigned(t *testing.T, e *env, hashUID string) {
 	t.Helper()
-	faces, err := e.vectors.ListFaces(t.Context(), e.photoUID(t, hashUID))
+	faces, err := e.vectors.ListFaces(t.Context(), project.BootstrapUID, e.photoUID(t, hashUID))
 	if err != nil {
 		t.Fatalf("ListFaces %s: %v", hashUID, err)
 	}

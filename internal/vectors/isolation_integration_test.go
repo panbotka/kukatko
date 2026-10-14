@@ -190,3 +190,106 @@ func TestFindDuplicatePairs_neverCrossesProjects(t *testing.T) {
 		t.Errorf("FindDuplicatePairs without a project = %v, want ErrNoProject", err)
 	}
 }
+
+// TestLoaders_neverCrossProjects gives each project a photo with one face of
+// its seeded person and an image embedding, then asks every uid-keyed loader
+// about BOTH photos (and both people) from inside each project: each read finds
+// only the project's own row, so a loader's correctness no longer rests on the
+// caller having proved the photo first. Without a project every loader refuses.
+func TestLoaders_neverCrossProjects(t *testing.T) {
+	store, _, db := newStore(t)
+	f := projecttest.Seed(t, db.Pool())
+	ctx := t.Context()
+	for _, side := range []projecttest.Side{projecttest.SideA, projecttest.SideB} {
+		tenant := f.Tenant(side)
+		face := isolationFace(faceVec(map[int]float32{2: 1}))
+		face.SubjectUID = &tenant.SubjectUID
+		if err := store.SaveFaces(ctx, tenant.PhotoUID, []vectors.Face{face}); err != nil {
+			t.Fatalf("SaveFaces %s: %v", side, err)
+		}
+		saveEmbedding(t, store, tenant.PhotoUID, imageVec(map[int]float32{4: 1}))
+	}
+	bothPhotos := []string{f.A.PhotoUID, f.B.PhotoUID}
+	bothSubjects := []string{f.A.SubjectUID, f.B.SubjectUID}
+	keys := []vectors.FaceKey{{PhotoUID: f.A.PhotoUID}, {PhotoUID: f.B.PhotoUID}}
+
+	loaders := map[string]func(projectUID string) ([]string, error){
+		"GetEmbedding": func(projectUID string) ([]string, error) {
+			var out []string
+			for _, uid := range bothPhotos {
+				emb, err := store.GetEmbedding(ctx, projectUID, uid)
+				if errors.Is(err, vectors.ErrEmbeddingNotFound) {
+					continue
+				}
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, emb.PhotoUID)
+			}
+			return out, nil
+		},
+		"ListFaces": func(projectUID string) ([]string, error) {
+			var out []string
+			for _, uid := range bothPhotos {
+				faces, err := store.ListFaces(ctx, projectUID, uid)
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, facePhotos(faces)...)
+			}
+			return out, nil
+		},
+		"FacesByKeys": func(projectUID string) ([]string, error) {
+			faces, err := store.FacesByKeys(ctx, projectUID, keys)
+			return facePhotos(faces), err
+		},
+		"ListFacesBySubject": func(projectUID string) ([]string, error) {
+			var out []string
+			for _, uid := range bothSubjects {
+				faces, err := store.ListFacesBySubject(ctx, projectUID, uid)
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, facePhotos(faces)...)
+			}
+			return out, nil
+		},
+		"SampleFacesBySubject": func(projectUID string) ([]string, error) {
+			var out []string
+			for _, uid := range bothSubjects {
+				sample, err := store.SampleFacesBySubject(ctx, projectUID, uid, 10)
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, facePhotos(sample.Faces)...)
+			}
+			return out, nil
+		},
+	}
+	for name, load := range loaders {
+		t.Run(name, func(t *testing.T) {
+			f.AssertStoreScoped(t, load)
+			for _, side := range []projecttest.Side{projecttest.SideA, projecttest.SideB} {
+				got, err := load(f.Tenant(side).ProjectUID)
+				if err != nil {
+					t.Fatalf("%s inside %s: %v", name, side, err)
+				}
+				if want := f.Tenant(side).PhotoUID; len(got) != 1 || got[0] != want {
+					t.Errorf("%s inside %s = %v, want only [%s]", name, side, got, want)
+				}
+			}
+			if _, err := load(""); !errors.Is(err, vectors.ErrNoProject) {
+				t.Errorf("%s without a project = %v, want ErrNoProject", name, err)
+			}
+		})
+	}
+}
+
+// facePhotos returns the photo uid of every face, in order.
+func facePhotos(faces []vectors.Face) []string {
+	out := make([]string, 0, len(faces))
+	for i := range faces {
+		out = append(out, faces[i].PhotoUID)
+	}
+	return out
+}

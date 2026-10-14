@@ -25,7 +25,7 @@ func TestUpdateFaceMarker(t *testing.T) {
 	if err := store.UpdateFaceMarker(ctx, uid, 0, "mk1", "su1", "Alice"); err != nil {
 		t.Fatalf("UpdateFaceMarker set: %v", err)
 	}
-	faces, err := store.ListFaces(ctx, uid)
+	faces, err := store.ListFaces(ctx, project.BootstrapUID, uid)
 	if err != nil || len(faces) != 1 {
 		t.Fatalf("ListFaces = %d, %v", len(faces), err)
 	}
@@ -38,7 +38,7 @@ func TestUpdateFaceMarker(t *testing.T) {
 	if err := store.UpdateFaceMarker(ctx, uid, 0, "", "", ""); err != nil {
 		t.Fatalf("UpdateFaceMarker clear: %v", err)
 	}
-	faces, _ = store.ListFaces(ctx, uid)
+	faces, _ = store.ListFaces(ctx, project.BootstrapUID, uid)
 	if faces[0].MarkerUID != nil || faces[0].SubjectUID != nil || faces[0].SubjectName != "" {
 		t.Errorf("cache after clear = %+v, want nil/nil/empty", faces[0])
 	}

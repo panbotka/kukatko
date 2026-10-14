@@ -27,7 +27,7 @@ func TestRecordFaceDetection_storesFacesAndMarksProcessed(t *testing.T) {
 		t.Fatalf("RecordFaceDetection: %v", err)
 	}
 
-	got, err := store.ListFaces(ctx, uid)
+	got, err := store.ListFaces(ctx, project.BootstrapUID, uid)
 	if err != nil || len(got) != 2 {
 		t.Fatalf("ListFaces = %d faces, %v; want 2", len(got), err)
 	}
@@ -85,7 +85,7 @@ func TestRecordFaceDetection_zeroFaces(t *testing.T) {
 	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{Model: "buffalo_l"}); err != nil {
 		t.Fatalf("RecordFaceDetection: %v", err)
 	}
-	if got, _ := store.ListFaces(ctx, uid); len(got) != 0 {
+	if got, _ := store.ListFaces(ctx, project.BootstrapUID, uid); len(got) != 0 {
 		t.Fatalf("ListFaces = %d, want 0", len(got))
 	}
 	detected, err := store.FacesDetected(ctx, uid)
@@ -112,7 +112,7 @@ func TestRecordFaceDetection_idempotentReplace(t *testing.T) {
 	}, Model: "buffalo_l"}); err != nil {
 		t.Fatalf("RecordFaceDetection second: %v", err)
 	}
-	if got, _ := store.ListFaces(ctx, uid); len(got) != 1 {
+	if got, _ := store.ListFaces(ctx, project.BootstrapUID, uid); len(got) != 1 {
 		t.Fatalf("ListFaces after replace = %d, want 1", len(got))
 	}
 	if detected, _ := store.FacesDetected(ctx, uid); !detected {

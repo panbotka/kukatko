@@ -529,9 +529,10 @@ type OrganizeStore interface {
 
 // FaceStore is the slice of *vectors.Store the review game needs.
 type FaceStore interface {
-	// FacesByKeys returns the faces for the given (photo, index) keys; missing
-	// keys are simply absent from the result.
-	FacesByKeys(ctx context.Context, keys []vectors.FaceKey) ([]vectors.Face, error)
+	// FacesByKeys returns the faces of projectUID for the given (photo, index)
+	// keys; missing keys — and keys naming another project's face — are simply
+	// absent from the result.
+	FacesByKeys(ctx context.Context, projectUID string, keys []vectors.FaceKey) ([]vectors.Face, error)
 }
 
 // FeedbackStore is the slice of *feedback.Store the review game needs. Every

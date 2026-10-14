@@ -61,9 +61,10 @@ type PhotoStore interface {
 // VectorStore is the subset of vectors.Store the service uses to read, write and
 // search embeddings and to enumerate photos still missing one.
 type VectorStore interface {
-	// GetEmbedding returns a photo's image embedding, or
-	// vectors.ErrEmbeddingNotFound.
-	GetEmbedding(ctx context.Context, photoUID string) (vectors.Embedding, error)
+	// GetEmbeddingForJob returns a photo's image embedding in whichever project
+	// holds it, or vectors.ErrEmbeddingNotFound. The job has no request and so no
+	// project; the row names it.
+	GetEmbeddingForJob(ctx context.Context, photoUID string) (vectors.Embedding, error)
 	// SaveEmbedding stores (or overwrites) a photo's image embedding.
 	SaveEmbedding(ctx context.Context, emb vectors.Embedding) (vectors.Embedding, error)
 	// FindSimilar returns the project's embeddings nearest to vec within
@@ -219,7 +220,7 @@ func (s *Service) ForceEmbed(ctx context.Context, photoUID string) error {
 // to stop.
 func (s *Service) embed(ctx context.Context, photoUID string, force bool) error {
 	if !force {
-		switch _, err := s.vectors.GetEmbedding(ctx, photoUID); {
+		switch _, err := s.vectors.GetEmbeddingForJob(ctx, photoUID); {
 		case err == nil:
 			return nil // already embedded — idempotent skip
 		case errors.Is(err, vectors.ErrEmbeddingNotFound):
@@ -313,7 +314,7 @@ func (s *Service) Duplicates(ctx context.Context, photoUID string) ([]vectors.Ma
 	if s.dupMaxDist <= 0 {
 		return nil, nil
 	}
-	emb, err := s.vectors.GetEmbedding(ctx, photoUID)
+	emb, err := s.vectors.GetEmbeddingForJob(ctx, photoUID)
 	if errors.Is(err, vectors.ErrEmbeddingNotFound) {
 		return nil, nil
 	}

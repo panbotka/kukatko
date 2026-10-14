@@ -66,7 +66,7 @@ func TestApply_archiveRepairsStack(t *testing.T) {
 		t.Fatalf("result = %+v, want one updated photo", res)
 	}
 
-	survivor, err := store.GetByUID(ctx, sibling)
+	survivor, err := store.GetAcrossProjects(ctx, sibling)
 	if err != nil {
 		t.Fatalf("GetByUID(sibling): %v", err)
 	}
@@ -104,7 +104,7 @@ func TestApply_unarchiveLeavesStacksAlone(t *testing.T) {
 		t.Fatalf("Apply: %v", err)
 	}
 
-	stacked, err := store.GetByUID(ctx, primary)
+	stacked, err := store.GetAcrossProjects(ctx, primary)
 	if err != nil {
 		t.Fatalf("GetByUID(primary): %v", err)
 	}

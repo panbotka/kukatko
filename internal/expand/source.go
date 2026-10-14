@@ -32,9 +32,10 @@ func sampleSource(members []string, sourceCap int) ([]string, bool) {
 
 // loadVectors loads the image embeddings for uids, dropping the ones not embedded
 // yet, and returns just the vectors (order is irrelevant to voting). len of the
-// result is how many of the inputs were embedded.
-func (s *Service) loadVectors(ctx context.Context, uids []string) ([][]float32, error) {
-	byUID, err := s.loadVectorMap(ctx, uids)
+// result is how many of the inputs were embedded. Only embeddings of projectUID
+// are read; a photo of another project counts as not embedded.
+func (s *Service) loadVectors(ctx context.Context, projectUID string, uids []string) ([][]float32, error) {
+	byUID, err := s.loadVectorMap(ctx, projectUID, uids)
 	if err != nil {
 		return nil, err
 	}
@@ -48,8 +49,11 @@ func (s *Service) loadVectors(ctx context.Context, uids []string) ([][]float32, 
 // loadVectorMap loads the image embeddings for uids concurrently (bounded by the
 // service's concurrency), keyed by photo UID. A photo with no embedding is simply
 // absent from the map — vectors.ErrEmbeddingNotFound is expected, not an error,
-// because the sidecar is often offline and a collection can be half-embedded.
-func (s *Service) loadVectorMap(ctx context.Context, uids []string) (map[string][]float32, error) {
+// because the sidecar is often offline and a collection can be half-embedded. Only
+// embeddings of projectUID are read, so a foreign uid is simply absent too.
+func (s *Service) loadVectorMap(
+	ctx context.Context, projectUID string, uids []string,
+) (map[string][]float32, error) {
 	var mu sync.Mutex
 	out := make(map[string][]float32, len(uids))
 	group, groupCtx := errgroup.WithContext(ctx)
@@ -57,7 +61,7 @@ func (s *Service) loadVectorMap(ctx context.Context, uids []string) (map[string]
 	for i := range uids {
 		uid := uids[i]
 		group.Go(func() error {
-			emb, err := s.vectors.GetEmbedding(groupCtx, uid)
+			emb, err := s.vectors.GetEmbedding(groupCtx, projectUID, uid)
 			if errors.Is(err, vectors.ErrEmbeddingNotFound) {
 				return nil
 			}

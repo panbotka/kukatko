@@ -76,7 +76,7 @@ func TestMarkSidecarWritten_doesNotBumpUpdatedAt(t *testing.T) {
 	if err := store.MarkSidecarWritten(ctx, created.UID); err != nil {
 		t.Fatalf("MarkSidecarWritten returned error: %v", err)
 	}
-	after, err := store.GetByUID(ctx, created.UID)
+	after, err := store.GetAcrossProjects(ctx, created.UID)
 	if err != nil {
 		t.Fatalf("GetByUID returned error: %v", err)
 	}

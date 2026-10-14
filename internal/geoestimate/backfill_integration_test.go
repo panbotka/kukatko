@@ -130,7 +130,7 @@ func (e *backfillEnv) seed(t *testing.T, f fixture) photos.Photo {
 // get reloads a photo.
 func (e *backfillEnv) get(t *testing.T, uid string) photos.Photo {
 	t.Helper()
-	p, err := e.store.GetByUID(t.Context(), uid)
+	p, err := e.store.GetAcrossProjects(t.Context(), uid)
 	if err != nil {
 		t.Fatalf("GetByUID(%s): %v", uid, err)
 	}

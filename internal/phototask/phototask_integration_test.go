@@ -324,7 +324,7 @@ func TestDelete(t *testing.T) {
 	}
 	// The photograph itself is untouched: a task is work about a picture, never
 	// a claim on it.
-	if _, err := f.photos.GetByUID(ctx, photo.UID); err != nil {
+	if _, err := f.photos.GetAcrossProjects(ctx, photo.UID); err != nil {
 		t.Errorf("deleting a task removed its photo: %v", err)
 	}
 }

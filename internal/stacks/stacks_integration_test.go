@@ -96,8 +96,8 @@ func TestIntegration_DetectStacksBackfill(t *testing.T) {
 	}
 
 	// The JPEG is the primary (rendered beats RAW); both share one stack_uid.
-	rawGot, _ := store.GetByUID(ctx, raw.UID)
-	jpgGot, _ := store.GetByUID(ctx, jpg.UID)
+	rawGot, _ := store.GetAcrossProjects(ctx, raw.UID)
+	jpgGot, _ := store.GetAcrossProjects(ctx, jpg.UID)
 	if rawGot.StackUID == nil || jpgGot.StackUID == nil || *rawGot.StackUID != *jpgGot.StackUID {
 		t.Fatalf("members do not share a stack_uid: raw=%v jpg=%v", rawGot.StackUID, jpgGot.StackUID)
 	}
@@ -154,7 +154,7 @@ func TestIntegration_CountsDropAndUnstackRestores(t *testing.T) {
 		t.Fatalf("UnstackWhole: %v", err)
 	}
 	assertCounts(t, store, org, ppl, subject.UID, album.UID, label.UID, 2)
-	rawGot, _ := store.GetByUID(ctx, raw.UID)
+	rawGot, _ := store.GetAcrossProjects(ctx, raw.UID)
 	if rawGot.StackUID != nil || rawGot.StackPrimary {
 		t.Errorf("raw still stacked after unstack: %+v", rawGot.StackUID)
 	}
@@ -203,7 +203,7 @@ func TestIntegration_ManualStackingLifecycle(t *testing.T) {
 	if _, err := svc.Unstack(ctx, project.BootstrapUID, b.UID, actorEntry("", audit.ActionStackUngroup)); err != nil {
 		t.Fatalf("Unstack B: %v", err)
 	}
-	aGot, _ := store.GetByUID(ctx, a.UID)
+	aGot, _ := store.GetAcrossProjects(ctx, a.UID)
 	if aGot.StackUID != nil {
 		t.Errorf("A still stacked after its stack dissolved: %v", aGot.StackUID)
 	}

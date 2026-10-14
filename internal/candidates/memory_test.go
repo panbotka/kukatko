@@ -52,7 +52,7 @@ type scaleFaces struct {
 // with an even stride, and — crucially for what these tests measure — only
 // materialises the sample, exactly as the SQL behind the real store does.
 func (s *scaleFaces) SampleFacesBySubject(
-	_ context.Context, _ string, limit int,
+	_ context.Context, _, _ string, limit int,
 ) (vectors.SubjectFaces, error) {
 	n := s.exemplars
 	step := 1
@@ -96,7 +96,7 @@ func (s *scaleFaces) FindSimilarUnassignedFaceCandidates(
 }
 
 // FacesByKeys returns an embedded face per requested key.
-func (s *scaleFaces) FacesByKeys(_ context.Context, keys []vectors.FaceKey) ([]vectors.Face, error) {
+func (s *scaleFaces) FacesByKeys(_ context.Context, _ string, keys []vectors.FaceKey) ([]vectors.Face, error) {
 	out := make([]vectors.Face, 0, len(keys))
 	for _, key := range keys {
 		out = append(out, vectors.Face{

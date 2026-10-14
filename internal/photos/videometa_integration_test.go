@@ -50,7 +50,7 @@ func TestRepairVideoMetadata_writesOnlyWhatItWasGiven(t *testing.T) {
 		t.Fatal("RepairVideoMetadata reported no change, want one")
 	}
 
-	got, err := store.GetByUID(ctx, created.UID)
+	got, err := store.GetAcrossProjects(ctx, created.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestRepairVideoMetadata_emptyRepairIsANoOp(t *testing.T) {
 	if changed {
 		t.Error("an empty repair reported a change")
 	}
-	got, err := store.GetByUID(ctx, created.UID)
+	got, err := store.GetAcrossProjects(ctx, created.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestRepairVideoMetadata_refusesAStill(t *testing.T) {
 	if !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("RepairVideoMetadata over a still = %v, want ErrPhotoNotFound", err)
 	}
-	got, err := store.GetByUID(ctx, created.UID)
+	got, err := store.GetAcrossProjects(ctx, created.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}

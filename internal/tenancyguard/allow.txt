@@ -66,11 +66,11 @@ internal/people/subjects.go:428 requireSubjectInProject proved the subject in th
 internal/people/subjects.go:435 requireSubjectInProject proved the subject in the project earlier in the same tx
 
 # internal/photos
-internal/photos/store.go:585 only caller is the ingest rollback, which deletes the row it just created in the request's project
+internal/photos/store.go:589 only caller is the ingest rollback, which deletes the row it just created in the request's project
 internal/photos/store_aliases.go:90 ListPhotoprismAliases has no production caller (tests only); an instance-wide read for import reconciliation
 internal/photos/store_blurhash.go:18 worker/ingest only: thumbjob (GetForJob or photoInProject before ForceRegenerate) and ingest's own new photo
-internal/photos/store_extras.go:138 thumbjob ForceRegenerate: job via GetForJob, or HTTP regenerate after the scoped a.photoInProject check
-internal/photos/store_extras.go:151 thumbjob Regenerate is a worker-only job handler; the photo uid comes from the job payload via GetForJob
+internal/photos/store_extras.go:127 thumbjob ForceRegenerate: job via GetForJob, or HTTP regenerate after the scoped a.photoInProject check
+internal/photos/store_extras.go:140 thumbjob Regenerate is a worker-only job handler; the photo uid comes from the job payload via GetForJob
 internal/photos/store_fill.go:53 dirimport duplicate uid comes from ingest's GetByFileHashInProject (dedup scoped to the import's project)
 internal/photos/store_fill.go:189 metajob Reextract is worker-only (job Handle); the uid comes from the payload via GetForJob
 internal/photos/store_geometry.go:64 instance-wide maintenance scan/repair (ListDimensionMismatches), maintainer-only
@@ -136,9 +136,9 @@ internal/uploadlink/uploads.go:234 provenance of a photo loaded scoped (photoInP
 internal/vectors/carryover.go:77 worker-only: RecordFaceDetection is called only by the facejob handler working from a photo uid
 internal/vectors/facerepair.go:23 instance-wide maintenance repair --dimensions plan (maintainer-only maintenance service)
 internal/vectors/facerepair.go:50 instance-wide maintenance repair --dimensions apply, keyed by rows the scan just planned
-internal/vectors/faces.go:270 replaceFaces: child rows keyed by photo uid; callers are the facejob worker (RecordFaceDetection) and SaveFaces
-internal/vectors/faces.go:325 Outliers runs it only after the subject was loaded with GetSubjectByUID(ctx, projectUID, ...)
-internal/vectors/faces.go:488 DeleteFaces has no non-test caller; a child-row delete keyed by photo uid
+internal/vectors/faces.go:276 replaceFaces: child rows keyed by photo uid; callers are the facejob worker (RecordFaceDetection) and SaveFaces
+internal/vectors/faces.go:343 Outliers runs it only after the subject was loaded with GetSubjectByUID(ctx, projectUID, ...)
+internal/vectors/faces.go:520 DeleteFaces has no non-test caller; a child-row delete keyed by photo uid
 internal/vectors/match.go:15 callers prove the photo first: Apply via GetByUIDInProject, PhotoFaces scoped, ClearSurplusLinks worker
 internal/vectors/match.go:61 instance-wide maintenance scan/repair of duplicate face-marker links (maintainer-only)
 internal/vectors/sideways.go:28 instance-wide maintenance repair --sideways-faces listing (maintainer-only)

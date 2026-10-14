@@ -224,7 +224,7 @@ func TestIngest_singleCreatesEverything(t *testing.T) {
 		t.Fatal("created result has no photo UID")
 	}
 
-	photo, err := env.store.GetByUID(ctx, res.PhotoUID)
+	photo, err := env.store.GetAcrossProjects(ctx, res.PhotoUID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -371,7 +371,7 @@ func TestIngest_concurrentIdentical(t *testing.T) {
 
 	// Exactly one photo row must exist for the content hash, and every duplicate
 	// must point at it.
-	if _, err := env.store.GetByUID(ctx, uid); err != nil {
+	if _, err := env.store.GetAcrossProjects(ctx, uid); err != nil {
 		t.Fatalf("winning photo missing: %v", err)
 	}
 	for _, res := range results {
@@ -406,7 +406,7 @@ func TestIngest_video(t *testing.T) {
 		t.Fatalf("result = %+v, want created/201", res)
 	}
 
-	photo, err := env.store.GetByUID(ctx, res.PhotoUID)
+	photo, err := env.store.GetAcrossProjects(ctx, res.PhotoUID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -483,11 +483,11 @@ func TestIngest_placeholderDescribesThePhoto(t *testing.T) {
 		t.Fatalf("uploads = %+v, %+v; want both created", first, second)
 	}
 
-	red, err := env.store.GetByUID(ctx, first.PhotoUID)
+	red, err := env.store.GetAcrossProjects(ctx, first.PhotoUID)
 	if err != nil {
 		t.Fatalf("GetByUID(red): %v", err)
 	}
-	blue, err := env.store.GetByUID(ctx, second.PhotoUID)
+	blue, err := env.store.GetAcrossProjects(ctx, second.PhotoUID)
 	if err != nil {
 		t.Fatalf("GetByUID(blue): %v", err)
 	}

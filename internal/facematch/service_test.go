@@ -42,7 +42,7 @@ type fakeFaces struct {
 	updates     int
 }
 
-func (f *fakeFaces) ListFaces(_ context.Context, _ string) ([]vectors.Face, error) {
+func (f *fakeFaces) ListFaces(_ context.Context, _, _ string) ([]vectors.Face, error) {
 	return f.list, nil
 }
 

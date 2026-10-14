@@ -164,7 +164,7 @@ func TestOutliers_trimmedCentroidDB(t *testing.T) {
 		t.Fatalf("Outliers: %v", err)
 	}
 
-	loaded, err := h.faces.ListFacesBySubject(ctx, subj)
+	loaded, err := h.faces.ListFacesBySubject(ctx, project.BootstrapUID, subj)
 	if err != nil {
 		t.Fatalf("ListFacesBySubject: %v", err)
 	}

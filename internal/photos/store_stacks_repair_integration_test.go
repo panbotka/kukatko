@@ -50,7 +50,7 @@ func listedUIDs(t *testing.T, store *photos.Store, ctx context.Context) []string
 // mustGet reads a photo by uid, failing the test when it is gone.
 func mustGet(t *testing.T, store *photos.Store, ctx context.Context, uid string) photos.Photo {
 	t.Helper()
-	p, err := store.GetByUID(ctx, uid)
+	p, err := store.GetAcrossProjects(ctx, uid)
 	if err != nil {
 		t.Fatalf("Get %s: %v", uid, err)
 	}
@@ -155,7 +155,7 @@ func TestDeleteAuditedRepairsStack(t *testing.T) {
 		t.Fatalf("DeleteAudited: %v", err)
 	}
 
-	if _, err := store.GetByUID(ctx, primaryUID); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if _, err := store.GetAcrossProjects(ctx, primaryUID); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("purged photo still readable: err = %v", err)
 	}
 	survivor := mustGet(t, store, ctx, otherUID)

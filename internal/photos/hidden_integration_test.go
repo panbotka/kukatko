@@ -177,7 +177,7 @@ func TestHiddenFromLibrary_visibleWhereItWasFiled(t *testing.T) {
 func TestHiddenFromLibrary_reachableByUID(t *testing.T) {
 	lib := newHiddenLibrary(t)
 
-	got, err := lib.store.GetByUID(t.Context(), lib.scan.UID)
+	got, err := lib.store.GetAcrossProjects(t.Context(), lib.scan.UID)
 	if err != nil {
 		t.Fatalf("GetByUID(hidden): %v", err)
 	}

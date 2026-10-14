@@ -61,7 +61,7 @@ func TestMerge_refusesToArchiveAVideoForAStill(t *testing.T) {
 		t.Fatalf("Merge error = %v, want ErrCrossKindGroup", err)
 	}
 
-	survivor, err := store.GetByUID(ctx, clip)
+	survivor, err := store.GetAcrossProjects(ctx, clip)
 	if err != nil {
 		t.Fatalf("GetByUID(clip): %v", err)
 	}

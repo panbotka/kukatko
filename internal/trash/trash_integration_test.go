@@ -153,10 +153,10 @@ func (e *purgeEnv) seedPhoto(t *testing.T, name string, at *time.Time) (photos.P
 func (e *purgeEnv) assertGone(t *testing.T, photo photos.Photo, originalAbs, thumbAbs string) {
 	t.Helper()
 	ctx := t.Context()
-	if _, err := e.store.GetByUID(ctx, photo.UID); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if _, err := e.store.GetAcrossProjects(ctx, photo.UID); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("photo row survives: err = %v", err)
 	}
-	if _, err := e.vectors.GetEmbedding(ctx, photo.UID); !errors.Is(err, vectors.ErrEmbeddingNotFound) {
+	if _, err := e.vectors.GetEmbedding(ctx, photo.ProjectID, photo.UID); !errors.Is(err, vectors.ErrEmbeddingNotFound) {
 		t.Errorf("embedding row survives (cascade failed): err = %v", err)
 	}
 	if files, err := e.store.ListFiles(ctx, project.BootstrapUID, photo.UID); err != nil || len(files) != 0 {
@@ -192,10 +192,10 @@ func TestPurgeExpired_removesOnlyExpired(t *testing.T) {
 	}
 	env.assertGone(t, oldPhoto, oldOrig, oldThumb)
 
-	if _, err := env.store.GetByUID(t.Context(), recentPhoto.UID); err != nil {
+	if _, err := env.store.GetAcrossProjects(t.Context(), recentPhoto.UID); err != nil {
 		t.Errorf("recently archived photo was purged: %v", err)
 	}
-	if _, err := env.store.GetByUID(t.Context(), livePhoto.UID); err != nil {
+	if _, err := env.store.GetAcrossProjects(t.Context(), livePhoto.UID); err != nil {
 		t.Errorf("live photo was purged: %v", err)
 	}
 }
@@ -220,7 +220,7 @@ func TestEmptyTrash_removesAllArchived(t *testing.T) {
 	}
 	env.assertGone(t, a, aOrig, aThumb)
 	env.assertGone(t, b, bOrig, bThumb)
-	if _, err := env.store.GetByUID(t.Context(), livePhoto.UID); err != nil {
+	if _, err := env.store.GetAcrossProjects(t.Context(), livePhoto.UID); err != nil {
 		t.Errorf("live photo was purged by EmptyTrash: %v", err)
 	}
 }
@@ -247,10 +247,10 @@ func TestPurgeOlderThan_removesOnlyOlder(t *testing.T) {
 	}
 	env.assertGone(t, oldPhoto, oldOrig, oldThumb)
 
-	if _, err := env.store.GetByUID(t.Context(), recentPhoto.UID); err != nil {
+	if _, err := env.store.GetAcrossProjects(t.Context(), recentPhoto.UID); err != nil {
 		t.Errorf("recently archived photo (within the cutoff) was purged: %v", err)
 	}
-	if _, err := env.store.GetByUID(t.Context(), livePhoto.UID); err != nil {
+	if _, err := env.store.GetAcrossProjects(t.Context(), livePhoto.UID); err != nil {
 		t.Errorf("live photo was purged: %v", err)
 	}
 }
@@ -276,7 +276,7 @@ func TestPurgeOlderThan_zeroDaysEmptiesTrash(t *testing.T) {
 	}
 	env.assertGone(t, a, aOrig, aThumb)
 	env.assertGone(t, b, bOrig, bThumb)
-	if _, err := env.store.GetByUID(t.Context(), livePhoto.UID); err != nil {
+	if _, err := env.store.GetAcrossProjects(t.Context(), livePhoto.UID); err != nil {
 		t.Errorf("live photo was purged by PurgeOlderThan(0): %v", err)
 	}
 }

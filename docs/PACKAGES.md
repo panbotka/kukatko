@@ -485,18 +485,21 @@ to `## Package map` in `CLAUDE.md`.
   and **a stack never spans projects**. An audited write defaults
   the entry's `ProjectUID` to the project (`withProject`). `ListFiles(ctx, projectUID, uid)` is scoped by
   an `EXISTS` on the parent. **Worker loaders:** a background job has no request and so no project;
-  it loads through the explicitly named, unscoped **`GetForJob(ctx, uid)`** / **`FilesForJob(ctx, uid)`**
-  and learns the project from the row — every read now fills **`Photo.ProjectID`** (`photos.project_id`
+  it loads through the explicitly named, unscoped **`GetForJob(ctx, uid)`** (`FilesForJob` had no caller and
+  is gone) and learns the project from the row — every read now fills **`Photo.ProjectID`** (`photos.project_id`
   is the last of `photoColumns`; `json:"-"`, it never leaves the server). **`Create`** writes it as the
   last insert parameter and refuses an empty `Photo.ProjectID` with `ErrNoProject` (the column has had
   no default since migration 0114). `thumbjob`, `embedjob`, `facejob`,
   `metajob`, `ocrjob`, `sidecarjob`, `placesjob`, `storyboardjob` and `hlsjob`
   use them (`tagnotifyjob` reads its rows with its own SQL). `forjob_guard_test.go` walks every
-  `internal/*api` package's non-test source and fails on `ForJob(` / `.…ForJob`: a handler loads through
-  the scoped lookups, never these. The job-side write-backs keyed by a uid the job just loaded
+  `internal/*api` package's non-test source and fails on `ForJob(` / `.…ForJob` (vectors'
+  `GetEmbeddingForJob` included) and on `GetAcrossProjects`: a handler loads through the scoped lookups,
+  never these. The job-side write-backs keyed by a uid the job just loaded
   (`SaveBlurhash`, `SetPhash`, `MarkThumbnailsBuilt`, `FillFileMetadata`, `SaveOCR`, `MarkSidecarWritten`,
-  …) stay unscoped for the same reason. **Still unscoped, for callers scoped in later steps:** `GetByUID`
-  (profile picture, directory import, geoestimate review), `GetByFileHash`
+  …) stay unscoped for the same reason. **Still unscoped:** **`GetAcrossProjects`** (was `GetByUID`,
+  renamed so the name says it reads past the boundary; its one caller is `internal/userpic`, whose picked
+  photo may live in any project the viewer is an approved member of and which checks that membership on every
+  read — an API package may not call it, see the guard above), `GetByFileHash`
   (ingest), `ListByUIDs` (review/candidates/expand/notifications), `Delete` (ingest's rollback of
   its own fresh row) and the maintenance scans. The pure builders are tested through
   `stripProject` (store_project_test.go), which removes the scope and renumbers, so the filter tests keep
@@ -547,7 +550,7 @@ to `## Package map` in `CLAUDE.md`.
   of its own; the one definition `internal/duplicates` and `internal/dupmerge` both read),
   `FileRole` original/sidecar/edited, UID generator prefix `ph`,
   `Store` over pgx with
-  `Create`/`GetByUID`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotoprismFileHash`
+  `Create`/`GetAcrossProjects`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotoprismFileHash`
   (the identity of a single SOURCE FILE, not of a source photo: a source photo made of several
   files — a RAW next to its JPEG — becomes one row per file grouped in one stack, and only the
   displayable one carries the `photoprism_uid`, so a sibling is found again by its own SHA1 alone;
@@ -2161,18 +2164,25 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   another project. The planner picks the btree `idx_faces_project`/`idx_embeddings_project` + an exact sort
   for a small project and the HNSW scan with the filter for a big one (plans in `docs/PERF.md` §1). `Face`
   and `Embedding` carry `ProjectID` on read, so a job or a later-scoped caller searches the neighbours of a
-  face inside that face's own project (`embedjob`'s duplicate pass, `internal/cluster`). Everything keyed by
-  a photo uid (`ListFaces`, `SaveFaces`, `UpdateFaceMarker`, …) stays unscoped — child rows of a photo the
-  caller has already loaded inside its project. `FindDuplicatePairs` (the duplicates scan) filters
+  face inside that face's own project (`embedjob`'s duplicate pass, `internal/cluster`). The **loaders**
+  keyed by a photo or subject uid take `projectUID` after `ctx` too and name it in their own statement
+  (`AND project_id = $n`): `GetEmbedding`, `ListFaces`, `FacesByKeys`, `ListFacesBySubject`,
+  `SampleFacesBySubject` — a row of another project is answered exactly like a missing one (no row,
+  `ErrEmbeddingNotFound`), an empty project is `ErrNoProject`, so their correctness no longer depends on the
+  caller having proved the photo first. The one unscoped loader left is **`GetEmbeddingForJob`**, the
+  embedding job's read (no request, the row names its project); the `*ForJob` guard keeps it out of every API
+  package. The writes keyed by a photo uid (`SaveFaces`, `UpdateFaceMarker`, …) stay unscoped — child rows
+  of a photo the caller has already loaded inside its project. `FindDuplicatePairs` (the duplicates scan) filters
   `project_id` on both sides of its lateral join — the outer row and, inside the HNSW scan, the neighbour —
   under the same iterative-scan transaction, so a pair never names two projects.
   `Store` = `NewStore(pool)` over the shared pgx pool:
-  `SaveEmbedding`(upsert)/`GetEmbedding`(`ErrEmbeddingNotFound`)/`FindSimilar(projectUID,vec,limit,maxDistance)`
+  `SaveEmbedding`(upsert)/`GetEmbedding(projectUID,photoUID)`(`ErrEmbeddingNotFound`)/`GetEmbeddingForJob(photoUID)`/
+  `FindSimilar(projectUID,vec,limit,maxDistance)`
   for 1152-dim image embeddings (768 until migration `0057` swapped the image tower),
-  `SaveFaces`(idempotent replace in a transaction)/`ListFaces`/
-  `ListFacesBySubject(subjectUID)` (faces with the given `subject_uid`, ordered `(photo_uid,
+  `SaveFaces`(idempotent replace in a transaction)/`ListFaces(projectUID,photoUID)`/
+  `ListFacesBySubject(projectUID,subjectUID)` (faces with the given `subject_uid`, ordered `(photo_uid,
   face_index)` — the basis of outlier detection; shares `queryFaces`/`scanFace` with `ListFaces`)/
-  `SampleFacesBySubject(subjectUID,limit)` → `SubjectFaces{Faces,Total,Photos}` (the **bounded** read of the
+  `SampleFacesBySubject(projectUID,subjectUID,limit)` → `SubjectFaces{Faces,Total,Photos}` (the **bounded** read of the
   same set: at most `limit` rows selected by an even stride **in SQL** — a row survives where
   `floor(rn·limit/total)` steps up — plus the subject's true face count and distinct-photo count, since a
   sample can no longer be counted from; `limit ≤ 0` = all. It backs the candidate search, whose cost is one
@@ -2193,9 +2203,9 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   beyond it — the same set a SQL predicate returns, but a `(embedding <=> $1) <= x` in the `WHERE` clause is
   invisible to the index scan and made the iterative scan walk to `hnsw.max_scan_tuples` on every call:
   90 ms per exemplar instead of 10, see `docs/PERF.md` §3)/
-  `FacesByKeys(keys)` (batch fetch of `faces` rows by `[]FaceKey` `(photo_uid,face_index)` in one
-  query via `JOIN unnest` — **including embeddings**; keys with no row (a face deleted by re-detection)
-  are missing from the result, order undefined, empty input → `nil`; the basis of `internal/candidates`,
+  `FacesByKeys(projectUID,keys)` (batch fetch of `faces` rows by `[]FaceKey` `(photo_uid,face_index)` in one
+  query via `JOIN unnest` — **including embeddings**; keys with no row (a face deleted by re-detection, or a
+  face of another project) are missing from the result, order undefined, empty input → `nil`; the basis of `internal/candidates`,
   where the negative-exemplar rule needs the embeddings of the filtered candidate set without N+1)/
   `UpdateFaceMarker(photoUID,faceIndex,markerUID,subjectUID,subjectName)` (writes the cache columns onto
   a single face, empty marker/subject → `NULL`; this is how an IoU match is cached — and, all-empty, how a
@@ -2757,7 +2767,7 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   `unassign_person` → `face.unassign` (target = marker, details action/photo/subject/face_index);
   `meta` is the actor+request from `photoapi.handleFaceAssign`, empty for the system cluster caller
   (actor NULL);
-  **`PhotoPeople(ctx,photoUID)`** (`people.go`, backing the detail response's opt-in `?people=true` block,
+  **`PhotoPeople(ctx,projectUID,photoUID)`** (`people.go`, backing the detail response's opt-in `?people=true` block,
   served under the key **`faces`** since hand-attached people took the name `people`)
   answers the narrower question "who is on this photo?" → `[]PersonOnPhoto`
   (`subject_uid`/`subject_name`/`marker_uid`/`bbox`/`det_score`): every detection with the subject its
@@ -3511,7 +3521,10 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   content, ordering, exclusions and the HTTP shape are unchanged. **`Answer(ctx,userUID,
   questionID,answer,meta)`**: the id is **content-derived** (`face:<photo>:<idx>:<subject>` /
   `label:<photo>:<label>`) → the endpoint is stateless; a yes on a face **re-reads** the current face
-  row (`FacesByKeys`) and derives the action (marker → `assign_person`, otherwise `create_marker` with the stored
+  row (`FacesByKeys`, **read inside the answer's project**: on top of the up-front `proveInProject`, a
+  face of another project is simply not found, so the answer is the `"gone"` a photo that exists nowhere
+  gets — never `"assigned"`, which would confirm that a guessed face exists and whom it belongs to; the
+  outlier no's `detachOutlier` reads it the same way) and derives the action (marker → `assign_person`, otherwise `create_marker` with the stored
   bbox; a face already carrying a subject → short-circuit, no duplicate marker), a yes on a label
   `AttachLabelAudited` (idempotent upsert), a no → `RejectFace`/`RejectLabel` (permanent, idempotent,
   audited in the mutation's transaction); a vanished target (`ErrPhotoNotFound`/`ErrMarkerNotFound`/
@@ -3694,7 +3707,10 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   request with no project skips the step — and nothing, which the HTTP layer answers 404 and a client draws
   as the initial. `Service` =
   `NewService(Config{Pictures,Members,Subjects,Photos})` with `Resolve(ctx, viewer, userUID)` (→
-  `Source{Upload|PhotoUID,Face}` + `Origin`), `Describe(ctx, viewer)` (→ `State{Origin,PhotoUID,SubjectUID}`,
+  `Source{Upload|PhotoUID+Photo,Face}` + `Origin` — `Photo` is the record the chain loaded and authorized, so
+  the HTTP layer renders it and never loads a photo by uid itself: a picked photo via
+  `photos.GetAcrossProjects` followed by the `maySee` check, an inherited face via `GetByUIDInProject` in the
+  viewer's project, an avatar photo no longer there being `ErrNoPicture`), `Describe(ctx, viewer)` (→ `State{Origin,PhotoUID,SubjectUID}`,
   the same walk without the bytes, for the caller's own account page), `SetUpload`, `SetPhoto(ctx, viewer,
   photoUID)`, `Clear`. `Viewer{UserUID, Maintainer, ProjectUID}` is who asks and from which project
   (`userpicapi` fills it from the principal and `auth.ProjectUIDFromContext`): the face step reads the
@@ -3734,7 +3750,8 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   the fallback a FK would enforce is needed anyway. **Nothing here is audited**, following
   `POST /auth/password` — the audit trail records what was done *to* an account by somebody else),
   `internal/userpicapi/`
-  (its HTTP surface: `NewAPI(Config{Pictures,Photos,Renderer,RequireAuth})` + `RegisterRoutes` mounts four
+  (its HTTP surface: `NewAPI(Config{Pictures,Renderer,RequireAuth})` — no photo store: it renders
+  `Source.Photo` as the chain resolved it, so it holds no unscoped photo read of its own; + `RegisterRoutes` mounts four
   **flat** routes so `/auth/picture` coexists with `auth`'s own `/auth` group — `GET /users/{uid}/avatar`,
   `GET`/`PUT`/`DELETE /auth/picture`, all RequireAuth. Serving has the same shape as `avatarapi`: an upload
   streams straight from its row with an ETag that is a SHA-256 of the bytes (so replacing the picture
@@ -4512,7 +4529,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `GetLabelByUID` + `AlbumCovers`/`LabelCovers`, satisfied by `organize.Store`, each taking the request's
   project — another project's album or label is neither found nor resolved from a pasted uid), `PeopleSearcher`
   (`SearchSubjects` + `GetSubjectByUID`/`GetMarkerByUID` + `SubjectCovers`, satisfied by
-  `people.Store`) and `PhotoSearcher` (`Search` + `GetByUID`/
+  `people.Store`) and `PhotoSearcher` (`Search` + `GetByUIDInProject`/
   `GetByPhotoprismUID`/`GetByPhotoprismAlias`/`ListStackMembers`, satisfied by
   `photos.Store` — reusing the existing fulltext via `ListParams.FullText`) → unit-testable with fakes;
   `NewAPI(Config{Organizer,People,Photos,Limit,RequireAuth})`+`RegisterRoutes` mounts
@@ -7203,7 +7220,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   - Deliberately textual, so it has blind spots: a table name built at run time (`FROM %s` with a variable),
     comma joins (`FROM a, photos`), a project-named piece that is not actually a predicate, and a statement
     that only *selects* the column (`photoColumns` ends in `project_id`, which is why the worker loaders
-    `GetForJob`/`FilesForJob` need no entry). It is a tripwire for the common mistake, not a proof; the
+    `GetForJob` and `GetAcrossProjects` need no entry). It is a tripwire for the common mistake, not a proof; the
     isolation tests stay the proof.
   - `BootstrapReferences(root, patterns...)` (`bootstrap.go`) is the request-path half of "there is no
     default project": it parses the non-test `.go` files directly inside every directory matching a

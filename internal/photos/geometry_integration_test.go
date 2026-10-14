@@ -141,7 +141,7 @@ func TestRepairDimensionsIsIdempotent(t *testing.T) {
 	if err != nil || !changed {
 		t.Fatalf("RepairDimensions = (%v, %v), want (true, nil)", changed, err)
 	}
-	fixed, err := store.GetByUID(ctx, created.UID)
+	fixed, err := store.GetAcrossProjects(ctx, created.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}

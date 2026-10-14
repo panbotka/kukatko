@@ -135,7 +135,7 @@ type fakeFaces struct {
 }
 
 // FacesByKeys returns the known faces among keys.
-func (f *fakeFaces) FacesByKeys(_ context.Context, keys []vectors.FaceKey) ([]vectors.Face, error) {
+func (f *fakeFaces) FacesByKeys(_ context.Context, _ string, keys []vectors.FaceKey) ([]vectors.Face, error) {
 	var out []vectors.Face
 	for _, key := range keys {
 		if face, ok := f.faces[key]; ok {

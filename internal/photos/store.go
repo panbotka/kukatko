@@ -210,14 +210,18 @@ func (s *Store) Create(ctx context.Context, p Photo) (Photo, error) {
 	return created, nil
 }
 
-// GetByUID returns the photo with the given UID in whichever project holds it,
-// or ErrPhotoNotFound.
+// GetAcrossProjects returns the photo with the given UID in whichever project
+// holds it, or ErrPhotoNotFound.
 //
-// It is the unscoped load kept for the callers not scoped yet (trash, the
-// profile picture, the directory import), each moved to a scoped lookup in its
-// own step. A handler answering a reader uses GetByUIDInProject, so a foreign
-// uid is a plain miss; a background job uses GetForJob, which says so.
-func (s *Store) GetByUID(ctx context.Context, uid string) (Photo, error) {
+// The name is the warning: it reads past the project boundary, so a caller
+// must authorize the photo's project itself (Photo.ProjectID) before showing
+// anything of it. Its one live caller is internal/userpic, whose picked profile
+// photo may belong to any project the viewer is an approved member of — the
+// chain checks that membership on every read. A handler answering a reader uses
+// GetByUIDInProject, so a foreign uid is a plain miss; a background job uses
+// GetForJob. Like GetForJob, nothing in an internal/*api package may call it:
+// the guard test in this package fails the build if one does.
+func (s *Store) GetAcrossProjects(ctx context.Context, uid string) (Photo, error) {
 	return s.getPhoto(ctx, "uid", uid)
 }
 

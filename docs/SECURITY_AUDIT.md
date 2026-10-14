@@ -38,7 +38,9 @@ cookie-authenticated write) was confirmed on **2026-10-09** and is open: it is s
 under the registrable domain is trusted, and behaviour is unchanged pending a product decision.
 **SEC-024** (a curator of one project could dismiss another project's repeated-marker group) was found
 and fixed on **2026-10-14**, and so was **SEC-025** (the slug and username oracles of `/audit/mine`, the
-anonymous project settings and the registration refusals).
+anonymous project settings and the registration refusals). **SEC-026** (the face and embedding loaders
+answered for any project and relied on their callers proving the photo first; not reachable, hardening)
+was fixed on **2026-10-14** too.
 Everything else below is open as written.
 
 > **Severity scale:** critical / high / medium / low / info. A weakness that is not
@@ -1061,6 +1063,52 @@ Everything else below is open as written.
   only learned from a shared context (a comment, a member list), and an account's own picture is meant to
   follow it into every project it joins. `/invite/{code}` and `/u/{code}` naming the project or album to a
   code holder is by design.
+- **Fixed:** 2026-10-14.
+
+---
+
+### SEC-026 — INFO — **FIXED** — Face and embedding loaders answered for any project and relied on their callers' ordering
+
+- **Origin:** found on **2026-10-14** by the tenancy validation. The tenancy guard accepted these
+  statements because each one *selects* `project_id`, which is one of the guard's documented blind spots.
+- **Where (before the fix):** `vectors.Store.GetEmbedding`, `ListFaces`, `FacesByKeys`,
+  `ListFacesBySubject` and `SampleFacesBySubject` read by a bare photo or subject uid. Their callers were
+  safe only because each one proved the photo or subject first: `photoapi`'s similar route, `mcpapi`'s
+  `find_similar` and `facematch.PhotoFaces` load through `GetByUIDInProject`, and `outliers`/`candidates`
+  load the subject scoped. `facematch.PhotoPeople` (the detail page's roll-call) was gated only by
+  `photoapi`'s `photoInProject` in front of it. The review game's answer (`review.applyFaceYes`,
+  `detachOutlier`) read the face before the scoped `assigner.Apply` ran. A face of the guessed subject
+  short-circuits to `"assigned"`, so an unscoped read can confirm that a guessed face exists and whom it
+  belongs to. `photos.Store.GetByUID` was an unscoped loader under an innocent name, called by
+  `internal/userpicapi`, and `FilesForJob` had no caller at all.
+- **Reachability:** not reachable at the time of the fix. `review.Answer` already proves the question's
+  photo, subject and label in the request's project (`proveInProject`) before any face is read. A foreign
+  uid is the same `ErrQuestionNotFound` 404 as a missing one
+  (`TestAnswerRoute_foreignFaceIsMissing`, `internal/reviewapi`). Every other caller was ordered correctly
+  too. The risk was the next caller: one that forgot the proof would leak another project's faces,
+  embeddings or roll-call, and nothing would catch it.
+- **Fix:**
+  1. The five loaders take the project after the context and name it in their own statement
+     (`AND project_id = $n`). A row of another project is answered exactly like a missing one, and an empty
+     project is `ErrNoProject`. Every caller passes the project it already holds. The review answer reads the
+     face inside the answer's project, so even with the up-front proof gone a foreign face is `"gone"`, the
+     answer a photo that exists nowhere gets. `PhotoPeople` is scoped by the same reads.
+  2. The one unscoped embedding read left is `GetEmbeddingForJob`, used by `internal/embedjob`, which has
+     no request. The instance-wide link repair (`facematch.ClearSurplusLinks`) reads faces in the project of
+     the photo it loaded through `GetForJob`.
+  3. `FilesForJob` is removed. `GetByUID` is renamed `GetAcrossProjects`, and its one caller is
+     `internal/userpic`, which checks the viewer's membership of the photo's project on every read. The
+     chain now hands the authorized record to the HTTP layer (`userpic.Source.Photo`), so
+     `internal/userpicapi` holds no photo store at all. An inherited face's photo is read with
+     `GetByUIDInProject` in the viewer's project. `internal/photos`' `forjob_guard_test.go` fails the build if
+     any `internal/*api` package calls `GetAcrossProjects` or any `*ForJob` loader.
+- **Regression tests:** `TestLoaders_neverCrossProjects` (`internal/vectors`: every loader asked about
+  both projects' photos and people from inside each project finds only its own row, and without a project
+  it refuses). `TestAnswer_foreignFaceReadIsScopedEvenWithoutTheProof` (`internal/review`: with a `Scope`
+  that vouches for anything, B's answers about A's unnamed and named faces are `"gone"`, exactly like a
+  missing photo, and A's faces and marker are untouched). Without the `FacesByKeys` predicate it fails
+  with `"assigned"`. `TestPhotoPeople_neverCrossesProjects` (`internal/facematch`).
+  `TestForJobUse_matchesEveryUnscopedLoader` (`internal/photos`).
 - **Fixed:** 2026-10-14.
 
 ---

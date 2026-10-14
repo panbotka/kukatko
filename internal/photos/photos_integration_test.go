@@ -72,7 +72,7 @@ func TestPhotoLifecycle(t *testing.T) {
 		t.Errorf("Create did not populate timestamps: %+v", created)
 	}
 
-	got, err := store.GetByUID(ctx, created.UID)
+	got, err := store.GetAcrossProjects(ctx, created.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestPhotoLifecycle(t *testing.T) {
 		t.Errorf("UpdateMetadata ai_note = %q, want %q", updated.AiNote, "detected: sea, sky, sunset")
 	}
 	// The AI note must survive a fresh read, not just the RETURNING round-trip.
-	if reread, err := store.GetByUID(ctx, created.UID); err != nil {
+	if reread, err := store.GetAcrossProjects(ctx, created.UID); err != nil {
 		t.Fatalf("GetByUID after update: %v", err)
 	} else if reread.AiNote != "detected: sea, sky, sunset" {
 		t.Errorf("reread ai_note = %q, want %q", reread.AiNote, "detected: sea, sky, sunset")
@@ -140,7 +140,7 @@ func TestPhotoNotFound(t *testing.T) {
 	store, _ := newStore(t)
 	ctx := t.Context()
 
-	if _, err := store.GetByUID(ctx, "missing"); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if _, err := store.GetAcrossProjects(ctx, "missing"); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("GetByUID error = %v, want ErrPhotoNotFound", err)
 	}
 	if _, err := store.UpdateMetadata(ctx, project.BootstrapUID, "missing", photos.MetadataUpdate{}); !errors.Is(err, photos.ErrPhotoNotFound) {
@@ -197,7 +197,7 @@ func TestMediaTypeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create video: %v", err)
 	}
-	got, err := store.GetByUID(ctx, created.UID)
+	got, err := store.GetAcrossProjects(ctx, created.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -539,7 +539,7 @@ func TestCascadeDelete(t *testing.T) {
 		t.Fatalf("Delete: %v", err)
 	}
 
-	if _, err := store.GetByUID(ctx, photo.UID); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if _, err := store.GetAcrossProjects(ctx, photo.UID); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("photo still present after delete: %v", err)
 	}
 	files, err := store.ListFiles(ctx, project.BootstrapUID, photo.UID)

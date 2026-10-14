@@ -5,6 +5,7 @@ package vectors_test
 import (
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -52,7 +53,7 @@ func TestRecordFaceDetection_carriesAssignmentsOverARedetection(t *testing.T) {
 		t.Fatalf("RecordFaceDetection (rebuild): %v", err)
 	}
 
-	got, err := store.ListFaces(ctx, uid)
+	got, err := store.ListFaces(ctx, project.BootstrapUID, uid)
 	if err != nil {
 		t.Fatalf("ListFaces: %v", err)
 	}
@@ -94,7 +95,7 @@ func TestRecordFaceDetection_dropsAnAssignmentWithNowhereToGo(t *testing.T) {
 		t.Fatalf("RecordFaceDetection (rebuild): %v", err)
 	}
 
-	got, err := store.ListFaces(ctx, uid)
+	got, err := store.ListFaces(ctx, project.BootstrapUID, uid)
 	if err != nil || len(got) != 1 {
 		t.Fatalf("ListFaces = %d faces, %v; want 1", len(got), err)
 	}

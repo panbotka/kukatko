@@ -131,7 +131,7 @@ func (s *Service) applyFaceYes(
 	ctx context.Context, projectUID string, ref questionRef, meta audit.Meta,
 ) (string, error) {
 	key := vectors.FaceKey{PhotoUID: ref.PhotoUID, FaceIndex: ref.FaceIndex}
-	faces, err := s.faces.FacesByKeys(ctx, []vectors.FaceKey{key})
+	faces, err := s.faces.FacesByKeys(ctx, projectUID, []vectors.FaceKey{key})
 	if err != nil {
 		return "", fmt.Errorf("review: loading face %s/%d: %w", ref.PhotoUID, ref.FaceIndex, err)
 	}
@@ -289,7 +289,7 @@ func (s *Service) detachOutlier(
 	ctx context.Context, projectUID string, ref questionRef, meta audit.Meta,
 ) (string, error) {
 	key := vectors.FaceKey{PhotoUID: ref.PhotoUID, FaceIndex: ref.FaceIndex}
-	faces, err := s.faces.FacesByKeys(ctx, []vectors.FaceKey{key})
+	faces, err := s.faces.FacesByKeys(ctx, projectUID, []vectors.FaceKey{key})
 	if err != nil {
 		return "", fmt.Errorf("review: loading face %s/%d: %w", ref.PhotoUID, ref.FaceIndex, err)
 	}

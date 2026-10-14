@@ -96,7 +96,7 @@ func TestBulk_setTakenAtEachPrecision(t *testing.T) {
 				t.Fatalf("counts = %+v, want updated=1", result.Counts)
 			}
 
-			photo, err := env.photos.GetByUID(t.Context(), uid)
+			photo, err := env.photos.GetAcrossProjects(t.Context(), uid)
 			if err != nil {
 				t.Fatalf("get %s: %v", uid, err)
 			}
@@ -136,7 +136,7 @@ func TestBulk_setTakenAtExactDateDropsTheEstimate(t *testing.T) {
 	_ = resp.Body.Close()
 
 	// A note is what a user would have added beside the guess.
-	current, err := env.photos.GetByUID(ctx, uid)
+	current, err := env.photos.GetAcrossProjects(ctx, uid)
 	if err != nil {
 		t.Fatalf("get %s: %v", uid, err)
 	}
@@ -156,7 +156,7 @@ func TestBulk_setTakenAtExactDateDropsTheEstimate(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	photo, err := env.photos.GetByUID(ctx, uid)
+	photo, err := env.photos.GetAcrossProjects(ctx, uid)
 	if err != nil {
 		t.Fatalf("get %s: %v", uid, err)
 	}
@@ -195,7 +195,7 @@ func TestBulk_setTakenAtIsTransactional(t *testing.T) {
 	_ = resp.Body.Close()
 
 	for _, uid := range []string{p1, p2} {
-		photo, err := env.photos.GetByUID(t.Context(), uid)
+		photo, err := env.photos.GetAcrossProjects(t.Context(), uid)
 		if err != nil {
 			t.Fatalf("get %s: %v", uid, err)
 		}
@@ -224,7 +224,7 @@ func TestBulk_setTakenAtRejectsABadDate(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	photo, err := env.photos.GetByUID(t.Context(), uid)
+	photo, err := env.photos.GetAcrossProjects(t.Context(), uid)
 	if err != nil {
 		t.Fatalf("get %s: %v", uid, err)
 	}
@@ -247,7 +247,7 @@ func TestBulk_setTakenAtViewerForbidden(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	photo, err := env.photos.GetByUID(t.Context(), uid)
+	photo, err := env.photos.GetAcrossProjects(t.Context(), uid)
 	if err != nil {
 		t.Fatalf("get %s: %v", uid, err)
 	}
@@ -405,7 +405,7 @@ func TestBulk_clearTakenAtPreservesTheOutgoingDate(t *testing.T) {
 	}
 
 	for _, uid := range uids {
-		photo, err := env.photos.GetByUID(ctx, uid)
+		photo, err := env.photos.GetAcrossProjects(ctx, uid)
 		if err != nil {
 			t.Fatalf("get %s: %v", uid, err)
 		}
@@ -429,7 +429,7 @@ func TestBulk_clearTakenAtPreservesTheOutgoingDate(t *testing.T) {
 		}
 	}
 
-	untouched, err := env.photos.GetByUID(ctx, control)
+	untouched, err := env.photos.GetAcrossProjects(ctx, control)
 	if err != nil {
 		t.Fatalf("get %s: %v", control, err)
 	}
@@ -469,7 +469,7 @@ func TestBulk_clearTakenAtOnUndatedPhotosPreservesNothing(t *testing.T) {
 		_ = resp.Body.Close()
 	}
 
-	neverPhoto, err := env.photos.GetByUID(ctx, never)
+	neverPhoto, err := env.photos.GetAcrossProjects(ctx, never)
 	if err != nil {
 		t.Fatalf("get %s: %v", never, err)
 	}
@@ -477,7 +477,7 @@ func TestBulk_clearTakenAtOnUndatedPhotosPreservesNothing(t *testing.T) {
 		t.Errorf("a never-dated photo preserved %s, want nothing", neverPhoto.TakenAtBeforeUnknown)
 	}
 
-	clearedPhoto, err := env.photos.GetByUID(ctx, cleared)
+	clearedPhoto, err := env.photos.GetAcrossProjects(ctx, cleared)
 	if err != nil {
 		t.Fatalf("get %s: %v", cleared, err)
 	}
@@ -508,7 +508,7 @@ func TestBulk_clearTakenAtRejectsSetTakenAt(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	photo, err := env.photos.GetByUID(t.Context(), uid)
+	photo, err := env.photos.GetAcrossProjects(t.Context(), uid)
 	if err != nil {
 		t.Fatalf("get %s: %v", uid, err)
 	}

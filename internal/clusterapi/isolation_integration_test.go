@@ -108,7 +108,7 @@ func TestClusterRoutes_foreignClusterIsMissing(t *testing.T) {
 		t.Errorf("A's cluster after B's attempts = %d faces (%v), want its 2 untouched", len(members), err)
 	}
 	for _, m := range members {
-		got, err := faces.FacesByKeys(ctx, []vectors.FaceKey{{PhotoUID: m.PhotoUID, FaceIndex: m.FaceIndex}})
+		got, err := faces.FacesByKeys(ctx, f.A.ProjectUID, []vectors.FaceKey{{PhotoUID: m.PhotoUID, FaceIndex: m.FaceIndex}})
 		if err != nil || len(got) != 1 || got[0].SubjectUID != nil {
 			t.Errorf("A's face %s/%d was assigned from B: %+v (%v)", m.PhotoUID, m.FaceIndex, got, err)
 		}

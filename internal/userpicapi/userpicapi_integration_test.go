@@ -101,7 +101,6 @@ func newEnv(t *testing.T) *env {
 			Subjects: peopleStore,
 			Photos:   photoStore,
 		}),
-		Photos:          photoStore,
 		Renderer:        avatar.New(&previewSource{data: squareJPEG(t, 1280)}, t.TempDir()),
 		RequireAuth:     authAPI.RequireAuth,
 		RequireSignedIn: authAPI.RequireSignedIn,

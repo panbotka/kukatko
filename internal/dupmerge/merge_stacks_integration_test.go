@@ -75,7 +75,7 @@ func TestMerge_archivedCopyLeavesItsStack(t *testing.T) {
 		t.Fatalf("result = %+v, want one archived copy", res)
 	}
 
-	archived, err := store.GetByUID(ctx, copyUID)
+	archived, err := store.GetAcrossProjects(ctx, copyUID)
 	if err != nil {
 		t.Fatalf("GetByUID(copy): %v", err)
 	}
@@ -86,7 +86,7 @@ func TestMerge_archivedCopyLeavesItsStack(t *testing.T) {
 		t.Errorf("archived copy kept stack_uid = %q, want NULL", *archived.StackUID)
 	}
 
-	survivor, err := store.GetByUID(ctx, sibling)
+	survivor, err := store.GetAcrossProjects(ctx, sibling)
 	if err != nil {
 		t.Fatalf("GetByUID(sibling): %v", err)
 	}

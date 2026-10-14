@@ -210,7 +210,7 @@ func TestBulk_appliesAlbumLabelAndLocation(t *testing.T) {
 	assertAlbumMembers(t, ctx, env, album.UID, p1, p2)
 	assertLabelMembers(t, ctx, env, label.UID, p1, p2)
 	for _, uid := range []string{p1, p2} {
-		photo, err := env.photos.GetByUID(ctx, uid)
+		photo, err := env.photos.GetAcrossProjects(ctx, uid)
 		if err != nil {
 			t.Fatalf("get %s: %v", uid, err)
 		}
@@ -284,7 +284,7 @@ func TestBulk_missingPhotoRefusesTheBatch(t *testing.T) {
 		t.Fatalf("bulk status = %d, want 404", resp.StatusCode)
 	}
 
-	photo, err := env.photos.GetByUID(ctx, good)
+	photo, err := env.photos.GetAcrossProjects(ctx, good)
 	if err != nil {
 		t.Fatalf("get good photo: %v", err)
 	}
@@ -455,7 +455,7 @@ func TestBulk_hidesAndUnhides(t *testing.T) {
 func assertHidden(t *testing.T, ctx context.Context, env *env, want bool, uids ...string) {
 	t.Helper()
 	for _, uid := range uids {
-		photo, err := env.photos.GetByUID(ctx, uid)
+		photo, err := env.photos.GetAcrossProjects(ctx, uid)
 		if err != nil {
 			t.Fatalf("get %s: %v", uid, err)
 		}

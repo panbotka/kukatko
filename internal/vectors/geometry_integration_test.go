@@ -83,7 +83,7 @@ func addMarker(t *testing.T, db *database.DB, uid, markerUID string, on [4]float
 // faceByIndex returns one face of a photo by its per-photo slot.
 func faceByIndex(t *testing.T, store *vectors.Store, uid string, index int) vectors.Face {
 	t.Helper()
-	faces, err := store.ListFaces(context.Background(), uid)
+	faces, err := store.ListFaces(context.Background(), project.BootstrapUID, uid)
 	if err != nil {
 		t.Fatalf("ListFaces: %v", err)
 	}

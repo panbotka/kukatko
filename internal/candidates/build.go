@@ -28,7 +28,7 @@ func (s *Service) build(
 		return nil, err
 	}
 	survivors = filterByPixel(survivors, photoByUID, s.minFacePx)
-	survivors, err = s.filterNegatives(ctx, survivors, acceptedVecs, rejected)
+	survivors, err = s.filterNegatives(ctx, projectUID, survivors, acceptedVecs, rejected)
 	if err != nil {
 		return nil, err
 	}
@@ -93,21 +93,22 @@ func filterByPixel(survivors []votedCandidate, photoByUID map[string]photos.Phot
 // this subject than to any accepted face (the negative-exemplar margin rule). It is
 // a no-op — and loads no embeddings — when the subject has no rejections, so the
 // common path pays nothing. Candidate and rejected embeddings are fetched in one
-// batch each.
+// batch each, inside projectUID.
 func (s *Service) filterNegatives(
-	ctx context.Context, survivors []votedCandidate, acceptedVecs [][]float32, rejected []feedback.FaceRef,
+	ctx context.Context, projectUID string, survivors []votedCandidate,
+	acceptedVecs [][]float32, rejected []feedback.FaceRef,
 ) ([]votedCandidate, error) {
 	if len(rejected) == 0 || len(survivors) == 0 {
 		return survivors, nil
 	}
-	rejectedVecs, err := s.embeddings(ctx, rejectionKeys(rejected))
+	rejectedVecs, err := s.embeddings(ctx, projectUID, rejectionKeys(rejected))
 	if err != nil {
 		return nil, err
 	}
 	if len(rejectedVecs) == 0 {
 		return survivors, nil
 	}
-	candidateVecs, err := s.embeddingMap(ctx, survivorKeys(survivors))
+	candidateVecs, err := s.embeddingMap(ctx, projectUID, survivorKeys(survivors))
 	if err != nil {
 		return nil, err
 	}
@@ -123,9 +124,9 @@ func (s *Service) filterNegatives(
 }
 
 // embeddings loads the embedding vectors for the given keys, dropping keys with no
-// row (a face removed by re-detection).
-func (s *Service) embeddings(ctx context.Context, keys []vectors.FaceKey) ([][]float32, error) {
-	faces, err := s.faces.FacesByKeys(ctx, keys)
+// row (a face removed by re-detection, or one of another project than projectUID).
+func (s *Service) embeddings(ctx context.Context, projectUID string, keys []vectors.FaceKey) ([][]float32, error) {
+	faces, err := s.faces.FacesByKeys(ctx, projectUID, keys)
 	if err != nil {
 		return nil, fmt.Errorf("loading face embeddings: %w", err)
 	}
@@ -133,9 +134,11 @@ func (s *Service) embeddings(ctx context.Context, keys []vectors.FaceKey) ([][]f
 }
 
 // embeddingMap loads the embedding vectors for the given keys, indexed by key so a
-// candidate can be matched to its vector.
-func (s *Service) embeddingMap(ctx context.Context, keys []vectors.FaceKey) (map[vectors.FaceKey][]float32, error) {
-	faces, err := s.faces.FacesByKeys(ctx, keys)
+// candidate can be matched to its vector. Only faces of projectUID are read.
+func (s *Service) embeddingMap(
+	ctx context.Context, projectUID string, keys []vectors.FaceKey,
+) (map[vectors.FaceKey][]float32, error) {
+	faces, err := s.faces.FacesByKeys(ctx, projectUID, keys)
 	if err != nil {
 		return nil, fmt.Errorf("loading candidate embeddings: %w", err)
 	}

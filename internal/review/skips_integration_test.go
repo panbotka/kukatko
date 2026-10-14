@@ -177,7 +177,7 @@ func TestSkip_isNotARejection(t *testing.T) {
 	// The identities themselves are untouched: the faces are still unassigned.
 	for _, photoUID := range skipped {
 		faces, err := h.vectors.FacesByKeys(context.Background(),
-			[]vectors.FaceKey{{PhotoUID: photoUID, FaceIndex: 0}})
+			project.BootstrapUID, []vectors.FaceKey{{PhotoUID: photoUID, FaceIndex: 0}})
 		if err != nil {
 			t.Fatalf("FacesByKeys: %v", err)
 		}

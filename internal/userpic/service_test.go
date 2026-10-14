@@ -119,9 +119,19 @@ type fakePhotos struct {
 	byUID map[string]photos.Photo
 }
 
-func (f fakePhotos) GetByUID(_ context.Context, uid string) (photos.Photo, error) {
+func (f fakePhotos) GetAcrossProjects(_ context.Context, uid string) (photos.Photo, error) {
 	photo, ok := f.byUID[uid]
 	if !ok {
+		return photos.Photo{}, photos.ErrPhotoNotFound
+	}
+	return photo, nil
+}
+
+// GetByUIDInProject answers only for a catalogued photo of projectUID — a photo
+// of another project is as missing as one that was never catalogued.
+func (f fakePhotos) GetByUIDInProject(_ context.Context, projectUID, uid string) (photos.Photo, error) {
+	photo, ok := f.byUID[uid]
+	if !ok || photo.ProjectID != projectUID {
 		return photos.Photo{}, photos.ErrPhotoNotFound
 	}
 	return photo, nil
@@ -205,8 +215,8 @@ func TestResolve_aPickedPhotoWinsOverTheLinkedSubject(t *testing.T) {
 	if origin != userpic.OriginPhoto {
 		t.Errorf("origin = %q, want %q", origin, userpic.OriginPhoto)
 	}
-	if source.PhotoUID != "picked" {
-		t.Errorf("photo = %q, want the picked one", source.PhotoUID)
+	if source.PhotoUID != "picked" || source.Photo.UID != "picked" {
+		t.Errorf("photo = %q (record %q), want the picked one", source.PhotoUID, source.Photo.UID)
 	}
 	if source.Face != nil {
 		t.Errorf("a picked photo is shown whole, got face box %+v", source.Face)
@@ -244,6 +254,12 @@ func TestResolve_noSourceAtAllIsErrNoPicture(t *testing.T) {
 		"the linked person is gone":  {members: linkedTo("s1"), subjects: fakeSubjects{err: people.ErrSubjectNotFound}},
 		"nobody photographed them":   {members: linkedTo("s1"), subjects: fakeSubjects{err: people.ErrNoAvatar}},
 		"the account itself is gone": {members: fakeMembers{}, subjects: fakeSubjects{}},
+		// The avatar names a photo the viewer's project does not hold (any more):
+		// it is read scoped, so it is no answer rather than a foreign picture.
+		"the avatar photo is not in the project": {
+			members:  linkedTo("s1"),
+			subjects: fakeSubjects{source: people.AvatarSource{PhotoUID: "subject-photo"}},
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -491,7 +507,10 @@ func TestResolve_theInheritedFaceIsTheViewersProjects(t *testing.T) {
 		"sA": {PhotoUID: "face-a"},
 		"sB": {PhotoUID: "face-b"},
 	}}
-	svc := newService(newFakePictures(), members, subjects, nil)
+	faceB := visiblePhoto("face-b")
+	faceB.ProjectID = projectB
+	catalogue := map[string]photos.Photo{"face-a": visiblePhoto("face-a"), "face-b": faceB}
+	svc := newService(newFakePictures(), members, subjects, catalogue)
 
 	for _, tc := range []struct {
 		project string
@@ -504,6 +523,10 @@ func TestResolve_theInheritedFaceIsTheViewersProjects(t *testing.T) {
 		if origin != userpic.OriginSubject || source.PhotoUID != tc.want {
 			t.Errorf("from %s resolved to %q/%q, want the subject face %q", tc.project, origin, source.PhotoUID, tc.want)
 		}
+		if source.Photo.UID != tc.want || source.Photo.ProjectID != tc.project {
+			t.Errorf("from %s the source carries photo %q of %q, want %q of %q",
+				tc.project, source.Photo.UID, source.Photo.ProjectID, tc.want, tc.project)
+		}
 	}
 
 	if _, _, err := svc.Resolve(t.Context(), userpic.Viewer{UserUID: "viewer"}, "u1"); !errors.Is(err, userpic.ErrNoPicture) {
@@ -513,7 +536,7 @@ func TestResolve_theInheritedFaceIsTheViewersProjects(t *testing.T) {
 	// Linked only in B: a viewer in A sees no face — a person of another
 	// project is nobody here.
 	onlyB := newService(newFakePictures(), fakeMembers{}.with(projectB, "u1", "sB").with(projectA, "u1", ""),
-		subjects, nil)
+		subjects, catalogue)
 	if _, _, err := onlyB.Resolve(t.Context(), inA, "u1"); !errors.Is(err, userpic.ErrNoPicture) {
 		t.Errorf("linked only in B, asked from A: error = %v, want ErrNoPicture", err)
 	}
@@ -540,7 +563,7 @@ func TestResolve_aPickedPhotoIsShownOnlyToWhoMaySeeItsProject(t *testing.T) {
 	}
 	svc := newService(pictures, members,
 		fakeSubjects{source: people.AvatarSource{PhotoUID: "subject-photo"}},
-		map[string]photos.Photo{"picked": picked})
+		map[string]photos.Photo{"picked": picked, "subject-photo": visiblePhoto("subject-photo")})
 
 	for _, tc := range []struct {
 		name   string

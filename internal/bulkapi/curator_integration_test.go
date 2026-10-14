@@ -105,7 +105,7 @@ func TestBulk_curatorRefusedBeyondCuration(t *testing.T) {
 	if len(members) != 0 {
 		t.Errorf("album members after refused batches = %v, want none", members)
 	}
-	photo, err := env.photos.GetByUID(ctx, uid)
+	photo, err := env.photos.GetAcrossProjects(ctx, uid)
 	if err != nil {
 		t.Fatalf("get photo: %v", err)
 	}

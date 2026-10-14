@@ -25,9 +25,10 @@ const (
 // It is an interface so photoapi depends on the vectors layer's behaviour, not
 // its construction; vectors.Store satisfies it.
 type SimilarSearcher interface {
-	// GetEmbedding returns a photo's image embedding, or
-	// vectors.ErrEmbeddingNotFound when it has not been embedded yet.
-	GetEmbedding(ctx context.Context, photoUID string) (vectors.Embedding, error)
+	// GetEmbedding returns the image embedding of a photo of projectUID, or
+	// vectors.ErrEmbeddingNotFound when it has not been embedded yet (or belongs
+	// to another project).
+	GetEmbedding(ctx context.Context, projectUID, photoUID string) (vectors.Embedding, error)
 	// FindSimilar returns embeddings nearest to vec by cosine distance, nearest
 	// first; maxDistance <= 0 disables the distance filter.
 	FindSimilar(
@@ -65,7 +66,7 @@ func (a *API) handleSimilar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parseSimilarLimit(r.URL.Query().Get("limit"))
-	emb, err := a.similar.GetEmbedding(r.Context(), uid)
+	emb, err := a.similar.GetEmbedding(r.Context(), source.ProjectID, uid)
 	if errors.Is(err, vectors.ErrEmbeddingNotFound) {
 		writeJSON(w, http.StatusOK, similarResponse{Similar: []similarPhoto{}})
 		return

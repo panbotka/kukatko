@@ -5,6 +5,7 @@ package vectors_test
 import (
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -35,7 +36,7 @@ func TestFacesByKeys(t *testing.T) {
 		{PhotoUID: photoB, FaceIndex: 0},
 		{PhotoUID: photoA, FaceIndex: 9},
 	}
-	got, err := store.FacesByKeys(ctx, keys)
+	got, err := store.FacesByKeys(ctx, project.BootstrapUID, keys)
 	if err != nil {
 		t.Fatalf("FacesByKeys: %v", err)
 	}
@@ -54,7 +55,7 @@ func TestFacesByKeys(t *testing.T) {
 		t.Errorf("photoA#1 embedding not round-tripped: len=%d", len(faceA1.Vector))
 	}
 
-	empty, err := store.FacesByKeys(ctx, nil)
+	empty, err := store.FacesByKeys(ctx, project.BootstrapUID, nil)
 	if err != nil || empty != nil {
 		t.Errorf("FacesByKeys(nil) = %v, %v; want nil, nil", empty, err)
 	}

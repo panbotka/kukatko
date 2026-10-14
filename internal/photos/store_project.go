@@ -24,7 +24,7 @@ import (
 // uid therefore changes nothing and is answered exactly like a missing one.
 //
 // Background jobs are the one deliberate exception: they have no request and so
-// no project, load through the explicitly named GetForJob/FilesForJob and learn
+// no project, load through the explicitly named GetForJob and learn
 // the project from the row they loaded.
 
 // requireProject returns ErrNoProject when projectUID is empty and nil

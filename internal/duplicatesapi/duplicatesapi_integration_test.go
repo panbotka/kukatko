@@ -258,7 +258,7 @@ func TestMerge_unionsAlbumsLabelsPeopleAndArchives(t *testing.T) {
 	assertLabelHas(t, ctx, env, labelY, keeper)
 	assertSubjectHas(t, ctx, env, subj2, keeper)
 
-	got, err := env.photos.GetByUID(ctx, keeper)
+	got, err := env.photos.GetAcrossProjects(ctx, keeper)
 	if err != nil {
 		t.Fatalf("get keeper: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestMerge_fillsOnlyMissingScalars(t *testing.T) {
 		}
 	}
 
-	got, err := env.photos.GetByUID(ctx, keeper)
+	got, err := env.photos.GetAcrossProjects(ctx, keeper)
 	if err != nil {
 		t.Fatalf("get keeper: %v", err)
 	}
@@ -353,7 +353,7 @@ func TestMerge_dryRunPreviewsWithoutChanging(t *testing.T) {
 	}
 
 	assertAlbumMissing(t, ctx, env, albumB, keeper)
-	got, err := env.photos.GetByUID(ctx, copy1)
+	got, err := env.photos.GetAcrossProjects(ctx, copy1)
 	if err != nil {
 		t.Fatalf("get copy: %v", err)
 	}
@@ -449,7 +449,7 @@ func assertSubjectHas(t *testing.T, ctx context.Context, env *env, subjectUID, p
 // assertArchived fails unless the photo is archived.
 func assertArchived(t *testing.T, ctx context.Context, env *env, photoUID string) {
 	t.Helper()
-	p, err := env.photos.GetByUID(ctx, photoUID)
+	p, err := env.photos.GetAcrossProjects(ctx, photoUID)
 	if err != nil {
 		t.Fatalf("get photo %s: %v", photoUID, err)
 	}

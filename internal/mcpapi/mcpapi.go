@@ -86,8 +86,9 @@ audit trail against the token you are using.`
 // makes the tool report that similarity search is unavailable, which is the
 // honest answer on an instance with no embeddings.
 type SimilarSearcher interface {
-	// GetEmbedding returns a photo's image embedding, or vectors.ErrEmbeddingNotFound.
-	GetEmbedding(ctx context.Context, photoUID string) (vectors.Embedding, error)
+	// GetEmbedding returns the image embedding of a photo of projectUID, or
+	// vectors.ErrEmbeddingNotFound (also for a photo of another project).
+	GetEmbedding(ctx context.Context, projectUID, photoUID string) (vectors.Embedding, error)
 	// FindSimilar returns the project's nearest neighbours of vec by cosine
 	// distance.
 	FindSimilar(

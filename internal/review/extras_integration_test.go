@@ -142,7 +142,7 @@ func TestReviewPlaceCheck_acceptKeepsTheLocationAndClearsTheEstimateDB(t *testin
 		t.Errorf("result = %q, want confirmed", res.Result)
 	}
 
-	after, err := h.photos.GetByUID(context.Background(), uid)
+	after, err := h.photos.GetAcrossProjects(context.Background(), uid)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestReviewPlaceCheck_rejectClearsTheLocationAndLeavesTheTombstoneDB(t *test
 		t.Errorf("result = %q, want cleared", res.Result)
 	}
 
-	after, err := h.photos.GetByUID(context.Background(), uid)
+	after, err := h.photos.GetAcrossProjects(context.Background(), uid)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestReviewDuplicateCheck_yesConfirmsAndNeverMergesDB(t *testing.T) {
 	// The one thing the game must never do: neither photo may be archived or
 	// deleted by an answer. Merging stays an explicit act on the duplicates page.
 	for _, uid := range []string{left, right} {
-		photo, getErr := h.photos.GetByUID(ctx, uid)
+		photo, getErr := h.photos.GetAcrossProjects(ctx, uid)
 		if getErr != nil {
 			t.Fatalf("GetByUID(%s): %v — the answer must not delete a photo", uid, getErr)
 		}
@@ -396,7 +396,7 @@ func TestReviewOutlierCheck_noDetachesThePersonAndKeepsTheMarkerDB(t *testing.T)
 	}
 
 	ctx := context.Background()
-	faces, err := h.vectors.FacesByKeys(ctx, []vectors.FaceKey{{PhotoUID: odd, FaceIndex: 0}})
+	faces, err := h.vectors.FacesByKeys(ctx, project.BootstrapUID, []vectors.FaceKey{{PhotoUID: odd, FaceIndex: 0}})
 	if err != nil {
 		t.Fatalf("FacesByKeys: %v", err)
 	}
@@ -422,7 +422,7 @@ func TestReviewOutlierCheck_noDetachesThePersonAndKeepsTheMarkerDB(t *testing.T)
 		t.Errorf("marker still carries subject %q, want it cleared", *markers[0].SubjectUID)
 	}
 	// The other three assignments are untouched: an answer is about one face.
-	remaining, err := h.vectors.ListFacesBySubject(ctx, subj.UID)
+	remaining, err := h.vectors.ListFacesBySubject(ctx, project.BootstrapUID, subj.UID)
 	if err != nil {
 		t.Fatalf("ListFacesBySubject: %v", err)
 	}
@@ -456,7 +456,7 @@ func TestReviewOutlierCheck_yesConfirmsAndStopsSurfacingDB(t *testing.T) {
 		t.Errorf("face not recorded as confirmed")
 	}
 	// A confirmation changes nothing about the assignment itself.
-	faces, err := h.vectors.FacesByKeys(ctx, []vectors.FaceKey{{PhotoUID: odd, FaceIndex: 0}})
+	faces, err := h.vectors.FacesByKeys(ctx, project.BootstrapUID, []vectors.FaceKey{{PhotoUID: odd, FaceIndex: 0}})
 	if err != nil {
 		t.Fatalf("FacesByKeys: %v", err)
 	}

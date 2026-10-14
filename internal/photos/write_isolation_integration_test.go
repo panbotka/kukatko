@@ -216,13 +216,6 @@ func TestForJobLoaders_readAnyProjectAndCarryIt(t *testing.T) {
 		if photo.ProjectID != side.ProjectUID {
 			t.Errorf("GetForJob(%s).ProjectID = %q, want %q", side.PhotoUID, photo.ProjectID, side.ProjectUID)
 		}
-		files, err := store.FilesForJob(ctx, side.PhotoUID)
-		if err != nil {
-			t.Fatalf("FilesForJob(%s): %v", side.PhotoUID, err)
-		}
-		if len(files) != 1 {
-			t.Errorf("FilesForJob(%s) = %d files, want the seeded one", side.PhotoUID, len(files))
-		}
 	}
 	f.AssertStoreScoped(t, func(projectUID string) ([]string, error) {
 		var uids []string

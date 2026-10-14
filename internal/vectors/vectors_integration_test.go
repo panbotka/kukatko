@@ -84,7 +84,7 @@ func TestEmbeddingLifecycle(t *testing.T) {
 		t.Errorf("SaveEmbedding did not populate Dim/CreatedAt: %+v", saved)
 	}
 
-	got, err := store.GetEmbedding(ctx, uid)
+	got, err := store.GetEmbedding(ctx, project.BootstrapUID, uid)
 	if err != nil {
 		t.Fatalf("GetEmbedding: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestEmbeddingLifecycle(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveEmbedding overwrite: %v", err)
 	}
-	got, err = store.GetEmbedding(ctx, uid)
+	got, err = store.GetEmbedding(ctx, project.BootstrapUID, uid)
 	if err != nil || got.Model != "ViT-L-14" {
 		t.Fatalf("overwrite not applied: %+v, %v", got, err)
 	}
@@ -107,7 +107,7 @@ func TestEmbeddingLifecycle(t *testing.T) {
 // TestGetEmbedding_notFound checks the sentinel for a missing embedding.
 func TestGetEmbedding_notFound(t *testing.T) {
 	store, _, _ := newStore(t)
-	if _, err := store.GetEmbedding(t.Context(), "ph_missing"); !errors.Is(err, vectors.ErrEmbeddingNotFound) {
+	if _, err := store.GetEmbedding(t.Context(), project.BootstrapUID, "ph_missing"); !errors.Is(err, vectors.ErrEmbeddingNotFound) {
 		t.Fatalf("GetEmbedding missing = %v, want ErrEmbeddingNotFound", err)
 	}
 }
@@ -250,7 +250,7 @@ func TestEmbeddingCascadeDelete(t *testing.T) {
 	if err := photoStore.Delete(ctx, uid); err != nil {
 		t.Fatalf("Delete photo: %v", err)
 	}
-	if _, err := store.GetEmbedding(ctx, uid); !errors.Is(err, vectors.ErrEmbeddingNotFound) {
+	if _, err := store.GetEmbedding(ctx, project.BootstrapUID, uid); !errors.Is(err, vectors.ErrEmbeddingNotFound) {
 		t.Fatalf("embedding survived photo delete: %v", err)
 	}
 }

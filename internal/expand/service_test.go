@@ -49,7 +49,7 @@ type fakeVectors struct {
 	searched   []string                   // the projectUID of every FindSimilar call
 }
 
-func (f *fakeVectors) GetEmbedding(_ context.Context, uid string) (vectors.Embedding, error) {
+func (f *fakeVectors) GetEmbedding(_ context.Context, _, uid string) (vectors.Embedding, error) {
 	if v, ok := f.embeddings[uid]; ok {
 		return vectors.Embedding{PhotoUID: uid, Vector: v}, nil
 	}

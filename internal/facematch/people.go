@@ -39,10 +39,11 @@ type PersonOnPhoto struct {
 // enough to answer a detail request with, and keeps a plain read a plain read.
 // A photo with no faces and no markers yields an empty, non-nil slice.
 //
-// The markers and subjects are read inside projectUID; a photo of another
-// project lists nobody (the caller gates on a scoped load of the photo).
+// The faces, markers and subjects are all read inside projectUID, so a photo of
+// another project lists nobody — exactly like a photo with no faces — whatever
+// the caller checked first. An empty projectUID is an error.
 func (s *Service) PhotoPeople(ctx context.Context, projectUID, photoUID string) ([]PersonOnPhoto, error) {
-	faces, err := s.faces.ListFaces(ctx, photoUID)
+	faces, err := s.faces.ListFaces(ctx, projectUID, photoUID)
 	if err != nil {
 		return nil, fmt.Errorf("facematch: listing faces for %s: %w", photoUID, err)
 	}

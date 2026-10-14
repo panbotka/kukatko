@@ -400,7 +400,7 @@ func TestNamelessRestoreReplaysTheUndoFile(t *testing.T) {
 	if sub := markerSubjectUID(t, env, markerUID); sub == nil || *sub != subject.UID {
 		t.Errorf("marker subject after the undo = %v, want %s", sub, subject.UID)
 	}
-	faces, err := env.vectors.ListFaces(t.Context(), facePhotoUID(t, env, markerUID))
+	faces, err := env.vectors.ListFaces(t.Context(), project.BootstrapUID, facePhotoUID(t, env, markerUID))
 	if err != nil {
 		t.Fatalf("ListFaces: %v", err)
 	}

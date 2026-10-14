@@ -1113,11 +1113,11 @@ func TestTrashPurgeOlderRBAC(t *testing.T) {
 			t.Errorf("purge-older result = %+v, want {Purged:2 Failed:0}", body)
 		}
 		for _, uid := range []string{archivedA.UID, archivedB.UID} {
-			if _, err := env.store.GetByUID(ctx, uid); !errors.Is(err, photos.ErrPhotoNotFound) {
+			if _, err := env.store.GetAcrossProjects(ctx, uid); !errors.Is(err, photos.ErrPhotoNotFound) {
 				t.Errorf("archived photo %s survived the purge: err = %v", uid, err)
 			}
 		}
-		if _, err := env.store.GetByUID(ctx, live.UID); err != nil {
+		if _, err := env.store.GetAcrossProjects(ctx, live.UID); err != nil {
 			t.Errorf("live photo was purged: %v", err)
 		}
 	})

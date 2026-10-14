@@ -31,8 +31,9 @@ const MinMeaningful = 3
 // score. It is an interface so the service is unit-testable with a fake;
 // vectors.Store satisfies it.
 type FaceStore interface {
-	// ListFacesBySubject returns every face cached as assigned to subjectUID.
-	ListFacesBySubject(ctx context.Context, subjectUID string) ([]vectors.Face, error)
+	// ListFacesBySubject returns every face of projectUID cached as assigned to
+	// subjectUID.
+	ListFacesBySubject(ctx context.Context, projectUID, subjectUID string) ([]vectors.Face, error)
 	// CountMarkersWithoutFace returns how many of the subject's valid markers
 	// have no embedded face row, so the result can name what cannot be scored.
 	CountMarkersWithoutFace(ctx context.Context, subjectUID string) (int, error)
@@ -148,7 +149,7 @@ func (s *Service) Outliers(ctx context.Context, projectUID, subjectUID string, o
 	if _, err := s.people.GetSubjectByUID(ctx, projectUID, subjectUID); err != nil {
 		return Result{}, fmt.Errorf("loading subject %s: %w", subjectUID, err)
 	}
-	faces, err := s.faces.ListFacesBySubject(ctx, subjectUID)
+	faces, err := s.faces.ListFacesBySubject(ctx, projectUID, subjectUID)
 	if err != nil {
 		return Result{}, fmt.Errorf("listing faces for subject %s: %w", subjectUID, err)
 	}

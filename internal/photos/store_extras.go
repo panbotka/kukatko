@@ -74,17 +74,6 @@ func (s *Store) ListFiles(ctx context.Context, projectUID, photoUID string) ([]P
 	return s.queryFiles(ctx, q, photoUID, projectUID)
 }
 
-// FilesForJob returns every file belonging to the photo identified by photoUID
-// in whichever project holds it, primary first then by id; empty (not nil) when
-// it has none. It is the unscoped loader of a background job, the photo_files
-// twin of GetForJob, and the same rule holds: nothing serving an HTTP request
-// may call it.
-func (s *Store) FilesForJob(ctx context.Context, photoUID string) ([]PhotoFile, error) {
-	q := "SELECT " + fileColumns + " FROM photo_files WHERE photo_uid = $1 " +
-		"ORDER BY is_primary DESC, id"
-	return s.queryFiles(ctx, q, photoUID)
-}
-
 // queryFiles runs q and scans every row as a photo file, empty (not nil) when
 // there are none.
 func (s *Store) queryFiles(ctx context.Context, q string, args ...any) ([]PhotoFile, error) {

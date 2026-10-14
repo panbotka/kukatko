@@ -149,7 +149,7 @@ func TestTakenAtCleared_survivesAnUnrelatedEdit(t *testing.T) {
 	mustBeforeUnknown(t, retitled, &scannedIn, "after an edit that leaves the date alone")
 
 	// And it is on the row, not only in the RETURNING of the statement that wrote it.
-	reread, err := store.GetByUID(ctx, created.UID)
+	reread, err := store.GetAcrossProjects(ctx, created.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}

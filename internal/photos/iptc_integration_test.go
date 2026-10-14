@@ -83,7 +83,7 @@ func TestIPTCColumns_roundTrip(t *testing.T) {
 	}
 	assertIPTC(t, created)
 
-	got, err := store.GetByUID(ctx, created.UID)
+	got, err := store.GetAcrossProjects(ctx, created.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestUpdateMetadata_editableIPTCFields(t *testing.T) {
 	}
 
 	// The persisted row, not just the RETURNING clause, carries the edit.
-	got, err := store.GetByUID(ctx, created.UID)
+	got, err := store.GetAcrossProjects(ctx, created.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}

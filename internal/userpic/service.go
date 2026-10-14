@@ -76,11 +76,18 @@ type Viewer struct {
 	ProjectUID string
 }
 
-// Photos reads the record behind a picked photo: whether it still exists, and
-// whether it may be shown on a profile. It is satisfied by *photos.Store.
+// Photos reads the record behind a picture's photo: whether it still exists,
+// and whether it may be shown on a profile. It is satisfied by *photos.Store.
 type Photos interface {
-	// GetByUID returns one photo or photos.ErrPhotoNotFound.
-	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
+	// GetAcrossProjects returns one photo of any project or
+	// photos.ErrPhotoNotFound. A picked photo may belong to any project the
+	// viewer is an approved member of, so the chain reads it unscoped and checks
+	// the viewer's access to Photo.ProjectID itself.
+	GetAcrossProjects(ctx context.Context, uid string) (photos.Photo, error)
+	// GetByUIDInProject returns the project's photo or photos.ErrPhotoNotFound
+	// (also for a photo of another project). An inherited face is always a
+	// photo of the viewer's project, so it is read scoped.
+	GetByUIDInProject(ctx context.Context, projectUID, uid string) (photos.Photo, error)
 }
 
 // Service resolves and changes a user's profile picture. It is the whole of the
@@ -162,7 +169,7 @@ func (s *Service) resolveStored(ctx context.Context, viewer Viewer, stored Pictu
 	if stored.Kind == KindUpload {
 		return Source{Upload: stored.Image}, true, nil
 	}
-	photo, err := s.photos.GetByUID(ctx, stored.PhotoUID)
+	photo, err := s.photos.GetAcrossProjects(ctx, stored.PhotoUID)
 	if errors.Is(err, photos.ErrPhotoNotFound) {
 		return Source{}, false, nil
 	}
@@ -176,7 +183,7 @@ func (s *Service) resolveStored(ctx context.Context, viewer Viewer, stored Pictu
 	if err != nil || !ok {
 		return Source{}, false, err
 	}
-	return Source{PhotoUID: photo.UID}, true, nil
+	return Source{PhotoUID: photo.UID, Photo: photo}, true, nil
 }
 
 // maySee reports whether viewer may see the photos of the project projectUID:
@@ -222,7 +229,8 @@ func (s *Service) linkedSubject(ctx context.Context, projectUID, userUID string)
 // the project projectUID — the chain's default and the reason most accounts
 // need to configure nothing at all. A request with no project skips the step;
 // an account with no link there, a link to a person who has been deleted, or a
-// person with no picture anywhere all yield ErrNoPicture.
+// person with no picture anywhere all yield ErrNoPicture, and so does an avatar
+// photo that is no longer in the project (it is read scoped, like the subject).
 func (s *Service) resolveSubject(ctx context.Context, projectUID, userUID string) (Source, Origin, error) {
 	subjectUID, err := s.linkedSubject(ctx, projectUID, userUID)
 	if err != nil {
@@ -238,7 +246,14 @@ func (s *Service) resolveSubject(ctx context.Context, projectUID, userUID string
 	if err != nil {
 		return Source{}, OriginNone, fmt.Errorf("userpic: reading subject avatar %s: %w", subjectUID, err)
 	}
-	return Source{PhotoUID: avatar.PhotoUID, Face: convertBox(avatar.Face)}, OriginSubject, nil
+	photo, err := s.photos.GetByUIDInProject(ctx, projectUID, avatar.PhotoUID)
+	if errors.Is(err, photos.ErrPhotoNotFound) {
+		return Source{}, OriginNone, ErrNoPicture
+	}
+	if err != nil {
+		return Source{}, OriginNone, fmt.Errorf("userpic: reading subject avatar photo %s: %w", avatar.PhotoUID, err)
+	}
+	return Source{PhotoUID: photo.UID, Photo: photo, Face: convertBox(avatar.Face)}, OriginSubject, nil
 }
 
 // State is what the account page is told about the picture it is editing: which
@@ -323,7 +338,7 @@ func (s *Service) SetUpload(ctx context.Context, userUID string, data []byte) er
 // or a photo of a library the account cannot even open — become one would be
 // the plainest way there is to sidestep the flag or the project boundary.
 func (s *Service) SetPhoto(ctx context.Context, viewer Viewer, photoUID string) error {
-	photo, err := s.photos.GetByUID(ctx, photoUID)
+	photo, err := s.photos.GetAcrossProjects(ctx, photoUID)
 	if errors.Is(err, photos.ErrPhotoNotFound) {
 		return ErrPhotoNotFound
 	}

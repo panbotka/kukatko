@@ -121,7 +121,7 @@ func wantStates(t *testing.T, got, want map[processing.Step]processing.State) {
 // cached.
 func (e *queueEnv) hasThumbnail(t *testing.T, uid string) bool {
 	t.Helper()
-	photo, err := e.photos.GetByUID(t.Context(), uid)
+	photo, err := e.photos.GetAcrossProjects(t.Context(), uid)
 	if err != nil {
 		t.Fatalf("GetByUID(%s): %v", uid, err)
 	}
@@ -176,7 +176,7 @@ func TestIngest_duplicateCompletesAnInterruptedPhoto(t *testing.T) {
 
 	// Leave exactly what the interrupted upload left: the photo and its pHash,
 	// but no thumbnails (in the cache or in the stamp) and nothing queued.
-	photo, err := env.photos.GetByUID(ctx, first.PhotoUID)
+	photo, err := env.photos.GetAcrossProjects(ctx, first.PhotoUID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}

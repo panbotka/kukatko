@@ -92,14 +92,6 @@ type Pictures interface {
 	Clear(ctx context.Context, userUID string) error
 }
 
-// Photos resolves a picked or inherited photo to its stored record, which
-// carries the file hash the rendition cache is keyed by and the frame the face
-// box is measured against. It is satisfied by *photos.Store.
-type Photos interface {
-	// GetByUID returns one photo or photos.ErrPhotoNotFound.
-	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
-}
-
 // Renderer cuts and caches the square rendition of a photo. It is the very
 // renderer the subject avatar uses — the picked-photo and inherited-face cases
 // are the same crop, so they must not grow a second cropper. Satisfied by
@@ -113,7 +105,6 @@ type Renderer interface {
 // API exposes the profile picture endpoints over HTTP.
 type API struct {
 	pictures      Pictures
-	photos        Photos
 	renderer      Renderer
 	requireAuth   func(http.Handler) http.Handler
 	requireSigned func(http.Handler) http.Handler
@@ -126,8 +117,6 @@ type API struct {
 type Config struct {
 	// Pictures resolves and edits the chain.
 	Pictures Pictures
-	// Photos resolves a photo uid to its stored record.
-	Photos Photos
 	// Renderer cuts the rendition served for a picked or inherited photo.
 	Renderer Renderer
 	// RequireAuth guards the project-scoped reads (RegisterProjectRoutes) for
@@ -147,7 +136,6 @@ func NewAPI(cfg Config) *API {
 	}
 	return &API{
 		pictures:      cfg.Pictures,
-		photos:        cfg.Photos,
 		renderer:      cfg.Renderer,
 		requireAuth:   cfg.RequireAuth,
 		requireSigned: signedIn,
@@ -226,12 +214,11 @@ func (a *API) servePhoto(w http.ResponseWriter, r *http.Request, source userpic.
 		writeError(w, http.StatusServiceUnavailable, "profile pictures not available")
 		return
 	}
-	photo, err := a.photos.GetByUID(r.Context(), source.PhotoUID)
-	if err != nil {
-		writeResolveError(w, err)
-		return
-	}
-	reader, etag, err := a.renderer.Open(r.Context(), photo, faceBox(source.Face))
+	// The chain hands over the photo's record already authorized — a picked
+	// photo after the viewer's access to its project was checked, an inherited
+	// face read inside the viewer's project — so nothing here loads a photo by
+	// uid, and nothing here could read one past the project boundary.
+	reader, etag, err := a.renderer.Open(r.Context(), source.Photo, faceBox(source.Face))
 	if err != nil {
 		log.Printf("userpicapi: rendering picture from %s: %v", source.PhotoUID, err)
 		writeError(w, http.StatusInternalServerError, "profile picture unavailable")

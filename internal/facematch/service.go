@@ -42,8 +42,9 @@ type PhotoStore interface {
 // FaceStore is the subset of vectors.Store the service uses to read a photo's
 // faces, search neighbouring faces, and cache the matched marker on a face.
 type FaceStore interface {
-	// ListFaces returns every stored face of the photo, ordered by face index.
-	ListFaces(ctx context.Context, photoUID string) ([]vectors.Face, error)
+	// ListFaces returns every stored face of the project's photo, ordered by
+	// face index; a photo of another project has none.
+	ListFaces(ctx context.Context, projectUID, photoUID string) ([]vectors.Face, error)
 	// FindSimilarFaceCandidates returns the project's nearest faces with their
 	// cached assignment.
 	FindSimilarFaceCandidates(
@@ -174,7 +175,7 @@ func (s *Service) ClearSurplusLinks(ctx context.Context, photoUID string) (int, 
 	if err != nil {
 		return 0, fmt.Errorf("facematch: loading photo %s: %w", photoUID, err)
 	}
-	faces, err := s.faces.ListFaces(ctx, photoUID)
+	faces, err := s.faces.ListFaces(ctx, photo.ProjectID, photoUID)
 	if err != nil {
 		return 0, fmt.Errorf("facematch: listing faces for %s: %w", photoUID, err)
 	}

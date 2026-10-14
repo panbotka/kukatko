@@ -108,9 +108,9 @@ func filterVoted(cands []votedCandidate, minMatch int) []votedCandidate {
 // filterRejected applies the label rejection filters: it drops candidates the user
 // rejected outright for the label, then applies the negative-exemplar rule. With no
 // rejections (always the case for albums, which have no rejection model) it is a
-// no-op returning its input untouched.
+// no-op returning its input untouched. Embeddings are read inside projectUID.
 func (s *Service) filterRejected(
-	ctx context.Context, cands []votedCandidate, acceptedVecs [][]float32, rejected []string,
+	ctx context.Context, projectUID string, cands []votedCandidate, acceptedVecs [][]float32, rejected []string,
 ) ([]votedCandidate, error) {
 	if len(rejected) == 0 || len(cands) == 0 {
 		return cands, nil
@@ -125,7 +125,7 @@ func (s *Service) filterRejected(
 			kept = append(kept, candidate)
 		}
 	}
-	return s.filterNegatives(ctx, kept, acceptedVecs, rejected)
+	return s.filterNegatives(ctx, projectUID, kept, acceptedVecs, rejected)
 }
 
 // filterNegatives applies the negative-exemplar rule: a candidate closer to a photo
@@ -133,20 +133,21 @@ func (s *Service) filterRejected(
 // teaches rather than just hides one row. acceptedVecs are the (sampled) source
 // embeddings; the rejected and candidate embeddings are loaded here. When no
 // rejected photo is embedded the rule cannot fire and the input is returned as-is.
+// Embeddings are read inside projectUID.
 func (s *Service) filterNegatives(
-	ctx context.Context, cands []votedCandidate, acceptedVecs [][]float32, rejected []string,
+	ctx context.Context, projectUID string, cands []votedCandidate, acceptedVecs [][]float32, rejected []string,
 ) ([]votedCandidate, error) {
 	if len(cands) == 0 {
 		return cands, nil
 	}
-	rejectedVecs, err := s.loadVectors(ctx, rejected)
+	rejectedVecs, err := s.loadVectors(ctx, projectUID, rejected)
 	if err != nil {
 		return nil, err
 	}
 	if len(rejectedVecs) == 0 {
 		return cands, nil
 	}
-	candidateVecs, err := s.loadVectorMap(ctx, candidateUIDs(cands))
+	candidateVecs, err := s.loadVectorMap(ctx, projectUID, candidateUIDs(cands))
 	if err != nil {
 		return nil, err
 	}

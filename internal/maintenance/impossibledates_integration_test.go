@@ -54,7 +54,7 @@ func (h *harness) dateAs(t *testing.T, uid, fileName string, takenAt time.Time, 
 // takenAtOf reads a photo's capture date back from the catalogue.
 func (h *harness) takenAtOf(t *testing.T, uid string) *time.Time {
 	t.Helper()
-	photo, err := h.photos.GetByUID(context.Background(), uid)
+	photo, err := h.photos.GetAcrossProjects(context.Background(), uid)
 	if err != nil {
 		t.Fatalf("GetByUID(%s): %v", uid, err)
 	}
@@ -137,7 +137,7 @@ func TestScanAndRepair_impossibleDates(t *testing.T) {
 
 	// The withdrawn date is preserved, not destroyed: the clear stays reversible
 	// and the metadata panel can still say what the date used to be.
-	photo, err := h.photos.GetByUID(ctx, facebook.UID)
+	photo, err := h.photos.GetAcrossProjects(ctx, facebook.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}

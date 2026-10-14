@@ -187,7 +187,7 @@ func TestDetect_storesFiltersAndIsIdempotent(t *testing.T) {
 	if err := svc.Detect(ctx, photo.UID); err != nil {
 		t.Fatalf("Detect: %v", err)
 	}
-	faces, err := h.vectors.ListFaces(ctx, photo.UID)
+	faces, err := h.vectors.ListFaces(ctx, photo.ProjectID, photo.UID)
 	if err != nil {
 		t.Fatalf("ListFaces: %v", err)
 	}

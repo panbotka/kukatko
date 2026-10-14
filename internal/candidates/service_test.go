@@ -51,7 +51,7 @@ type fakeFaces struct {
 }
 
 func (f *fakeFaces) SampleFacesBySubject(
-	_ context.Context, _ string, limit int,
+	_ context.Context, _, _ string, limit int,
 ) (vectors.SubjectFaces, error) {
 	out := vectors.SubjectFaces{Faces: f.bySubject, Total: len(f.bySubject)}
 	photos := map[string]struct{}{}
@@ -86,7 +86,7 @@ func (f *fakeFaces) FindSimilarUnassignedFaceCandidates(
 	return out, nil
 }
 
-func (f *fakeFaces) FacesByKeys(_ context.Context, keys []vectors.FaceKey) ([]vectors.Face, error) {
+func (f *fakeFaces) FacesByKeys(_ context.Context, _ string, keys []vectors.FaceKey) ([]vectors.Face, error) {
 	var out []vectors.Face
 	for _, key := range keys {
 		if face, ok := f.byKeys[key]; ok {

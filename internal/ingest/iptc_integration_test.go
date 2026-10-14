@@ -98,7 +98,7 @@ func TestIngest_readsIPTCMetadata(t *testing.T) {
 	if res.Outcome != ingest.OutcomeCreated {
 		t.Fatalf("result = %+v, want created", res)
 	}
-	photo, err := env.store.GetByUID(ctx, res.PhotoUID)
+	photo, err := env.store.GetAcrossProjects(ctx, res.PhotoUID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestIngest_plainFileHasNoIPTC(t *testing.T) {
 	if res.Outcome != ingest.OutcomeCreated {
 		t.Fatalf("result = %+v, want created", res)
 	}
-	photo, err := env.store.GetByUID(ctx, res.PhotoUID)
+	photo, err := env.store.GetAcrossProjects(ctx, res.PhotoUID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}

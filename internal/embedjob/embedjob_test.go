@@ -38,7 +38,7 @@ type fakeVectorStore struct {
 }
 
 // GetEmbedding returns the stored embedding or vectors.ErrEmbeddingNotFound.
-func (f *fakeVectorStore) GetEmbedding(_ context.Context, uid string) (vectors.Embedding, error) {
+func (f *fakeVectorStore) GetEmbeddingForJob(_ context.Context, uid string) (vectors.Embedding, error) {
 	emb, ok := f.embeddings[uid]
 	if !ok {
 		return vectors.Embedding{}, vectors.ErrEmbeddingNotFound

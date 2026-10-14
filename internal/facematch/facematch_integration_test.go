@@ -206,7 +206,7 @@ func (e *env) saveFace(t *testing.T, photoUID string, index int, vec []float32, 
 		face.SubjectUID = &subjectUID
 	}
 	// Replace would clobber other faces; append by reading then re-saving all.
-	existing, err := e.vectors.ListFaces(t.Context(), photoUID)
+	existing, err := e.vectors.ListFaces(t.Context(), project.BootstrapUID, photoUID)
 	if err != nil {
 		t.Fatalf("ListFaces: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestFaces_iouMatchCachesAndAssigns(t *testing.T) {
 	}
 
 	// The match must be cached on the face row.
-	faces, err := env.vectors.ListFaces(ctx, uid)
+	faces, err := env.vectors.ListFaces(ctx, project.BootstrapUID, uid)
 	if err != nil || len(faces) != 1 {
 		t.Fatalf("ListFaces = %d, %v", len(faces), err)
 	}
@@ -390,7 +390,7 @@ func TestAssign_createUnassignReuseSubject(t *testing.T) {
 	subjectUID := created.Subject.UID
 
 	// The face cache reflects the assignment.
-	if faces, _ := env.vectors.ListFaces(ctx, uid); faces[0].SubjectUID == nil || *faces[0].SubjectUID != subjectUID {
+	if faces, _ := env.vectors.ListFaces(ctx, project.BootstrapUID, uid); faces[0].SubjectUID == nil || *faces[0].SubjectUID != subjectUID {
 		t.Fatalf("face cache after create = %+v", faces[0])
 	}
 
@@ -401,7 +401,7 @@ func TestAssign_createUnassignReuseSubject(t *testing.T) {
 	if un.Marker.SubjectUID != nil || un.Marker.Reviewed {
 		t.Fatalf("unassign result marker = %+v, want no subject and not reviewed", un.Marker)
 	}
-	if faces, _ := env.vectors.ListFaces(ctx, uid); faces[0].SubjectUID != nil || faces[0].SubjectName != "" {
+	if faces, _ := env.vectors.ListFaces(ctx, project.BootstrapUID, uid); faces[0].SubjectUID != nil || faces[0].SubjectName != "" {
 		t.Errorf("face cache not cleared after unassign: %+v", faces[0])
 	}
 
@@ -567,7 +567,7 @@ func TestFaces_oneMarkerPerFace(t *testing.T) {
 
 	// The stored cache must agree: no marker may be claimed by two faces, and both
 	// face rows survive.
-	faces, err := env.vectors.ListFaces(ctx, uid)
+	faces, err := env.vectors.ListFaces(ctx, project.BootstrapUID, uid)
 	if err != nil {
 		t.Fatalf("ListFaces: %v", err)
 	}

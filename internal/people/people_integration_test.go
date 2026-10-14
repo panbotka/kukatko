@@ -87,7 +87,7 @@ func saveLinkedFace(t *testing.T, store *vectors.Store, photoUID, markerUID stri
 // photoUID, failing the test if there is not exactly one.
 func faceCache(t *testing.T, store *vectors.Store, photoUID string) (*string, string) {
 	t.Helper()
-	faces, err := store.ListFaces(context.Background(), photoUID)
+	faces, err := store.ListFaces(context.Background(), project.BootstrapUID, photoUID)
 	if err != nil {
 		t.Fatalf("ListFaces: %v", err)
 	}

@@ -52,6 +52,8 @@ package userpic
 import (
 	"errors"
 	"time"
+
+	"github.com/panbotka/kukatko/internal/photos"
 )
 
 // Kind is which of the two stored answers a row holds. The third source of the
@@ -111,13 +113,19 @@ type Picture struct {
 
 // Source is what the resolved chain hands the HTTP layer: either bytes to serve
 // as they are, or a photo (and optionally a face box) to render through the
-// avatar renderer. Exactly one of Upload and PhotoUID is set.
+// avatar renderer. Exactly one of Upload and PhotoUID is set; Photo is set
+// together with PhotoUID.
 type Source struct {
 	// Upload holds the stored JPEG bytes when the answer is an uploaded picture.
 	Upload []byte
 	// PhotoUID names the photo to cut the picture from, for a picked photo or an
 	// inherited subject avatar.
 	PhotoUID string
+	// Photo is the record of PhotoUID, loaded and authorized by the chain: a
+	// picked photo after the viewer's access to its project was checked, an
+	// inherited face inside the viewer's project. The HTTP layer renders it as
+	// it is and never loads a photo by uid itself.
+	Photo photos.Photo
 	// Face is the normalised face box to cut, set only when the answer is the
 	// linked subject's detected face. Nil means the photo is shown whole,
 	// centre-cropped square — which is what a picked photo and a hand-chosen

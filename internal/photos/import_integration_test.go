@@ -64,7 +64,7 @@ func TestApplyImportMetadata_fillsEveryColumn(t *testing.T) {
 		t.Error("changed = false, want true: every column was empty")
 	}
 
-	got, err := store.GetByUID(ctx, photo.UID)
+	got, err := store.GetAcrossProjects(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestApplyImportMetadata_rerunWritesNothing(t *testing.T) {
 	if _, err := store.ApplyImportMetadata(ctx, photo.UID, fullImport); err != nil {
 		t.Fatalf("first apply: %v", err)
 	}
-	before, err := store.GetByUID(ctx, photo.UID)
+	before, err := store.GetAcrossProjects(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestApplyImportMetadata_rerunWritesNothing(t *testing.T) {
 	if changed {
 		t.Error("changed = true on an unchanged re-apply, want false")
 	}
-	after, err := store.GetByUID(ctx, photo.UID)
+	after, err := store.GetAcrossProjects(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestApplyImportMetadata_emptyNeverClobbers(t *testing.T) {
 		t.Error("changed = false, want true: the subject is new")
 	}
 
-	got, err := store.GetByUID(ctx, photo.UID)
+	got, err := store.GetAcrossProjects(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestApplyImportMetadata_notesAreGapFilledOnly(t *testing.T) {
 		t.Fatalf("ApplyImportMetadata: %v", err)
 	}
 
-	got, err := store.GetByUID(ctx, photo.UID)
+	got, err := store.GetAcrossProjects(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}

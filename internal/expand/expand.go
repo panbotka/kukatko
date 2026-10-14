@@ -98,10 +98,10 @@ var ErrNoProject = errors.New("expand: no project given")
 // It is an interface so expand depends on the vectors layer's behaviour, not its
 // construction; *vectors.Store satisfies it.
 type VectorStore interface {
-	// GetEmbedding returns a photo's image embedding, or vectors.ErrEmbeddingNotFound
-	// when it has not been embedded yet. It is keyed by uid: expand only asks it
-	// about photos it already resolved inside the project.
-	GetEmbedding(ctx context.Context, photoUID string) (vectors.Embedding, error)
+	// GetEmbedding returns the image embedding of a photo of projectUID, or
+	// vectors.ErrEmbeddingNotFound when it has not been embedded yet or belongs
+	// to another project.
+	GetEmbedding(ctx context.Context, projectUID, photoUID string) (vectors.Embedding, error)
 	// FindSimilar returns the photos of projectUID nearest to vec by cosine
 	// distance, nearest first; maxDistance <= 0 disables the distance filter.
 	FindSimilar(

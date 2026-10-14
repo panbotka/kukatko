@@ -427,7 +427,7 @@ func (a *API) handleFindSimilar(
 		}
 		return nil, similarResult{}, fmt.Errorf("fetching photo: %w", err)
 	}
-	emb, err := a.similar.GetEmbedding(ctx, uid)
+	emb, err := a.similar.GetEmbedding(ctx, c.projectUID, uid)
 	if err != nil {
 		if errors.Is(err, vectors.ErrEmbeddingNotFound) {
 			// The photo is real but not yet embedded — an empty result is the

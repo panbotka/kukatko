@@ -264,7 +264,7 @@ func TestTimelineBuckets_implausibleYear(t *testing.T) {
 		}
 	}
 
-	got, err := store.GetByUID(ctx, uids["tli-a"])
+	got, err := store.GetAcrossProjects(ctx, uids["tli-a"])
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}

@@ -452,7 +452,7 @@ func TestMCPViewerIsRefusedOnEveryWrite(t *testing.T) {
 	}
 
 	// The refusals must have changed nothing.
-	photo, err := e.photos.GetByUID(t.Context(), photoUID)
+	photo, err := e.photos.GetAcrossProjects(t.Context(), photoUID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -692,7 +692,7 @@ func TestMCPEveryMutationIsAudited(t *testing.T) {
 	}
 
 	// The changes really landed.
-	photo, err := e.photos.GetByUID(t.Context(), photoUID)
+	photo, err := e.photos.GetAcrossProjects(t.Context(), photoUID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -735,7 +735,7 @@ func TestMCPSetMetadataDoesNotBlankOtherFields(t *testing.T) {
 
 	e.mustCall(t, bearer, "set_photo_metadata", map[string]any{"uid": photoUID, "title": "new"})
 
-	photo, err := e.photos.GetByUID(t.Context(), photoUID)
+	photo, err := e.photos.GetAcrossProjects(t.Context(), photoUID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -754,7 +754,7 @@ func TestMCPSetMetadataDoesNotBlankOtherFields(t *testing.T) {
 
 	// Clearing is still possible, and distinct from omitting.
 	e.mustCall(t, bearer, "set_photo_metadata", map[string]any{"uid": photoUID, "notes": ""})
-	photo, err = e.photos.GetByUID(t.Context(), photoUID)
+	photo, err = e.photos.GetAcrossProjects(t.Context(), photoUID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}

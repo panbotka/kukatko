@@ -78,20 +78,52 @@ func (s *Store) SaveEmbedding(ctx context.Context, emb Embedding) (Embedding, er
 	return emb, nil
 }
 
-// getEmbeddingSQL reads the full image-embedding row for one photo.
+// getEmbeddingSQL reads the full image-embedding row for one photo of one
+// project ($2). A photo of another project has no row here, exactly like a photo
+// that was never embedded.
 const getEmbeddingSQL = `
+SELECT photo_uid, embedding, model, pretrained, dim, created_at, project_id
+FROM embeddings
+WHERE photo_uid = $1 AND project_id = $2`
+
+// getEmbeddingForJobSQL reads the full image-embedding row for one photo in
+// whichever project holds it — the unscoped loader of the embedding job.
+const getEmbeddingForJobSQL = `
 SELECT photo_uid, embedding, model, pretrained, dim, created_at, project_id
 FROM embeddings
 WHERE photo_uid = $1`
 
-// GetEmbedding returns the image embedding stored for photoUID, or
-// ErrEmbeddingNotFound when none exists.
-func (s *Store) GetEmbedding(ctx context.Context, photoUID string) (Embedding, error) {
+// GetEmbedding returns the image embedding stored for photoUID inside the
+// project projectUID, or ErrEmbeddingNotFound when none exists — also when the
+// photo belongs to another project, so the two cannot be told apart. An empty
+// projectUID is ErrNoProject. Correctness does not depend on the caller having
+// proved the photo first: the statement itself names the project.
+func (s *Store) GetEmbedding(ctx context.Context, projectUID, photoUID string) (Embedding, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Embedding{}, err
+	}
+	return s.getEmbedding(ctx, getEmbeddingSQL, photoUID, projectUID)
+}
+
+// GetEmbeddingForJob returns the image embedding stored for photoUID in
+// whichever project holds it, or ErrEmbeddingNotFound. It is the unscoped loader
+// of the embedding job, which has no request and so no project (the row carries
+// it, Embedding.ProjectID). Nothing serving an HTTP request may call it — the
+// *ForJob guard in internal/photos fails the build if an internal/*api package
+// does.
+func (s *Store) GetEmbeddingForJob(ctx context.Context, photoUID string) (Embedding, error) {
+	return s.getEmbedding(ctx, getEmbeddingForJobSQL, photoUID)
+}
+
+// getEmbedding runs one of the embedding loaders and scans its single row,
+// mapping "no row" to ErrEmbeddingNotFound. The photo uid is bound as $1, args
+// follow it.
+func (s *Store) getEmbedding(ctx context.Context, query, photoUID string, args ...any) (Embedding, error) {
 	var (
 		emb Embedding
 		hv  pgvector.HalfVector
 	)
-	err := s.pool.QueryRow(ctx, getEmbeddingSQL, photoUID).Scan(
+	err := s.pool.QueryRow(ctx, query, append([]any{photoUID}, args...)...).Scan(
 		&emb.PhotoUID, &hv, &emb.Model, &emb.Pretrained, &emb.Dim, &emb.CreatedAt, &emb.ProjectID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Embedding{}, ErrEmbeddingNotFound

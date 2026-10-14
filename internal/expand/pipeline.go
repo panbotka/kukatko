@@ -10,7 +10,7 @@ import "context"
 // result carrying a Reason so the UI can explain it.
 func (s *Service) find(ctx context.Context, src collection, req Request) (Result, error) {
 	sampled, capped := sampleSource(src.members, s.sourceCap)
-	sourceVecs, err := s.loadVectors(ctx, sampled)
+	sourceVecs, err := s.loadVectors(ctx, src.project, sampled)
 	if err != nil {
 		return Result{}, err
 	}
@@ -29,7 +29,7 @@ func (s *Service) find(ctx context.Context, src collection, req Request) (Result
 	}
 	voted = excludeMembers(voted, src.members)
 	voted = filterVoted(voted, result.MinMatchCount)
-	voted, err = s.filterRejected(ctx, voted, sourceVecs, src.rejected)
+	voted, err = s.filterRejected(ctx, src.project, voted, sourceVecs, src.rejected)
 	if err != nil {
 		return Result{}, err
 	}

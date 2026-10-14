@@ -84,18 +84,21 @@ const (
 // FaceStore is the subset of vectors.Store the service reads. It is an interface so
 // the service is unit-testable with a fake; *vectors.Store satisfies it.
 type FaceStore interface {
-	// SampleFacesBySubject returns at most limit of subjectUID's faces, evenly
-	// spread rather than taken from the head, plus the subject's true face and
-	// photo totals.
-	SampleFacesBySubject(ctx context.Context, subjectUID string, limit int) (vectors.SubjectFaces, error)
+	// SampleFacesBySubject returns at most limit of subjectUID's faces in
+	// projectUID, evenly spread rather than taken from the head, plus the
+	// subject's true face and photo totals.
+	SampleFacesBySubject(
+		ctx context.Context, projectUID, subjectUID string, limit int,
+	) (vectors.SubjectFaces, error)
 	// FindSimilarUnassignedFaceCandidates returns the nearest unassigned faces to
 	// vec inside the project, excluding the given keys, within maxDistance.
 	FindSimilarUnassignedFaceCandidates(
 		ctx context.Context, projectUID string, vec []float32, limit int, maxDistance float64,
 		exclude []vectors.FaceKey,
 	) ([]vectors.FaceCandidate, error)
-	// FacesByKeys returns the face rows for the given keys (embeddings included).
-	FacesByKeys(ctx context.Context, keys []vectors.FaceKey) ([]vectors.Face, error)
+	// FacesByKeys returns the face rows of projectUID for the given keys
+	// (embeddings included); a key of another project is absent.
+	FacesByKeys(ctx context.Context, projectUID string, keys []vectors.FaceKey) ([]vectors.Face, error)
 }
 
 // PeopleStore is the subset of people.Store the service reads: it validates the

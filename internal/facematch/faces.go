@@ -22,7 +22,7 @@ func (s *Service) PhotoFaces(ctx context.Context, projectUID, photoUID string) (
 	if err != nil {
 		return FacesResponse{}, fmt.Errorf("facematch: loading photo %s: %w", photoUID, err)
 	}
-	faces, err := s.faces.ListFaces(ctx, photoUID)
+	faces, err := s.faces.ListFaces(ctx, projectUID, photoUID)
 	if err != nil {
 		return FacesResponse{}, fmt.Errorf("facematch: listing faces for %s: %w", photoUID, err)
 	}

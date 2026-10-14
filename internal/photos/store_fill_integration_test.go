@@ -44,7 +44,7 @@ func TestFillMissingMetadata_fillsGapsAndIsIdempotent(t *testing.T) {
 		t.Fatal("FillMissingMetadata reported no change, want the gaps filled")
 	}
 
-	filled, err := store.GetByUID(ctx, photo.UID)
+	filled, err := store.GetAcrossProjects(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestFillMissingMetadata_fillsGapsAndIsIdempotent(t *testing.T) {
 	if changed {
 		t.Error("the second fill reported a change, want none")
 	}
-	again, err := store.GetByUID(ctx, photo.UID)
+	again, err := store.GetAcrossProjects(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestFillMissingMetadata_neverOverwrites(t *testing.T) {
 		t.Fatal("FillMissingMetadata reported no change, want the missing altitude filled")
 	}
 
-	got, err := store.GetByUID(ctx, photo.UID)
+	got, err := store.GetAcrossProjects(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestFillMissingMetadata_overrulesAFilenameGuess(t *testing.T) {
 		t.Fatalf("FillMissingMetadata: %v", err)
 	}
 
-	got, err := store.GetByUID(ctx, photo.UID)
+	got, err := store.GetAcrossProjects(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestFillMissingMetadata_halfAFixIsNotALocation(t *testing.T) {
 		t.Error("a lone latitude was written, want nothing")
 	}
 
-	got, err := store.GetByUID(ctx, photo.UID)
+	got, err := store.GetAcrossProjects(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}

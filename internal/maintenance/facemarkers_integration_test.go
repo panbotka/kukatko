@@ -72,7 +72,7 @@ func faceVector(index int) []float32 {
 // marker uid.
 func (h *harness) markerLinks(t *testing.T, photoUID string) map[string]int {
 	t.Helper()
-	faces, err := h.vectors.ListFaces(context.Background(), photoUID)
+	faces, err := h.vectors.ListFaces(context.Background(), project.BootstrapUID, photoUID)
 	if err != nil {
 		t.Fatalf("ListFaces: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestScanAndRepairFaceMarkers(t *testing.T) {
 		t.Fatalf("FaceLinksCleared = %d, want 1", res.FaceLinksCleared)
 	}
 
-	faces, err := h.vectors.ListFaces(ctx, photo.UID)
+	faces, err := h.vectors.ListFaces(ctx, photo.ProjectID, photo.UID)
 	if err != nil {
 		t.Fatalf("ListFaces: %v", err)
 	}
