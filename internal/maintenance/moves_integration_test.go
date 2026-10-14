@@ -34,7 +34,8 @@ func (h *harness) withMoves(t *testing.T) *rekey.Service {
 }
 
 // TestRepairOrphanSegmentsRefusedDuringAMove verifies the orphan-segment sweep —
-// and the root-derived repair, the other repair that deletes at the root — is
+// and the root-derived repair, the other repair that deletes at the root, and
+// the orphan import, which mid-move would re-catalogue a purged photo's copy — is
 // refused with ErrStorageMoveActive, deleting nothing, while a storage move is
 // running and while it is paused, and runs again once the move has ended.
 func TestRepairOrphanSegmentsRefusedDuringAMove(t *testing.T) {
@@ -53,7 +54,9 @@ func TestRepairOrphanSegmentsRefusedDuringAMove(t *testing.T) {
 
 	refused := func(state string) {
 		t.Helper()
-		for _, opts := range []maintenance.RepairOptions{{DeleteOrphanSegments: true}, {RootDerived: true}} {
+		for _, opts := range []maintenance.RepairOptions{
+			{DeleteOrphanSegments: true}, {RootDerived: true}, {ImportOrphans: true},
+		} {
 			_, err := h.svc.Repair(ctx, opts, audit.Meta{})
 			if !errors.Is(err, maintenance.ErrStorageMoveActive) {
 				t.Fatalf("Repair(%+v) with the move %s = %v, want ErrStorageMoveActive", opts, state, err)

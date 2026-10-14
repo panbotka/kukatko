@@ -115,6 +115,18 @@ var errCrash = errors.New("rekey: simulated crash")
 // movePhoto runs the whole safety sequence for one photo: copy the original,
 // verify the copy, move the row, then hand over to completePhoto for the derived
 // objects and the deletions.
+//
+// The copy runs unlocked — it can be long, and a publisher of the photo's
+// derived objects may meanwhile go on publishing at the root, where the move
+// will take its objects from. From the commit to the end of completePhoto the
+// move holds the photo's lock (lockPhoto), and re-reads the photo under it
+// first: no thumbnail, rendition or sidecar is published for the photo while
+// its derived objects are copied, so a fresh one is never overwritten by the
+// stale root copy, and the plan includes a rendition recorded since the batch
+// was read. A photo that changed or vanished since the batch was read — a trash
+// purge got to it first — is ErrPhotoChanged, and the copy of its original made
+// for this move is deleted again (discardCopy), so no object of a purged photo
+// survives under the new prefix.
 func (s *Service) movePhoto(ctx context.Context, run Run, photo PhotoFiles) (State, error) {
 	moves := Plan(photo, run.TargetPrefix)
 	if len(moves) == 0 {
@@ -127,13 +139,57 @@ func (s *Service) movePhoto(ctx context.Context, run Run, photo PhotoFiles) (Sta
 	if err := s.at(stageCopied); err != nil {
 		return "", err
 	}
-	if err := s.commitMove(ctx, run, photo, original); err != nil {
-		return "", err
+	var state State
+	err := s.lockPhoto(ctx, photo.UID, func() error {
+		current, err := s.reloadUnchanged(ctx, run, photo)
+		if err != nil {
+			return err
+		}
+		moves = Plan(current, run.TargetPrefix)
+		if err := s.commitMove(ctx, run, current, original); err != nil {
+			return err
+		}
+		if err := s.at(stageCommitted); err != nil {
+			return err
+		}
+		state, err = s.completePhoto(ctx, run, current, moves)
+		return err
+	})
+	if errors.Is(err, ErrPhotoChanged) {
+		return "", errors.Join(err, s.discardCopy(ctx, original))
 	}
-	if err := s.at(stageCommitted); err != nil {
-		return "", err
+	return state, err
+}
+
+// reloadUnchanged re-reads photo with its renditions as they are now, returning
+// ErrPhotoChanged when it is gone or its original is no longer at the key the
+// batch read.
+func (s *Service) reloadUnchanged(ctx context.Context, run Run, photo PhotoFiles) (PhotoFiles, error) {
+	current, found, err := s.loadPhoto(ctx, run.ProjectUID, photo.UID)
+	if err != nil {
+		return PhotoFiles{}, err
 	}
-	return s.completePhoto(ctx, run, photo, moves)
+	if !found || current.FilePath != photo.FilePath || current.FileHash != photo.FileHash {
+		return PhotoFiles{}, fmt.Errorf("rekey: re-reading %s: %w", photo.UID, ErrPhotoChanged)
+	}
+	return current, nil
+}
+
+// discardCopy deletes the copy of an original this move made for a photo it
+// then did not commit — unless a photo row names that key, which only another
+// photo's could. A copy already gone is no work.
+func (s *Service) discardCopy(ctx context.Context, original Move) error {
+	var referenced bool
+	if err := s.pool.QueryRow(ctx, keyReferencedSQL, original.To).Scan(&referenced); err != nil {
+		return fmt.Errorf("rekey: checking references to %s: %w", original.To, err)
+	}
+	if referenced {
+		return nil
+	}
+	if err := s.store.Delete(ctx, original.To); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("rekey: deleting the unused copy %s: %w", original.To, err)
+	}
+	return nil
 }
 
 // copyVerified makes sure the original's new key holds a verified copy: a copy
@@ -279,8 +335,14 @@ func (s *Service) deleteOldOriginal(ctx context.Context, original Move) error {
 // photo that is gone, or whose row no longer points at the move's new key, is
 // only forgotten: its objects are left for the maintenance scan to report. A
 // copy that can be neither verified nor redone is recorded as an error and
-// forgotten too, with nothing deleted.
+// forgotten too, with nothing deleted. It all runs under the photo's lock, like
+// the step the crash interrupted.
 func (s *Service) finishPending(ctx context.Context, run Run) error {
+	return s.lockPhoto(ctx, run.PendingPhotoUID, func() error { return s.finishPendingLocked(ctx, run) })
+}
+
+// finishPendingLocked is finishPending under the photo's lock.
+func (s *Service) finishPendingLocked(ctx context.Context, run Run) error {
 	photo, found, err := s.loadPhoto(ctx, run.ProjectUID, run.PendingPhotoUID)
 	if err != nil {
 		return err

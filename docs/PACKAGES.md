@@ -1010,18 +1010,31 @@ to `## Package map` in `CLAUDE.md`.
   **`MoveRootDerived(ctx, found)`** are the same root sweep and retry for every project a move touched,
   read-only and repairing respectively (`RootDerivedPhoto{UID, ProjectUID, Moves}`,
   `RootDerivedResult{Photos, Objects, Failed}`) — the `root_derived` check and repair of
-  `internal/maintenance`. **The move and the publishing jobs (`gate.go`)**: the `thumbnail`,
+  `internal/maintenance`. The closing sweep, `FindRootDerived` and so `MoveRootDerived` find nothing while
+  another project is still in the root layout (`rootShared`, like `cleanRoot`): a hash is unique only per
+  project, so a matching root tile may be that project's. **The move and the publishing jobs (`gate.go`)**: the `thumbnail`,
   `hls_transcode` and `sidecar` handlers wait for the move, never the move for them — the chosen
   direction, because a photo the pass skipped for a busy job would sit behind the `file_path` cursor until a
   `Retry`, while a deferred job just runs later. **`Gate`** (`NewGate(pool)`) answers
   **`AwaitingMove(ctx, projectUID, filePath)`**: true while the project has a **running** run and `filePath`
-  is not under its target prefix — the handler then defers with `worker.RetryAfter` (`MoveRetryDelay`, a
-  minute) until the move has taken the photo; a paused/failed/done run awaits nothing. The handlers also
-  re-read the photo's key right before publishing (`hlsjob` re-publishes under the current prefix, again
-  before its row; `thumb.WithLocation` refuses a size with `thumb.ErrPrefixMoved` and `thumbjob` defers;
-  `sidecarjob` rebuilds next to the current key), so a job already running when the move committed its photo
-  never writes under the prefix the photo left; the remaining instant between that re-read and the upload is
-  caught by `Finish`'s root sweep. **`ActiveRuns(ctx)`** lists the running/paused runs, oldest first — what
+  is not under its target prefix — the handler then defers with `worker.RetryAfter` (from `MoveRetryDelay`,
+  a minute, backing off to 30 minutes — `worker.WaitedDelay`) until the move has taken the photo; a
+  paused/failed/done run awaits nothing. **The photo lock (`lock.go`)**: a transaction-scoped advisory lock
+  per photo uid (`hashtextextended('rekey_photo:'||uid, 0)`). `movePhoto` copies and verifies the original
+  unlocked, then takes it **exclusively** (`lockPhoto`, waiting) for re-reading the photo (a photo gone or
+  changed since the batch is `ErrPhotoChanged`, and **`discardCopy`** deletes the copy this move made unless
+  a row names it), the commit, and `completePhoto`; `finishPending`, `retryDerived` and `MoveRootDerived`
+  run each photo under it too. **`Gate.Publish(ctx, projectUID, photoUID, fn(filePath, found))`** takes it
+  **shared without waiting**, re-reads the photo's key on the lock's own transaction and runs `fn` — the
+  thumbnailer's upload (`thumb.WithLocation`), `hlsjob`'s segment upload + row, `sidecarjob`'s write — under
+  it; while the move holds the photo, or a crashed step left it `pending_photo_uid`, it returns
+  `storekeys.ErrMoving` without calling `fn`, and the caller defers (or the HTTP rebuild answers 503).
+  **`Gate.Purge(ctx, projectUID, photoUID, fn)`** is the same shared lock **waiting**, for
+  `internal/trash` (refusing a pending photo the same way). So a fresh object lands before the move copies
+  (at the root, taken along) or after it is through (under the new prefix), never in between where the stale
+  root copy would overwrite it or it would be orphaned at an emptied root, and a purge and a move never
+  interleave on one photo. Publishers never wait, so a pooled connection is never held by a job waiting for a
+  move that itself needs the pool. **`ActiveRuns(ctx)`** lists the running/paused runs, oldest first — what
   `internal/maintenance` checks before a repair that deletes at the root. Tests: `gate_integration_test.go`
   (the gate and `ActiveRuns` through start, pause, resume and finish), `plan_test.go` (plan, rendition names,
   verification over an in-memory fake with S3-style ETags), `derived_test.go` (the two-phase move: a copy
@@ -1037,7 +1050,11 @@ to `## Package map` in `CLAUDE.md`.
   (old kept, run continues, `Finish` fails it, `Retry` completes it), the error threshold, pause/resume and
   the `Start` refusals, the transitions' audit entries and their one queued job, the preview, with an
   invariant — every `photos.file_path` names an existing object of the right size — checked after **every**
-  step),
+  step), `lock_integration_test.go` (the photo lock: a thumbnail published between the commit and the
+  derived copy is refused and its deferred re-run is what the prefix serves; a publish in flight holds the
+  move off and its fresh root tile is taken along; a purge before the commit leaves nothing of the photo, one
+  during the copy waits and leaves nothing either; a crashed step's pending photo refuses both purge and
+  publish until the next step finishes it),
   `internal/rekeyjob/`
   (**the `storage_rekey` job**: the scheduled half of `internal/rekey`. `New(Config{Mover, PerSecond, Clock,
   Logger})`, `Mover` = `Status`/`Step`/`Finish`, satisfied by `*rekey.Service`; `PerSecond` is
@@ -1082,7 +1099,9 @@ to `## Package map` in `CLAUDE.md`.
   `pj` + 24 symbols of the uid alphabet, checked so a foreign `projects/` tree is never a project — else `""`),
   `Strip(key)` → `(prefix, rest)`, `Join(prefix, rest)` (its inverse), `ValidatePrefix(prefix)`
   (`ErrInvalidPrefix` unless `""` or exactly `projects/<uid>/` — every builder calls it, so a malformed
-  prefix never becomes a cache path or a key) and `ProjectUID(prefix)`. **The rule every builder follows:**
+  prefix never becomes a cache path or a key) and `ProjectUID(prefix)`. `ErrMoving` is the transient "a
+  storage move is moving this photo right now" that `rekey.Gate` returns and the publishers and the purge
+  recognise — defined here so `internal/thumb`, which the move imports, can see it. **The rule every builder follows:**
   a photo's derived keys take `PrefixOf(photos.file_path)` — the prefix of its **own original**, never the
   project row — so a half-moved project stays consistent per photo and no read falls back or guesses.
   `ClassifyWithProject(key)` → `(Kind, projectUID)` accepts both layouts: it strips a project prefix and
@@ -1149,11 +1168,12 @@ to `## Package map` in `CLAUDE.md`.
   `fit_720/1280/1920/2560/3840` + `tile_100/224/500`; cache layout under `storage.cache_path`
   `<prefix>thumb/<aa>/<bb>/<cc>/<hash>_<size>.jpg` (shard from the hex SHA256; `<prefix>` =
   `storekeys.PrefixOf(photo.FilePath)`, the storage prefix of the photo's own original — `""` for the root
-  layout — so two projects holding identical bytes never share a thumbnail; with `WithLocation(r)` — wired
-  with `*photos.Store` by `cmd/kukatko`'s `thumbOptions` — the photo's row is re-read right before each size
-  is published and a size whose prefix moved since the generation started (a storage move committed the
-  photo) is refused with `ErrPrefixMoved`, its cache file removed, nothing published; a row not committed yet
-  publishes as planned), regenerable +
+  layout — so two projects holding identical bytes never share a thumbnail; with `WithLocation(l)` — a
+  `LocationLock`, wired with `*rekey.Gate` by `cmd/kukatko`'s `thumbOptions` — each size's upload runs
+  inside `l.Publish` (the storage move's shared photo lock), right after the photo's row is re-read there: a
+  size whose prefix moved since the generation started (a storage move committed the photo), or that the move
+  holds right now (`storekeys.ErrMoving`, wrapped too), is refused with `ErrPrefixMoved`, its cache file
+  removed, nothing published; a row not committed yet publishes as planned), regenerable +
   **idempotent** (skips existing ones) + atomic write temp+rename; `Thumbnailer` =
   `New(store,cacheDir,WithConcurrency(n),WithMaxPixels(px),WithDecodeBudget(b))` with the API `Generate(ctx,photo,sizes...)`/
   `GenerateAll(ctx,photo)` (a size→abs-path map, skips existing)/
@@ -1933,7 +1953,12 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   = EXIF orientation; identity = passthrough of the original, otherwise render to a JPEG), `internal/trash/`
   (permanent deletion (purge) of soft-deleted photos, all behind the interfaces `PhotoStore`/`ProjectLister`/
   `FileStorage`/`ThumbStore`/`RemoteRemover` (unit-testable with fakes): `Service` = `New(Config{Photos,Projects,
-  Storage,Thumbnailer,Remote?,RetentionDays,BatchSize,Logger})` (panics on nil Photos/Projects/Storage/Thumbnailer);
+  Storage,Thumbnailer,Remote?,Moves?,RetentionDays,BatchSize,Logger})` (panics on nil Photos/Projects/Storage/Thumbnailer);
+  **during a storage move** — with `Moves` (a `MoveLock`, `*rekey.Gate`) — each photo is purged inside
+  `Moves.Purge`, the move's photo lock held shared and **waited for** while the move copies that photo, so a
+  purge and a move never interleave on one photo (the move deletes the copy it made of a photo purged before
+  it committed); a photo a crashed move has yet to finish is refused with `storekeys.ErrMoving` (a single
+  purge returns it — 503 over HTTP —, a batch counts it `failed`);
   **project scope:** every operation works inside one project — `PhotoStore` is the scoped
   `GetByUIDInProject`/`ListFiles`/`DeleteAudited(projectUID,…)`/`ListArchivedUIDs(projectUID,…)`, so a foreign
   uid is `photos.ErrPhotoNotFound` exactly like a missing one and emptying one project's trash never reaches
@@ -2129,6 +2154,10 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   `ErrHandlerPanic` (job fail, not a crash), an unknown type → `ErrNoHandler`; a handler can return
   `RetryAfter(delay,cause)`/`RetryAfterError` → the worker calls `Defer(delay)` instead of `Fail` (a transient
   error-free failure, no burned attempt — used by `image_embed` when the box is offline);
+  `WaitedDelay(created, now, floor, ceiling)` is the delay of a deferral that repeats while a job waits for
+  something outside its control: as long as the job has waited already, clamped to `[floor, ceiling]` (a zero
+  `created` counts as long) — the storage move's deferrals of `thumbnail`/`hls_transcode`/`sidecar` use it to
+  back off from a minute to 30 instead of polling every minute while a stalled move holds them;
   `IsDeferral(err)` is the same distinction for callers **outside** the worker — the rebuild endpoints, which
   run a handler's work synchronously and queue the forced job instead of failing when the answer is "not now";
   or
@@ -5382,10 +5411,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `Handle`=`worker.HandlerFunc` (payload `{photo_uid,force?}`, empty uid → `ErrMissingPhotoUID` dead-letter),
   `Regenerate(uid)`/`ensurePhash`/`ensureBlurhash` idempotent; registered in `serve` on `jobs.TypeThumbnail`.
   **During a storage move** `Handle` (the job path only; the on-demand rebuild relies on the thumbnailer's
-  re-read) defers — `worker.RetryAfter(MoveRetryDelay)` — a photo a running move has yet to take
-  (`Config.Moves`, `*rekey.Gate`, `ErrAwaitingMove`) and a generation the thumbnailer refused because the
-  photo's prefix moved mid-job (`thumb.ErrPrefixMoved`); the re-run renders from the moved row
-  (`move_test.go`).
+  locked re-read) defers — `worker.RetryAfter`, from `MoveRetryDelay` backing off with the job's age to
+  `MaxMoveRetryDelay` (`moveDeferral`) — a photo a running move has yet to take (`Config.Moves`,
+  `*rekey.Gate`, `ErrAwaitingMove`) and a generation the thumbnailer refused because the photo's prefix moved
+  mid-job or the move holds the photo right now (`thumb.ErrPrefixMoved`); the re-run renders from the moved
+  row (`move_test.go`). `ForceRegenerate` returns such a refusal wrapping `thumb.ErrPrefixMoved` and **not**
+  `ErrRegenerateFailed`, so the HTTP rebuild answers 503 + `Retry-After`, not 422.
   After the thumbnails are in place it stamps `photos.thumbnails_at` — the processing report's evidence for
   the step: the repair through `MarkThumbnailsPresent` (only an unstamped photo, so a repair never passes for
   a rebuild), `ForceRegenerate` through `MarkThumbnailsBuilt` (always moved — what a viewer waiting for a
@@ -5469,9 +5500,11 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (the worker handler of the `sidecar` job + the backfill — the **scheduling** half of `sidecarexport`: that one knows the format
   and the write, this one knows *when*. **During a storage move** (`Config.Moves`, a `MoveGate` =
   `*rekey.Gate`) `Handle` defers (`worker.RetryAfter`, `ErrAwaitingMove`) a photo a running move has yet to
-  take, and `Export` re-reads the photo right before the write: a changed `file_path` rebuilds the sidecar
-  next to the current key (up to `maxExportAttempts`, then `ErrPathMoved` deferred) — never next to the key
-  the photo left (`move_test.go`). The organise readers get the project of the photo the job loaded
+  take, and `Export` re-reads the photo right before the write, under the move's photo lock
+  (`MoveGate.Publish`), which the write finishes inside: a changed `file_path` rebuilds the sidecar next to
+  the current key (up to `maxExportAttempts`, then `ErrPathMoved` deferred), a photo the move holds is
+  deferred (`ErrPathMoved` wrapping `storekeys.ErrMoving`) — never written next to the key the photo left;
+  move deferrals back off with the job's age to `MaxMoveRetryDelay` (`backOff`, `move_test.go`). The organise readers get the project of the photo the job loaded
   (`Photo.ProjectID`), so a sidecar records only its own project's albums, labels, favourites and ratings. The job is enqueued by every mutation of metadata/curation data; the handler
   **re-reads** the photo and rewrites the file, so it is **idempotent and stateless** (twice = the same bytes,
   late = the current state) — which is why the queue's per-photo dedup is a safe **debounce**, not a dropped update.
@@ -5684,10 +5717,14 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `cmd/kukatko/hls.go:hlsPlan`, an unknown name failing **startup** rather than silently producing a library
   with a missing quality level). **During a storage move**: with `Moves` (`*rekey.Gate`) a video a running
   move has yet to take is deferred before anything is encoded (`ErrAwaitingMove`); after the encode,
-  `publishCurrent` re-reads the photo's key immediately before the publish and once more before the row — a
-  prefix that changed in between removes what went under the stale prefix and re-publishes the same segments
-  under the current one (at most `maxPublishAttempts`, then `ErrPrefixMoved` deferred), so no row is ever
-  written for a prefix the video left (`move_test.go`). `Handle` = `worker.HandlerFunc` (payload `{photo_uid}`, empty →
+  `publishCurrent` publishes under the move's photo lock (`MoveGate.Publish`: re-read, segment upload and
+  row, so the move never copies an old encode's segments over fresh ones; a video the move holds is deferred,
+  `ErrPrefixMoved` wrapping `storekeys.ErrMoving`), re-reading the photo's key immediately before the publish
+  and once more before the row — a prefix that changed in between (only possible without a gate) removes
+  what went under the stale prefix and re-publishes the same segments under the current one (at most
+  `maxPublishAttempts`, then `ErrPrefixMoved` deferred), so no row is ever written for a prefix the video
+  left; `Handle` stretches a move deferral with the job's age to `MaxMoveRetryDelay` (`backOff`,
+  `move_test.go`). `Handle` = `worker.HandlerFunc` (payload `{photo_uid}`, empty →
   `ErrMissingPhotoUID` dead-letter); `Transcode(ctx,uid)` encodes one photo into every rendition of the plan.
   **A photo that is not a standalone video is a quiet no-op**, live photos included — their motion clip is a
   hover preview nobody streams — because the job was scheduled from a state that may have changed; an empty

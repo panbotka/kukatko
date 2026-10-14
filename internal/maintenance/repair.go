@@ -549,11 +549,19 @@ func (s *Service) repairPlaces(ctx context.Context, opts RepairOptions, res *Rep
 // failure. It returns ErrOrphanImportUnavailable when no importer
 // is configured.
 //
+// It is refused with ErrStorageMoveActive while a storage move is running or
+// paused: mid-move, an original the move copied under the new prefix but did not
+// commit — its photo purged meanwhile, say — has no row and looks exactly like
+// an orphan, and importing it would bring back a photo the user deleted.
+//
 // Unlike the scan, a failed store listing aborts here: a repair that imported
 // nothing because it could not see the store must not report success.
 func (s *Service) repairOrphans(ctx context.Context, opts RepairOptions, res *RepairResult) error {
 	if !opts.ImportOrphans {
 		return nil
+	}
+	if err := s.refuseDuringMove(ctx, "importing orphan originals"); err != nil {
+		return err
 	}
 	if s.importer == nil {
 		return ErrOrphanImportUnavailable

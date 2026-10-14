@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/thumbjob"
 )
 
@@ -57,6 +58,7 @@ func TestHandleRegenerateThumbnail(t *testing.T) {
 		name        string
 		regenerator *fakeRegenerator
 		wantStatus  int
+		wantRetry   string
 	}{
 		{name: "no backend", regenerator: nil, wantStatus: http.StatusServiceUnavailable},
 		{
@@ -73,6 +75,12 @@ func TestHandleRegenerateThumbnail(t *testing.T) {
 			name:        "undecodable original",
 			regenerator: &fakeRegenerator{err: fmt.Errorf("%w: boom", thumbjob.ErrRegenerateFailed)},
 			wantStatus:  http.StatusUnprocessableEntity,
+		},
+		{
+			name:        "a storage move holds the photo",
+			regenerator: &fakeRegenerator{err: fmt.Errorf("thumbjob: x: %w", thumb.ErrPrefixMoved)},
+			wantStatus:  http.StatusServiceUnavailable,
+			wantRetry:   moveRetryAfter,
 		},
 		{
 			name:        "internal error",
@@ -93,6 +101,9 @@ func TestHandleRegenerateThumbnail(t *testing.T) {
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			if got := rec.Header().Get("Retry-After"); got != tt.wantRetry {
+				t.Errorf("Retry-After = %q, want %q", got, tt.wantRetry)
 			}
 			if tt.wantStatus != http.StatusOK {
 				return

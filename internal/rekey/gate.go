@@ -22,6 +22,10 @@ import (
 // the handlers: the move walks the photos in file_path order behind a cursor, and
 // a photo it skipped because a job was busy with it would be left behind the
 // cursor until a Retry, while a deferred job simply runs a little later.
+//
+// AwaitingMove is the coarse half; Publish and Purge (lock.go) are the fine
+// one, keeping the move off one photo while a job publishes for it or the trash
+// purges it.
 type Gate struct {
 	pool *pgxpool.Pool
 }

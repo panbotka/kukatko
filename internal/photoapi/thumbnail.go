@@ -9,6 +9,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/thumbjob"
 )
 
@@ -75,8 +76,9 @@ type regenerateThumbnailResponse struct {
 // handleRegenerateThumbnail rebuilds the photo's cached thumbnails and perceptual
 // hashes from its original, overwriting stale cache entries, then records the
 // action in the audit trail. It runs synchronously so it can report the outcome:
-// 200 with the regenerated sizes on success, 404 for a missing photo, or 422 when
-// the original is missing or cannot be decoded into an image. The original file
+// 200 with the regenerated sizes on success, 404 for a missing photo, 503 with
+// Retry-After while a storage move is moving the photo, or 422 when the
+// original is missing or cannot be decoded into an image. The original file
 // is never touched — only derived data is rebuilt. Editors and admins only (the
 // route is guarded by RequireWrite); when no regenerator is wired it answers 503.
 func (a *API) handleRegenerateThumbnail(w http.ResponseWriter, r *http.Request) {
@@ -98,12 +100,22 @@ func (a *API) handleRegenerateThumbnail(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, regenerateThumbnailResponse{Status: "regenerated", Sizes: sizes})
 }
 
+// moveRetryAfter is the Retry-After, in seconds, of a rebuild a storage move
+// refused: the move holds a photo for the few seconds it takes to copy it.
+const moveRetryAfter = "5"
+
 // writeRegenerateError maps a regeneration error to an HTTP response: 404 for a
-// missing photo, 422 when the original is missing or undecodable, otherwise 500.
+// missing photo, 503 with Retry-After while a storage move is moving the photo
+// (thumb.ErrPrefixMoved — transient, the same request succeeds a moment later),
+// 422 when the original is missing or undecodable, otherwise 500.
 func writeRegenerateError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, photos.ErrPhotoNotFound):
 		writeError(w, http.StatusNotFound, "photo not found")
+	case errors.Is(err, thumb.ErrPrefixMoved):
+		w.Header().Set("Retry-After", moveRetryAfter)
+		writeError(w, http.StatusServiceUnavailable,
+			"the photo is being moved in storage right now; try again in a moment")
 	case errors.Is(err, thumbjob.ErrRegenerateFailed):
 		writeError(w, http.StatusUnprocessableEntity,
 			"cannot regenerate thumbnail: the original is missing or cannot be decoded")

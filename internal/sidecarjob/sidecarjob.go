@@ -34,6 +34,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/uploadlink"
 	"github.com/panbotka/kukatko/internal/worker"
 )
@@ -55,24 +56,38 @@ var ErrAwaitingMove = errors.New("sidecarjob: a storage move has yet to take thi
 
 // ErrPathMoved indicates the photo's key kept changing between the read the
 // sidecar is built from and the write, more often than one run rebuilds it
-// (maxExportAttempts). The job is deferred and re-runs from the start.
+// (maxExportAttempts), or that a storage move is moving the photo right now (the
+// error then wraps storekeys.ErrMoving too). The job is deferred and re-runs
+// from the start.
 var ErrPathMoved = errors.New("sidecarjob: the photo's key kept changing during the export")
 
 // MoveRetryDelay is how long a job deferred by a storage move waits before it
-// runs again.
+// runs again the first time. A job deferred again and again backs off up to
+// MaxMoveRetryDelay (backOff).
 const MoveRetryDelay = time.Minute
+
+// MaxMoveRetryDelay is the longest a job deferred by a storage move waits
+// before it runs again.
+const MaxMoveRetryDelay = 30 * time.Minute
 
 // maxExportAttempts bounds how often one run rebuilds the sidecar because the
 // photo's key changed under it. A photo is moved once, so a second attempt is
 // the rare case.
 const maxExportAttempts = 3
 
-// MoveGate tells the job whether a storage move is about to take a photo. It is
-// satisfied by *rekey.Gate.
+// MoveGate tells the job whether a storage move is about to take a photo, and
+// keeps a move off the photo while its sidecar is written. It is satisfied by
+// *rekey.Gate.
 type MoveGate interface {
 	// AwaitingMove reports whether a running storage move of project projectUID
 	// has yet to take the photo whose original is stored at filePath.
 	AwaitingMove(ctx context.Context, projectUID, filePath string) (bool, error)
+	// Publish runs publish while no storage move can commit the photo or copy its
+	// objects, handing it the key of the photo's original as its row has it then
+	// (found false without a row). It returns an error wrapping
+	// storekeys.ErrMoving, without calling publish, while a move holds the photo;
+	// otherwise publish's error.
+	Publish(ctx context.Context, projectUID, photoUID string, publish func(filePath string, found bool) error) error
 }
 
 // PhotoStore reads the catalogue row a sidecar describes and records that the
@@ -246,9 +261,23 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 		return ErrMissingPhotoUID
 	}
 	if err := s.awaitMove(ctx, p.PhotoUID); err != nil {
-		return err
+		return backOff(job, err)
 	}
-	return s.Export(ctx, p.PhotoUID)
+	return backOff(job, s.Export(ctx, p.PhotoUID))
+}
+
+// backOff stretches a storage move's deferral of job (ErrAwaitingMove,
+// ErrPathMoved) to as long as the job has waited already, between
+// MoveRetryDelay and MaxMoveRetryDelay (worker.WaitedDelay), and returns err.
+// A move whose own job has stopped — dead-lettered while its run still says
+// running — would otherwise have the job re-run each minute until the operator
+// pauses and resumes the move.
+func backOff(job jobs.Job, err error) error {
+	var deferral *worker.RetryAfterError
+	if errors.As(err, &deferral) && (errors.Is(err, ErrAwaitingMove) || errors.Is(err, ErrPathMoved)) {
+		deferral.Delay = worker.WaitedDelay(job.CreatedAt, time.Now(), MoveRetryDelay, MaxMoveRetryDelay)
+	}
+	return err
 }
 
 // awaitMove defers the job while a running storage move has yet to take the
@@ -285,12 +314,14 @@ func (s *Service) awaitMove(ctx context.Context, photoUID string) error {
 // almost certainly purged between the enqueue and the run, which is a race the
 // queue is expected to lose gracefully.
 //
-// The photo is re-read immediately before the write. When its key changed since
-// the sidecar was gathered — a storage move committed it under its project's
-// prefix — the sidecar is rebuilt from the row as it is now and written next to
-// the original's new key, never next to the key the photo left; a photo whose
-// key keeps changing defers the job (worker.RetryAfter wrapping ErrPathMoved)
-// after maxExportAttempts.
+// The photo is re-read immediately before the write, under the storage move's
+// photo lock (MoveGate.Publish), and the write finishes before a move can commit
+// the photo or copy its sidecar. When its key changed since the sidecar was
+// gathered — a storage move committed it under its project's prefix — the
+// sidecar is gathered again for the original's new key and written next to it,
+// never next to the key the photo left; a photo whose key keeps changing defers
+// the job (worker.RetryAfter wrapping ErrPathMoved) after maxExportAttempts, and
+// so does one a move holds right now (wrapping storekeys.ErrMoving too).
 func (s *Service) Export(ctx context.Context, photoUID string) error {
 	photo, found, err := s.load(ctx, photoUID)
 	if err != nil || !found {
@@ -301,17 +332,54 @@ func (s *Service) Export(ctx context.Context, photoUID string) error {
 		if err != nil {
 			return err
 		}
-		current, found, err := s.load(ctx, photoUID)
-		if err != nil || !found {
+		done, moved := false, ""
+		err = s.holdPhoto(ctx, photo, func(filePath string, found bool) error {
+			switch {
+			case !found:
+				s.logGone(ctx, photoUID)
+				done = true
+				return nil
+			case filePath != photo.FilePath:
+				moved = filePath
+				return nil
+			}
+			done = true
+			return s.write(ctx, photo, in)
+		})
+		if errors.Is(err, storekeys.ErrMoving) {
+			cause := fmt.Errorf("%w: %s: %w", ErrPathMoved, photoUID, err)
+			return worker.RetryAfter(MoveRetryDelay, cause) //nolint:wrapcheck // the worker's deferral
+		}
+		if err != nil || done {
 			return err
 		}
-		if current.FilePath == photo.FilePath {
-			return s.write(ctx, photo, in)
-		}
-		photo = current
+		photo.FilePath = moved
 	}
 	cause := fmt.Errorf("%w: %s", ErrPathMoved, photoUID)
 	return worker.RetryAfter(MoveRetryDelay, cause) //nolint:wrapcheck // the worker's deferral
+}
+
+// holdPhoto runs fn with the key of photo's original as its row has it now
+// (found false when the row is gone): under the storage move's photo lock with a
+// MoveGate, re-read plainly without one.
+func (s *Service) holdPhoto(ctx context.Context, photo photos.Photo, fn func(filePath string, found bool) error) error {
+	if s.moves != nil {
+		//nolint:wrapcheck // the gate wraps its own errors and fn's are returned as they are.
+		return s.moves.Publish(ctx, photo.ProjectID, photo.UID, fn)
+	}
+	current, err := s.photos.GetForJob(ctx, photo.UID)
+	if errors.Is(err, photos.ErrPhotoNotFound) {
+		return fn("", false)
+	}
+	if err != nil {
+		return fmt.Errorf("sidecarjob: loading photo %s: %w", photo.UID, err)
+	}
+	return fn(current.FilePath, true)
+}
+
+// logGone logs the skip of a photo that no longer exists.
+func (s *Service) logGone(ctx context.Context, photoUID string) {
+	s.log.WarnContext(ctx, "sidecar export skipped: photo is gone", slog.String("photo_uid", photoUID))
 }
 
 // load reads the photo, reporting false — after logging the skip — when it no
@@ -319,8 +387,7 @@ func (s *Service) Export(ctx context.Context, photoUID string) error {
 func (s *Service) load(ctx context.Context, photoUID string) (photos.Photo, bool, error) {
 	photo, err := s.photos.GetForJob(ctx, photoUID)
 	if errors.Is(err, photos.ErrPhotoNotFound) {
-		s.log.WarnContext(ctx, "sidecar export skipped: photo is gone",
-			slog.String("photo_uid", photoUID))
+		s.logGone(ctx, photoUID)
 		return photos.Photo{}, false, nil
 	}
 	if err != nil {

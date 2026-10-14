@@ -979,13 +979,17 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   repair path of the `thumbnail` job, which skips present data), the original is **never
   changed**. It runs **synchronously** so it can return a clear result `{status:"regenerated",
   sizes:[…]}` (200) or a typed error: 404 missing photo, **422** the original is missing or
-  cannot be decoded (`thumbjob.ErrRegenerateFailed`), 503 when regeneration is not wired in.
+  cannot be decoded (`thumbjob.ErrRegenerateFailed`), **503 with `Retry-After: 5`** while a storage move
+  is moving the photo right now (`thumb.ErrPrefixMoved` — transient, the same request succeeds a moment
+  later; see the photo lock in [`OPERATIONS.md`](OPERATIONS.md)), 503 when regeneration is not wired in.
   Idempotent (safe to click repeatedly); recorded in the audit log as
   `photo.thumbnail` with the list of regenerated sizes in details;
   **trash / permanent deletion** (`trash.go`, backed by `internal/trash` via the `Purger` interface, nil → 503):
   `POST /photos/{uid}/purge` (**admin** via `RequireAdmin`, `?confirm=true` otherwise 400, 404 missing —
   and 404 with the same body for a photo of another project, which is left untouched —
-  409 photo not archived → 204) and `POST /trash/empty` (**admin** via `RequireAdmin`,
+  409 photo not archived, **503 with `Retry-After: 5`** for a photo a crashed storage move has yet to
+  finish (`storekeys.ErrMoving`; a batch purge counts such a photo as `failed` instead) → 204) and
+  `POST /trash/empty` (**admin** via `RequireAdmin`,
   `?confirm=true` → `{purged,failed}`, **the request project's trash only**) permanently and irreversibly
   delete archived photos, so they are
   tightened from write to admin; `POST /trash/purge-older` (**admin** via `RequireAdmin`,

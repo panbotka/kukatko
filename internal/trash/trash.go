@@ -139,6 +139,16 @@ type RemoteRemover interface {
 	Remove(ctx context.Context, key string) error
 }
 
+// MoveLock keeps a storage move off one photo while it is purged. It is
+// satisfied by *rekey.Gate.
+type MoveLock interface {
+	// Purge runs purge while no storage move can commit the photo or copy its
+	// objects — waiting while a move is copying it right now — and returns
+	// purge's error. A photo a crashed move has yet to finish is refused with an
+	// error wrapping storekeys.ErrMoving, purge not called.
+	Purge(ctx context.Context, projectUID, photoUID string, purge func() error) error
+}
+
 // Result reports the outcome of a batch purge: how many photos were permanently
 // removed and how many failed (and were left in the trash for a later retry).
 type Result struct {
@@ -164,6 +174,10 @@ type Config struct {
 	Storyboards StoryboardStore
 	// Remote, when non-nil, deletes the corresponding backup objects.
 	Remote RemoteRemover
+	// Moves, when non-nil, keeps a storage move off each photo while it is
+	// purged. Without it a purge racing a move could leave the copy the move
+	// made of the photo's original under the new prefix, owned by no row.
+	Moves MoveLock
 	// RetentionDays is how long an archived photo is kept before the scheduled
 	// purge removes it. A value <= 0 disables the scheduled purge (manual purge
 	// and empty-trash still work).
@@ -182,6 +196,7 @@ type Service struct {
 	thumbnailer   ThumbStore
 	storyboards   StoryboardStore
 	remote        RemoteRemover
+	moves         MoveLock
 	retentionDays int
 	batchSize     int
 	logger        *log.Logger
@@ -208,6 +223,7 @@ func New(cfg Config) *Service {
 		thumbnailer:   cfg.Thumbnailer,
 		storyboards:   cfg.Storyboards,
 		remote:        cfg.Remote,
+		moves:         cfg.Moves,
 		retentionDays: cfg.RetentionDays,
 		batchSize:     batch,
 		logger:        logger,
@@ -351,7 +367,26 @@ func (s *Service) purgeBatch(
 // first so an interrupted purge leaves a re-purgeable orphan row rather than
 // dangling files; a hard artifact error aborts before the row is deleted so the
 // next run retries it.
+//
+// With a MoveLock it all runs under the photo's storage-move lock: a purge and a
+// storage move never interleave on one photo, so the purge deletes the objects
+// of the key the row has once the move is through with it, and a move that has
+// copied the original but not committed finds the row gone and deletes its
+// copy. A photo a crashed move has yet to finish is not purged now (an error
+// wrapping storekeys.ErrMoving); a later purge — the retention's next run, or
+// the user's retry — takes it once the move has.
 func (s *Service) purgeOne(ctx context.Context, projectUID, uid string, meta audit.Meta, source string) error {
+	if s.moves == nil {
+		return s.purgeUnlocked(ctx, projectUID, uid, meta, source)
+	}
+	//nolint:wrapcheck // the lock wraps its own errors and returns purgeUnlocked's as they are.
+	return s.moves.Purge(ctx, projectUID, uid, func() error {
+		return s.purgeUnlocked(ctx, projectUID, uid, meta, source)
+	})
+}
+
+// purgeUnlocked is purgeOne once any storage move is kept off the photo.
+func (s *Service) purgeUnlocked(ctx context.Context, projectUID, uid string, meta audit.Meta, source string) error {
 	files, err := s.photos.ListFiles(ctx, projectUID, uid)
 	if err != nil {
 		return fmt.Errorf("listing files: %w", err)

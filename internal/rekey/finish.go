@@ -150,11 +150,11 @@ func (s *Service) enqueueRewrites(ctx context.Context, projectUID string) error 
 // the root layout, in which case the root is not the run's project's alone and
 // nothing there is touched.
 func (s *Service) cleanRoot(ctx context.Context, run Run) error {
-	var rootProjects int
-	if err := s.pool.QueryRow(ctx, rootLayoutProjectsSQL).Scan(&rootProjects); err != nil {
-		return fmt.Errorf("rekey: counting root-layout projects: %w", err)
+	shared, err := s.rootShared(ctx)
+	if err != nil {
+		return err
 	}
-	if rootProjects > 0 {
+	if shared {
 		s.log.InfoContext(ctx, "rekey: root layout still in use; leaving its objects", "run", run.UID)
 		return nil
 	}
@@ -231,6 +231,17 @@ func (s *Service) removeRootSidecars(ctx context.Context, prefix string) []error
 		}
 	}
 	return problems
+}
+
+// rootShared reports whether a project is still in the root layout — the root
+// is then not the moved projects' alone, and nothing there may be taken as
+// theirs.
+func (s *Service) rootShared(ctx context.Context) (bool, error) {
+	var rootProjects int
+	if err := s.pool.QueryRow(ctx, rootLayoutProjectsSQL).Scan(&rootProjects); err != nil {
+		return false, fmt.Errorf("rekey: counting root-layout projects: %w", err)
+	}
+	return rootProjects > 0, nil
 }
 
 // listed returns the set of keys the store lists under prefix.

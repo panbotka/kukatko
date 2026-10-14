@@ -46,6 +46,20 @@ func RetryAfter(delay time.Duration, cause error) error {
 	return &RetryAfterError{Delay: delay, Cause: cause}
 }
 
+// WaitedDelay is the delay for a deferral that repeats while a job waits for a
+// condition outside its control (a storage move to take its photo, say): as
+// long as the job has waited already — from created to now — but at least floor
+// and at most ceiling. So the deferral backs off, roughly doubling each time,
+// instead of re-running the job every floor for as long as the condition holds;
+// a job that has just started waiting is retried after floor. A zero created
+// (the job's age is unknown) counts as having waited long.
+func WaitedDelay(created, now time.Time, floor, ceiling time.Duration) time.Duration {
+	if created.IsZero() {
+		return max(ceiling, floor)
+	}
+	return max(min(now.Sub(created), ceiling), floor)
+}
+
 // Error implements error, describing the deferral and its cause.
 func (e *RetryAfterError) Error() string {
 	if e.Cause == nil {

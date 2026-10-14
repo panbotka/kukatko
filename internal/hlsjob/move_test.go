@@ -3,14 +3,18 @@ package hlsjob
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/hls"
+	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/worker"
 )
 
@@ -48,10 +52,26 @@ func (m *movingPhotos) GetForJob(_ context.Context, uid string) (photos.Photo, e
 }
 
 // fakeGate answers AwaitingMove with a canned verdict and records the question.
+// Its Publish refuses with holdErr when set, and otherwise runs publish and
+// counts it.
 type fakeGate struct {
 	awaiting bool
 	err      error
 	asked    []string
+	holdErr  error
+	held     int
+}
+
+// Publish runs publish (with the key unknown: the job re-reads its own) unless
+// holdErr is set.
+func (g *fakeGate) Publish(
+	_ context.Context, _, _ string, publish func(filePath string, found bool) error,
+) error {
+	if g.holdErr != nil {
+		return g.holdErr
+	}
+	g.held++
+	return publish("", false)
 }
 
 // AwaitingMove records the project and key and returns the canned answer.
@@ -226,5 +246,79 @@ func TestTranscode_movedVideoIsNotDeferred(t *testing.T) {
 	})
 	if err := svc.Transcode(t.Context(), "ph1"); !errors.Is(err, objects.materializeErr) {
 		t.Fatalf("Transcode = %v, want it to reach the original", err)
+	}
+}
+
+// TestPublishCurrent_heldByTheMove verifies the publish runs under the move's
+// photo lock, and that a video a move holds right now is deferred with
+// ErrPrefixMoved (wrapping storekeys.ErrMoving) before anything is uploaded or
+// recorded.
+func TestPublishCurrent_heldByTheMove(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name string
+		gate *fakeGate
+	}{
+		{name: "free", gate: &fakeGate{}},
+		{name: "held", gate: &fakeGate{holdErr: fmt.Errorf("rekey: %w", storekeys.ErrMoving)}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir, produced := encodedDir(t)
+			cat := &movingPhotos{photo: videoPhoto("ph1"), moveAfter: 100}
+			objects := newFakeObjects()
+			rend := &fakeRenditions{}
+			svc := newService(t, cat, objects, rend)
+			svc.moves = tt.gate
+
+			_, err := svc.publishCurrent(t.Context(), dir, cat.photo, produced, Encoded{PhotoUID: "ph1", Rendition: "720p"})
+			if tt.gate.holdErr == nil {
+				if err != nil || tt.gate.held != 1 || len(rend.saved) != 1 {
+					t.Fatalf("publishCurrent = %v, held %d, saved %d; want one locked publish", err, tt.gate.held, len(rend.saved))
+				}
+				return
+			}
+			if !worker.IsDeferral(err) || !errors.Is(err, ErrPrefixMoved) || !errors.Is(err, storekeys.ErrMoving) {
+				t.Fatalf("publishCurrent = %v, want a deferral wrapping ErrPrefixMoved and storekeys.ErrMoving", err)
+			}
+			if len(objects.put) != 0 || len(rend.saved) != 0 {
+				t.Errorf("published %v, saved %d while the move held the video", keysUnder(objects, ""), len(rend.saved))
+			}
+		})
+	}
+}
+
+// TestHandle_moveDeferralBacksOff verifies a job a storage move keeps deferring
+// waits as long as it has waited already, from MoveRetryDelay up to
+// MaxMoveRetryDelay, while any other deferral keeps its own delay.
+func TestHandle_moveDeferralBacksOff(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
+	svc := &Service{now: func() time.Time { return now }}
+	awaiting := func() error { return worker.RetryAfter(MoveRetryDelay, ErrAwaitingMove) }
+	tests := []struct {
+		name   string
+		err    error
+		waited time.Duration
+		want   time.Duration
+	}{
+		{name: "fresh", err: awaiting(), want: MoveRetryDelay},
+		{name: "waited 12m", err: awaiting(), waited: 12 * time.Minute, want: 12 * time.Minute},
+		{name: "waited a day", err: worker.RetryAfter(MoveRetryDelay, ErrPrefixMoved), waited: 24 * time.Hour,
+			want: MaxMoveRetryDelay},
+		{name: "not a move", err: worker.RetryAfter(time.Second, errors.New("box offline")), waited: 24 * time.Hour,
+			want: time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := svc.backOff(jobs.Job{CreatedAt: now.Add(-tt.waited)}, tt.err)
+			var deferral *worker.RetryAfterError
+			if !errors.As(err, &deferral) || deferral.Delay != tt.want {
+				t.Errorf("backOff = %v, want a deferral of %s", err, tt.want)
+			}
+		})
 	}
 }

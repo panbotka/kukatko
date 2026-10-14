@@ -18,6 +18,7 @@ import (
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/placesjob"
+	"github.com/panbotka/kukatko/internal/rekey"
 	"github.com/panbotka/kukatko/internal/system"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/worker"
@@ -44,11 +45,12 @@ func thumbOptions(cfg *config.Config, reg *metrics.Registry, db *database.DB) []
 		opts = append(opts, thumb.WithObserver(reg))
 	}
 	if db != nil {
-		// The store doubles as the location re-read before each publish, so a
-		// generation a storage move overtook never publishes under the prefix
-		// the photo left.
+		// Every size is published under the storage move's photo lock, which
+		// re-reads the photo's key first: a generation a move overtook never
+		// publishes under the prefix the photo left, and never while the move
+		// copies the photo's thumbnails.
 		store := photos.NewStore(db.Pool())
-		opts = append(opts, thumb.WithEdits(store), thumb.WithLocation(store))
+		opts = append(opts, thumb.WithEdits(store), thumb.WithLocation(rekey.NewGate(db.Pool())))
 	}
 	if cfg.Thumb.Concurrency > 0 {
 		opts = append(opts, thumb.WithConcurrency(cfg.Thumb.Concurrency))

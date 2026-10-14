@@ -597,3 +597,31 @@ func TestIsTerminal_rejectsOtherErrors(t *testing.T) {
 		t.Error("isTerminal(RetryAfter) = true, want false")
 	}
 }
+
+// TestWaitedDelay verifies the backing-off deferral: the floor for a job that
+// has just started waiting, the time waited so far in between, the ceiling past
+// it and for a job of unknown age.
+func TestWaitedDelay(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
+	floor, ceiling := time.Minute, 30*time.Minute
+	tests := []struct {
+		name    string
+		created time.Time
+		want    time.Duration
+	}{
+		{name: "just enqueued", created: now, want: floor},
+		{name: "waited less than the floor", created: now.Add(-20 * time.Second), want: floor},
+		{name: "waited a while", created: now.Add(-7 * time.Minute), want: 7 * time.Minute},
+		{name: "waited past the ceiling", created: now.Add(-5 * time.Hour), want: ceiling},
+		{name: "age unknown", want: ceiling},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := WaitedDelay(tt.created, now, floor, ceiling); got != tt.want {
+				t.Errorf("WaitedDelay = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}

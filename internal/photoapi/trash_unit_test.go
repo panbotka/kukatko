@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/trash"
 )
 
@@ -104,6 +106,12 @@ func TestHandlePurge(t *testing.T) {
 			purger:     &fakePurger{purgeErr: trash.ErrNotArchived},
 			url:        "/photos/ph_1/purge?confirm=true",
 			wantStatus: 409,
+		},
+		{
+			name:       "a storage move holds the photo",
+			purger:     &fakePurger{purgeErr: fmt.Errorf("rekey: %w", storekeys.ErrMoving)},
+			url:        "/photos/ph_1/purge?confirm=true",
+			wantStatus: 503,
 		},
 		{
 			name:       "internal error",

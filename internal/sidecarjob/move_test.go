@@ -3,11 +3,14 @@ package sidecarjob
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/worker"
 )
 
@@ -36,10 +39,24 @@ func (m *movingPhotos) GetForJob(ctx context.Context, uid string) (photos.Photo,
 }
 
 // fakeGate answers AwaitingMove with a canned verdict and records the question.
+// Its Publish hands publish the canned key (no row when empty), or refuses with
+// holdErr when set.
 type fakeGate struct {
 	awaiting bool
 	err      error
 	asked    []string
+	key      string
+	holdErr  error
+}
+
+// Publish runs publish with the canned key unless holdErr is set.
+func (g *fakeGate) Publish(
+	_ context.Context, _, _ string, publish func(filePath string, found bool) error,
+) error {
+	if g.holdErr != nil {
+		return g.holdErr
+	}
+	return publish(g.key, g.key != "")
 }
 
 // AwaitingMove records the project and key and returns the canned answer.
@@ -128,7 +145,7 @@ func TestHandle_awaitsTheMove(t *testing.T) {
 		wantWritten  int
 	}{
 		{name: "awaiting the move", gate: &fakeGate{awaiting: true}, wantDeferral: true, wantErr: true},
-		{name: "already moved", gate: &fakeGate{}, wantWritten: 1},
+		{name: "already moved", gate: &fakeGate{key: "2024/05/a.jpg"}, wantWritten: 1},
 		{name: "gate fails", gate: &fakeGate{err: errors.New("db down")}, wantErr: true},
 	}
 	for _, tt := range tests {
@@ -150,6 +167,80 @@ func TestHandle_awaitsTheMove(t *testing.T) {
 			}
 			if want := []string{"pj1|2024/05/a.jpg"}; !slices.Equal(tt.gate.asked, want) {
 				t.Errorf("gate asked %v, want %v", tt.gate.asked, want)
+			}
+		})
+	}
+}
+
+// TestExport_heldByTheMove verifies the write runs under the move's photo lock:
+// a photo a move holds right now is deferred with ErrPathMoved (wrapping
+// storekeys.ErrMoving) and nothing is written; a photo the lock finds under a
+// new key is written next to that key; one the lock finds gone is skipped.
+func TestExport_heldByTheMove(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		gate         *fakeGate
+		wantDeferral bool
+		wantKeys     []string
+	}{
+		{name: "held", gate: &fakeGate{holdErr: fmt.Errorf("rekey: %w", storekeys.ErrMoving)}, wantDeferral: true},
+		{name: "moved under the lock", gate: &fakeGate{key: movedKey}, wantKeys: []string{movedKey}},
+		{name: "gone under the lock", gate: &fakeGate{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cat := &fakePhotos{photo: photos.Photo{UID: "pht1", ProjectID: "pj1", FilePath: "2024/05/a.jpg"}}
+			writer := newFakeWriter()
+			svc := newTestService(t, Config{Photos: cat, Writer: writer, Moves: tt.gate})
+
+			err := svc.Export(t.Context(), "pht1")
+			if tt.wantDeferral {
+				if !worker.IsDeferral(err) || !errors.Is(err, ErrPathMoved) || !errors.Is(err, storekeys.ErrMoving) {
+					t.Fatalf("Export = %v, want a deferral wrapping ErrPathMoved and storekeys.ErrMoving", err)
+				}
+			} else if err != nil {
+				t.Fatalf("Export: %v", err)
+			}
+			keys := make([]string, 0, len(writer.written))
+			for key := range writer.written {
+				keys = append(keys, key)
+			}
+			if !slices.Equal(keys, tt.wantKeys) {
+				t.Errorf("sidecars written next to %v, want %v", keys, tt.wantKeys)
+			}
+		})
+	}
+}
+
+// TestHandle_moveDeferralBacksOff verifies a job a storage move keeps deferring
+// waits as long as it has waited already, from MoveRetryDelay up to
+// MaxMoveRetryDelay.
+func TestHandle_moveDeferralBacksOff(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name   string
+		waited time.Duration
+		want   time.Duration
+	}{
+		{name: "fresh", want: MoveRetryDelay},
+		{name: "waited a day", waited: 24 * time.Hour, want: MaxMoveRetryDelay},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cat := &fakePhotos{photo: photos.Photo{UID: "pht1", ProjectID: "pj1", FilePath: "2024/05/a.jpg"}}
+			svc := newTestService(t, Config{Photos: cat, Writer: newFakeWriter(), Moves: &fakeGate{awaiting: true}})
+
+			job := jobs.Job{Payload: []byte(`{"photo_uid":"pht1"}`), CreatedAt: time.Now().Add(-tt.waited)}
+			var deferral *worker.RetryAfterError
+			if err := svc.Handle(t.Context(), job); !errors.As(err, &deferral) {
+				t.Fatalf("Handle = %v, want a deferral", err)
+			}
+			if deferral.Delay < tt.want || deferral.Delay > tt.want+time.Minute {
+				t.Errorf("deferral = %s, want about %s", deferral.Delay, tt.want)
 			}
 		})
 	}

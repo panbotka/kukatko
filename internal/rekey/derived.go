@@ -225,8 +225,15 @@ const rootKeysSQL = `SELECT root_keys FROM storage_rekey_derived_failures WHERE 
 // agree on what the photo owns, so a stray the plan does not know cannot keep
 // the move from ending. A photo that is gone, or whose row is not under a
 // prefix, has nothing to retry and is forgotten. Only a fatal failure is
-// returned; a per-photo one refreshes the record.
+// returned; a per-photo one refreshes the record. It runs under the photo's lock
+// (lockPhoto), so a thumbnail rendered under the new prefix meanwhile is either
+// there before the retry looks — and kept — or published after it is through.
 func (s *Service) retryDerived(ctx context.Context, projectUID, photoUID string) error {
+	return s.lockPhoto(ctx, photoUID, func() error { return s.retryDerivedLocked(ctx, projectUID, photoUID) })
+}
+
+// retryDerivedLocked is retryDerived under the photo's lock.
+func (s *Service) retryDerivedLocked(ctx context.Context, projectUID, photoUID string) error {
 	photo, found, err := s.loadPhoto(ctx, projectUID, photoUID)
 	if err != nil {
 		return err
@@ -441,7 +448,26 @@ func (s *Service) FindRootDerived(ctx context.Context) ([]RootDerivedPhoto, erro
 // segment keys are named after the photo's content hash, which is unique within
 // a project, so a root key matches at most one of its photos. It lists each of
 // the two root trees once, whatever the number of photos.
+//
+// While another project is still in the root layout it finds nothing: hashes
+// are unique only within a project, so a root key named after a moved photo's
+// hash may as well be a thumbnail that other project's photo still uses there —
+// the same reason cleanRoot leaves the root alone then.
 func (s *Service) rootDerivedOf(ctx context.Context, projectUID, prefix string) ([]RootDerivedPhoto, error) {
+	shared, err := s.rootShared(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if shared {
+		s.log.InfoContext(ctx, "rekey: root layout still in use; not looking for derived objects there",
+			"project", projectUID)
+		return nil, nil
+	}
+	return s.listRootDerived(ctx, projectUID, prefix)
+}
+
+// listRootDerived is rootDerivedOf once the root is the moved projects' alone.
+func (s *Service) listRootDerived(ctx context.Context, projectUID, prefix string) ([]RootDerivedPhoto, error) {
 	byHash, err := s.prefixedHashes(ctx, projectUID, prefix)
 	if err != nil || len(byHash) == 0 {
 		return nil, err
@@ -523,12 +549,18 @@ func hlsKeyHash(key string) string {
 // an object already under its new key is kept and not copied over, and no root
 // copy of a photo is deleted unless every one of them exists under the prefix.
 // A photo that moves completely is also forgotten as a derived failure of a
-// storage move. A failure that is not about one photo — a store that refuses
-// every request, a cancelled context — is returned with what was done so far.
+// storage move. Each photo is moved under its lock (lockPhoto), like a move's
+// retry. A failure that is not about one photo — a store that refuses every
+// request, a cancelled context — is returned with what was done so far.
 func (s *Service) MoveRootDerived(ctx context.Context, found []RootDerivedPhoto) (RootDerivedResult, error) {
 	var result RootDerivedResult
 	for _, photo := range found {
-		outcome, err := s.moveTracked(ctx, photo.Moves, true)
+		var outcome derivedOutcome
+		err := s.lockPhoto(ctx, photo.UID, func() error {
+			var err error
+			outcome, err = s.moveRootDerivedOf(ctx, photo)
+			return err
+		})
 		if err != nil {
 			return result, err
 		}
@@ -538,13 +570,24 @@ func (s *Service) MoveRootDerived(ctx context.Context, found []RootDerivedPhoto)
 			result.Failed++
 			continue
 		}
-		if _, err := s.pool.Exec(ctx, clearDerivedSQL, photo.UID, photo.ProjectUID); err != nil {
-			return result, fmt.Errorf("rekey: forgetting the derived failure of %s: %w", photo.UID, err)
-		}
 		result.Photos++
 		result.Objects += len(photo.Moves)
 	}
 	return result, nil
+}
+
+// moveRootDerivedOf moves the root objects of one photo of MoveRootDerived
+// (under the photo's lock) and forgets the photo as a derived failure once every
+// one of them moved, returning what the move came to.
+func (s *Service) moveRootDerivedOf(ctx context.Context, photo RootDerivedPhoto) (derivedOutcome, error) {
+	outcome, err := s.moveTracked(ctx, photo.Moves, true)
+	if err != nil || outcome.problem != nil {
+		return outcome, err
+	}
+	if _, err := s.pool.Exec(ctx, clearDerivedSQL, photo.UID, photo.ProjectUID); err != nil {
+		return outcome, fmt.Errorf("rekey: forgetting the derived failure of %s: %w", photo.UID, err)
+	}
+	return outcome, nil
 }
 
 // sweepDerivedSQL records the root keys the sweep found, one row per photo:

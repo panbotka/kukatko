@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -68,12 +69,20 @@ func (s *Service) encodeRendition(
 // publishCurrent publishes an encoded rendition from dir under the prefix the
 // photo's row points at right now and records it, returning the bytes uploaded.
 //
-// The photo's key is re-read immediately before the publish and once more
-// before the row is written. When a storage move committed the photo in between
-// — its prefix changed while the segments were uploading — what this attempt
-// wrote under the stale prefix is removed (nothing resolves there any more) and
-// the same segments are published again under the new prefix, at most
-// maxPublishAttempts times; past that the job is deferred with
+// Each attempt runs under the storage move's photo lock (MoveGate.Publish): the
+// photo's key is re-read there, the segments are uploaded and the row is
+// written before a move can commit the photo or copy its segments, so the move
+// never copies the old encode's segments over the ones just published, nor
+// leaves fresh ones at a root it has emptied. While a move holds the video the
+// job is deferred with worker.RetryAfter wrapping ErrPrefixMoved (and
+// storekeys.ErrMoving).
+//
+// The photo's key is also re-read once more before the row is written. When a
+// storage move committed the photo in between — its prefix changed while the
+// segments were uploading, which only an encode without a MoveGate can see —
+// what this attempt wrote under the stale prefix is removed (nothing resolves
+// there any more) and the same segments are published again under the new
+// prefix, at most maxPublishAttempts times; past that the job is deferred with
 // worker.RetryAfter wrapping ErrPrefixMoved. No row is ever written for a
 // prefix the photo has left.
 func (s *Service) publishCurrent(
@@ -81,18 +90,36 @@ func (s *Service) publishCurrent(
 ) (int64, error) {
 	var written int64
 	for range maxPublishAttempts {
-		prefix, err := s.currentPrefix(ctx, photo.UID, photo.FileHash, row.Rendition)
-		if err != nil {
-			return written, err
+		moved := false
+		err := s.holdPhoto(ctx, photo, func() error {
+			prefix, err := s.currentPrefix(ctx, photo.UID, photo.FileHash, row.Rendition)
+			if err != nil {
+				return err
+			}
+			n, mv, err := s.publishUnder(ctx, dir, prefix, photo.FileHash, produced, row)
+			written, moved = written+n, mv
+			return err
+		})
+		if errors.Is(err, storekeys.ErrMoving) {
+			cause := fmt.Errorf("%w: rendition %s of %s: %w", ErrPrefixMoved, row.Rendition, photo.UID, err)
+			return written, worker.RetryAfter(MoveRetryDelay, cause) //nolint:wrapcheck // the worker's deferral
 		}
-		n, moved, err := s.publishUnder(ctx, dir, prefix, photo.FileHash, produced, row)
-		written += n
 		if err != nil || !moved {
 			return written, err
 		}
 	}
 	cause := fmt.Errorf("%w: rendition %s of %s", ErrPrefixMoved, row.Rendition, photo.UID)
 	return written, worker.RetryAfter(MoveRetryDelay, cause) //nolint:wrapcheck // the worker's deferral
+}
+
+// holdPhoto runs fn under the storage move's photo lock of photo, or simply
+// runs it without a MoveGate.
+func (s *Service) holdPhoto(ctx context.Context, photo photos.Photo, fn func() error) error {
+	if s.moves == nil {
+		return fn()
+	}
+	//nolint:wrapcheck // the gate wraps its own errors and fn's are returned as they are.
+	return s.moves.Publish(ctx, photo.ProjectID, photo.UID, func(string, bool) error { return fn() })
 }
 
 // publishUnder is one attempt of publishCurrent: it publishes the segments

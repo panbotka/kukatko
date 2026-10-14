@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/trash"
 )
 
@@ -64,7 +65,8 @@ func purgeAuditMeta(r *http.Request) audit.Meta {
 // handlePurge permanently deletes a single archived photo of the request's
 // project. It requires the explicit confirm=true query parameter (400
 // otherwise), answers 404 for a missing photo — or one of another project, with
-// the same body — and 409 for a photo that is not archived, and 204 on success.
+// the same body — and 409 for a photo that is not archived, 503 with
+// Retry-After while a storage move holds the photo, and 204 on success.
 // Without a purge backend it answers 503.
 func (a *API) handlePurge(w http.ResponseWriter, r *http.Request) {
 	if a.purger == nil {
@@ -81,6 +83,10 @@ func (a *API) handlePurge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "photo not found")
 	case errors.Is(err, trash.ErrNotArchived):
 		writeError(w, http.StatusConflict, "photo is not archived")
+	case errors.Is(err, storekeys.ErrMoving):
+		w.Header().Set("Retry-After", moveRetryAfter)
+		writeError(w, http.StatusServiceUnavailable,
+			"the photo is being moved in storage right now; try again in a moment")
 	case err != nil:
 		writeError(w, http.StatusInternalServerError, "purging photo failed")
 	default:

@@ -92,6 +92,15 @@ const (
 // projects/<uid>/ with a well-formed project uid.
 var ErrInvalidPrefix = errors.New("storekeys: invalid storage prefix")
 
+// ErrMoving indicates a storage move is moving one photo's objects from one
+// layout to the other right now, so nothing may be published for the photo or
+// deleted of it until the move is through with it. It is transient: the move
+// holds a photo for the time it takes to copy its objects. Defined here, beside
+// the layouts, so that the publishers of derived objects (internal/thumb among
+// them, which the move itself imports) can recognise it without importing the
+// move.
+var ErrMoving = errors.New("storekeys: a storage move is moving this photo right now")
+
 // projectPrefixPattern matches a project storage prefix at the start of a key:
 // projects/, a project uid (pj and 24 symbols of the lowercase base32 alphabet
 // every uid uses), and the closing slash. The uid shape is checked so a foreign

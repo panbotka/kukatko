@@ -370,3 +370,38 @@ func TestService_strayThatCannotMoveFailsTheRunInsteadOfLooping(t *testing.T) {
 		t.Error("the stray segment did not move once the store recovered")
 	}
 }
+
+// TestService_rootDerivedLeftAloneWhileAnotherProjectUsesTheRoot verifies the
+// sweep of Finish and the root-derived repair touch nothing at the root while
+// another project is still in the root layout: thumbnail keys are named after a
+// content hash, which is unique only within a project, so a root tile matching a
+// moved photo may be the other project's own. Once no project is left there,
+// the same tile is found again.
+func TestService_rootDerivedLeftAloneWhileAnotherProjectUsesTheRoot(t *testing.T) {
+	h := newHarness(t)
+	photo := h.seedPhoto("ph1", "2023/01/a.jpg", false)
+	run := h.start()
+	if err := h.stepToEnd(run, 5); err != nil {
+		t.Fatalf("stepping: %v", err)
+	}
+	stale := trackedDerived(photo)[0]
+	h.mem.put(stale, []byte("a root tile"))
+	h.exec(`INSERT INTO projects (uid, slug, name, description, active, storage_prefix)
+		VALUES ('pjrrrrrrrrrrrrrrrrrrrrrrrr', 'rootlayout', 'Root', '', true, '')`)
+
+	if found, err := h.svc.FindRootDerived(t.Context()); err != nil || len(found) != 0 {
+		t.Fatalf("FindRootDerived with another root-layout project = %+v, %v; want nothing", found, err)
+	}
+	done, err := h.svc.Finish(t.Context(), run)
+	if err != nil || done.State != StateDone {
+		t.Fatalf("Finish with another root-layout project = %+v, %v; want done without a sweep", done, err)
+	}
+	if data, _ := h.mem.get(stale); string(data) != "a root tile" {
+		t.Errorf("the root tile = %q, want it left alone", data)
+	}
+
+	h.exec(`DELETE FROM projects WHERE uid = 'pjrrrrrrrrrrrrrrrrrrrrrrrr'`)
+	if found, err := h.svc.FindRootDerived(t.Context()); err != nil || len(found) != 1 {
+		t.Errorf("FindRootDerived once the root is the moved projects' alone = %+v, %v; want the tile", found, err)
+	}
+}

@@ -76,9 +76,10 @@ var (
 	ErrNotCached = errors.New("thumb: thumbnail not cached")
 	// ErrPrefixMoved indicates the photo's storage prefix changed — a storage
 	// move committed it — between the start of a generation and the publish of
-	// one of its sizes. Nothing is published under the stale prefix; the caller
-	// generates again from the photo as it is now (the thumbnail job defers
-	// itself and re-runs).
+	// one of its sizes, or a storage move is moving the photo right now (the
+	// error then wraps storekeys.ErrMoving too). Nothing is published under the
+	// stale prefix; the caller generates again from the photo as it is now (the
+	// thumbnail job defers itself and re-runs).
 	ErrPrefixMoved = errors.New("thumb: the photo's storage prefix changed during generation")
 )
 
@@ -134,20 +135,24 @@ type Thumbnailer struct {
 	// rendered the way the library shows the photo, or nil when the thumbnailer
 	// renders originals verbatim. See WithEdits.
 	edits EditResolver
-	// location re-reads where a photo's original lives right before a size is
-	// published, or nil when the prefix the generation started with is trusted.
-	// See WithLocation.
-	location LocationReader
+	// location keeps a storage move off the photo while a size is published and
+	// re-reads where its original lives then, or nil when the prefix the
+	// generation started with is trusted. See WithLocation.
+	location LocationLock
 	// observer receives per-size generation timing; never nil after New.
 	observer Observer
 }
 
-// LocationReader re-reads a photo's catalogue row, for the key of its original
-// as it is now. It is satisfied by *photos.Store.
-type LocationReader interface {
-	// GetForJob returns the photo identified by uid in whichever project holds
-	// it, or photos.ErrPhotoNotFound.
-	GetForJob(ctx context.Context, uid string) (photos.Photo, error)
+// LocationLock keeps a storage move off one photo while one of its sizes is
+// published, and says where the photo's original lives meanwhile. It is
+// satisfied by *rekey.Gate.
+type LocationLock interface {
+	// Publish runs publish with the key of the photo's original as its row has
+	// it now (found false when the project has no such row yet), while no
+	// storage move can commit the photo or copy its objects. It returns an error
+	// wrapping storekeys.ErrMoving, without calling publish, while a move holds
+	// the photo; otherwise publish's error.
+	Publish(ctx context.Context, projectUID, photoUID string, publish func(filePath string, found bool) error) error
 }
 
 // target is where one photo's sizes are published: the photo, and the storage
@@ -155,6 +160,8 @@ type LocationReader interface {
 type target struct {
 	// uid identifies the photo, so its current prefix can be re-read.
 	uid string
+	// project is the photo's project, which the re-read is scoped by.
+	project string
 	// prefix is the storage prefix the generation started with.
 	prefix string
 	// hash is the photo's file hash.
@@ -250,14 +257,18 @@ func WithEdits(r EditResolver) Option {
 	}
 }
 
-// WithLocation makes the thumbnailer re-read the photo's row through r
-// immediately before it publishes each size, refusing with ErrPrefixMoved when
-// the photo's storage prefix is no longer the one the generation started with.
-// It is what keeps a generation that overlapped a storage move from publishing
-// under the prefix the photo has left — where nothing would ever look for the
-// object again. A photo the row cannot be found for (an upload whose row is not
-// committed yet) is published as planned. A nil reader is ignored.
-func WithLocation(r LocationReader) Option {
+// WithLocation makes the thumbnailer publish each size through r: the photo's
+// row is re-read under the photo's lock immediately before the upload, which is
+// refused with ErrPrefixMoved when the photo's storage prefix is no longer the
+// one the generation started with, and the upload finishes before a storage move
+// can commit the photo or copy its thumbnails. It is what keeps a generation
+// that overlapped a storage move from publishing under the prefix the photo has
+// left — where nothing would ever look for the object again — and from having
+// its fresh tile overwritten by the stale root one the move copies. A size the
+// move is busy with right now is refused with ErrPrefixMoved too (wrapping
+// storekeys.ErrMoving). A photo the row cannot be found for (an upload whose row
+// is not committed yet) is published as planned. A nil lock is ignored.
+func WithLocation(r LocationLock) Option {
 	return func(t *Thumbnailer) {
 		if r != nil {
 			t.location = r
@@ -508,7 +519,7 @@ func (t *Thumbnailer) generate(
 	}
 	defer cleanup()
 
-	dst := target{uid: photo.UID, prefix: prefix, hash: photo.FileHash}
+	dst := target{uid: photo.UID, project: photo.ProjectID, prefix: prefix, hash: photo.FileHash}
 	// Fast path: shell out to vipsthumbnail for directly-supported originals. On
 	// any failure it returns false and we fall through to the pure-Go engine, so
 	// output never depends on vips succeeding — only speed does. An edited photo
@@ -775,8 +786,9 @@ func (t *Thumbnailer) writeSize(
 // the invariant that on a publishing backend every cached size is also in the
 // bucket — which is what lets a client's object URL resolve.
 //
-// Right before the upload the photo's prefix is re-read (checkLocation): when a
-// storage move committed the photo since the generation started, the cache file
+// The upload runs under the photo's lock (WithLocation), right after the photo's
+// prefix is re-read there (checkLocation): when a storage move committed the
+// photo since the generation started, or is moving it right now, the cache file
 // is removed and ErrPrefixMoved returned instead of publishing under the prefix
 // the photo has left.
 func (t *Thumbnailer) publishSize(ctx context.Context, dst target, size, absPath string) error {
@@ -787,10 +799,29 @@ func (t *Thumbnailer) publishSize(ctx context.Context, dst target, size, absPath
 	if t.originals.URL(rel) == "" {
 		return nil
 	}
-	if err := t.checkLocation(ctx, dst); err != nil {
+	put := func() error { return t.upload(ctx, size, rel, absPath) }
+	if t.location != nil && dst.uid != "" {
+		err = t.location.Publish(ctx, dst.project, dst.uid, func(filePath string, found bool) error {
+			if err := checkLocation(dst, filePath, found); err != nil {
+				return err
+			}
+			return put()
+		})
+	} else {
+		err = put()
+	}
+	if errors.Is(err, storekeys.ErrMoving) && !errors.Is(err, ErrPrefixMoved) {
+		err = fmt.Errorf("%w: %w", ErrPrefixMoved, err)
+	}
+	if err != nil {
 		_ = os.Remove(absPath)
 		return err
 	}
+	return nil
+}
+
+// upload puts the cached thumbnail at absPath under the object key rel.
+func (t *Thumbnailer) upload(ctx context.Context, size, rel, absPath string) error {
 	digest, byteLen, err := hashAndSize(absPath)
 	if err != nil {
 		return err
@@ -802,28 +833,19 @@ func (t *Thumbnailer) publishSize(ctx context.Context, dst target, size, absPath
 	defer func() { _ = file.Close() }()
 	want := storage.StoredFile{Hash: digest, RelPath: rel, Size: byteLen, MIME: thumbMIME}
 	if err := t.originals.Put(ctx, file, want); err != nil {
-		_ = os.Remove(absPath)
 		return fmt.Errorf("thumb: publishing %s: %w", size, err)
 	}
 	return nil
 }
 
-// checkLocation re-reads the photo of dst and returns ErrPrefixMoved when its
-// original no longer lives under dst.prefix. Without a LocationReader, for a
-// photo with no uid, and for one whose row is not (yet) there it has no
-// objection.
-func (t *Thumbnailer) checkLocation(ctx context.Context, dst target) error {
-	if t.location == nil || dst.uid == "" {
+// checkLocation returns ErrPrefixMoved when the photo of dst, whose original
+// the lock re-read at filePath, no longer lives under dst.prefix. A photo whose
+// row is not (yet) there raises no objection.
+func checkLocation(dst target, filePath string, found bool) error {
+	if !found {
 		return nil
 	}
-	current, err := t.location.GetForJob(ctx, dst.uid)
-	if errors.Is(err, photos.ErrPhotoNotFound) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("thumb: re-reading photo %s: %w", dst.uid, err)
-	}
-	if now := storekeys.PrefixOf(current.FilePath); now != dst.prefix {
+	if now := storekeys.PrefixOf(filePath); now != dst.prefix {
 		return fmt.Errorf("%w: %s moved from %q to %q", ErrPrefixMoved, dst.uid, dst.prefix, now)
 	}
 	return nil

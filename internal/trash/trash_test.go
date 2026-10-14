@@ -3,6 +3,8 @@ package trash
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -13,6 +15,7 @@ import (
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // fakePhotoStore is an in-memory PhotoStore for the purge tests. It tracks which
@@ -786,5 +789,65 @@ func TestPurgePhoto_followsTheOriginalsLayout(t *testing.T) {
 	}
 	if len(sprites.removed) != 1 || sprites.removed[0] != prefix+hash {
 		t.Errorf("storyboards removed = %v, want [%s]", sprites.removed, prefix+hash)
+	}
+}
+
+// fakeMoveLock stands in for the storage move's photo lock: it refuses the
+// photos in busy with storekeys.ErrMoving and otherwise runs the purge, recording
+// which photo it ran and whether the purge's deletions happened under it.
+type fakeMoveLock struct {
+	busy  map[string]bool
+	store *fakePhotoStore
+	held  []string
+}
+
+// Purge runs purge unless the photo is busy, and checks the row went inside it.
+func (f *fakeMoveLock) Purge(_ context.Context, projectUID, photoUID string, purge func() error) error {
+	if f.busy[photoUID] {
+		return fmt.Errorf("rekey: %w: %s", storekeys.ErrMoving, photoUID)
+	}
+	if err := purge(); err != nil {
+		return err
+	}
+	if f.store.deleted[photoUID] {
+		f.held = append(f.held, projectUID+"|"+photoUID)
+	}
+	return nil
+}
+
+// TestPurge_underTheMoveLock verifies every purge — the manual one, empty-trash
+// and the scheduled retention — deletes under the storage move's photo lock,
+// and that a photo the move holds is left in the trash, its row and original
+// untouched: the manual purge reports storekeys.ErrMoving, a batch counts it as
+// failed and goes on with the rest.
+func TestPurge_underTheMoveLock(t *testing.T) {
+	t.Parallel()
+	old := time.Now().Add(-72 * time.Hour)
+	store := newFakePhotoStore()
+	store.seed("ph_free", &old)
+	store.seed("ph_moving", &old)
+	fs, th := newFakeStorage(), newFakeThumb()
+	lock := &fakeMoveLock{busy: map[string]bool{"ph_moving": true}, store: store}
+	svc := New(Config{
+		Photos: store, Projects: fakeProjects{active(testProject)}, Storage: fs, Thumbnailer: th,
+		Moves: lock, RetentionDays: 1,
+	})
+
+	if err := svc.PurgePhoto(t.Context(), testProject, "ph_moving", audit.Meta{}); !errors.Is(err, storekeys.ErrMoving) {
+		t.Fatalf("PurgePhoto of a photo the move holds = %v, want storekeys.ErrMoving", err)
+	}
+	res, err := svc.PurgeExpired(t.Context())
+	if err != nil {
+		t.Fatalf("PurgeExpired: %v", err)
+	}
+	if res.Purged != 1 || res.Failed != 1 {
+		t.Errorf("PurgeExpired = %+v, want one purged and the held one failed", res)
+	}
+	if store.deleted["ph_moving"] || fs.deleted["ph_moving.jpg"] {
+		t.Errorf("the photo the move holds was purged (row %v, original %v)",
+			store.deleted["ph_moving"], fs.deleted["ph_moving.jpg"])
+	}
+	if want := []string{testProject + "|ph_free"}; !slices.Equal(lock.held, want) {
+		t.Errorf("purged under the lock: %v, want %v", lock.held, want)
 	}
 }

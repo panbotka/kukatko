@@ -739,21 +739,51 @@ the project is never matched: it stays at the root for `maintenance scan` to rep
 
 **Jobs during a move.** The `thumbnail`, `hls_transcode` and `sidecar` jobs publish a photo's derived objects
 under the prefix of its original, and the move snapshots those objects when it steps the photo. So while a
-project's move is `running`, a job for one of its photos still in the old layout is **deferred** (requeued a
-minute later, no attempt burned — `internal/rekey.Gate`) until the move has taken the photo; it then publishes
-under the new prefix. The jobs also **re-read the photo's key right before publishing** (and the encode once
-more before it writes the rendition row): a job that was already running when the move committed its photo
-publishes under the new prefix (the encode re-publishes the segments it already has; a thumbnail job defers and
-re-renders) and never under the one the photo left. A paused move defers nothing. Expect the thumbnail and
-encode queues of the project to wait while the move runs — that is the deferral, not a stuck worker.
+project's move is `running`, a job for one of its photos still in the old layout is **deferred** (requeued
+later, no attempt burned — `internal/rekey.Gate`) until the move has taken the photo; it then publishes under
+the new prefix. A paused move defers nothing.
+
+**The photo lock.** Each photo the move takes is guarded by a per-photo Postgres advisory lock
+(`internal/rekey/lock.go`). The move holds it **exclusively** from just before it commits the row under the
+new prefix until the photo's thumbnails, segments and sidecar are copied and the root ones deleted. Every
+publisher holds it **shared** while it re-reads the photo's key and uploads: the thumbnailer around each
+size's upload (the on-demand rebuild too), the encode around the segment upload and the rendition row, the
+sidecar job around the write. So a publish lands either before the move copies (at the root, and the move takes
+it along) or after the move is through (under the new prefix) — never in between, where the stale root copy
+would overwrite the fresh tile of an edit or the fresh one would be left at a root already emptied. A publisher
+never waits for the lock: one that finds the move holding the photo — or finds the photo committed by a move
+that crashed before finishing it (`pending_photo_uid`) — is **deferred** (the thumbnail and sidecar jobs, the
+encode), or answered **503 with `Retry-After: 5`** (the on-demand `POST /photos/{uid}/regenerate-thumbnail`).
+The move does wait for a publish in flight (a thumbnail upload; for a video, its segment upload).
+
+**Deferrals back off.** A move deferral is requeued after as long as the job has waited already — one minute
+for a fresh job, then roughly doubling, at most **30 minutes** (`worker.WaitedDelay`). That matters when the
+move's own job is dead-lettered while its run still says `running` (below): nothing steps the move, so every
+waiting thumbnail, encode and sidecar job keeps being deferred, but at most every half hour rather than every
+minute, until `--pause` + `--resume` restarts the move. Expect the thumbnail and encode queues of the project to
+wait while the move runs — that is the deferral, not a stuck worker.
+
+**Trash purge during a move.** The purge (a single photo, empty trash, `purge-older`, and the daily
+retention) deletes each photo **under the same lock**, shared, **waiting** while the move copies that photo:
+it then deletes the objects of the key the row has by then. A move that copied a photo's original but finds
+the photo purged before it could commit deletes its copy again, so nothing of a purged photo survives under
+the new prefix. A photo a crashed move committed and has yet to finish is not purged (single purge: **503**
+with `Retry-After`; a batch counts it as failed and the next run takes it).
 
 **Repairs during a move.** `maintenance repair --delete-orphan-segments` and `--root-derived` delete at the
 store root, which is exactly what a move is emptying: a photo it has committed but not finished has its row
-under the prefix and its segments still at the root, where the sweep would take them for orphans. Both are
-**refused while any storage move is `running` or `paused`** — the CLI exits non-zero with
+under the prefix and its segments still at the root, where the sweep would take them for orphans.
+`--import-orphans` is the mirror case: mid-move, a copied-but-uncommitted original has no row and looks like
+an orphan, and importing it could bring back a photo the user purged. All three are **refused while any
+storage move is `running` or `paused`** — the CLI exits non-zero with
 `a storage move is under way: … is refused while the storage move of project <uid> is <state>`, the API
-answers **409** — and nothing is deleted. Run them again once the move is `done` (or `failed`: the root
-segments of moved photos are then kept by the sweep, and `--root-derived` moves them).
+answers **409** — and nothing is deleted or imported. Run them again once the move is `done` (or `failed`:
+the root segments of moved photos are then kept by the sweep, and `--root-derived` moves them).
+
+**Another project in the root layout.** Thumbnail and segment keys are named after a content hash, which is
+unique only within a project. While any project other than the moved ones is still in the root layout (none
+is today: `project.Create` always gives a prefix), the closing sweep, `maintenance scan`'s `root derived`
+and `--root-derived` look at nothing at the root, like the final clean-up of sidecars and `families.yaml`.
 
 **Before you start — pre-move checks.** Run these against the project (here `v`) first; each must return
 **0 rows**:
@@ -818,7 +848,9 @@ loses nothing.
 **If the job is dead.** A failure that is not about one photo (database or store unreachable) is retried by
 the queue with backoff; after its attempts are spent the job is dead-lettered while the run still says
 `running` — and nothing steps it. Unstick it with **`--pause` then `--resume`** (or „Pozastavit" /
-„Pokračovat"), which queues a fresh job; requeueing it from the maintainer's `/jobs` works too.
+„Pokračovat"), which queues a fresh job; requeueing it from the maintainer's `/jobs` works too. Until then the
+thumbnail, encode and sidecar jobs of photos the move has not taken keep being deferred, backing off to one
+attempt every 30 minutes (see *Deferrals back off* above).
 
 ### `kukatko ctl` — remote API client
 

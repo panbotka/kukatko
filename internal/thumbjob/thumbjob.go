@@ -69,8 +69,24 @@ var ErrAwaitingMove = errors.New("thumbjob: a storage move has yet to take this 
 
 // MoveRetryDelay is how long a job deferred by a storage move — waiting for the
 // move to take the photo, or refused a publish because the move committed it
-// mid-way (thumb.ErrPrefixMoved) — waits before it runs again.
+// mid-way or is moving it right now (thumb.ErrPrefixMoved) — waits before it
+// runs again the first time. A job that keeps being deferred backs off up to
+// MaxMoveRetryDelay (worker.WaitedDelay): a move whose own job has stopped —
+// dead-lettered while the run still says running — would otherwise have every
+// waiting thumbnail job re-run each minute until the operator pauses and resumes
+// the move.
 const MoveRetryDelay = time.Minute
+
+// MaxMoveRetryDelay is the longest a job deferred by a storage move waits
+// before it runs again.
+const MaxMoveRetryDelay = 30 * time.Minute
+
+// moveDeferral defers job, with worker.RetryAfter wrapping cause, for as long as
+// it has waited already, between MoveRetryDelay and MaxMoveRetryDelay.
+func moveDeferral(job jobs.Job, cause error) error {
+	delay := worker.WaitedDelay(job.CreatedAt, time.Now(), MoveRetryDelay, MaxMoveRetryDelay)
+	return worker.RetryAfter(delay, cause) //nolint:wrapcheck // the worker's deferral
+}
 
 // MoveGate tells the job whether a storage move is about to take a photo. It is
 // satisfied by *rekey.Gate.
@@ -249,7 +265,9 @@ type jobPayload struct {
 // thumbnails when it steps it, so tiles published under the root meanwhile
 // would be left behind), or the move committed the photo while the job was
 // rendering and the thumbnailer refused to publish under the prefix the photo
-// left (thumb.ErrPrefixMoved). The re-run renders from the row as it is then.
+// left or is copying the photo's thumbnails right now (thumb.ErrPrefixMoved).
+// The re-run renders from the row as it is then. A deferral that repeats backs
+// off (moveDeferral).
 func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	var p jobPayload
 	if err := json.Unmarshal(job.Payload, &p); err != nil {
@@ -258,7 +276,7 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	if p.PhotoUID == "" {
 		return ErrMissingPhotoUID
 	}
-	if err := s.awaitMove(ctx, p.PhotoUID); err != nil {
+	if err := s.awaitMove(ctx, job, p.PhotoUID); err != nil {
 		return err
 	}
 	var err error
@@ -268,7 +286,7 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 		err = s.Regenerate(ctx, p.PhotoUID)
 	}
 	if errors.Is(err, thumb.ErrPrefixMoved) {
-		return worker.RetryAfter(MoveRetryDelay, err) //nolint:wrapcheck // the worker's deferral
+		return moveDeferral(job, err)
 	}
 	return err
 }
@@ -276,7 +294,7 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 // awaitMove defers the job, with worker.RetryAfter wrapping ErrAwaitingMove,
 // while a running storage move has yet to take the photo. Without a MoveGate it
 // never defers and reads nothing.
-func (s *Service) awaitMove(ctx context.Context, photoUID string) error {
+func (s *Service) awaitMove(ctx context.Context, job jobs.Job, photoUID string) error {
 	if s.moves == nil {
 		return nil
 	}
@@ -289,8 +307,7 @@ func (s *Service) awaitMove(ctx context.Context, photoUID string) error {
 		return fmt.Errorf("thumbjob: %w", err)
 	}
 	if awaiting {
-		cause := fmt.Errorf("%w: %s", ErrAwaitingMove, photoUID)
-		return worker.RetryAfter(MoveRetryDelay, cause) //nolint:wrapcheck // the worker's deferral
+		return moveDeferral(job, fmt.Errorf("%w: %s", ErrAwaitingMove, photoUID))
 	}
 	return nil
 }
@@ -331,14 +348,20 @@ func (s *Service) Regenerate(ctx context.Context, photoUID string) error {
 //
 // A missing photo is returned as photos.ErrPhotoNotFound (which the HTTP layer
 // maps to 404); a missing or undecodable original is wrapped with
-// ErrRegenerateFailed (mapped to 422); a storage/database failure is an ordinary
-// wrapped error (mapped to 500).
+// ErrRegenerateFailed (mapped to 422); a size a storage move refused — it
+// committed the photo mid-render or is copying its thumbnails right now — is
+// returned wrapping thumb.ErrPrefixMoved and not ErrRegenerateFailed, a
+// transient condition the caller retries (mapped to 503 with Retry-After); a
+// storage/database failure is an ordinary wrapped error (mapped to 500).
 func (s *Service) ForceRegenerate(ctx context.Context, photoUID string) ([]string, error) {
 	photo, err := s.photos.GetForJob(ctx, photoUID)
 	if err != nil {
 		return nil, fmt.Errorf("thumbjob: loading photo %s: %w", photoUID, err)
 	}
 	sizes, err := s.thumbs.RegenerateAll(ctx, photo)
+	if errors.Is(err, thumb.ErrPrefixMoved) {
+		return nil, fmt.Errorf("thumbjob: regenerating thumbnails for %s: %w", photoUID, err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: regenerating thumbnails for %s: %w", ErrRegenerateFailed, photoUID, err)
 	}

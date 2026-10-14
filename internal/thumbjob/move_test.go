@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -111,5 +112,64 @@ func TestHandle_defersAPublishTheMoveOvertook(t *testing.T) {
 				t.Errorf("Handle = %v, want it to wrap %v", err, tt.err)
 			}
 		})
+	}
+}
+
+// TestHandle_moveDeferralBacksOff verifies a job a storage move keeps deferring
+// waits longer the longer it has waited — from MoveRetryDelay for a fresh job up
+// to MaxMoveRetryDelay — for both kinds of move deferral: the gate's "not taken
+// yet" and the thumbnailer's refusal to publish.
+func TestHandle_moveDeferralBacksOff(t *testing.T) {
+	t.Parallel()
+
+	moved := fmt.Errorf("thumb: generate sizes: %w", thumb.ErrPrefixMoved)
+	tests := []struct {
+		name   string
+		gate   *fakeGate
+		thErr  error
+		waited time.Duration
+		want   time.Duration
+	}{
+		{name: "awaiting, fresh", gate: &fakeGate{awaiting: true}, want: MoveRetryDelay},
+		{name: "awaiting, waited 10m", gate: &fakeGate{awaiting: true}, waited: 10 * time.Minute, want: 10 * time.Minute},
+		{name: "awaiting, waited a day", gate: &fakeGate{awaiting: true}, waited: 24 * time.Hour, want: MaxMoveRetryDelay},
+		{name: "refused, fresh", gate: &fakeGate{}, thErr: moved, want: MoveRetryDelay},
+		{name: "refused, waited a day", gate: &fakeGate{}, thErr: moved, waited: 24 * time.Hour, want: MaxMoveRetryDelay},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := &fakePhotos{photo: photos.Photo{ProjectID: "pj1", FilePath: "2024/05/a.jpg"}, hasPhash: true}
+			svc := New(Config{Photos: p, Thumbnailer: &fakeThumbs{err: tt.thErr}, Decoder: &fakeDecoder{}, Moves: tt.gate})
+
+			job := jobs.Job{Payload: payload(t, "ph1"), CreatedAt: time.Now().Add(-tt.waited)}
+			err := svc.Handle(t.Context(), job)
+			var deferral *worker.RetryAfterError
+			if !errors.As(err, &deferral) {
+				t.Fatalf("Handle = %v, want a deferral", err)
+			}
+			// The job's age is read a moment after CreatedAt was stamped.
+			if deferral.Delay < tt.want || deferral.Delay > tt.want+time.Minute {
+				t.Errorf("deferral = %s, want about %s", deferral.Delay, tt.want)
+			}
+		})
+	}
+}
+
+// TestForceRegenerate_moveIsNotAnUndecodableOriginal verifies an on-demand
+// rebuild a storage move refused is reported as the move (thumb.ErrPrefixMoved,
+// a retryable condition the HTTP layer answers 503) and not as
+// ErrRegenerateFailed, which the HTTP layer answers 422 "cannot be decoded".
+func TestForceRegenerate_moveIsNotAnUndecodableOriginal(t *testing.T) {
+	t.Parallel()
+	th := &fakeThumbs{regenErr: fmt.Errorf("thumb: %w", thumb.ErrPrefixMoved)}
+	svc := newService(&fakePhotos{hasPhash: true}, th, &fakeDecoder{})
+
+	_, err := svc.ForceRegenerate(t.Context(), "ph1")
+	if !errors.Is(err, thumb.ErrPrefixMoved) {
+		t.Fatalf("ForceRegenerate = %v, want it to wrap thumb.ErrPrefixMoved", err)
+	}
+	if errors.Is(err, ErrRegenerateFailed) {
+		t.Errorf("ForceRegenerate = %v, must not wrap ErrRegenerateFailed", err)
 	}
 }

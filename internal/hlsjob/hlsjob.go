@@ -63,14 +63,21 @@ var ErrAwaitingMove = errors.New("hlsjob: a storage move has yet to take this vi
 
 // ErrPrefixMoved indicates the video's storage prefix changed while its
 // segments were being published, more often than the job re-publishes in one
-// run (maxPublishAttempts). The job is deferred and re-runs from the start.
+// run (maxPublishAttempts), or that a storage move is moving the video right now
+// (the error then wraps storekeys.ErrMoving too). The job is deferred and re-runs
+// from the start.
 var ErrPrefixMoved = errors.New("hlsjob: the video's storage prefix kept changing during the publish")
 
 // MoveRetryDelay is how long a job deferred by a storage move waits before it is
 // tried again. The move takes storage.rekey.per_second photos a second, so a
 // minute is long enough not to spin and short enough that a moved video is
-// encoded soon after.
+// encoded soon after. A job deferred again and again backs off up to
+// MaxMoveRetryDelay (Service.backOff).
 const MoveRetryDelay = time.Minute
+
+// MaxMoveRetryDelay is the longest a job deferred by a storage move waits
+// before it is tried again.
+const MaxMoveRetryDelay = 30 * time.Minute
 
 // maxPublishAttempts bounds how often one run re-publishes a rendition because
 // the video's prefix changed under it. A photo is moved once, so a second
@@ -126,12 +133,19 @@ type Enqueuer interface {
 	EnqueueHLSTranscode(ctx context.Context, photoUID string) error
 }
 
-// MoveGate tells the job whether a storage move is about to take a video. It is
-// satisfied by *rekey.Gate.
+// MoveGate tells the job whether a storage move is about to take a video, and
+// keeps a move off the video while its segments are published. It is satisfied
+// by *rekey.Gate.
 type MoveGate interface {
 	// AwaitingMove reports whether a running storage move of project projectUID
 	// has yet to take the photo whose original is stored at filePath.
 	AwaitingMove(ctx context.Context, projectUID, filePath string) (bool, error)
+	// Publish runs publish while no storage move can commit the photo or copy its
+	// objects, handing it the key of the photo's original as its row has it then
+	// (found false without a row). It returns an error wrapping
+	// storekeys.ErrMoving, without calling publish, while a move holds the photo;
+	// otherwise publish's error.
+	Publish(ctx context.Context, projectUID, photoUID string, publish func(filePath string, found bool) error) error
 }
 
 // RenditionStore records what an encode produced. It is satisfied by *Store.
@@ -245,7 +259,21 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	if payload.PhotoUID == "" {
 		return ErrMissingPhotoUID
 	}
-	return s.Transcode(ctx, payload.PhotoUID)
+	return s.backOff(job, s.Transcode(ctx, payload.PhotoUID))
+}
+
+// backOff stretches a storage move's deferral of job (ErrAwaitingMove,
+// ErrPrefixMoved) to as long as the job has waited already, between
+// MoveRetryDelay and MaxMoveRetryDelay (worker.WaitedDelay), and returns err.
+// A move whose own job has stopped — dead-lettered while its run still says
+// running — would otherwise have the encode re-run each minute until the
+// operator pauses and resumes the move.
+func (s *Service) backOff(job jobs.Job, err error) error {
+	var deferral *worker.RetryAfterError
+	if errors.As(err, &deferral) && (errors.Is(err, ErrAwaitingMove) || errors.Is(err, ErrPrefixMoved)) {
+		deferral.Delay = worker.WaitedDelay(job.CreatedAt, s.now(), MoveRetryDelay, MaxMoveRetryDelay)
+	}
+	return err
 }
 
 // Transcode encodes one photo into every configured rendition and records each

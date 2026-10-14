@@ -13,14 +13,16 @@ import (
 )
 
 // ErrStorageMoveActive indicates a repair that deletes objects at the root of
-// the store was refused because a storage move is running or paused. During a
+// the store, or imports orphan originals, was refused because a storage move is running or paused. During a
 // move a photo's row can already point under its project's prefix while its
 // thumbnails and streaming segments still wait at the root to be copied; to a
 // sweep reconciling the root against the catalogue those objects look orphaned,
 // and deleting them would lose what the move is about to copy. The repair can be
 // run again once the move is done (or failed — a failed move's photos that kept
 // derived objects at the root are excused below, and are the root-derived
-// repair's to move).
+// repair's to move). The orphan import is refused for the mirror reason: an
+// original the move copied under the new prefix but never committed (its photo
+// purged meanwhile) has no row either, and importing it would resurrect it.
 var ErrStorageMoveActive = errors.New("maintenance: a storage move is under way")
 
 // MoveWatcher reports the storage moves still under way. It is satisfied by

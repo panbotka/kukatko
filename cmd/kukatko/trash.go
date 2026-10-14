@@ -7,6 +7,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/rekey"
 	"github.com/panbotka/kukatko/internal/storyboard"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/trash"
@@ -38,7 +39,10 @@ func buildTrashService(cfg *config.Config, db *database.DB) (*trash.Service, err
 		Thumbnailer: thumb.New(store, cfg.Storage.CachePath),
 		// A purged video's scrub-preview sprite is derived media keyed by the same
 		// file hash, so it goes with the thumbnails rather than outliving them.
-		Storyboards:   storyboard.New(store, cfg.Storage.CachePath),
+		Storyboards: storyboard.New(store, cfg.Storage.CachePath),
+		// Each photo is purged under the storage move's photo lock, so a purge
+		// during a move never leaves the move's copy of the original behind.
+		Moves:         rekey.NewGate(db.Pool()),
 		RetentionDays: cfg.Trash.RetentionDays,
 	}), nil
 }
