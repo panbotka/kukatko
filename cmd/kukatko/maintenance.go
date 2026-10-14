@@ -24,6 +24,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/rekey"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/thumbjob"
@@ -113,6 +114,8 @@ func buildThumbService(
 		Decoder:     thumbjob.NewStorageDecoder(store, cfg.Thumb.MaxPixels, processDecodeBudget(cfg)),
 		Lister:      photoStore,
 		Enqueuer:    enqueuer,
+		// The job defers a photo a running storage move has yet to take.
+		Moves: rekey.NewGate(db.Pool()),
 	})
 	return svc, nil
 }
@@ -213,6 +216,9 @@ func buildMaintenanceService(
 			projects: projects,
 		},
 		RootDerived: rootDerived,
+		// The orphan-segment sweep and the root-derived repair delete at the
+		// root, so they wait for a running or paused move to end.
+		Moves: rootDerived,
 	}), nil
 }
 

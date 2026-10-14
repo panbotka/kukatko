@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
 	"github.com/panbotka/kukatko/internal/processapi"
+	"github.com/panbotka/kukatko/internal/rekey"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/sidecarjob"
 	"github.com/panbotka/kukatko/internal/uploadlink"
@@ -47,6 +48,8 @@ func buildSidecarServiceOrNil(
 		Writer:      sidecarexport.NewWriter(store),
 		Lister:      photoStore,
 		Enqueuer:    enqueuer,
+		// The job defers a photo a running storage move has yet to take.
+		Moves: rekey.NewGate(db.Pool()),
 	}), nil
 }
 

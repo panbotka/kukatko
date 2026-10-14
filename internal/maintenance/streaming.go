@@ -438,12 +438,22 @@ func (s *Service) dropIfGone(ctx context.Context, rec hlsjob.Recorded, res *Repa
 // hls_transcode job is therefore excluded and counted as kept — the queue is
 // re-read here rather than trusted from the scan, so an encode that started in
 // between is still safe.
+//
+// The sweep is refused outright (ErrStorageMoveActive) while a storage move is
+// running or paused: a video the move has committed but not yet finished has
+// its row under the project prefix and its segments still at the root, where
+// they would look orphaned. Root segments of a moved video's recorded
+// renditions are kept (and counted) in any case — the move left them for its
+// retry, or for the root-derived repair.
 func (s *Service) repairOrphanSegments(ctx context.Context, opts RepairOptions, res *RepairResult) error {
 	if !opts.DeleteOrphanSegments {
 		return nil
 	}
 	if !s.streaming.enabled() {
 		return ErrStreamingUnavailable
+	}
+	if err := s.refuseDuringMove(ctx, "deleting orphan streaming segments"); err != nil {
+		return err
 	}
 	doomed, kept, err := s.collectOrphanSegments(ctx)
 	if err != nil {
@@ -488,6 +498,7 @@ func (s *Service) collectOrphanSegments(ctx context.Context) (doomed []string, k
 		return nil, 0, err
 	}
 	live := recordedPrefixes(recorded)
+	movedRoot := movedRootPrefixes(recorded)
 	doomed = make([]string, 0)
 	walkErr := s.streaming.Segments.KeysWithPrefix(ctx, hls.Prefix+"/", func(key string) error {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -497,7 +508,7 @@ func (s *Service) collectOrphanSegments(ctx context.Context) (doomed []string, k
 		switch {
 		case inSet(live, ref.group):
 			return nil
-		case ref.shaped && inSet(encoding, ref.fileHash):
+		case ref.shaped && inSet(encoding, ref.fileHash), inSet(movedRoot, ref.group):
 			kept++
 			return nil
 		}

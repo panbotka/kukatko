@@ -52,13 +52,18 @@ func rootDerivedKeys(found []rekey.RootDerivedPhoto) []string {
 
 // repairRootDerived moves the derived objects left at the root under their
 // photo's prefix, when that repair is selected. It finds them afresh rather than
-// trusting an earlier scan, so a second run is a no-op.
+// trusting an earlier scan, so a second run is a no-op. It deletes root copies,
+// so it is refused (ErrStorageMoveActive) while a storage move is running or
+// paused — the move is still moving those objects itself.
 func (s *Service) repairRootDerived(ctx context.Context, opts RepairOptions, res *RepairResult) error {
 	if !opts.RootDerived {
 		return nil
 	}
 	if s.rootDerived == nil {
 		return ErrRootDerivedUnavailable
+	}
+	if err := s.refuseDuringMove(ctx, "moving derived objects left at the root"); err != nil {
+		return err
 	}
 	found, err := s.findRootDerived(ctx)
 	if err != nil {

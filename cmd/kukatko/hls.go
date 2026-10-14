@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/processapi"
+	"github.com/panbotka/kukatko/internal/rekey"
 )
 
 // buildHLSServiceOrNil assembles the streaming-encode service — the
@@ -50,6 +51,7 @@ func buildHLSServiceOrNil(
 		// the catalogue says have never been encoded.
 		Lister:         photos.NewStore(db.Pool()),
 		Enqueuer:       enqueuer,
+		Moves:          rekey.NewGate(db.Pool()), // the encode waits for a running move to take the video
 		Plan:           plan,
 		SegmentSeconds: cfg.Video.HLS.SegmentSeconds,
 		TempDir:        cfg.Storage.TempPath,

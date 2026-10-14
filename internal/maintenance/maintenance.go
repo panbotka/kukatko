@@ -211,7 +211,9 @@ type OrphanImporter interface {
 // is off), Streaming (a zero value means this instance does not stream) and
 // Processing (nil leaves the unscheduled-steps finding empty and its repair
 // unavailable) and RootDerived (nil leaves the root-derived finding empty and
-// its repair unavailable). A non-positive SampleLimit uses defaultSampleLimit.
+// its repair unavailable) and Moves (nil means no storage move ever runs, so the
+// repairs that delete under the root never wait for one). A non-positive
+// SampleLimit uses defaultSampleLimit.
 type Config struct {
 	Photos      PhotoCatalog
 	Vectors     VectorCatalog
@@ -229,6 +231,7 @@ type Config struct {
 	Streaming   Streaming
 	Processing  ProcessingGaps
 	RootDerived RootDerivedMover
+	Moves       MoveWatcher
 	SampleLimit int
 }
 
@@ -251,6 +254,7 @@ type Service struct {
 	streaming   Streaming
 	processing  ProcessingGaps
 	rootDerived RootDerivedMover
+	moves       MoveWatcher
 	sampleLimit int
 }
 
@@ -282,6 +286,7 @@ func New(cfg Config) *Service {
 		streaming:   cfg.Streaming,
 		processing:  cfg.Processing,
 		rootDerived: cfg.RootDerived,
+		moves:       cfg.Moves,
 		sampleLimit: limit,
 	}
 }

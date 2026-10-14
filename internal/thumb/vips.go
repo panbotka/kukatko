@@ -3,6 +3,7 @@ package thumb
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -88,14 +89,16 @@ func vipsSupportsMime(mime string) bool {
 // reading the materialized original at src and returning true when it produced
 // them all. It returns false — leaving the caller to fall back to the pure-Go
 // engine — when the engine is disabled, the source is not a vips-handled format,
-// or any vips invocation fails. The original is read directly by vips;
+// or any vips invocation fails. A size refused because the photo's prefix moved
+// (ErrPrefixMoved) is returned as the error instead, since the fallback would
+// only be refused the same way. The original is read directly by vips;
 // orientation is applied by vipsthumbnail's built-in EXIF autorotation (the same
 // orientation Kukátko stored at import), so output matches the pure-Go engine.
 func (t *Thumbnailer) tryVips(
-	ctx context.Context, photo photos.Photo, prefix, src string, needed []string, result map[string]string,
-) bool {
+	ctx context.Context, photo photos.Photo, dst target, src string, needed []string, result map[string]string,
+) (bool, error) {
 	if !t.usesVips() || !vipsSupportsMime(photo.FileMime) {
-		return false
+		return false, nil
 	}
 	group, gctx := errgroup.WithContext(ctx)
 	group.SetLimit(t.workers)
@@ -104,18 +107,22 @@ func (t *Thumbnailer) tryVips(
 			if gctx.Err() != nil {
 				return gctx.Err()
 			}
-			return t.vipsWriteSize(gctx, src, prefix, photo.FileHash, name, result[name])
+			return t.vipsWriteSize(gctx, src, dst, name, result[name])
 		})
 	}
-	return group.Wait() == nil
+	err := group.Wait()
+	if errors.Is(err, ErrPrefixMoved) {
+		return false, fmt.Errorf("thumb: vips: %w", err)
+	}
+	return err == nil, nil
 }
 
 // vipsWriteSize renders one size of src into absPath via vipsthumbnail, writing
 // to a sibling temp file and renaming it into place so no half-written thumbnail
 // is ever observed (matching the pure-Go atomic write), then publishes it to the
-// storage backend when that backend serves thumbnails from object URLs. prefix
-// and hash — the photo's storage prefix and file hash — key the published object.
-func (t *Thumbnailer) vipsWriteSize(ctx context.Context, src, prefix, hash, name, absPath string) error {
+// storage backend when that backend serves thumbnails from object URLs. dst —
+// the photo, its storage prefix and file hash — keys the published object.
+func (t *Thumbnailer) vipsWriteSize(ctx context.Context, src string, dst target, name, absPath string) error {
 	start := time.Now()
 	tmpPath, cleanup, err := reserveVipsTemp(absPath)
 	if err != nil {
@@ -133,7 +140,7 @@ func (t *Thumbnailer) vipsWriteSize(ctx context.Context, src, prefix, hash, name
 		return fmt.Errorf("thumb: rename vips temp: %w", err)
 	}
 	t.observer.ObserveThumbnail(time.Since(start))
-	return t.publishSize(ctx, prefix, hash, name, absPath)
+	return t.publishSize(ctx, dst, name, absPath)
 }
 
 // reserveVipsTemp creates the destination directory and a unique sibling temp

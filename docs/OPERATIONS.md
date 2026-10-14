@@ -134,6 +134,7 @@ configuration key both here **and** into `config.example.yaml`.
   own rules (`internal/rekey`): an object already under the prefix is kept, a missing one is copied there, and
   a photo's root copies are deleted **only once every one of them exists under the prefix**; it prints
   `root derived objects moved: photos=N objects=M failed=K` — a failed photo kept everything at the root.
+  Like `--delete-orphan-segments` it is refused while a storage move is `running` or `paused`.
   `--impossible-dates` is the fourth flag that writes the catalogue directly, and the only one that **removes**
   something: it withdraws the capture date of every photo dated to a year no photograph can have been taken in
   — before 1826 or further ahead than next year, the same range `internal/exif` enforces on an incoming
@@ -169,7 +170,10 @@ configuration key both here **and** into `config.example.yaml`.
   with an unfinished `hls_transcode` job (`orphan segments deleted=N kept=M`): the encode publishes a rendition's
   objects **before** it writes the row describing them, so during a transcode a healthy job's uploads are
   indistinguishable from abandoned ones and deleting them would break the job. The queue is re-read at repair
-  time, not taken from the scan, so an encode that started in between is still safe. Both refuse on an instance
+  time, not taken from the scan, so an encode that started in between is still safe. It also keeps (and counts)
+  the root segments of a recorded rendition whose video already lives under its project's prefix — what a
+  storage move has not copied yet, `--root-derived`'s to move — and it is **refused outright while any storage
+  move is `running` or `paused`** (see the storage-move runbook). Both refuse on an instance
   with `video.hls.enabled: false` (503 over HTTP): nothing encodes there, so a dropped row would never be
   produced again.
   **Cost of the streaming check:** with streaming off, or with no video in the catalogue (archived ones counted —
@@ -717,6 +721,24 @@ re-plans the derived objects of the recorded photos: a prefixed copy that exists
 copied from the root, the root copies are deleted only once every prefixed one exists, and the record is
 cleared. Before closing, the run also **sweeps the bucket**: a moved photo whose thumbnails or segments a
 listing still finds at the root (e.g. from a move before 0115) is recorded and retried the same way.
+
+**Jobs during a move.** The `thumbnail`, `hls_transcode` and `sidecar` jobs publish a photo's derived objects
+under the prefix of its original, and the move snapshots those objects when it steps the photo. So while a
+project's move is `running`, a job for one of its photos still in the old layout is **deferred** (requeued a
+minute later, no attempt burned — `internal/rekey.Gate`) until the move has taken the photo; it then publishes
+under the new prefix. The jobs also **re-read the photo's key right before publishing** (and the encode once
+more before it writes the rendition row): a job that was already running when the move committed its photo
+publishes under the new prefix (the encode re-publishes the segments it already has; a thumbnail job defers and
+re-renders) and never under the one the photo left. A paused move defers nothing. Expect the thumbnail and
+encode queues of the project to wait while the move runs — that is the deferral, not a stuck worker.
+
+**Repairs during a move.** `maintenance repair --delete-orphan-segments` and `--root-derived` delete at the
+store root, which is exactly what a move is emptying: a photo it has committed but not finished has its row
+under the prefix and its segments still at the root, where the sweep would take them for orphans. Both are
+**refused while any storage move is `running` or `paused`** — the CLI exits non-zero with
+`a storage move is under way: … is refused while the storage move of project <uid> is <state>`, the API
+answers **409** — and nothing is deleted. Run them again once the move is `done` (or `failed`: the root
+segments of moved photos are then kept by the sweep, and `--root-derived` moves them).
 
 **Before you start — pre-move checks.** Run these against the project (here `v`) first; each must return
 **0 rows**:

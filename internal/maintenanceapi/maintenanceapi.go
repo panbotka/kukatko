@@ -181,7 +181,8 @@ func (a *API) handleRepair(w http.ResponseWriter, r *http.Request) {
 
 // writeRepairError maps a repair failure onto its response: the five
 // "this instance has no such feature" sentinels answer 503 with what is missing,
-// anything else is an opaque 500.
+// a repair refused during a storage move answers 409, anything else is an
+// opaque 500.
 func writeRepairError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, maintenance.ErrOrphanImportUnavailable):
@@ -194,6 +195,9 @@ func writeRepairError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusServiceUnavailable, "processing gap repair not configured")
 	case errors.Is(err, maintenance.ErrRootDerivedUnavailable):
 		writeError(w, http.StatusServiceUnavailable, "storage move not configured")
+	case errors.Is(err, maintenance.ErrStorageMoveActive):
+		writeError(w, http.StatusConflict, "a storage move is running or paused: "+
+			"deleting at the root waits until it is done")
 	default:
 		writeError(w, http.StatusInternalServerError, "repair failed")
 	}

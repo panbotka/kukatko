@@ -3,6 +3,7 @@ package maintenanceapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -209,6 +210,20 @@ func TestRepairRootDerivedUnavailable(t *testing.T) {
 	rec := do(newRouter(svc), http.MethodPost, "/maintenance/repair", `{"root_derived":true}`)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503", rec.Code)
+	}
+}
+
+// TestRepairDuringStorageMove verifies ErrStorageMoveActive maps to 409: the
+// repair is refused for now, not unavailable, and the answer says why.
+func TestRepairDuringStorageMove(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{repairErr: fmt.Errorf("wrapped: %w", maintenance.ErrStorageMoveActive)}
+	rec := do(newRouter(svc), http.MethodPost, "/maintenance/repair", `{"delete_orphan_segments":true}`)
+	if rec.Code != http.StatusConflict {
+		t.Errorf("status = %d, want 409", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "storage move") {
+		t.Errorf("body = %s, want it to name the storage move", rec.Body.String())
 	}
 }
 

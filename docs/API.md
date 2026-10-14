@@ -2860,7 +2860,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   mapy.com key → 503 (`ErrPlaceBackfillUnavailable`), a streaming repair on an instance with
   `video.hls.enabled: false` → 503 (`ErrStreamingUnavailable`), a gap repair on a service wired without the
   processing service → 503 (`ErrProcessingUnavailable`), a root-derived repair on a service wired without the
-  storage move → 503 (`ErrRootDerivedUnavailable`). `unscheduled_steps` counts, per (photo, step) and
+  storage move → 503 (`ErrRootDerivedUnavailable`), and `delete_orphan_segments` or `root_derived` while a
+  storage move is `running` or `paused` → **409** (`ErrStorageMoveActive`, nothing deleted: the move's
+  committed photos still have segments at the root). `unscheduled_steps` counts, per (photo, step) and
   sampled as `<photo_uid>/<step>`, every step a **live** photo is owed that nothing will deliver — exactly the
   steps its `processing` block calls `pending` (no evidence, no unfinished job, not switched off) — **except
   `places`**, whose pending backlog is deliberately deferred (geocoding is paid, worked off in batches) and is

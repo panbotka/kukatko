@@ -17,6 +17,7 @@ import (
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/video"
+	"github.com/panbotka/kukatko/internal/worker"
 )
 
 const (
@@ -44,13 +45,10 @@ func (s *Service) encodeOne(ctx context.Context, photo photos.Photo, srcPath str
 // segments it published — everything the run uploaded, which for a failure is
 // the part it had uploaded before it broke and then removed again.
 //
-// The order is deliberate: publish first, write the row last. A row is a promise
-// that the objects it describes can be fetched, so it may only be made once they
-// can be; the reverse order would let a player follow a playlist into segments
-// that do not exist. If anything fails after some objects have been uploaded,
-// the ones this run created are deleted again — objects a previous encode of the
-// same rendition had already published are left alone, because they are what its
-// still-valid row points at.
+// The encode is done once; where it is published is decided only afterwards, by
+// publishCurrent, from the photo's key as the catalogue holds it then — never
+// from the key the job started with, which a storage move may have changed while
+// ffmpeg ran.
 func (s *Service) encodeRendition(
 	ctx context.Context, photo photos.Photo, srcPath string, r hls.Rendition,
 ) (int64, error) {
@@ -64,23 +62,86 @@ func (s *Service) encodeRendition(
 	if err != nil {
 		return 0, err
 	}
-	prefix, err := renditionPrefix(storekeys.PrefixOf(photo.FilePath), photo.FileHash, r.Name)
-	if err != nil {
-		return 0, err
+	return s.publishCurrent(ctx, dir, photo, produced, row)
+}
+
+// publishCurrent publishes an encoded rendition from dir under the prefix the
+// photo's row points at right now and records it, returning the bytes uploaded.
+//
+// The photo's key is re-read immediately before the publish and once more
+// before the row is written. When a storage move committed the photo in between
+// — its prefix changed while the segments were uploading — what this attempt
+// wrote under the stale prefix is removed (nothing resolves there any more) and
+// the same segments are published again under the new prefix, at most
+// maxPublishAttempts times; past that the job is deferred with
+// worker.RetryAfter wrapping ErrPrefixMoved. No row is ever written for a
+// prefix the photo has left.
+func (s *Service) publishCurrent(
+	ctx context.Context, dir string, photo photos.Photo, produced encoded, row Encoded,
+) (int64, error) {
+	var written int64
+	for range maxPublishAttempts {
+		prefix, err := s.currentPrefix(ctx, photo.UID, photo.FileHash, row.Rendition)
+		if err != nil {
+			return written, err
+		}
+		n, moved, err := s.publishUnder(ctx, dir, prefix, photo.FileHash, produced, row)
+		written += n
+		if err != nil || !moved {
+			return written, err
+		}
 	}
+	cause := fmt.Errorf("%w: rendition %s of %s", ErrPrefixMoved, row.Rendition, photo.UID)
+	return written, worker.RetryAfter(MoveRetryDelay, cause) //nolint:wrapcheck // the worker's deferral
+}
+
+// publishUnder is one attempt of publishCurrent: it publishes the segments
+// under prefix and, when the photo is still there afterwards, writes the row.
+// fileHash is the video's content hash, which names its rendition prefix.
+// It reports moved when the photo's prefix changed during the upload, having
+// removed everything it uploaded under the stale prefix.
+//
+// The order is deliberate: publish first, write the row last. A row is a promise
+// that the objects it describes can be fetched, so it may only be made once they
+// can be; the reverse order would let a player follow a playlist into segments
+// that do not exist. If anything fails after some objects have been uploaded,
+// the ones this run created are deleted again — objects a previous encode of the
+// same rendition had already published are left alone, because they are what its
+// still-valid row points at.
+func (s *Service) publishUnder(
+	ctx context.Context, dir, prefix, fileHash string, produced encoded, row Encoded,
+) (int64, bool, error) {
 	before := s.existingKeys(ctx, prefix)
 	published, written, err := s.publish(ctx, dir, prefix, produced)
 	if err == nil {
+		var current string
+		current, err = s.currentPrefix(ctx, row.PhotoUID, fileHash, row.Rendition)
+		if err == nil && current != prefix {
+			s.remove(ctx, published)
+			return written, true, nil
+		}
+	}
+	if err == nil {
 		if _, saveErr := s.renditions.Save(ctx, row); saveErr != nil {
-			err = fmt.Errorf("hlsjob: recording rendition %s of %s: %w", r.Name, photo.UID, saveErr)
+			err = fmt.Errorf("hlsjob: recording rendition %s of %s: %w", row.Rendition, row.PhotoUID, saveErr)
 		}
 	}
 	if err != nil {
 		s.remove(ctx, without(published, before))
-		return written, err
+		return written, false, err
 	}
 	s.remove(ctx, without(before, published))
-	return written, nil
+	return written, false, nil
+}
+
+// currentPrefix re-reads the photo and returns the key prefix of its rendition
+// under the storage prefix its original has now.
+func (s *Service) currentPrefix(ctx context.Context, photoUID, fileHash, rendition string) (string, error) {
+	current, err := s.photos.GetForJob(ctx, photoUID)
+	if err != nil {
+		return "", fmt.Errorf("hlsjob: re-reading photo %s: %w", photoUID, err)
+	}
+	return renditionPrefix(storekeys.PrefixOf(current.FilePath), fileHash, rendition)
 }
 
 // prepare runs ffmpeg into dir and reads back what it produced: the objects to

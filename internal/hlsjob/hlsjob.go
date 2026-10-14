@@ -36,6 +36,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/video"
+	"github.com/panbotka/kukatko/internal/worker"
 )
 
 // ErrMissingPhotoUID indicates an hls_transcode payload carried no photo uid. It
@@ -53,6 +54,28 @@ var ErrBackfillUnavailable = errors.New("hlsjob: HLS backfill not configured")
 // plan. Nothing would be produced, so it is a wiring mistake rather than a
 // switched-off feature — which is expressed by registering no handler at all.
 var ErrNoRenditions = errors.New("hlsjob: no renditions configured")
+
+// ErrAwaitingMove indicates a running storage move of the video's project has
+// yet to take it. The job is deferred (worker.RetryAfter) rather than failed:
+// once the move has taken the video its row points under the new prefix, and
+// the encode publishes there.
+var ErrAwaitingMove = errors.New("hlsjob: a storage move has yet to take this video")
+
+// ErrPrefixMoved indicates the video's storage prefix changed while its
+// segments were being published, more often than the job re-publishes in one
+// run (maxPublishAttempts). The job is deferred and re-runs from the start.
+var ErrPrefixMoved = errors.New("hlsjob: the video's storage prefix kept changing during the publish")
+
+// MoveRetryDelay is how long a job deferred by a storage move waits before it is
+// tried again. The move takes storage.rekey.per_second photos a second, so a
+// minute is long enough not to spin and short enough that a moved video is
+// encoded soon after.
+const MoveRetryDelay = time.Minute
+
+// maxPublishAttempts bounds how often one run re-publishes a rendition because
+// the video's prefix changed under it. A photo is moved once, so a second
+// attempt is the rare case and a third means something keeps moving it.
+const maxPublishAttempts = 3
 
 // PhotoStore is the subset of the photo catalogue this package needs: loading one
 // photo. It is satisfied by *photos.Store.
@@ -103,6 +126,14 @@ type Enqueuer interface {
 	EnqueueHLSTranscode(ctx context.Context, photoUID string) error
 }
 
+// MoveGate tells the job whether a storage move is about to take a video. It is
+// satisfied by *rekey.Gate.
+type MoveGate interface {
+	// AwaitingMove reports whether a running storage move of project projectUID
+	// has yet to take the photo whose original is stored at filePath.
+	AwaitingMove(ctx context.Context, projectUID, filePath string) (bool, error)
+}
+
 // RenditionStore records what an encode produced. It is satisfied by *Store.
 type RenditionStore interface {
 	// Save upserts one rendition on (photo_uid, rendition) and returns the stored
@@ -124,6 +155,9 @@ type Config struct {
 	Lister PhotoLister
 	// Enqueuer schedules the backfill's jobs (optional).
 	Enqueuer Enqueuer
+	// Moves defers the encode of a video a running storage move has yet to take
+	// (optional; nil never defers).
+	Moves MoveGate
 	// Plan is the ordered list of renditions every video is encoded into. It is
 	// resolved from configuration by the caller, so an instance can produce fewer
 	// qualities than the encoder knows about without this package reading config.
@@ -152,6 +186,7 @@ type Service struct {
 	renditions RenditionStore
 	lister     PhotoLister
 	enqueuer   Enqueuer
+	moves      MoveGate
 	plan       []hls.Rendition
 	segment    int
 	tempDir    string
@@ -184,6 +219,7 @@ func New(cfg Config) *Service {
 		renditions: cfg.Renditions,
 		lister:     cfg.Lister,
 		enqueuer:   cfg.Enqueuer,
+		moves:      cfg.Moves,
 		plan:       cfg.Plan,
 		segment:    hls.SegmentLength(cfg.SegmentSeconds),
 		tempDir:    cfg.TempDir,
@@ -221,6 +257,14 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 // stills — their motion clip is a one-to-three second hover preview, not
 // something anybody streams.
 //
+// A video a running storage move has yet to take is deferred with
+// worker.RetryAfter (wrapping ErrAwaitingMove) before anything is encoded: the
+// move snapshots the video's segments when it steps it, so an encode publishing
+// under the root meanwhile would leave its segments where the moved row no
+// longer looks. A move that commits the video during the encode is caught right
+// before the publish and again before the row is written — the segments always
+// go under the prefix the row points at by then (publishCurrent).
+//
 // It returns a wrapped video.ErrFFmpegMissing on a host with no encoder,
 // photos.ErrPhotoNotFound for an unknown photo, ErrNoRenditions when nothing is
 // configured to be produced, and whatever the encode, the upload or the write
@@ -241,6 +285,9 @@ func (s *Service) Transcode(ctx context.Context, photoUID string) error {
 	if !s.ffmpeg() {
 		return fmt.Errorf("hlsjob: encoding %s: %w", photoUID, video.ErrFFmpegMissing)
 	}
+	if err := s.awaitMove(ctx, photo); err != nil {
+		return err
+	}
 	srcPath, cleanup, err := s.objects.Materialize(ctx, photo.FilePath)
 	defer cleanup()
 	if err != nil {
@@ -258,6 +305,24 @@ func (s *Service) Transcode(ctx context.Context, photoUID string) error {
 	// the retry will put the same footage through again.
 	if length := clipLength(photo.DurationMs); length > 0 {
 		s.observer.ObserveEncodedSource(length)
+	}
+	return nil
+}
+
+// awaitMove defers the job, with worker.RetryAfter wrapping ErrAwaitingMove,
+// while a running storage move has yet to take photo. Without a MoveGate it
+// never defers.
+func (s *Service) awaitMove(ctx context.Context, photo photos.Photo) error {
+	if s.moves == nil {
+		return nil
+	}
+	awaiting, err := s.moves.AwaitingMove(ctx, photo.ProjectID, photo.FilePath)
+	if err != nil {
+		return fmt.Errorf("hlsjob: %w", err)
+	}
+	if awaiting {
+		cause := fmt.Errorf("%w: %s", ErrAwaitingMove, photo.UID)
+		return worker.RetryAfter(MoveRetryDelay, cause) //nolint:wrapcheck // the worker's deferral
 	}
 	return nil
 }

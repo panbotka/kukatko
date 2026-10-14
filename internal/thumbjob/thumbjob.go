@@ -26,11 +26,14 @@ import (
 	"image"
 	"io"
 	"sort"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/blurhash"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/phash"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/thumb"
+	"github.com/panbotka/kukatko/internal/worker"
 )
 
 // PlaceholderSize is the rendition the blurred placeholder is computed from. It
@@ -57,6 +60,25 @@ var ErrRegenerateFailed = errors.New("thumbjob: thumbnail regeneration failed")
 // on-demand and worker-handler Services omit them, since they never backfill; a
 // Service that must back the /process/thumbnails endpoint is wired with both.
 var ErrBackfillUnavailable = errors.New("thumbjob: thumbnail backfill not configured")
+
+// ErrAwaitingMove indicates a running storage move of the photo's project has
+// yet to take it. The job is deferred (worker.RetryAfter) rather than failed:
+// once the move has taken the photo its row points under the new prefix, and
+// the thumbnails are published there.
+var ErrAwaitingMove = errors.New("thumbjob: a storage move has yet to take this photo")
+
+// MoveRetryDelay is how long a job deferred by a storage move — waiting for the
+// move to take the photo, or refused a publish because the move committed it
+// mid-way (thumb.ErrPrefixMoved) — waits before it runs again.
+const MoveRetryDelay = time.Minute
+
+// MoveGate tells the job whether a storage move is about to take a photo. It is
+// satisfied by *rekey.Gate.
+type MoveGate interface {
+	// AwaitingMove reports whether a running storage move of project projectUID
+	// has yet to take the photo whose original is stored at filePath.
+	AwaitingMove(ctx context.Context, projectUID, filePath string) (bool, error)
+}
 
 // PhotoStore is the subset of the photo catalogue the handler needs: loading the
 // photo and reading/writing its perceptual hashes. It is satisfied by
@@ -168,6 +190,11 @@ type Config struct {
 	Lister PhotoLister
 	// Enqueuer schedules thumbnail backfill jobs (optional).
 	Enqueuer Enqueuer
+	// Moves defers the job of a photo a running storage move has yet to take
+	// (optional; nil never defers). Only the job handler (Handle) asks it; an
+	// on-demand rebuild is protected by the thumbnailer's own re-read of the
+	// photo's prefix before each publish (thumb.WithLocation).
+	Moves MoveGate
 }
 
 // Service regenerates a photo's derived data. It is safe for concurrent use: the
@@ -178,6 +205,7 @@ type Service struct {
 	decoder  Decoder
 	lister   PhotoLister
 	enqueuer Enqueuer
+	moves    MoveGate
 }
 
 // New returns a Service from cfg. It panics if any of the three required
@@ -194,6 +222,7 @@ func New(cfg Config) *Service {
 		decoder:  cfg.Decoder,
 		lister:   cfg.Lister,
 		enqueuer: cfg.Enqueuer,
+		moves:    cfg.Moves,
 	}
 }
 
@@ -213,6 +242,14 @@ type jobPayload struct {
 // is missing, or (with the payload's force flag) rebuilding every size over the
 // cached one. A malformed or empty payload is a permanent error (the job
 // dead-letters rather than retrying a payload that can never succeed).
+//
+// Two conditions defer the job (worker.RetryAfter) instead of running or failing
+// it, both about a storage move: a running move of the photo's project has yet
+// to take the photo (ErrAwaitingMove — the move snapshots the photo's
+// thumbnails when it steps it, so tiles published under the root meanwhile
+// would be left behind), or the move committed the photo while the job was
+// rendering and the thumbnailer refused to publish under the prefix the photo
+// left (thumb.ErrPrefixMoved). The re-run renders from the row as it is then.
 func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	var p jobPayload
 	if err := json.Unmarshal(job.Payload, &p); err != nil {
@@ -221,11 +258,41 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	if p.PhotoUID == "" {
 		return ErrMissingPhotoUID
 	}
-	if p.Force {
-		_, err := s.ForceRegenerate(ctx, p.PhotoUID)
+	if err := s.awaitMove(ctx, p.PhotoUID); err != nil {
 		return err
 	}
-	return s.Regenerate(ctx, p.PhotoUID)
+	var err error
+	if p.Force {
+		_, err = s.ForceRegenerate(ctx, p.PhotoUID)
+	} else {
+		err = s.Regenerate(ctx, p.PhotoUID)
+	}
+	if errors.Is(err, thumb.ErrPrefixMoved) {
+		return worker.RetryAfter(MoveRetryDelay, err) //nolint:wrapcheck // the worker's deferral
+	}
+	return err
+}
+
+// awaitMove defers the job, with worker.RetryAfter wrapping ErrAwaitingMove,
+// while a running storage move has yet to take the photo. Without a MoveGate it
+// never defers and reads nothing.
+func (s *Service) awaitMove(ctx context.Context, photoUID string) error {
+	if s.moves == nil {
+		return nil
+	}
+	photo, err := s.photos.GetForJob(ctx, photoUID)
+	if err != nil {
+		return fmt.Errorf("thumbjob: loading photo %s: %w", photoUID, err)
+	}
+	awaiting, err := s.moves.AwaitingMove(ctx, photo.ProjectID, photo.FilePath)
+	if err != nil {
+		return fmt.Errorf("thumbjob: %w", err)
+	}
+	if awaiting {
+		cause := fmt.Errorf("%w: %s", ErrAwaitingMove, photoUID)
+		return worker.RetryAfter(MoveRetryDelay, cause) //nolint:wrapcheck // the worker's deferral
+	}
+	return nil
 }
 
 // Regenerate rebuilds the regenerable derived data for the photo identified by

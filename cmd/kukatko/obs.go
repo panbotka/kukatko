@@ -44,7 +44,11 @@ func thumbOptions(cfg *config.Config, reg *metrics.Registry, db *database.DB) []
 		opts = append(opts, thumb.WithObserver(reg))
 	}
 	if db != nil {
-		opts = append(opts, thumb.WithEdits(photos.NewStore(db.Pool())))
+		// The store doubles as the location re-read before each publish, so a
+		// generation a storage move overtook never publishes under the prefix
+		// the photo left.
+		store := photos.NewStore(db.Pool())
+		opts = append(opts, thumb.WithEdits(store), thumb.WithLocation(store))
 	}
 	if cfg.Thumb.Concurrency > 0 {
 		opts = append(opts, thumb.WithConcurrency(cfg.Thumb.Concurrency))

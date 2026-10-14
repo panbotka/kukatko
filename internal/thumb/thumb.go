@@ -74,6 +74,12 @@ var (
 	ErrInvalidHash = errors.New("thumb: invalid file hash")
 	// ErrNotCached indicates a requested thumbnail is not present in the cache.
 	ErrNotCached = errors.New("thumb: thumbnail not cached")
+	// ErrPrefixMoved indicates the photo's storage prefix changed — a storage
+	// move committed it — between the start of a generation and the publish of
+	// one of its sizes. Nothing is published under the stale prefix; the caller
+	// generates again from the photo as it is now (the thumbnail job defers
+	// itself and re-runs).
+	ErrPrefixMoved = errors.New("thumb: the photo's storage prefix changed during generation")
 )
 
 // CacheSubdir is the top-level directory that holds every cached thumbnail: a
@@ -128,8 +134,31 @@ type Thumbnailer struct {
 	// rendered the way the library shows the photo, or nil when the thumbnailer
 	// renders originals verbatim. See WithEdits.
 	edits EditResolver
+	// location re-reads where a photo's original lives right before a size is
+	// published, or nil when the prefix the generation started with is trusted.
+	// See WithLocation.
+	location LocationReader
 	// observer receives per-size generation timing; never nil after New.
 	observer Observer
+}
+
+// LocationReader re-reads a photo's catalogue row, for the key of its original
+// as it is now. It is satisfied by *photos.Store.
+type LocationReader interface {
+	// GetForJob returns the photo identified by uid in whichever project holds
+	// it, or photos.ErrPhotoNotFound.
+	GetForJob(ctx context.Context, uid string) (photos.Photo, error)
+}
+
+// target is where one photo's sizes are published: the photo, and the storage
+// prefix and file hash its keys are derived from.
+type target struct {
+	// uid identifies the photo, so its current prefix can be re-read.
+	uid string
+	// prefix is the storage prefix the generation started with.
+	prefix string
+	// hash is the photo's file hash.
+	hash string
 }
 
 // Observer receives the wall-clock time taken to generate one thumbnail size.
@@ -217,6 +246,21 @@ func WithEdits(r EditResolver) Option {
 	return func(t *Thumbnailer) {
 		if r != nil {
 			t.edits = r
+		}
+	}
+}
+
+// WithLocation makes the thumbnailer re-read the photo's row through r
+// immediately before it publishes each size, refusing with ErrPrefixMoved when
+// the photo's storage prefix is no longer the one the generation started with.
+// It is what keeps a generation that overlapped a storage move from publishing
+// under the prefix the photo has left — where nothing would ever look for the
+// object again. A photo the row cannot be found for (an upload whose row is not
+// committed yet) is published as planned. A nil reader is ignored.
+func WithLocation(r LocationReader) Option {
+	return func(t *Thumbnailer) {
+		if r != nil {
+			t.location = r
 		}
 	}
 }
@@ -464,16 +508,24 @@ func (t *Thumbnailer) generate(
 	}
 	defer cleanup()
 
+	dst := target{uid: photo.UID, prefix: prefix, hash: photo.FileHash}
 	// Fast path: shell out to vipsthumbnail for directly-supported originals. On
 	// any failure it returns false and we fall through to the pure-Go engine, so
 	// output never depends on vips succeeding — only speed does. An edited photo
 	// skips it: vipsthumbnail renders the file as it is on disk and has no way to
-	// apply the edit, so speed there would cost correctness.
-	if photoedit.IsIdentity(edit) && t.tryVips(ctx, photo, prefix, src, needed, result) {
-		return result, nil
+	// apply the edit, so speed there would cost correctness. A moved prefix is
+	// the exception: the pure-Go engine would only be refused the same way.
+	if photoedit.IsIdentity(edit) {
+		done, err := t.tryVips(ctx, photo, dst, src, needed, result)
+		if err != nil {
+			return nil, err
+		}
+		if done {
+			return result, nil
+		}
 	}
 
-	if err := t.encodePureGo(ctx, photo, prefix, src, edit, needed, result); err != nil {
+	if err := t.encodePureGo(ctx, photo, dst, src, edit, needed, result); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -489,7 +541,7 @@ func (t *Thumbnailer) generate(
 // The decode reserves its bitmap plus everything rendered from it (pureGoCost)
 // from the decode budget, held until every size is written.
 func (t *Thumbnailer) encodePureGo(
-	ctx context.Context, photo photos.Photo, prefix, src string,
+	ctx context.Context, photo photos.Photo, dst target, src string,
 	edit photos.Edit, needed []string, result map[string]string,
 ) error {
 	extra := func(cfg image.Config) int64 { return pureGoCost(cfg, photo.FileOrientation, edit, needed) }
@@ -498,7 +550,7 @@ func (t *Thumbnailer) encodePureGo(
 		return err
 	}
 	defer release()
-	return t.renderCascade(ctx, photoedit.Apply(img, edit), prefix, photo.FileHash, needed, result)
+	return t.renderCascade(ctx, photoedit.Apply(img, edit), dst, needed, result)
 }
 
 // renderCascade renders the needed sizes of img largest first, each from the
@@ -507,7 +559,7 @@ func (t *Thumbnailer) encodePureGo(
 // so the resampling, the memory-heavy part, runs one size at a time while the
 // encodes and uploads still overlap.
 func (t *Thumbnailer) renderCascade(
-	ctx context.Context, img image.Image, prefix, hash string, needed []string, result map[string]string,
+	ctx context.Context, img image.Image, dst target, needed []string, result map[string]string,
 ) error {
 	b := img.Bounds()
 	base := boxReduce(img, boxFactor(b.Dx(), b.Dy(), needed))
@@ -530,7 +582,7 @@ func (t *Thumbnailer) renderCascade(
 			rendered = append(rendered, resized)
 		}
 		group.Go(func() error {
-			return t.writeSize(gctx, resized, start, prefix, hash, name, result[name])
+			return t.writeSize(gctx, resized, start, dst, name, result[name])
 		})
 	}
 	if err := cmp.Or(group.Wait(), ctx.Err()); err != nil {
@@ -690,11 +742,11 @@ func objectPrefix(prefix, hash string) (string, error) {
 // writeSize JPEG-encodes resized — the image already rendered for the named
 // size — writes it atomically to absPath (the local cache), and publishes it to
 // the storage backend when that backend serves thumbnails from object URLs.
-// prefix and hash — the photo's storage prefix and file hash — key the published
+// dst — the photo, its storage prefix and file hash — keys the published
 // object; start is when the
 // size's rendering began, for the observer's timing.
 func (t *Thumbnailer) writeSize(
-	ctx context.Context, resized image.Image, start time.Time, prefix, hash, name, absPath string,
+	ctx context.Context, resized image.Image, start time.Time, dst target, name, absPath string,
 ) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("thumb: %s: %w", name, err)
@@ -707,11 +759,11 @@ func (t *Thumbnailer) writeSize(
 		return fmt.Errorf("thumb: write %s: %w", name, err)
 	}
 	t.observer.ObserveThumbnail(time.Since(start))
-	return t.publishSize(ctx, prefix, hash, name, absPath)
+	return t.publishSize(ctx, dst, name, absPath)
 }
 
 // publishSize uploads the freshly written thumbnail at absPath to the storage
-// backend under its canonical object key (RelPath(prefix, hash, size)), but only for a
+// backend under its canonical object key (RelPath(dst.prefix, dst.hash, size)), but only for a
 // backend that publishes client-fetchable URLs — an object store such as R2,
 // where mediaurl hands the client the object URL directly and the bytes must
 // therefore live in the bucket. A local filesystem backend serves thumbnails
@@ -722,13 +774,22 @@ func (t *Thumbnailer) writeSize(
 // ungenerated and a later Generate re-encodes and re-uploads it. That preserves
 // the invariant that on a publishing backend every cached size is also in the
 // bucket — which is what lets a client's object URL resolve.
-func (t *Thumbnailer) publishSize(ctx context.Context, prefix, hash, size, absPath string) error {
-	rel, err := RelPath(prefix, hash, size)
+//
+// Right before the upload the photo's prefix is re-read (checkLocation): when a
+// storage move committed the photo since the generation started, the cache file
+// is removed and ErrPrefixMoved returned instead of publishing under the prefix
+// the photo has left.
+func (t *Thumbnailer) publishSize(ctx context.Context, dst target, size, absPath string) error {
+	rel, err := RelPath(dst.prefix, dst.hash, size)
 	if err != nil {
 		return err
 	}
 	if t.originals.URL(rel) == "" {
 		return nil
+	}
+	if err := t.checkLocation(ctx, dst); err != nil {
+		_ = os.Remove(absPath)
+		return err
 	}
 	digest, byteLen, err := hashAndSize(absPath)
 	if err != nil {
@@ -743,6 +804,27 @@ func (t *Thumbnailer) publishSize(ctx context.Context, prefix, hash, size, absPa
 	if err := t.originals.Put(ctx, file, want); err != nil {
 		_ = os.Remove(absPath)
 		return fmt.Errorf("thumb: publishing %s: %w", size, err)
+	}
+	return nil
+}
+
+// checkLocation re-reads the photo of dst and returns ErrPrefixMoved when its
+// original no longer lives under dst.prefix. Without a LocationReader, for a
+// photo with no uid, and for one whose row is not (yet) there it has no
+// objection.
+func (t *Thumbnailer) checkLocation(ctx context.Context, dst target) error {
+	if t.location == nil || dst.uid == "" {
+		return nil
+	}
+	current, err := t.location.GetForJob(ctx, dst.uid)
+	if errors.Is(err, photos.ErrPhotoNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("thumb: re-reading photo %s: %w", dst.uid, err)
+	}
+	if now := storekeys.PrefixOf(current.FilePath); now != dst.prefix {
+		return fmt.Errorf("%w: %s moved from %q to %q", ErrPrefixMoved, dst.uid, dst.prefix, now)
 	}
 	return nil
 }

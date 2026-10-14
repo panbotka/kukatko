@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/jobs"
@@ -34,6 +35,7 @@ import (
 	"github.com/panbotka/kukatko/internal/places"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/uploadlink"
+	"github.com/panbotka/kukatko/internal/worker"
 )
 
 // ErrMissingPhotoUID indicates a sidecar job whose payload carries no photo_uid.
@@ -44,6 +46,34 @@ var ErrMissingPhotoUID = errors.New("sidecarjob: job payload has no photo_uid")
 // ErrBackfillUnavailable indicates a backfill requested on a service built
 // without a photo lister or an enqueuer.
 var ErrBackfillUnavailable = errors.New("sidecarjob: backfill not available")
+
+// ErrAwaitingMove indicates a running storage move of the photo's project has
+// yet to take it. The job is deferred (worker.RetryAfter) rather than failed:
+// once the move has taken the photo its row points under the new prefix, and
+// the sidecar is written there.
+var ErrAwaitingMove = errors.New("sidecarjob: a storage move has yet to take this photo")
+
+// ErrPathMoved indicates the photo's key kept changing between the read the
+// sidecar is built from and the write, more often than one run rebuilds it
+// (maxExportAttempts). The job is deferred and re-runs from the start.
+var ErrPathMoved = errors.New("sidecarjob: the photo's key kept changing during the export")
+
+// MoveRetryDelay is how long a job deferred by a storage move waits before it
+// runs again.
+const MoveRetryDelay = time.Minute
+
+// maxExportAttempts bounds how often one run rebuilds the sidecar because the
+// photo's key changed under it. A photo is moved once, so a second attempt is
+// the rare case.
+const maxExportAttempts = 3
+
+// MoveGate tells the job whether a storage move is about to take a photo. It is
+// satisfied by *rekey.Gate.
+type MoveGate interface {
+	// AwaitingMove reports whether a running storage move of project projectUID
+	// has yet to take the photo whose original is stored at filePath.
+	AwaitingMove(ctx context.Context, projectUID, filePath string) (bool, error)
+}
 
 // PhotoStore reads the catalogue row a sidecar describes and records that the
 // file was written. It is satisfied by photos.Store.
@@ -148,6 +178,9 @@ type Config struct {
 	Lister PhotoLister
 	// Enqueuer schedules the jobs the backfill creates.
 	Enqueuer Enqueuer
+	// Moves defers the job of a photo a running storage move has yet to take
+	// (optional; nil never defers).
+	Moves MoveGate
 	// Logger receives the skips. Defaults to slog.Default().
 	Logger *slog.Logger
 }
@@ -163,6 +196,7 @@ type Service struct {
 	writer   SidecarWriter
 	lister   PhotoLister
 	enqueuer Enqueuer
+	moves    MoveGate
 	log      *slog.Logger
 }
 
@@ -187,6 +221,7 @@ func New(cfg Config) *Service {
 		writer:   cfg.Writer,
 		lister:   cfg.Lister,
 		enqueuer: cfg.Enqueuer,
+		moves:    cfg.Moves,
 		log:      log,
 	}
 }
@@ -197,7 +232,11 @@ type jobPayload struct {
 }
 
 // Handle runs one sidecar job: it decodes the payload and rewrites the photo's
-// sidecar. It returns ErrMissingPhotoUID for a malformed payload.
+// sidecar. It returns ErrMissingPhotoUID for a malformed payload, and defers the
+// job (worker.RetryAfter wrapping ErrAwaitingMove) while a running storage move
+// of the photo's project has yet to take the photo — the sidecar is then written
+// next to the original under its new prefix rather than next to the root copy
+// the move is about to delete.
 func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	var p jobPayload
 	if err := json.Unmarshal(job.Payload, &p); err != nil {
@@ -206,7 +245,35 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	if p.PhotoUID == "" {
 		return ErrMissingPhotoUID
 	}
+	if err := s.awaitMove(ctx, p.PhotoUID); err != nil {
+		return err
+	}
 	return s.Export(ctx, p.PhotoUID)
+}
+
+// awaitMove defers the job while a running storage move has yet to take the
+// photo. Without a MoveGate it never defers and reads nothing; a photo that is
+// gone is left to Export, which skips it.
+func (s *Service) awaitMove(ctx context.Context, photoUID string) error {
+	if s.moves == nil {
+		return nil
+	}
+	photo, err := s.photos.GetForJob(ctx, photoUID)
+	if errors.Is(err, photos.ErrPhotoNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("sidecarjob: loading photo %s: %w", photoUID, err)
+	}
+	awaiting, err := s.moves.AwaitingMove(ctx, photo.ProjectID, photo.FilePath)
+	if err != nil {
+		return fmt.Errorf("sidecarjob: %w", err)
+	}
+	if awaiting {
+		cause := fmt.Errorf("%w: %s", ErrAwaitingMove, photoUID)
+		return worker.RetryAfter(MoveRetryDelay, cause) //nolint:wrapcheck // the worker's deferral
+	}
+	return nil
 }
 
 // Export writes the current sidecar of the photo identified by photoUID and
@@ -217,20 +284,55 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 // dead-letter it and make a library-wide backfill look broken. The photo was
 // almost certainly purged between the enqueue and the run, which is a race the
 // queue is expected to lose gracefully.
+//
+// The photo is re-read immediately before the write. When its key changed since
+// the sidecar was gathered — a storage move committed it under its project's
+// prefix — the sidecar is rebuilt from the row as it is now and written next to
+// the original's new key, never next to the key the photo left; a photo whose
+// key keeps changing defers the job (worker.RetryAfter wrapping ErrPathMoved)
+// after maxExportAttempts.
 func (s *Service) Export(ctx context.Context, photoUID string) error {
-	photo, err := s.photos.GetForJob(ctx, photoUID)
-	if err != nil {
-		if errors.Is(err, photos.ErrPhotoNotFound) {
-			s.log.WarnContext(ctx, "sidecar export skipped: photo is gone",
-				slog.String("photo_uid", photoUID))
-			return nil
-		}
-		return fmt.Errorf("sidecarjob: loading photo %s: %w", photoUID, err)
-	}
-	in, err := s.gather(ctx, photo)
-	if err != nil {
+	photo, found, err := s.load(ctx, photoUID)
+	if err != nil || !found {
 		return err
 	}
+	for range maxExportAttempts {
+		in, err := s.gather(ctx, photo)
+		if err != nil {
+			return err
+		}
+		current, found, err := s.load(ctx, photoUID)
+		if err != nil || !found {
+			return err
+		}
+		if current.FilePath == photo.FilePath {
+			return s.write(ctx, photo, in)
+		}
+		photo = current
+	}
+	cause := fmt.Errorf("%w: %s", ErrPathMoved, photoUID)
+	return worker.RetryAfter(MoveRetryDelay, cause) //nolint:wrapcheck // the worker's deferral
+}
+
+// load reads the photo, reporting false — after logging the skip — when it no
+// longer exists.
+func (s *Service) load(ctx context.Context, photoUID string) (photos.Photo, bool, error) {
+	photo, err := s.photos.GetForJob(ctx, photoUID)
+	if errors.Is(err, photos.ErrPhotoNotFound) {
+		s.log.WarnContext(ctx, "sidecar export skipped: photo is gone",
+			slog.String("photo_uid", photoUID))
+		return photos.Photo{}, false, nil
+	}
+	if err != nil {
+		return photos.Photo{}, false, fmt.Errorf("sidecarjob: loading photo %s: %w", photoUID, err)
+	}
+	return photo, true, nil
+}
+
+// write stores the sidecar built from in next to photo's original and stamps
+// its export marker.
+func (s *Service) write(ctx context.Context, photo photos.Photo, in sidecarexport.Input) error {
+	photoUID := photo.UID
 	if _, err := s.writer.Write(ctx, photo.FilePath, sidecarexport.Build(in)); err != nil {
 		return fmt.Errorf("sidecarjob: writing sidecar for %s: %w", photoUID, err)
 	}
