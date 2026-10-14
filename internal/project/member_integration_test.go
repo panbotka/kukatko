@@ -476,3 +476,75 @@ func TestMembership_cascades(t *testing.T) {
 		t.Errorf("%d membership(s) survived their account or project", left)
 	}
 }
+
+// disableUser marks the account uid disabled, as a maintainer's disable does.
+func disableUser(t *testing.T, db *database.DB, uid string) {
+	t.Helper()
+	if _, err := db.Pool().Exec(context.Background(),
+		`UPDATE users SET disabled = true WHERE uid = $1`, uid); err != nil {
+		t.Fatalf("disabling %s: %v", uid, err)
+	}
+}
+
+// TestLastAdminGuard_countsOnlyWorkingAdmins verifies the last-admin guard
+// counts only approved admins whose account is not disabled: a pending or a
+// disabled "admin" row does not let the last working admin step down or be
+// removed, while two working admins may lose one, and taking the role from a
+// non-working admin is always allowed.
+func TestLastAdminGuard_countsOnlyWorkingAdmins(t *testing.T) {
+	store, db, meta := newStore(t)
+	ctx := context.Background()
+	seedUser(t, db, "us_working", "working", "Working")
+	seedUser(t, db, "us_pending", "pending", "Pending")
+	seedUser(t, db, "us_disabled", "disabled", "Disabled")
+	mustAdd(t, store, meta, project.BootstrapUID, "us_working", project.RoleAdmin)
+	if _, err := store.AddMember(ctx, meta, project.BootstrapUID, "us_pending", project.RoleAdmin,
+		false); err != nil {
+		t.Fatalf("AddMember(pending admin): %v", err)
+	}
+	mustAdd(t, store, meta, project.BootstrapUID, "us_disabled", project.RoleAdmin)
+	disableUser(t, db, "us_disabled")
+
+	// (a) one approved admin plus a pending one: demoting the approved one fails.
+	if _, err := store.SetRole(ctx, meta, project.BootstrapUID, "us_working",
+		project.RoleEditor); !errors.Is(err, project.ErrLastAdmin) {
+		t.Errorf("demoting the last working admin beside a pending one: error = %v, want ErrLastAdmin", err)
+	}
+	// (b) one approved admin plus a disabled one: removing the approved one fails.
+	if err := store.RemoveMember(ctx, meta, project.BootstrapUID, "us_working"); !errors.Is(err,
+		project.ErrLastAdmin) {
+		t.Errorf("removing the last working admin beside a disabled one: error = %v, want ErrLastAdmin", err)
+	}
+	if m, err := store.Membership(ctx, project.BootstrapUID, "us_working"); err != nil || m.Role != project.RoleAdmin {
+		t.Fatalf("working admin after the refusals = %+v, %v; want still admin", m, err)
+	}
+	for _, action := range []string{audit.ActionProjectMemberRole, audit.ActionProjectMemberRemove} {
+		if n := len(auditRecords(t, db, action)); n != 0 {
+			t.Errorf("refused changes recorded %d %s audit rows", n, action)
+		}
+	}
+
+	// Neither the pending nor the disabled admin governs anything, so taking
+	// their role away never needs another admin.
+	if _, err := store.SetRole(ctx, meta, project.BootstrapUID, "us_pending", project.RoleViewer); err != nil {
+		t.Errorf("demoting a pending admin: %v", err)
+	}
+	if err := store.RemoveMember(ctx, meta, project.BootstrapUID, "us_disabled"); err != nil {
+		t.Errorf("removing a disabled admin: %v", err)
+	}
+
+	// (c) two approved admins: demoting one succeeds, then the other is the last.
+	if _, err := store.Approve(ctx, meta, project.BootstrapUID, "us_pending"); err != nil {
+		t.Fatalf("Approve(us_pending): %v", err)
+	}
+	if _, err := store.SetRole(ctx, meta, project.BootstrapUID, "us_pending", project.RoleAdmin); err != nil {
+		t.Fatalf("promoting the second admin: %v", err)
+	}
+	if _, err := store.SetRole(ctx, meta, project.BootstrapUID, "us_working", project.RoleEditor); err != nil {
+		t.Errorf("demoting one of two working admins: %v", err)
+	}
+	if _, err := store.SetRole(ctx, meta, project.BootstrapUID, "us_pending",
+		project.RoleEditor); !errors.Is(err, project.ErrLastAdmin) {
+		t.Errorf("demoting the remaining working admin: error = %v, want ErrLastAdmin", err)
+	}
+}

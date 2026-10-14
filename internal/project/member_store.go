@@ -171,7 +171,8 @@ func (s *Store) AddMember(
 // transaction. Setting the role the member already has changes nothing and
 // records nothing. It returns ErrInvalidRole for a bad role, ErrNotFound for an
 // unknown project, ErrNotMember when the account is not a member and
-// ErrLastAdmin when the member is the project's only admin and role is not admin.
+// ErrLastAdmin when the member is the project's last working (approved, enabled)
+// admin and role is not admin.
 func (s *Store) SetRole(ctx context.Context, meta audit.Meta, projectUID, userUID string, role Role) (*Member, error) {
 	if !role.Valid() {
 		return nil, fmt.Errorf("%w: %q", ErrInvalidRole, role)
@@ -184,7 +185,7 @@ func (s *Store) SetRole(ctx context.Context, meta audit.Meta, projectUID, userUI
 			return false, nil
 		}
 		if current.Role.IsAdmin() && !role.IsAdmin() {
-			if err := ensureAnotherAdmin(ctx, tx, projectUID); err != nil {
+			if err := ensureAnotherAdmin(ctx, tx, projectUID, userUID); err != nil {
 				return false, err
 			}
 		}
@@ -293,16 +294,16 @@ func requireSubjectInProject(ctx context.Context, tx pgx.Tx, projectUID string, 
 // RemoveMember removes the account userUID from the project projectUID and
 // records ActionProjectMemberRemove (with the role it held) in the same
 // transaction. It returns ErrNotFound for an unknown project, ErrNotMember when
-// the account is not a member and ErrLastAdmin when it is the project's only
-// admin. Who may remove whom (themselves included) is the caller's rule; the
-// store only keeps the project governable.
+// the account is not a member and ErrLastAdmin when it is the project's last
+// working (approved, enabled) admin. Who may remove whom (themselves included)
+// is the caller's rule; the store only keeps the project governable.
 func (s *Store) RemoveMember(ctx context.Context, meta audit.Meta, projectUID, userUID string) error {
 	entry := projectEntry(meta, projectUID, audit.ActionProjectMemberRemove, MemberTargetType, userUID, map[string]any{
 		"project_uid": projectUID,
 	})
 	_, err := s.mutateMember(ctx, entry, projectUID, userUID, func(tx pgx.Tx, current *Member) (bool, error) {
 		if current.Role.IsAdmin() {
-			if err := ensureAnotherAdmin(ctx, tx, projectUID); err != nil {
+			if err := ensureAnotherAdmin(ctx, tx, projectUID, userUID); err != nil {
 				return false, err
 			}
 		}
@@ -411,17 +412,28 @@ func lockMember(ctx context.Context, tx pgx.Tx, projectUID, userUID string) (*Me
 	return m, err
 }
 
-// ensureAnotherAdmin returns ErrLastAdmin unless the project has more than one
-// admin member, so the caller may demote or remove one of them. The caller
-// holds the project lock, so the count cannot change underneath it.
-func ensureAnotherAdmin(ctx context.Context, tx pgx.Tx, projectUID string) error {
-	var admins int
-	if err := tx.QueryRow(ctx,
-		`SELECT count(*) FROM project_members WHERE project_uid = $1 AND role = $2`,
-		projectUID, string(RoleAdmin)).Scan(&admins); err != nil {
+// workingAdminsSQL counts the working admins of the project $1 other than the
+// account $2 — approved memberships whose account is not disabled, the only
+// admins who can actually govern the project — and reports whether $2 is one
+// of them. A pending or disabled "admin" row holds the role on paper only.
+const workingAdminsSQL = `SELECT count(*) FILTER (WHERE m.user_uid <> $2),
+	COALESCE(bool_or(m.user_uid = $2), false)
+FROM project_members m JOIN users u ON u.uid = m.user_uid
+WHERE m.project_uid = $1 AND m.role = $3 AND m.approved_at IS NOT NULL AND NOT u.disabled`
+
+// ensureAnotherAdmin returns ErrLastAdmin when the member userUID is the last
+// working admin of the project (see workingAdminsSQL), so the caller may demote
+// or remove it only while another one remains. Demoting or removing a pending
+// or disabled admin takes no working admin away and is always allowed. The
+// caller holds the project lock, so the count cannot change underneath it.
+func ensureAnotherAdmin(ctx context.Context, tx pgx.Tx, projectUID, userUID string) error {
+	var others int
+	var working bool
+	if err := tx.QueryRow(ctx, workingAdminsSQL, projectUID, userUID, string(RoleAdmin)).
+		Scan(&others, &working); err != nil {
 		return fmt.Errorf("counting the admins of %s: %w", projectUID, err)
 	}
-	if admins <= 1 {
+	if working && others == 0 {
 		return ErrLastAdmin
 	}
 	return nil

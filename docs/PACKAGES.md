@@ -355,7 +355,12 @@ to `## Package map` in `CLAUDE.md`.
   audited `CreateUser`/`UpdateUser`/`SetUserDisabled`/`ResetPassword` remain for bootstrap and test
   seeding (they share the core `prepareNewUser`/`validateUserUpdate`/`invalidateIfDisabled`). The handler takes
   the actor from `UserFromContext` and builds `audit.FromRequest(r,uid).Entry(...)`; `details` carries
-  `username`/`role` (create) or `role`/`disabled` (update/disable).
+  `username`/`role` (create) or `role`/`disabled` (update/disable). A write that **disables** the account
+  (`SetUserDisabledAudited`, or `UpdateUserProfileAudited` with `Disabled`) goes through
+  `updateUserNotingStranded`: inside the transaction `strandedProjectsQuery` lists the projects the
+  account is the last working admin of (approved admin membership, no other approved admin on an enabled
+  account); the disable is **allowed**, the list lands on a copy of the entry's details as
+  `stranded_projects` (absent when empty) and is logged as a warning after commit.
   `Store.SetInstanceRoleAudited(uid, Role, entry)` is the instance-role write behind the system
   administrator's promote/demote (`internal/projectapi`): it touches no membership, validates the role
   (`ErrInvalidRole`) and runs under the same `withMaintainerGuard` (`ErrLastMaintainer`).
@@ -7058,8 +7063,11 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `internal/auth`'s `checkSubject` runs). A change to nothing writes
     neither the row nor an audit entry. Every write **locks the project row** first, so concurrent changes
     to one project's members are serialised and the **last-admin guard** cannot be raced: `SetRole` away
-    from admin and `RemoveMember` of an admin return `ErrLastAdmin` when no other admin would remain
-    (who may remove whom — themselves included — is the HTTP layer's rule, later).
+    from admin and `RemoveMember` of an admin return `ErrLastAdmin` when the member is the project's last
+    **working** admin — only approved memberships whose account is not disabled count (`workingAdminsSQL`),
+    so a pending or disabled "admin" row neither lets the last working one go nor is itself ever refused
+    (who may remove whom — themselves included — is the HTTP layer's rule, later). Disabling an account
+    is `internal/auth`'s write and is not refused here; it notes the projects it strands instead.
     `TouchLastProject(userUID, projectUID)` writes `users.last_project_uid` (not audited, no membership
     check; unknown account = `ErrUserNotFound`, unknown project = `ErrNotFound`).
   - `member_identifier.go` — `AddByIdentifier(meta, projectUID, identifier, role) (AddOutcome, error)`, the

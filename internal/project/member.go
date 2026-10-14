@@ -48,7 +48,8 @@ var (
 	// member; the existing membership is left unchanged.
 	ErrAlreadyMember = errors.New("already a member of the project")
 	// ErrLastAdmin is returned when a role change or a removal would leave the
-	// project without any admin member.
+	// project without any working admin: an approved member whose account is
+	// not disabled (a pending or disabled admin cannot govern it).
 	ErrLastAdmin = errors.New("the project must keep at least one admin")
 	// ErrUserNotFound is returned when the account a membership names does not exist.
 	ErrUserNotFound = errors.New("user not found")

@@ -411,7 +411,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     `invalid_role`; `maintainer` is not a project role); 409 `already_member` (the existing membership
     is left untouched); 422 `user_not_found`; 404 `not_found` for the project.
   - `DELETE /projects/{uid}/members/{user_uid}` → 204; 404 `not_member`; **409 `last_admin`** when it is
-    the project's only admin (the store's guard, under the project row's lock).
+    the project's last **working** admin (the store's guard, under the project row's lock — see the
+    Members API below for what counts).
   - **`GET /users`** (the unprefixed path — **not** the name directory, which lives only under
     `/api/v1/p/{project}/users`) → a bare array by username: `[{uid, username, display_name, email,
     instance_role, disabled, memberships: [{project_uid, project_slug, project_name, active, role,
@@ -423,7 +424,11 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     must); 409 `last_maintainer` if the demotion would leave no enabled maintainer; 422 `invalid_role`;
     404 `not_found`.
   - Blocking an account stays `POST /admin/users/{uid}/disable`, now **maintainer-only** (it locks the
-    account out of every project).
+    account out of every project). Disabling the **last working admin of a project is allowed** — a
+    maintainer locking somebody out must be able to, and can name a new admin afterwards — but never
+    silent: the `user.disable` audit entry (and `user.update`, when `PATCH /admin/users/{uid}` disables)
+    carries `stranded_projects: [project_uid…]`, the projects left with no working admin, and the server
+    logs a warning. The key is absent when no project is stranded.
 - **Storage move (`/api/v1/projects/{uid}/rekey`, `internal/rekeyapi`):** the system administrator's control
   of a project's move from the store root under `projects/<uid>/` (`internal/rekey`; runbook in
   [`OPERATIONS.md`](OPERATIONS.md)). Instance-level, mounted once beside the routes above (flat routes; chi
@@ -467,14 +472,16 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     `invalid_body`, 422 `invalid_role` (`viewer|curator|editor|admin`; `maintainer` is not a project role),
     422 `invalid_identifier` (blank).
   - `PATCH /members/{user_uid}` `{role}` → 200 + the member. **The caller's own membership → 409 `self`**
-    (another admin must change it); **409 `last_admin`** when it would demote the project's only admin;
+    (another admin must change it); **409 `last_admin`** when it would demote the project's last
+    **working** admin — an approved membership whose account is not disabled; a pending or disabled
+    "admin" row does not count, and demoting such a row is never refused;
     404 `not_member`; 422 `invalid_role`; 400 `invalid_body`. Setting the role it has records nothing.
   - `POST /members/{user_uid}/approve` → 200 + the member. Stamps the membership (which is what lets the
     account sign in) and enqueues the `account_approved` mail **in the same transaction** — it names
     the project and links to `mail.base_url` + `/p/<slug>/`. Approving an approved member is 200 with
     nothing changed, mailed or audited; 404 `not_member`.
   - `DELETE /members/{user_uid}` → 204; the account itself stays. **409 `last_admin`** for the project's
-    only admin; for the **caller themselves 409 `self`** unless another admin remains (then they leave and
+    last working admin (counted as for `PATCH`); for the **caller themselves 409 `self`** unless another admin remains (then they leave and
     the project answers them 404 from then on); 404 `not_member`.
 - **Invites (project admin) (`/api/v1/p/{project}/invites`, public `/api/v1/invite/{code}`,
   `internal/inviteapi`):** invitation links into a project. The code (8 symbols, the upload links'
