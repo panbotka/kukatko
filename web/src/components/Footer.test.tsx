@@ -6,10 +6,10 @@ import i18n from '../i18n'
 
 import { Footer } from './Footer'
 
-function renderFooter() {
+function renderFooter(text?: string) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <Footer />
+      <Footer text={text} />
     </I18nextProvider>,
   )
 }
@@ -19,16 +19,26 @@ beforeEach(async () => {
 })
 
 describe('Footer', () => {
-  it('renders a footer landmark naming the operator', () => {
-    renderFooter()
+  it("renders a footer landmark carrying the project's own line", () => {
+    renderFooter('Provozuje SDH Veselice')
     // <footer> at the top level carries the contentinfo landmark role.
-    expect(screen.getByRole('contentinfo')).toHaveTextContent('Operated by SDH Veselice')
+    const footer = screen.getByRole('contentinfo')
+    expect(footer).toHaveTextContent('Provozuje SDH Veselice · GitHub')
+    expect(screen.getByTestId('footer-text')).toHaveTextContent('Provozuje SDH Veselice')
   })
 
-  it('translates the operator text', async () => {
-    await i18n.changeLanguage('cs')
+  it('names no operator without a line — no hard-coded tenant, no stray separator', () => {
     renderFooter()
-    expect(screen.getByRole('contentinfo')).toHaveTextContent('Provozuje SDH Veselice')
+    const footer = screen.getByRole('contentinfo')
+    expect(footer).not.toHaveTextContent('Veselice')
+    expect(footer).not.toHaveTextContent('·')
+    expect(screen.queryByTestId('footer-text')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'GitHub' })).toBeInTheDocument()
+  })
+
+  it('treats a whitespace-only line as none', () => {
+    renderFooter('   ')
+    expect(screen.queryByTestId('footer-text')).not.toBeInTheDocument()
   })
 
   it('links to the GitHub repository in a new tab with safe rel attributes', () => {
@@ -44,13 +54,13 @@ describe('Footer', () => {
     // children; it sits beside the credits, never inside or instead of them.
     render(
       <I18nextProvider i18n={i18n}>
-        <Footer>
+        <Footer text="Operated by the club">
           <a href="/system">17 jobs permanently failed</a>
         </Footer>
       </I18nextProvider>,
     )
     const footer = screen.getByRole('contentinfo')
-    expect(footer).toHaveTextContent('Operated by SDH Veselice · GitHub')
+    expect(footer).toHaveTextContent('Operated by the club · GitHub')
     const status = screen.getByRole('link', { name: '17 jobs permanently failed' })
     expect(footer).toContainElement(status)
     expect(status).toHaveAttribute('href', '/system')

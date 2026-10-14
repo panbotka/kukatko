@@ -62,7 +62,7 @@ function record(
 
 /** Wraps records in an audit list response with paging metadata. */
 function response(entries: AuditRecord[], total = entries.length): AuditListResponse {
-  return { entries, total, limit: 60, offset: 0, next_offset: null }
+  return { entries, total, limit: 60, offset: 0, next_offset: null, actors: {} }
 }
 
 /** A one-row leaderboard so the header resolves u1's name and tallies. */

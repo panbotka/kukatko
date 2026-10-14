@@ -988,10 +988,14 @@ describe('UploadPage — project limits', () => {
 
     await pickFiles(user, [file('a.jpg'), file('b.jpg')])
 
-    expect(await screen.findByText('The project has reached its storage limit')).toBeInTheDocument()
+    expect(
+      await screen.findByText(
+        "This upload would exceed the project's storage limit (1,000 B of 1,000 B used)",
+      ),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
     expect(toasts.map((toast) => toast.message)).toEqual([
-      'The project has reached its storage limit; no more files will be uploaded.',
+      "Some files would exceed the project's storage limit and were not uploaded.",
     ])
   })
 })

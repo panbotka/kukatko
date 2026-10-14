@@ -27,14 +27,15 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // so the two can never drift. updated_by_uid is coalesced to the empty string so
 // a NULL (a since-deleted administrator) scans without a pointer.
 const selectColumns = `registration_enabled, registration_secret, welcome_markdown,
-       updated_at, COALESCE(updated_by_uid, '') AS updated_by_uid`
+       footer_text, updated_at, COALESCE(updated_by_uid, '') AS updated_by_uid`
 
 // getSQL reads one project's settings row.
 const getSQL = `SELECT ` + selectColumns + ` FROM instance_settings WHERE project_id = $1`
 
 // Get returns the settings of the project projectUID. Migration 0062 seeds the
-// bootstrap project's row, so the read normally finds it; a missing row yields the zero-value defaults (registration
-// closed, no secret, no welcome text) rather than an error, because the
+// bootstrap project's row, so the read normally finds it; a missing row yields
+// the zero-value defaults (registration closed, no secret, no welcome text, no
+// footer line) rather than an error, because the
 // anonymous sign-in screen reads this and must never be blocked by a settings
 // row that somebody removed by hand.
 //
@@ -44,7 +45,7 @@ func (s *Store) Get(ctx context.Context, projectUID string) (Settings, error) {
 	var out Settings
 	err := s.pool.QueryRow(ctx, getSQL, projectUID).Scan(
 		&out.RegistrationEnabled, &out.RegistrationSecret, &out.WelcomeMarkdown,
-		&out.UpdatedAt, &out.UpdatedByUID,
+		&out.FooterText, &out.UpdatedAt, &out.UpdatedByUID,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Settings{}, nil
@@ -55,30 +56,36 @@ func (s *Store) Get(ctx context.Context, projectUID string) (Settings, error) {
 	return out, nil
 }
 
-// upsertSQL writes all three values of one project at once, replacing whatever
-// was there. One row per project (project_id is the primary key) makes this an
-// upsert on that key, and updated_at is stamped to now() on every write.
+// upsertSQL writes the values of one project at once, replacing whatever was
+// there. One row per project (project_id is the primary key) makes this an
+// upsert on that key, and updated_at is stamped to now() on every write. The
+// footer line $6 is NULL when the update leaves it alone: a new row then gets
+// none, an existing one keeps its own.
 const upsertSQL = `
 INSERT INTO instance_settings (project_id, registration_enabled, registration_secret,
-                               welcome_markdown, updated_at, updated_by_uid)
-VALUES ($1, $2, $3, $4, now(), $5)
+                               welcome_markdown, footer_text, updated_at, updated_by_uid)
+VALUES ($1, $2, $3, $4, COALESCE($6::text, ''), now(), $5)
 ON CONFLICT (project_id) DO UPDATE
 SET registration_enabled = EXCLUDED.registration_enabled,
     registration_secret = EXCLUDED.registration_secret,
     welcome_markdown = EXCLUDED.welcome_markdown,
+    footer_text = COALESCE($6::text, instance_settings.footer_text),
     updated_at = now(),
     updated_by_uid = EXCLUDED.updated_by_uid
 RETURNING ` + selectColumns
 
-// Set replaces all three settings of the project projectUID with in, stamped as changed by actorUID, and
-// writes entry to the audit log in the same transaction so the change and the
-// record of who made it commit atomically or not at all.
+// Set replaces the settings of the project projectUID with in, stamped as
+// changed by actorUID, and writes entry to the audit log in the same
+// transaction so the change and the record of who made it commit atomically or
+// not at all.
 //
-// The three values are written together because the registration flag and the
+// The registration values are written together because the flag and the
 // secret guard each other: enabling registration while the secret is blank (or
 // only whitespace) returns ErrSecretRequired and nothing is written. The secret
-// is stored trimmed; the welcome Markdown is stored verbatim. entry's details
-// are set by the caller and must not carry the secret.
+// is stored trimmed; the welcome Markdown is stored verbatim. The footer line is
+// stored trimmed when in carries one (ErrFooterMultiline/ErrFooterTooLong refuse
+// it) and kept as it was when in.FooterText is nil. entry's details are set by
+// the caller and must not carry the secret.
 func (s *Store) Set(
 	ctx context.Context, projectUID string, in Update, actorUID string, entry audit.Entry,
 ) (Settings, error) {
@@ -95,10 +102,10 @@ func (s *Store) Set(
 	var out Settings
 	if scanErr := tx.QueryRow(ctx, upsertSQL, projectUID,
 		normalized.RegistrationEnabled, normalized.RegistrationSecret, normalized.WelcomeMarkdown,
-		nullableUID(actorUID),
+		nullableUID(actorUID), normalized.FooterText,
 	).Scan(
 		&out.RegistrationEnabled, &out.RegistrationSecret, &out.WelcomeMarkdown,
-		&out.UpdatedAt, &out.UpdatedByUID,
+		&out.FooterText, &out.UpdatedAt, &out.UpdatedByUID,
 	); scanErr != nil {
 		return Settings{}, fmt.Errorf("settings: writing instance settings: %w", scanErr)
 	}

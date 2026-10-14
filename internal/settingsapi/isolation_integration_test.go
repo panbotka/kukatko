@@ -277,5 +277,11 @@ func TestSettings_adminSeesOnlyTheirOwnProject(t *testing.T) {
 		if foreign.StatusCode != http.StatusNotFound {
 			t.Fatalf("%s reading %s's settings = %d, want 404", which, which.Other(), foreign.StatusCode)
 		}
+		_ = foreign.Body.Close()
+		foreignFooter := e.f.Get(t, client, e.f.PathFor(which.Other(), "/settings/footer"))
+		if foreignFooter.StatusCode != http.StatusNotFound {
+			t.Fatalf("%s reading %s's footer = %d, want 404", which, which.Other(), foreignFooter.StatusCode)
+		}
+		_ = foreignFooter.Body.Close()
 	}
 }

@@ -163,6 +163,19 @@ describe('setMySubject', () => {
     expect(init.body).toBe(JSON.stringify({ subject_uid: 'sub1' }))
     setCurrentProjectSlug(null)
   })
+
+  it('writes the link in the named project, whatever is current', async () => {
+    setCurrentProjectSlug('v')
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(SESSION.user, 200))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await setMySubject(null, { project: 'rodina' })
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/v1/p/rodina/auth/subject')
+    expect(init.body).toBe(JSON.stringify({ subject_uid: null }))
+    setCurrentProjectSlug(null)
+  })
 })
 
 describe('changePassword', () => {

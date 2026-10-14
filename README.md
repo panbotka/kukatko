@@ -210,7 +210,10 @@ and maintenance. You join a project through its own registration page (`/p/<proj
 open only while that project's administrator allows it, and approved by them), through an invitation link
 (no waiting), or by being added by an administrator. Who you are among the people of a library — the
 *this is me* that gives you *Moje fotky* and your face on your comments — is set per project, so you can
-be somebody in one library and nobody in another. Scripts, `kukatko ctl` and AI agents address a project
+be somebody in one library and nobody in another: *Kdo jsem v knihovně* on your account page has one row
+per project you belong to, each naming its project. Each project's administrator writes the line its
+pages end with (*Patička* in the project's settings, e.g. who runs the library); a page outside any
+project names nobody. Scripts, `kukatko ctl` and AI agents address a project
 the same way, by its slug in the URL (`/api/v1/p/<project>/…`).
 
 - **Addresses now start with `/p/<project>`.** One instance can hold several independent libraries
@@ -237,7 +240,7 @@ the same way, by its slug in the URL (`/api/v1/p/<project>/…`).
   one — the slug is checked as you type, because it is the project's address and cannot change
   later — with an optional largest-file limit and a quota for all originals together. A project's own
   page edits its name, description and limits, switches it off (its members can no longer open it;
-  nothing is deleted — you still can, under a banner saying it is off) or back on, adds you as its administrator when you are not a member yet, and
+  nothing is deleted — you still can, under a banner saying it is off) or back on, adds you as its administrator when you are not a member yet (the project you just founded already has you, and the switcher lists it at once), and
   shows where in the storage its files live. A project that still lives in the root of the storage
   (the original library, from before projects) is moved under its own prefix from that same page:
   *Spustit přesun* — after a confirmation that repeats the promise: every file is copied and verified
@@ -252,11 +255,15 @@ the same way, by its slug in the URL (`/api/v1/p/<project>/…`).
   *Změnit heslo* sets a password, *Odkaz na heslo* issues the one-time link somebody who forgot their
   password needs to get back in (mailed, or shown to copy when mail is off or the address is a
   placeholder), and *Zablokovat* / *Odblokovat* shuts an account out of every project or lets it back.
+  *Audit instance* (`/system/audit`) is the whole instance's audit trail — every project's entries and
+  the instance's own (accounts created and edited, system roles, blocking, password resets), which no
+  project's audit page shows — filterable by project or by "the instance only".
 - **The limits hold at every upload.** A project's largest-file limit and its quota are enforced on
   the upload page, through an upload link and by `kukatko import dir` alike, together with the
   instance's own file cap (the smallest cap wins). A file over the limit is refused before its bytes
-  are stored and marked in the upload list — "Soubor je větší než povolených 50,0 MB" — and a project
-  that has filled its quota takes nothing more ("Projekt dosáhl limitu úložiště"); the other files of the
+  are stored and marked in the upload list — "Soubor je větší než povolených 50,0 MB" — and a file that
+  would carry the project past its quota is refused the same way, saying how much of it is used
+  ("Tento soubor by překročil limit úložiště projektu (využito 9,7 MB z 11,0 MB)"); the other files of the
   batch still go in, and nothing already stored is ever deleted. Somebody uploading through a link into
   a full project learns only that: "Tento projekt má plné úložiště, nahrávání není možné." The project's
   settings page shows how full the quota is as a bar.

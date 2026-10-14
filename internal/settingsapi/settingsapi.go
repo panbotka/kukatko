@@ -11,8 +11,9 @@
 //
 //	GET /settings/public    RequireActiveProject  the project's name and whether it takes registrations
 //	GET /settings/welcome   RequireAuth           only the project's first-sign-in welcome Markdown
+//	GET /settings/footer    RequireAuth           only the project's footer line
 //	GET /settings           RequireAdmin          the full record, secret included
-//	PUT /settings           RequireAdmin          replaces all three values
+//	PUT /settings           RequireAdmin          replaces the values (the footer line when sent)
 //	GET /settings/usage     RequireAdmin          what the project occupies and its two limits
 //
 // and one is instance-level (RegisterInstanceRoutes):
@@ -40,6 +41,11 @@
 // (users.welcome_seen_at) stays per account: somebody who joins a second
 // project is not greeted again.
 //
+// The footer line is the project's too — the sentence its pages end with,
+// typically who runs the library. It is read by any member (the shell draws it
+// on every page of the project) and never anonymously: an instance page, an
+// anonymous upload-link page and a project one may not enter show no line.
+//
 // The guards and the stores are injected so the package stays decoupled from
 // auth's wiring and the concrete stores, and is unit-testable with fakes. An
 // update is audited in the same transaction as the change by the store.
@@ -52,6 +58,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -75,8 +82,8 @@ type Store interface {
 	// Get returns the project's current settings, including the registration
 	// secret in readable form.
 	Get(ctx context.Context, projectUID string) (settings.Settings, error)
-	// Set replaces all three of the project's settings, auditing the change in
-	// the same transaction, and returns the persisted record.
+	// Set replaces the project's settings, auditing the change in the same
+	// transaction, and returns the persisted record.
 	Set(
 		ctx context.Context, projectUID string, in settings.Update, actorUID string, entry audit.Entry,
 	) (settings.Settings, error)
@@ -161,13 +168,15 @@ func NewAPI(cfg Config) *API {
 //
 //	GET /settings/public    IP limit + RequireActiveProject  {"project_name":"…","registration_enabled":true}
 //	GET /settings/welcome   RequireAuth                      {"welcome_markdown":"…"}
+//	GET /settings/footer    RequireAuth                      {"footer_text":"…"}
 //	GET /settings           RequireAdmin                     the full record, secret included
-//	PUT /settings           RequireAdmin                     replaces all three values
+//	PUT /settings           RequireAdmin                     replaces the values (footer_text optional)
 //	GET /settings/usage     RequireAdmin                     photos, originals bytes and the two limits
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/settings", func(r chi.Router) {
 		r.With(a.ipLimit.Middleware, a.requireActiveProject).Get("/public", a.handleProjectPublic)
 		r.With(a.requireAuth).Get("/welcome", a.handleWelcome)
+		r.With(a.requireAuth).Get("/footer", a.handleFooter)
 		r.With(a.requireAdmin).Get("/usage", a.handleUsage)
 		r.With(a.requireAdmin).Get("/", a.handleGet)
 		r.With(a.requireAdmin).Put("/", a.handleSet)
@@ -254,6 +263,18 @@ func (a *API) handleWelcome(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, welcomeResponse{WelcomeMarkdown: current.WelcomeMarkdown})
 }
 
+// handleFooter writes the project's footer line for any signed-in member. No
+// line is an empty string, not a 404: the shell then draws only the link to the
+// source code.
+func (a *API) handleFooter(w http.ResponseWriter, r *http.Request) {
+	current, err := a.store.Get(r.Context(), requestProject(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "reading settings failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, footerResponse{FooterText: current.FooterText})
+}
+
 // handleGet writes the full settings record, registration secret included. The
 // route is behind RequireAdmin: reading the secret back is the whole point of
 // storing it unhashed, and the reason nobody below the project's administrator
@@ -267,8 +288,9 @@ func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toResponse(current))
 }
 
-// handleSet replaces all three settings and writes the persisted record.
-// Enabling registration with a blank secret is a 400.
+// handleSet replaces the settings and writes the persisted record. Enabling
+// registration with a blank secret is a 400, and so is a footer line that is
+// too long or not a single line.
 func (a *API) handleSet(w http.ResponseWriter, r *http.Request) {
 	in, err := decodeSet(r)
 	if err != nil {
@@ -289,23 +311,29 @@ func (a *API) handleSet(w http.ResponseWriter, r *http.Request) {
 // the request's client IP and User-Agent onto the settings action. The details
 // record the new registration flag, whether a secret is now set and whether
 // there is a welcome text — enough to read the trail, without copying the secret
-// or the greeting into a permanent record. The store writes the returned entry
+// or the greeting into a permanent record — and, when the update writes the
+// footer line, the line itself: it is public to every member anyway. The store writes the returned entry
 // inside the update's transaction. The route is guarded by RequireAdmin, so a
 // principal is present in production; an absent principal yields an empty actor
 // UID (stored as NULL).
 func (a *API) auditEntry(r *http.Request, actorUID string, in settings.Update) audit.Entry {
-	return audit.FromRequest(r, actorUID).Entry(audit.ActionSettingsUpdate, "settings", "", map[string]any{
+	details := map[string]any{
 		"registration_enabled": in.RegistrationEnabled,
 		"secret_set":           in.RegistrationSecret != "",
 		"welcome_set":          in.WelcomeMarkdown != "",
-	})
+	}
+	if in.FooterText != nil {
+		details["footer_text"] = strings.TrimSpace(*in.FooterText)
+	}
+	return audit.FromRequest(r, actorUID).Entry(audit.ActionSettingsUpdate, "settings", "", details)
 }
 
 // decodeSet reads the update request body, rejecting a body that is missing,
-// malformed, oversized or carries unknown fields. All three values are required
-// in the sense that the update replaces the record wholesale: a field left out
-// of the body is written as its zero value, which is what "PUT replaces all
-// three" means.
+// malformed, oversized or carries unknown fields. The three registration values
+// are required in the sense that the update replaces them wholesale: a field
+// left out of the body is written as its zero value. footer_text is the one
+// optional field — left out, the stored line stays (a client from before the
+// footer existed saves the rest without wiping it).
 func decodeSet(r *http.Request) (settings.Update, error) {
 	dec := json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes))
 	dec.DisallowUnknownFields()
@@ -317,10 +345,11 @@ func decodeSet(r *http.Request) (settings.Update, error) {
 }
 
 // writeSetError maps a store update error to an HTTP response: enabling
-// registration without a secret is a 400 (the administrator has to fix the
-// request), anything else a 500.
+// registration without a secret or an unfit footer line is a 400 (the
+// administrator has to fix the request), anything else a 500.
 func writeSetError(w http.ResponseWriter, err error) {
-	if errors.Is(err, settings.ErrSecretRequired) {
+	if errors.Is(err, settings.ErrSecretRequired) || errors.Is(err, settings.ErrFooterTooLong) ||
+		errors.Is(err, settings.ErrFooterMultiline) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -373,12 +402,19 @@ type welcomeResponse struct {
 	WelcomeMarkdown string `json:"welcome_markdown"`
 }
 
+// footerResponse is the members' wire shape for the footer line: one field,
+// like welcomeResponse.
+type footerResponse struct {
+	FooterText string `json:"footer_text"`
+}
+
 // adminResponse is the full wire shape, registration secret included, served
 // only behind RequireAdmin.
 type adminResponse struct {
 	RegistrationEnabled bool   `json:"registration_enabled"`
 	RegistrationSecret  string `json:"registration_secret"`
 	WelcomeMarkdown     string `json:"welcome_markdown"`
+	FooterText          string `json:"footer_text"`
 	UpdatedAt           string `json:"updated_at"`
 	UpdatedByUID        string `json:"updated_by_uid,omitempty"`
 }
@@ -390,6 +426,7 @@ func toResponse(s settings.Settings) adminResponse {
 		RegistrationEnabled: s.RegistrationEnabled,
 		RegistrationSecret:  s.RegistrationSecret,
 		WelcomeMarkdown:     s.WelcomeMarkdown,
+		FooterText:          s.FooterText,
 		UpdatedAt:           s.UpdatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedByUID:        s.UpdatedByUID,
 	}

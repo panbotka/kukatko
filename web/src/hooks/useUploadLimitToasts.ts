@@ -22,9 +22,10 @@ function isLimitCode(code: string | undefined): code is keyof typeof TOAST_KEYS 
 
 /**
  * Raises one translated toast when the queue first meets a project limit: a
- * file over the per-file cap (`file_too_large`), or a project whose storage
- * just ran out (`quota_exceeded`). Each file still carries its own reason in the
- * list; the toast is what reaches someone who is not looking at the list.
+ * file over the per-file cap (`file_too_large`), or a file that would carry the
+ * project's originals past its quota (`quota_exceeded`). Each file still
+ * carries its own reason in the list; the toast is what reaches someone who is
+ * not looking at the list.
  *
  * One toast per kind while the kind keeps occurring, not one per file: a
  * fifty-file batch into a full project would otherwise stack fifty identical

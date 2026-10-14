@@ -231,9 +231,19 @@ here.
   on any declaration other than the token that reads `--kk-tabbar-height`. The variable is removed on
   unmount and at the desktop breakpoint, so the bar's half collapses to `0px` when there is no bar),
   `Footer` (**global footer** below `<main>` on every page in `Layout` — the fullscreen
-  `/slideshow` and the immersive `/photos/:uid` run outside the shell, so they don't have it: „Provozuje SDH Veselice“ + a link to the source code
+  `/slideshow` and the immersive `/photos/:uid` run outside the shell, so they don't have it: **the
+  project's own line** (`text` prop, `data-testid="footer-text"`, followed by „ · ") + a link to the source code
   <https://github.com/panbotka/kukatko> in a new tab with `rel="noopener noreferrer"` and a decorative
-  `github` icon (`aria-hidden`); texts `footer.*` (cs/en). It renders in normal flow, and still ends at the
+  `github` icon (`aria-hidden`); texts `footer.*` (cs/en). The line is the project admin's setting
+  (`footer_text`, `SettingsPage` → „Patička"), read by **`hooks/useProjectFooter(slug)`**
+  (`GET /p/<slug>/settings/footer` via `fetchFooterText`, which names its project) — `Layout` passes `null` in
+  the neutral shell and signed out, so an instance page, a 404 outside a project, `/u/<code>` and a project
+  one may not enter name **no** operator, and an empty/whitespace line draws only the link. The hook answers
+  only for the slug it was asked about (`''` while another project's line is on its way, so a switch never
+  shows the previous project's sentence), a failed read is no line, and `announceFooterChanged(slug, text)`
+  (called by `SettingsPage` after a save) replaces the line on screen at once. The bootstrap project `v` was
+  backfilled with „Provozuje SDH Veselice" (migration 0118), the sentence this footer once hard-coded for
+  every tenant. It renders in normal flow, and still ends at the
   bottom of the window on a page too short to fill it: `Layout` wraps everything it renders in a
   **`.kukatko-shell`** flex column at least `100dvh - --kk-bottom-edge` tall, `.kukatko-page` inside it grows
   into the slack (`flex: 1 0 auto`) and the footer takes what is left with `margin-top: auto` — so an empty
@@ -244,7 +254,7 @@ here.
   viewport by the difference — a 1px scrollbar on every short page. A page taller than the window is
   untouched: the minimum is already met, so the footer stays at the end of the content and scrolls away with
   it, never pinned over it (guarded by `styles/shellFooter.test.ts`). Inside is a space-between
-  flex row: operator + GitHub on the left, `children` fills the right side (today the admin job-queue
+  flex row: the project's line + GitHub on the left, `children` fills the right side (today the admin job-queue
   badge); `.kukatko-footer` shares its horizontal padding — the container gutter plus the safe-area
   inset — with `.kukatko-main`, which also carries
   `pt-3 pt-md-4 pb-4`, one step less top padding on a phone, where that gap comes straight out of the
@@ -1052,8 +1062,12 @@ here.
   see `useUploadQueue` — reads `upload.error.interrupted` "Spojení se přerušilo" instead of the transport's
   "network error"; the **project limits** — `upload.error.file_too_large` "Soubor je větší než povolených
   {{limit}}" with the server's `limit_bytes` (`item.errorLimitBytes`) through `formatBytes`,
-  `file_too_large_unknown` without it, and `upload.error.quota_exceeded` "Projekt dosáhl limitu
-  úložiště", never a number) instead of the raw server string, and the five
+  `file_too_large_unknown` without it, and the quota as **this upload would cross it** — never "the
+  project reached its limit", which it may be far from: `upload.error.quota_exceeded` „Tento soubor by
+  překročil limit úložiště projektu (využito {{used}} z {{limit}})" with the server's `used_bytes`
+  (`item.errorUsedBytes`) and `limit_bytes` through the locale's `formatBytes` („využito 9,7 MB z 11,0 MB"),
+  `quota_exceeded_limit` with the limit alone (the public upload link sends no usage), `quota_exceeded_unknown`
+  with neither) instead of the raw server string, and the five
   permanent codes get **no Retry** (`canRetryUpload`) — the same file would be
   refused again; `useUploadQueue` keeps the code as `item.errorCode` and its `retry`/`retryFailed` skip
   them, and `UploadStageDone`/`UploadLinkPage` offer "retry the failed files" only while some failure is
@@ -2120,15 +2134,21 @@ here.
   entry point lives here rather than as another item in the already crowded nav bar,
   **plus `MySubjectCard`** (`components/account/`, directly under the identity card — the first block says
   which *account* this is, this one says which *person*): the account's link to a subject of the library.
-  Nothing is chosen → the app's ordinary subject typeahead (`AddAutocomplete` over `useSubjects`, the same
+  **One row per project** the account is an approved member of (of an active project), each headed with
+  the project's name (`account-subject-row-<slug>`) and acting only there — the account page belongs to no
+  project, and silently editing "the last used project's" link was the bug; no project → „Zatím nejsi
+  schváleným členem žádného projektu…". Per row:
+  nothing is chosen → the app's ordinary subject typeahead (`AddAutocomplete` over `useSubjects(slug)` —
+  that project's people, `fetchSubjects(signal, slug)` —, labelled „Najít osobu v projektu X", the same
   shape as naming a face or merging two people, and deliberately **without** `onCreate`: an account belongs
   to somebody the library already knows). Something is chosen → the name, linked to that person's page, and
   an „Zrušit propojení" button. Above the empty field — **before** the decision, not after the save — sits a
   warning that linking **publishes that person's cover photo next to every comment the account has written**,
-  and that the „soukromá osoba" flag hides nothing today. Saving goes through `setMySubject`
-  (`PUT /api/v1/p/<slug>/auth/subject` — the link is the current project's) and then `useAuth().refresh()`,
-  because the menu entry and the avatar both read the link off the session (`/auth/me`'s membership of the
-  current project) rather than off this card. A link whose person has since been deleted reads as
+  and that the „soukromá osoba" flag hides nothing today (once, above the rows, while any row is unlinked).
+  Saving goes through `setMySubject(uid, { project: slug })` (`PUT /api/v1/p/<slug>/auth/subject` of the
+  row's project, never the current one) and then `useAuth().refresh()`, because the menu entry and the avatar
+  both read the link off the session (`/auth/me`'s membership of each project) rather than off this card;
+  the person links into the row's project (`/p/<slug>/people/<uid>`). A link whose person has since been deleted reads as
   „Propojená osoba už v knihovně není" instead of a blank. Tests: `MySubjectCard.test.tsx`,
   **plus `MyPictureCard`** (`components/account/`, directly *under* the link — the link is the picture's own
   default, so overriding it comes after setting it): what the account looks like wherever it is named.
@@ -3105,7 +3125,11 @@ here.
   into the project is open, the shared secret its registration page asks a newcomer for (the page's
   absolute address, `projectRegisterPath`, is shown under it to pass on — `settings-register-url`), and
   the Markdown greeting a member meets on their first sign-in (`welcome_seen_at` is per account, so somebody
-  who joined another project first is not greeted again). It is
+  who joined another project first is not greeted again) — plus a **„Patička"** card: the plain-text
+  `footer_text` every page of the project ends with (`settings-footer-text`, one `type="text"` line, so a
+  pasted line break is stripped by the browser; `maxLength` = `MAX_FOOTER_LENGTH` 200 with a „22 / 200 znaků"
+  counter; compared trimmed like the secret; sent with every save and, once saved,
+  `announceFooterChanged(slug, saved.footer_text)` so the footer under the form changes with it). It is
   its own route rather than another section of `MembersPage`: that page is about memberships, this one
   about the project's settings, and it is long enough already. One `Form` over a local `Draft`, so **nothing is written
   until „Uložit nastavení"** — `isDirty(draft, saved)` drives both buttons (save + **Zahodit změny**),
@@ -3168,14 +3192,28 @@ here.
   `AlbumDetailPage`/`LabelDetailPage`/`SubjectPage`/`PhotoDetailPage` into a `missing` state
   (*Toto album už neexistuje.* + a hint) instead of the generic “could not be loaded”.
   Filters (actor = a `<select>` over the project's member directory via `listDirectory` — `GET
-  /api/v1/p/<slug>/users`; an actor no longer a member shows as its uid — action, entity type+UID,
+  /api/v1/p/<slug>/users` — action, entity type+UID,
   date range `od`/`do`) in a **draft** form → **Filtrovat** writes them to the URL and resets
   the page, **Zrušit filtry** clears them; the dates are expanded in `viewToParams` to RFC 3339 day boundaries
   (UTC). prev/next pagination over `offset`/`next_offset` (limit 100) with a `od–do z total` count;
   filters and offset live in the URL (`useUrlState` over `AUDIT_DEFAULTS`), so Back restores the exact view.
-  Actor names are fetched from the roster **best-effort** (fallback to UID, or `—` for a system action),
-  never blocking the table render. Loading/empty/error (retry via `reloadKey`) states, self-gated on
-  `isAdmin`,
+  **Actors are named by the page's own `actors` map first** (the server names everyone who acted in the
+  page — a former or a still-waiting member too, who used to show as a raw uid; see `docs/API.md`), the
+  roster second (fetched **best-effort**), the uid only when neither knows the account, `—` for a system
+  action; never blocking the table render. Loading/empty/error (retry via `reloadKey`) states, self-gated on
+  `isAdmin`. The subtitle says „…v tomto projektu" — the trail is the project's, not the instance's.
+  **`<AuditPage scope="instance" />` = `/system/audit`** (maintainer, self-gated on `isMaintainer`,
+  „Auditní log instance", nav entry `SYSTEM_AUDIT_PATH` among the instance's own admin items): the same page
+  over the whole instance's `GET /api/v1/audit` (`fetchInstanceAuditLog`) — every project's entries **and the
+  instance's own** (account creation and edits, instance-role promote/demote, blocking, password resets),
+  which no project's page shows. Extra: a **Projekt** filter first in the form (`audit-filter-project`:
+  „Všechny projekty i instance" / „Jen instance (bez projektu)" / each project from `fetchAdminProjects`,
+  by name; in the URL as `project=<slug>` or `project=-` = `AUDIT_INSTANCE_ONLY`, a value no slug can take,
+  mapped by `viewToParams(view, 'instance')` to `project`/`instance_only=true` — a project's own page drops
+  both, since its listing refuses them by name), a **Projekt** column after the time (the slug, or a muted
+  „instance"), the actor filter over every account (`fetchInstanceAccounts`, display name or username), and
+  links (`EntryLink`) that open in **the entry's own project** (`projectPathFor(record.project, …)`) — an
+  instance entry's UIDs stay plain text,
   `MyActivityPage` = `/account/activity` (**no role gate** — every signed-in user, viewer included) **the user's
   own history**: the same audit records as `/audit`, but from `GET /audit/mine`, which the server narrows to the
   caller — across **every** project the account acts in. It exists for self-repair, not supervision — *"I know I
@@ -5934,7 +5972,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   server has answered for every file**, a sent last byte is not "done"),
   `createdUids` (new ones only) for the link into the library
   and `resolvedUids` (new **and** duplicate photos) for the post-upload assignment; a refused item keeps
-  the backend's `code` as `errorCode` and a limit refusal's `limit_bytes` as `errorLimitBytes`.
+  the backend's `code` as `errorCode`, a limit refusal's `limit_bytes` as `errorLimitBytes` and a quota
+  refusal's `used_bytes` as `errorUsedBytes`.
   `useUploadLimitToasts(items)` (on `UploadPage`) raises **one** translated danger toast per project-limit
   kind while it occurs in the queue — `upload.toast.fileTooLarge` / `upload.toast.quotaExceeded` — not one
   per file, and toasts again once the kind has left the queue (a fresh batch); the rows carry the reasons.
@@ -7344,6 +7383,10 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   status **and the backend's own `error` message** — a 400 on enabling registration with a blank secret
   is meant to be shown verbatim. All three values travel together because the backend writes them
   together: the flag and the secret guard each other, so a partial update has no meaning.
+  `fetchFooterText(slug, signal)` over `GET /api/v1/p/<slug>/settings/footer` (`projectApiPath`: the project
+  is named, never the current one) → the footer line alone (`FooterSettings{footer_text}` unwrapped, `''` =
+  none); `ProjectSettings` carries `footer_text` and `ProjectSettingsUpdate.footer_text` is optional (left
+  out, the stored line stays);
   `fetchWelcomeMarkdown(signal)` over `GET /api/v1/p/<slug>/settings/welcome` (the project's) → the greeting string alone
   (`WelcomeSettings{welcome_markdown}` unwrapped): the one field of that record any signed-in role may
   read, a viewer having no business with the registration secret that travels with the admin shape. An
@@ -8598,7 +8641,7 @@ relative to the project root, mounted under `<Route path="/p/:slug" element={<Pr
 | project (under `/p/:slug`), immersive, no shell | `slideshow`, `photos/:uid`, `review` + `albums/:uid/faces` (curator), `duplicates/compare` (editor) |
 | project, inside `Layout` | index (= `LibraryPage`), `library/*` (`LibraryRedirect` → the project's library), `favorites`, `albums`, `albums/:uid`, `labels`, `labels/:uid`, `tasks`, `tasks/:uid`, `n/:uid`, `notifications`, `search`, `saved`, `map`, `places`, `people`, `people/:uid`, `people/:uid/tree`, `leaderboard`, `share-target`, `upload`, `stats`, `help`; curator: `upload-links`, `people/clusters`, `faces`, `expand`, `recognition`, `outliers`, `duplicate-markers`; editor: `duplicates`, `trash`; `import` (`RequireImport`); admin: `users`, `audit`, `audit/reviews`, `settings`; `*` → `NotFoundPage` |
 | instance, public | `/login`, `/register`, `/password-reset/:token`, `/u/:code` |
-| instance, signed in | `/` (`EntryRedirect`), `/projects` (`ProjectsPage`, no shell); inside `Layout`: `/account`, `/account/activity` (`ACTIVITY_PATH` — under the account and reading the instance-wide audit trail, so it carries no project), `/maintenance`, `/system`, `/system/projects`, `/system/projects/:slug`, `/system/users` (all maintainer), `*` (`LegacyRedirect`) |
+| instance, signed in | `/` (`EntryRedirect`), `/projects` (`ProjectsPage`, no shell); inside `Layout`: `/account`, `/account/activity` (`ACTIVITY_PATH` — under the account and reading the instance-wide audit trail, so it carries no project), `/maintenance`, `/system`, `/system/projects`, `/system/projects/:slug`, `/system/users`, `/system/audit` (all maintainer), `*` (`LegacyRedirect`) |
 
 **The entry rule** (`entryProjectSlug` in `project/paths.ts`): the target is `last_project_slug` when
 it is an approved membership of an active project, else the only such membership, else `null` →
@@ -8825,7 +8868,11 @@ opens `components/system/NewProjectModal.tsx`: slug (checked live on every keyst
 is only scolded on submit; hint „…Nelze později změnit."), name, description, the two limits. A
 refusal lands on its field: `slug_taken` → „Tento slug už existuje", `invalid_slug` → the format
 rule, `invalid_name` → the name, `invalid_limit` → the limits; anything else is an alert. An
-unlimited limit is left out of the body. A created project opens its detail page.
+unlimited limit is left out of the body. A created project opens its detail page **after
+`useAuth().refresh()`** — the creator is its admin, so the switcher lists it at once and its page offers no
+„Přidat mě jako člena". Likewise `SystemProjectPage` re-reads the session after a **rename** (only when the
+name changed) and after (de)activating — the switcher, the tab title and the project's pages read name and
+`active` off the session's memberships.
 
 **`SystemProjectPage`** = `/system/projects/:slug` (`NarrowPage`): the API addresses projects by uid,
 so the page reads the list and picks the slug (none → `ErrorState` „Projekt „x" neexistuje."). Cards:
@@ -8835,7 +8882,8 @@ set to the byte elsewhere is never rounded by the form), **Stav** (an `active` s
 `primary`; the dialog's target is kept while it fades out), **Členové** (link „Členové projektu" →
 `/p/<slug>/members`, the page a later step builds; **„Přidat mě jako člena"** POSTs the caller as
 `admin`, then `refresh()`es the session so the switcher learns the project — hidden when
-`useAuth().projects` already holds the project's uid), **Využití** and **Úložiště**
+`useAuth().projects` already holds the project's uid; a `409 already_member` from a session older than the
+membership is taken as joined, never as „Členství se nepodařilo přidat."), **Využití** and **Úložiště**
 (`components/system/StorageMoveCard.tsx`, keyed by the project's uid, below).
 
 **`StorageMoveCard`** — the „Úložiště" card: the project's storage move (`internal/rekeyapi`, client

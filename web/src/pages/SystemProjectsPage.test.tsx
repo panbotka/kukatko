@@ -4,6 +4,7 @@ import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import type { AdminProject } from '../services/projects'
 import type { RekeyRun, RekeyState } from '../services/rekey'
@@ -68,15 +69,21 @@ function move(projectUid: string, state: RekeyState, done: number): RekeyRun {
   }
 }
 
+/** The session's re-read, which a created project's creator needs. */
+let refreshMock = vi.fn()
+
 function renderPage() {
+  const value = { status: 'authenticated', refresh: refreshMock } as unknown as AuthContextValue
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={['/system/projects']}>
-        <Routes>
-          <Route path="/system/projects" element={<SystemProjectsPage />} />
-          <Route path="/system/projects/:slug" element={<p>detail page</p>} />
-        </Routes>
-      </MemoryRouter>
+      <AuthContext.Provider value={value}>
+        <MemoryRouter initialEntries={['/system/projects']}>
+          <Routes>
+            <Route path="/system/projects" element={<SystemProjectsPage />} />
+            <Route path="/system/projects/:slug" element={<p>detail page</p>} />
+          </Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -85,6 +92,7 @@ beforeEach(async () => {
   await i18n.changeLanguage('cs')
   fetchMock.mockReset()
   createMock.mockReset()
+  refreshMock = vi.fn().mockResolvedValue(undefined)
   rekeyMock.mockReset()
   rekeyMock.mockResolvedValue(null)
   fetchMock.mockResolvedValue([
@@ -209,6 +217,34 @@ describe('SystemProjectsPage', () => {
         max_total_bytes: 2 * GB,
       })
     })
+    expect(await screen.findByText('detail page')).toBeInTheDocument()
+    // The creator is its admin: the session is re-read before the page opens,
+    // so the switcher lists it and the page offers no "add me".
+    expect(refreshMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens the new project only once the session has been re-read', async () => {
+    const user = userEvent.setup()
+    let finishRefresh: () => void = () => undefined
+    refreshMock = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRefresh = resolve
+        }),
+    )
+    createMock.mockResolvedValue(project({ uid: 'pjn', slug: 'nova', name: 'Nová' }))
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Nový projekt' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText('Slug'), 'nova')
+    await user.type(within(dialog).getByLabelText('Název'), 'Nová')
+    await user.click(within(dialog).getByRole('button', { name: 'Založit projekt' }))
+
+    await waitFor(() => {
+      expect(refreshMock).toHaveBeenCalled()
+    })
+    expect(screen.queryByText('detail page')).not.toBeInTheDocument()
+    finishRefresh()
     expect(await screen.findByText('detail page')).toBeInTheDocument()
   })
 

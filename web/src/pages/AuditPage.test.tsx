@@ -14,14 +14,22 @@ import { AuditPage } from './AuditPage'
 // Mock the network layer only, keeping the real types and helpers.
 vi.mock('../services/audit', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/audit')>()
-  return { ...actual, fetchAuditLog: vi.fn() }
+  return { ...actual, fetchAuditLog: vi.fn(), fetchInstanceAuditLog: vi.fn() }
+})
+vi.mock('../services/projects', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/projects')>()
+  return { ...actual, fetchAdminProjects: vi.fn(), fetchInstanceAccounts: vi.fn() }
 })
 vi.mock('../services/directory', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/directory')>()
   return { ...actual, listDirectory: vi.fn() }
 })
 
-const { fetchAuditLog } = await import('../services/audit')
+const { fetchAuditLog, fetchInstanceAuditLog } = await import('../services/audit')
+const { fetchAdminProjects, fetchInstanceAccounts } = await import('../services/projects')
+const fetchInstanceAuditMock = vi.mocked(fetchInstanceAuditLog)
+const fetchAdminProjectsMock = vi.mocked(fetchAdminProjects)
+const fetchInstanceAccountsMock = vi.mocked(fetchInstanceAccounts)
 const { listDirectory } = await import('../services/directory')
 const fetchAuditMock = vi.mocked(fetchAuditLog)
 const listDirectoryMock = vi.mocked(listDirectory)
@@ -29,7 +37,7 @@ const listDirectoryMock = vi.mocked(listDirectory)
 const ME = 'me-admin'
 
 /** A stub auth context: admin (default) or a viewer to exercise the guard. */
-function auth(isAdmin: boolean): AuthContextValue {
+function auth(isAdmin: boolean, isMaintainer = false): AuthContextValue {
   const role = isAdmin ? 'admin' : 'viewer'
   return {
     status: 'authenticated',
@@ -39,6 +47,7 @@ function auth(isAdmin: boolean): AuthContextValue {
     canCurate: isAdmin,
     canWrite: isAdmin,
     isAdmin,
+    isMaintainer,
     canImport: isAdmin,
     login: vi.fn(),
     logout: vi.fn(),
@@ -69,7 +78,7 @@ function response(
   total = entries.length,
   offset = 0,
 ): AuditListResponse {
-  return { entries, total, limit: 100, offset, next_offset: nextOffset }
+  return { entries, total, limit: 100, offset, next_offset: nextOffset, actors: {} }
 }
 
 const ROSTER: DirectoryUser[] = [{ uid: 'us1', name: 'Ada Admin' }]
@@ -468,5 +477,137 @@ describe('AuditPage', () => {
 
     expect(screen.getByText('This page is available to administrators only.')).toBeInTheDocument()
     expect(fetchAuditMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('AuditPage in a project', () => {
+  it('names an actor the directory no longer lists, from the page itself', async () => {
+    // A former member: gone from the directory, still in the project's trail.
+    fetchAuditMock.mockResolvedValue({
+      ...response([record({ actor_uid: 'us-former' })]),
+      actors: { 'us-former': 'Bývalá Členka' },
+    })
+    renderPage()
+
+    expect(await screen.findByRole('cell', { name: 'Bývalá Členka' })).toBeInTheDocument()
+    expect(screen.queryByText('us-former')).not.toBeInTheDocument()
+  })
+
+  it("says its trail is the project's, never sends a project filter", async () => {
+    renderPage(true, '/audit?project=rodina')
+
+    expect(await screen.findByText(/changes in this project/)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(fetchAuditMock).toHaveBeenCalled()
+    })
+    const params = fetchAuditMock.mock.calls[0][0]
+    expect(params?.project).toBeUndefined()
+    expect(params?.instance_only).toBeUndefined()
+    expect(screen.queryByLabelText('Project')).not.toBeInTheDocument()
+    expect(fetchInstanceAuditMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('AuditPage on the instance', () => {
+  /** The system administrator's page at `entry`. */
+  function renderInstance(entry = '/system/audit', isMaintainer = true) {
+    return render(
+      <I18nextProvider i18n={i18n}>
+        <AuthContext.Provider value={auth(true, isMaintainer)}>
+          <MemoryRouter initialEntries={[entry]}>
+            <AuditPage scope="instance" />
+            <LocationProbe />
+          </MemoryRouter>
+        </AuthContext.Provider>
+      </I18nextProvider>,
+    )
+  }
+
+  beforeEach(() => {
+    fetchInstanceAuditMock.mockReset()
+    fetchAdminProjectsMock.mockReset()
+    fetchInstanceAccountsMock.mockReset()
+    fetchInstanceAuditMock.mockResolvedValue(
+      response([
+        record({ id: 2, project_uid: 'pjr', project: 'rodina', target_uid: 'ph5' }),
+        record({
+          id: 1,
+          project_uid: null,
+          project: null,
+          actor_uid: 'us9',
+          action: 'user.create',
+          target_type: 'users',
+          target_uid: 'us-new',
+        }),
+      ]),
+    )
+    fetchAdminProjectsMock.mockResolvedValue([
+      { uid: 'pjr', slug: 'rodina', name: 'Rodina' },
+      { uid: 'pjv', slug: 'v', name: 'Veselice' },
+    ] as never)
+    fetchInstanceAccountsMock.mockResolvedValue([
+      { uid: 'us1', username: 'ada', display_name: 'Ada Admin' },
+      { uid: 'us9', username: 'boss', display_name: '' },
+    ] as never)
+  })
+
+  it("reads the instance's whole trail and names each entry's project", async () => {
+    renderInstance()
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Instance audit log' }),
+    ).toBeInTheDocument()
+    expect(await screen.findByRole('cell', { name: 'rodina' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'instance' })).toBeInTheDocument()
+    // Every account names its actor; one without a display name by username.
+    expect(await screen.findByRole('cell', { name: 'boss' })).toBeInTheDocument()
+    expect(fetchAuditMock).not.toHaveBeenCalled()
+    expect(listDirectoryMock).not.toHaveBeenCalled()
+  })
+
+  it("opens an entry's target in that entry's project, and an instance entry nowhere", async () => {
+    renderInstance()
+
+    expect(await screen.findByRole('link', { name: 'ph5' })).toHaveAttribute(
+      'href',
+      '/p/rodina/photos/ph5',
+    )
+    expect(screen.getByText('us-new').closest('a')).toBeNull()
+  })
+
+  it('filters by project, and by the instance alone, through the URL', async () => {
+    const user = userEvent.setup()
+    renderInstance()
+
+    const select = await screen.findByLabelText('Project')
+    expect(await within(select).findByRole('option', { name: 'Rodina' })).toBeInTheDocument()
+    await user.selectOptions(select, 'The instance only (no project)')
+    await user.click(screen.getByRole('button', { name: 'Filter' }))
+
+    await waitFor(() => {
+      expect(fetchInstanceAuditMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ instance_only: true }),
+        expect.anything(),
+      )
+    })
+    expect(screen.getByTestId('location')).toHaveTextContent('/system/audit?project=-')
+
+    await user.selectOptions(screen.getByLabelText('Project'), 'Rodina')
+    await user.click(screen.getByRole('button', { name: 'Filter' }))
+    await waitFor(() => {
+      expect(fetchInstanceAuditMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ project: 'rodina' }),
+        expect.anything(),
+      )
+    })
+  })
+
+  it("is the system administrator's alone", () => {
+    renderInstance('/system/audit', false)
+
+    expect(
+      screen.getByText('This page is available to the system administrator only.'),
+    ).toBeInTheDocument()
+    expect(fetchInstanceAuditMock).not.toHaveBeenCalled()
   })
 })

@@ -1,4 +1,4 @@
-import { apiPath, instancePath } from './api'
+import { apiPath, instancePath, projectApiPath } from './api'
 
 /**
  * User roles mirrored from the backend (`internal/auth/role.go`), on a strict
@@ -354,11 +354,22 @@ export async function changePassword(
   }
 }
 
+/** Options of {@link setMySubject}. */
+export interface SetMySubjectOptions {
+  /**
+   * The slug of the project whose person is meant; the current project when
+   * absent. A page outside every project (the account page) always names it.
+   */
+  project?: string
+  signal?: AbortSignal
+}
+
 /**
- * Says which person of the current project's library the signed-in user is, or
- * takes it back when `subjectUid` is null (`PUT /api/v1/p/<slug>/auth/subject`).
- * Who you are is a fact about one project's people, so the link lives on the
- * membership of the current project and `GET /auth/me` reports it per project.
+ * Says which person of a project's library the signed-in user is, or takes it
+ * back when `subjectUid` is null (`PUT /api/v1/p/<slug>/auth/subject`) — in the
+ * current project, or in `options.project` when named. Who you are is a fact
+ * about one project's people, so the link lives on that project's membership
+ * and `GET /auth/me` reports it per project.
  *
  * It is self-service: the account written to is the session's, never one named
  * in the body. Setting it publishes that person's cover photo — when they have
@@ -368,8 +379,14 @@ export async function changePassword(
  * @returns the refreshed user, so the caller can re-render without a round trip.
  * @throws ApiError with `status` 400 when the UID names nobody in the library.
  */
-export async function setMySubject(subjectUid: string | null, signal?: AbortSignal): Promise<User> {
-  const res = await fetchUrl(apiPath('/auth/subject'), {
+export async function setMySubject(
+  subjectUid: string | null,
+  options: SetMySubjectOptions = {},
+): Promise<User> {
+  const { project, signal } = options
+  const url =
+    project === undefined ? apiPath('/auth/subject') : projectApiPath(project, '/auth/subject')
+  const res = await fetchUrl(url, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'same-origin',

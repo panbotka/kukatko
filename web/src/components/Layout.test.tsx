@@ -751,8 +751,11 @@ describe('Layout navbar', () => {
 
   it('renders the global footer below the routed content', () => {
     renderLayout(auth())
-    // Every page under the layout shell gets the operator/source-code footer.
-    expect(screen.getByRole('contentinfo')).toHaveTextContent('Operated by SDH Veselice')
+    // Every page under the layout shell gets the source-code footer; outside a
+    // project it names no operator.
+    const footer = screen.getByRole('contentinfo')
+    expect(footer).toHaveTextContent('GitHub')
+    expect(footer).not.toHaveTextContent('Veselice')
   })
 })
 
@@ -1075,6 +1078,30 @@ describe('the neutral shell outside a project', () => {
     expect(within(drawer).queryByRole('link', { name: 'Albums' })).not.toBeInTheDocument()
     expect(within(drawer).getByRole('link', { name: 'Veselice' })).toHaveAttribute('href', '/p/v')
     expect(within(drawer).getByRole('link', { name: 'My account' })).toBeInTheDocument()
+  })
+
+  it("ends a project's pages with its own footer line, and an instance page with none", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = input instanceof Request ? input.url : String(input)
+      const text = url.endsWith('/p/v/settings/footer') ? 'Provozuje SDH Veselice' : 'Rodina Nováků'
+      return Promise.resolve(new Response(JSON.stringify({ footer_text: text }), { status: 200 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const { unmount } = renderWith(auth(), '/p/v/albums', { inAddress: true })
+      expect(await screen.findByTestId('footer-text')).toHaveTextContent('Provozuje SDH Veselice')
+      expect(fetchMock).toHaveBeenCalledWith('/api/v1/p/v/settings/footer', expect.anything())
+      unmount()
+
+      // The same fallback project on an instance page: no line, and no request.
+      fetchMock.mockClear()
+      renderWith(auth(), '/account')
+      expect(screen.getByRole('contentinfo')).toHaveTextContent('GitHub')
+      expect(screen.queryByTestId('footer-text')).not.toBeInTheDocument()
+      expect(fetchMock).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('warns inside a deactivated project, and only inside it', () => {

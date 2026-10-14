@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { type AuditListResponse, fetchAuditLog } from './audit'
+import { type AuditListResponse, fetchAuditLog, fetchInstanceAuditLog } from './audit'
 
 function jsonResponse(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
@@ -29,6 +29,7 @@ const RESPONSE: AuditListResponse = {
   limit: 100,
   offset: 0,
   next_offset: null,
+  actors: {},
 }
 
 describe('fetchAuditLog', () => {
@@ -94,5 +95,29 @@ describe('fetchAuditLog', () => {
       status: 400,
       message: 'since must be an RFC 3339 timestamp',
     })
+  })
+})
+
+describe('fetchInstanceAuditLog', () => {
+  it("reads the instance's whole trail, outside any project", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(RESPONSE, 200))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchInstanceAuditLog({ project: 'rodina', limit: 100 })).resolves.toEqual(
+      RESPONSE,
+    )
+
+    const [url] = fetchMock.mock.calls[0] as [string]
+    expect(url).toBe('/api/v1/audit?project=rodina&limit=100')
+  })
+
+  it('asks for the instance entries alone with instance_only=true', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(RESPONSE, 200))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchInstanceAuditLog({ instance_only: true })
+
+    const [url] = fetchMock.mock.calls[0] as [string]
+    expect(url).toBe('/api/v1/audit?instance_only=true')
   })
 })

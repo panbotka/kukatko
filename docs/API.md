@@ -2481,17 +2481,26 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     active, or is not taking registrations" rather than "closed". `registration_enabled` stays on the wire
     (always `true`) so the payload did not change shape under the client.
   - `GET /settings/welcome` behind `RequireAuth` → `{welcome_markdown}` (the project's) and nothing else.
+  - `GET /settings/footer` behind `RequireAuth` → `{footer_text}` (the project's) and nothing else: the
+    plain-text line the shell draws in the footer of every page of the project (`""` = none, 200, never a
+    404). Never anonymous — an instance page, the public upload-link page and a project one may not enter
+    show no project's line. Migration 0118 backfilled the bootstrap project with "Provozuje SDH Veselice",
+    the sentence the frontend hard-coded before; every other project starts empty.
   - `GET /settings` behind `RequireAdmin` (the project's admin; every maintainer) →
-    `{registration_enabled, registration_secret, welcome_markdown, updated_at, updated_by_uid?}` — the
-    only place the secret appears.
-  - `PUT /settings` behind `RequireAdmin` **replaces all three values** → 200 with the stored record; a
-    field left out of the body is written as its zero value. **Enabling registration while the secret is
+    `{registration_enabled, registration_secret, welcome_markdown, footer_text, updated_at,
+    updated_by_uid?}` — the only place the secret appears.
+  - `PUT /settings` behind `RequireAdmin` **replaces the three registration values** → 200 with the
+    stored record; a field left out of the body is written as its zero value. **`footer_text` is the one
+    optional field**: left out, the stored line stays (a client from before the footer cannot wipe it);
+    sent, it is stored trimmed — a line break → **400** `footer text must be a single line`, more than
+    200 characters → **400** `footer text must be at most 200 characters`. **Enabling registration while the secret is
     blank (or whitespace-only) → 400** (`settings: registration secret must not be empty…`) — an open door
     with no lock is never what the administrator meant, and the two are saved together so the combination
     can be refused. The secret is stored trimmed, the welcome Markdown verbatim. Body
     `DisallowUnknownFields` + a 64 KiB limit, `updated_at` is RFC3339. **The update is audited**
     (`settings.update`) in the same transaction as the change; the details record the flag and *whether*
-    a secret and a greeting are set — **never the secret itself**.
+    a secret and a greeting are set — **never the secret itself** — and, when the update writes it, the
+    footer line (`footer_text`, public to every member anyway).
   - `GET /settings/usage` behind `RequireAdmin` → `{photos, originals_bytes, max_file_bytes,
     max_total_bytes}`: the project's `project.Store.Usage` next to the two limits the system
     administrator set (`null` = no limit). Read-only — limits change only through `/projects`.
@@ -2846,8 +2855,19 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `GET /p/{project}/audit/mine` ignores it — the route already names the one project they read, and nothing in
   the query widens it. The instance `GET /audit` alone takes
   **`?project=<slug>`**, narrowing to that project's entries (an unknown slug → **400** naming it, a deactivated
-  project's history still resolves; the slug goes through the `ResolveProject` lookup in `auditapi.Config`).
-  Body `{entries,total,limit,offset,next_offset}` (entry =
+  project's history still resolves; the slug goes through the `ResolveProject` lookup in `auditapi.Config`)
+  — and **`?instance_only=true`**, narrowing to the entries filed under **no** project (account creation and
+  edits, instance-role promote/demote, blocking, password resets — the entries no project's page shows; the
+  SPA's `/system/audit` is its reader). `instance_only` accepts `true`/`false` (anything else → 400), next to a
+  `?project=` → **400** `instance_only and project exclude each other`, and on `GET /p/{project}/audit` (and
+  `/p/{project}/audit/mine`) it is refused by name like `?project=`.
+  Body `{entries,actors,total,limit,offset,next_offset}` — **`actors`** maps the uid of every account that
+  acted in one of the page's entries to its display name (`COALESCE(NULLIF(display_name,''), username)`,
+  `audit.Store.ActorNames`; `{}` for a page without actors, an account since deleted is absent). It names
+  exactly the actors of entries the reader may already read, so it is **no oracle**: a project admin learns
+  the names of those who acted in the project — former and still-waiting members included, whom the
+  project's directory does not list and who used to show as raw uids — and of nobody else, the same people
+  `?user=` resolves among. Entry =
   `{id,project_uid,project,actor_uid,action,target_type,target_uid,details,ip,user_agent,created_at}` —
   `project_uid` and `project` (the slug, joined from `projects`) are `null` for an instance entry; newest-first;
   for edit actions `details.changes` = `{"<field>":{"old":…,"new":…}}` with only the changed fields — see

@@ -24,7 +24,6 @@
     "retry": "Zkusit znovu"
   },
   "footer": {
-    "operator": "Provozuje SDH Veselice",
     "github": "GitHub",
     "githubTitle": "Zobrazit zdrojový kód projektu na GitHubu",
     "jobs": {
@@ -112,7 +111,8 @@
       "tasks": "Úkoly",
       "uploadLinks": "Odkazy, přes které může kdokoli nahrát fotky do vybraných alb",
       "systemProjects": "Zakládat, upravovat a vypínat projekty instance",
-      "systemUsers": "Všechny účty instance, jejich systémová role a členství"
+      "systemUsers": "Všechny účty instance, jejich systémová role a členství",
+      "systemAudit": "Zobrazit auditní log celé instance, i změny účtů mimo projekty"
     },
     "expand": "Rozšířit",
     "review": "Třídění",
@@ -133,7 +133,8 @@
     "tasks": "Úkoly",
     "uploadLinks": "Odkazy pro nahrávání",
     "systemProjects": "Projekty",
-    "systemUsers": "Účty"
+    "systemUsers": "Účty",
+    "systemAudit": "Audit instance"
   },
   "help": {
     "title": "Nápověda",
@@ -706,12 +707,14 @@
     },
     "subject": {
       "title": "Kdo jsem v knihovně",
-      "hint": "Vyber osobu z knihovny, která jsi ty. Díky tomu ti appka umí ukázat fotky, na kterých jsi, a ve vyhledávání funguje person:me.",
+      "hint": "V každém projektu, kde jsi členem, si můžeš vybrat osobu z jeho knihovny, která jsi ty. Díky tomu ti appka v tom projektu umí ukázat fotky, na kterých jsi, a ve vyhledávání funguje person:me.",
       "publishWarning": "Pozor: až osobu vybereš, bude se u všech tvých komentářů zobrazovat její profilová fotka — uvidí ji každý, kdo si fotku otevře. Značka „soukromá osoba“ dnes nic neskrývá.",
-      "pickLabel": "Najít osobu",
       "clear": "Zrušit propojení",
       "unknownPerson": "Propojená osoba už v knihovně není.",
-      "error": "Propojení se nepodařilo uložit. Zkus to prosím znovu."
+      "error": "Propojení se nepodařilo uložit. Zkus to prosím znovu.",
+      "pickLabelIn": "Najít osobu v projektu {{project}}",
+      "clearIn": "Zrušit propojení v projektu {{project}}",
+      "noProjects": "Zatím nejsi schváleným členem žádného projektu, takže tu není koho vybrat."
     },
     "picture": {
       "title": "Moje fotka",
@@ -3042,11 +3045,13 @@
       "interrupted": "Spojení se přerušilo",
       "file_too_large": "Soubor je větší než povolených {{limit}}",
       "file_too_large_unknown": "Soubor je větší, než projekt povoluje",
-      "quota_exceeded": "Projekt dosáhl limitu úložiště"
+      "quota_exceeded": "Tento soubor by překročil limit úložiště projektu (využito {{used}} z {{limit}})",
+      "quota_exceeded_limit": "Tento soubor by překročil limit úložiště projektu ({{limit}})",
+      "quota_exceeded_unknown": "Tento soubor by překročil limit úložiště projektu"
     },
     "toast": {
       "fileTooLarge": "Některé soubory jsou větší, než projekt povoluje, a nenahrály se.",
-      "quotaExceeded": "Projekt dosáhl limitu úložiště, další soubory se nenahrají."
+      "quotaExceeded": "Některé soubory by překročily limit úložiště projektu, a proto se nenahrály."
     },
     "progress": {
       "barLabel": "Celkový průběh nahrávání",
@@ -4007,6 +4012,13 @@
       "body": "V nastavení máš neuložené změny. Když teď odejdeš, přijdeš o ně.",
       "confirm": "Odejít bez uložení",
       "cancel": "Zůstat tady"
+    },
+    "footer": {
+      "title": "Patička",
+      "help": "Jeden řádek obyčejného textu na konci každé stránky projektu — třeba kdo knihovnu provozuje. Prázdné pole patičku bez textu nechá, zůstane jen odkaz na zdrojový kód.",
+      "label": "Text patičky",
+      "placeholder": "Provozuje…",
+      "counter": "{{length}} / {{max}} znaků"
     }
   },
   "members": {
@@ -4129,7 +4141,7 @@
   },
   "audit": {
     "title": "Auditní log",
-    "subtitle": "Trvalý záznam změn v této instanci, od nejnovějších. Filtrujte podle aktéra, akce, entity nebo data.",
+    "subtitle": "Trvalý záznam změn v tomto projektu, od nejnovějších. Filtrujte podle aktéra, akce, entity nebo data.",
     "adminOnly": "Tato stránka je dostupná pouze administrátorům.",
     "loading": "Načítání auditního logu…",
     "error": "Auditní log se nepodařilo načíst.",
@@ -4144,7 +4156,8 @@
       "action": "Akce",
       "target": "Cíl",
       "ip": "IP",
-      "details": "Detaily"
+      "details": "Detaily",
+      "project": "Projekt"
     },
     "filters": {
       "actor": "Aktér",
@@ -4157,7 +4170,10 @@
       "since": "Od",
       "until": "Do",
       "apply": "Filtrovat",
-      "reset": "Zrušit filtry"
+      "reset": "Zrušit filtry",
+      "project": "Projekt",
+      "allProjects": "Všechny projekty i instance",
+      "instanceOnly": "Jen instance (bez projektu)"
     },
     "details": {
       "show": "Zobrazit detaily",
@@ -4184,7 +4200,11 @@
       "anonymous": "Odkaz „{{title}}“",
       "untitledNamed": "Odkaz bez názvu · {{name}}",
       "untitled": "Odkaz bez názvu"
-    }
+    },
+    "instanceTitle": "Auditní log instance",
+    "instanceSubtitle": "Trvalý záznam změn celé instance, od nejnovějších: záznamy všech projektů i ty, které k žádnému projektu nepatří — zakládání a úpravy účtů, systémové role, blokování, obnova hesla.",
+    "maintainerOnly": "Tato stránka je dostupná pouze správci systému.",
+    "instanceEntry": "instance"
   },
   "expand": {
     "title": "Rozšíření sbírky",

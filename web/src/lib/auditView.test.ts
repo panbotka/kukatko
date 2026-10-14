@@ -4,6 +4,7 @@ import { type AuditRecord } from '../services/audit'
 
 import {
   AUDIT_DEFAULTS,
+  AUDIT_INSTANCE_ONLY,
   AUDIT_DETAIL_LINK_LIMIT,
   auditDetailLinks,
   auditTargetHref,
@@ -46,11 +47,35 @@ describe('viewToParams', () => {
     expect(params.until).toBeUndefined()
     expect(params.offset).toBe(100)
   })
+
+  it("turns the instance page's project filter into project or instance_only", () => {
+    expect(viewToParams({ ...AUDIT_DEFAULTS, project: 'rodina' }, 'instance')).toMatchObject({
+      project: 'rodina',
+    })
+    const instanceOnly = viewToParams(
+      { ...AUDIT_DEFAULTS, project: AUDIT_INSTANCE_ONLY },
+      'instance',
+    )
+    expect(instanceOnly.instance_only).toBe(true)
+    expect(instanceOnly.project).toBeUndefined()
+    const everything = viewToParams(AUDIT_DEFAULTS, 'instance')
+    expect(everything.project).toBeUndefined()
+    expect(everything.instance_only).toBeUndefined()
+  })
+
+  it("never sends a project filter from a project's own page, which refuses it", () => {
+    for (const project of ['rodina', AUDIT_INSTANCE_ONLY]) {
+      const params = viewToParams({ ...AUDIT_DEFAULTS, project })
+      expect(params.project).toBeUndefined()
+      expect(params.instance_only).toBeUndefined()
+    }
+  })
 })
 
 describe('pickFilters', () => {
   it('drops the offset from the view', () => {
     expect(pickFilters({ ...AUDIT_DEFAULTS, action: 'photo.update', offset: '100' })).toEqual({
+      project: '',
       user: '',
       action: 'photo.update',
       entity_type: '',

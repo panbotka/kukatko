@@ -261,6 +261,43 @@ func TestWelcomeNeedsASessionAndHidesTheSecret(t *testing.T) {
 	}
 }
 
+// TestFooterIsReadByAnyMemberAndWrittenByTheAdmin: the admin's PUT sets the
+// footer line, any member (a viewer) reads it — and nothing else — from
+// /settings/footer, an anonymous caller is refused, and a later PUT that leaves
+// footer_text out keeps the line.
+func TestFooterIsReadByAnyMemberAndWrittenByTheAdmin(t *testing.T) {
+	env := newEnv(t)
+	admin := env.login(t, "admin", auth.AccountAdmin)
+	resp := env.mustDo(t, admin, http.MethodPut, projectPath+"/settings",
+		[]byte(`{"registration_enabled":false,"registration_secret":"","welcome_markdown":"","footer_text":"Provozuje spolek"}`))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT status = %d, want 200", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
+
+	resp = env.mustDo(t, &http.Client{}, http.MethodGet, projectPath+"/settings/footer", nil)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("anonymous GET /settings/footer status = %d, want 401", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
+
+	viewer := env.login(t, "viewer", auth.AccountViewer)
+	body := decodeBody(t, env.mustDo(t, viewer, http.MethodGet, projectPath+"/settings/footer", nil))
+	if len(body) != 1 || body["footer_text"] != "Provozuje spolek" {
+		t.Fatalf("footer body = %v, want only footer_text", body)
+	}
+
+	resp = env.mustDo(t, admin, http.MethodPut, projectPath+"/settings", openRegistration)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT without the footer status = %d, want 200", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
+	body = decodeBody(t, env.mustDo(t, viewer, http.MethodGet, projectPath+"/settings/footer", nil))
+	if body["footer_text"] != "Provozuje spolek" {
+		t.Fatalf("footer after a PUT without it = %v, want the line kept", body)
+	}
+}
+
 // TestFullRecordIsAdminOnly: everyone below an administrator is refused both the
 // full record and the update; an anonymous caller gets 401, a signed-in
 // non-admin 403. A maintainer sits above admin on the ladder, so it may.

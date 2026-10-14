@@ -77,11 +77,12 @@ describe('adminItems', () => {
       '/system',
       '/system/projects',
       '/system/users',
+      '/system/audit',
       '/members',
       '/audit',
       '/settings',
     ])
-    for (const route of ['/system/projects', '/system/users']) {
+    for (const route of ['/system/projects', '/system/users', '/system/audit']) {
       expect(projectPathFor('v', route)).toBe(route)
     }
   })

@@ -1,8 +1,10 @@
 import { type AuditListParams, type AuditRecord } from '../services/audit'
 
 /**
- * URL-encoded view state for the audit-log page: the five filters, a date range,
- * and the pagination `offset`. Every value is a string so the whole view
+ * URL-encoded view state for the audit-log page: the filters, a date range,
+ * and the pagination `offset`. `project` is the instance page's project filter
+ * — `''` for everything, {@link AUDIT_INSTANCE_ONLY} for the entries filed under
+ * no project, a slug otherwise; a project's own page never sends it. Every value is a string so the whole view
  * round-trips through the query string and Back/Forward restores it exactly —
  * the project's "Zpět vždy funguje" convention. `since`/`until` hold the raw
  * `YYYY-MM-DD` value from the date inputs; {@link viewToParams} widens them to
@@ -13,6 +15,7 @@ import { type AuditListParams, type AuditRecord } from '../services/audit'
  */
 // eslint-disable-next-line @typescript-eslint/consistent-type-definitions -- see above
 export type AuditView = {
+  project: string
   user: string
   action: string
   entity_type: string
@@ -28,6 +31,7 @@ export type AuditView = {
  * omitted from the URL (keeping it shareable).
  */
 export const AUDIT_DEFAULTS: AuditView = {
+  project: '',
   user: '',
   action: '',
   entity_type: '',
@@ -36,6 +40,13 @@ export const AUDIT_DEFAULTS: AuditView = {
   until: '',
   offset: '0',
 }
+
+/**
+ * The project filter's value for "the instance only": the entries filed under
+ * no project. A hyphen, because no project's slug can start with one, so the
+ * value can never name a project.
+ */
+export const AUDIT_INSTANCE_ONLY = '-'
 
 /** Page size for the audit listing (the endpoint's own default). */
 export const AUDIT_PAGE_SIZE = 100
@@ -46,6 +57,7 @@ export type AuditFilters = Omit<AuditView, 'offset'>
 /** Extracts just the filter fields from a full view (drops `offset`). */
 export function pickFilters(view: AuditView): AuditFilters {
   return {
+    project: view.project,
     user: view.user,
     action: view.action,
     entity_type: view.entity_type,
@@ -69,9 +81,23 @@ function dayBoundary(date: string, edge: 'start' | 'end'): string | undefined {
   return `${date}T${edge === 'start' ? '00:00:00' : '23:59:59'}Z`
 }
 
-/** Maps the URL view onto the audit service's request parameters. */
-export function viewToParams(view: AuditView): AuditListParams {
+/**
+ * Maps the URL view onto the audit service's request parameters. The project
+ * filter becomes `instance_only` or `project`; `scope: 'project'` drops it,
+ * because a project's own listing refuses both by name.
+ */
+export function viewToParams(
+  view: AuditView,
+  scope: 'project' | 'instance' = 'project',
+): AuditListParams {
+  const project =
+    scope === 'project' || view.project === ''
+      ? {}
+      : view.project === AUDIT_INSTANCE_ONLY
+        ? { instance_only: true }
+        : { project: view.project }
   return {
+    ...project,
     user: view.user,
     action: view.action,
     entity_type: view.entity_type,

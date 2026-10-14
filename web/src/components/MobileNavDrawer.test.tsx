@@ -349,6 +349,7 @@ describe('MobileNavDrawer', () => {
       '/system',
       '/system/projects',
       '/system/users',
+      '/system/audit',
       '/p/v/members',
       '/p/v/audit',
       '/p/v/settings',

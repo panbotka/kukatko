@@ -17,6 +17,7 @@ import { Icon } from '../components/Icon'
 import { Markdown } from '../components/Markdown'
 import { NarrowPage } from '../components/NarrowPage'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { announceFooterChanged } from '../hooks/useProjectFooter'
 import { useLeaveGuard } from '../hooks/useLeaveGuard'
 import { formatBytes, formatCount, formatDateTime } from '../lib/format'
 import { generateRegistrationSecret } from '../lib/registrationSecret'
@@ -26,16 +27,18 @@ import { ApiError } from '../services/auth'
 import {
   fetchProjectSettings,
   fetchProjectUsage,
+  MAX_FOOTER_LENGTH,
   type ProjectSettings,
   type ProjectUsage,
   updateProjectSettings,
 } from '../services/settings'
 
-/** The three values the form edits, i.e. everything `PUT /settings` replaces. */
+/** The values the form edits, i.e. everything `PUT /settings` replaces. */
 interface Draft {
   registrationEnabled: boolean
   registrationSecret: string
   welcomeMarkdown: string
+  footerText: string
 }
 
 /** Fetch lifecycle of the settings record behind the form. */
@@ -185,28 +188,33 @@ function toDraft(settings: ProjectSettings): Draft {
     registrationEnabled: settings.registration_enabled,
     registrationSecret: settings.registration_secret,
     welcomeMarkdown: settings.welcome_markdown,
+    footerText: settings.footer_text,
   }
 }
 
 /**
- * Whether the draft differs from what is stored. The secret is compared
- * trimmed, because the backend stores it trimmed: typing a trailing space and
- * deleting it again must not leave the page claiming unsaved work forever.
+ * Whether the draft differs from what is stored. The secret and the footer line
+ * are compared trimmed, because the backend stores them trimmed: typing a
+ * trailing space and deleting it again must not leave the page claiming unsaved
+ * work forever.
  */
 function isDirty(draft: Draft, saved: ProjectSettings): boolean {
   return (
     draft.registrationEnabled !== saved.registration_enabled ||
     draft.registrationSecret.trim() !== saved.registration_secret ||
-    draft.welcomeMarkdown !== saved.welcome_markdown
+    draft.welcomeMarkdown !== saved.welcome_markdown ||
+    draft.footerText.trim() !== saved.footer_text
   )
 }
 
 /**
- * The project admin's screen for the project's three settings
+ * The project admin's screen for the project's settings
  * (`GET`/`PUT /api/v1/p/<slug>/settings`): whether self-service registration
  * into the project is open, the shared secret its registration page
- * (`/p/<slug>/register`, linked here to pass on) asks a newcomer for, and the
- * Markdown greeting shown to a member the first time they sign in. Below them a
+ * (`/p/<slug>/register`, linked here to pass on) asks a newcomer for, the
+ * Markdown greeting shown to a member the first time they sign in, and the
+ * plain-text footer line every page of the project ends with (saved, it
+ * replaces the footer on screen at once). Below them a
  * read-only "usage and limits" block, and — for the system administrator, who
  * alone publishes it — the project's announcement banner.
  *
@@ -242,6 +250,7 @@ export function SettingsPage() {
     registrationEnabled: false,
     registrationSecret: '',
     welcomeMarkdown: '',
+    footerText: '',
   })
   const [save, setSave] = useState<SaveState>({ status: 'idle' })
   const [secretRevealed, setSecretRevealed] = useState(true)
@@ -309,10 +318,15 @@ export function SettingsPage() {
         registration_enabled: draft.registrationEnabled,
         registration_secret: draft.registrationSecret,
         welcome_markdown: draft.welcomeMarkdown,
+        footer_text: draft.footerText,
       })
       setLoad({ status: 'ready', saved })
       setDraft(toDraft(saved))
       setSave({ status: 'saved' })
+      // The footer under this very form is the project's: it changes with it.
+      if (slug !== null) {
+        announceFooterChanged(slug, saved.footer_text)
+      }
     } catch (error: unknown) {
       // The server's own wording, not a generic apology: a rejection it made on
       // grounds this form does not know about is exactly what needs repeating.
@@ -465,6 +479,35 @@ export function SettingsPage() {
                 </div>
               </Col>
             </Row>
+          </Card.Body>
+        </Card>
+
+        <Card className="mb-4">
+          <Card.Body>
+            <h2 className="kk-section-title mb-1">{t('settings.footer.title')}</h2>
+            <p className="text-secondary">{t('settings.footer.help')}</p>
+            <Form.Group controlId="settings-footer-text">
+              <Form.Label>{t('settings.footer.label')}</Form.Label>
+              <Form.Control
+                type="text"
+                value={draft.footerText}
+                maxLength={MAX_FOOTER_LENGTH}
+                placeholder={t('settings.footer.placeholder')}
+                aria-describedby="settings-footer-counter"
+                onChange={(event) => {
+                  // A text input is one line already: the browser strips a
+                  // pasted line break, which the backend would refuse.
+                  const value = event.currentTarget.value
+                  setDraft((prev) => ({ ...prev, footerText: value }))
+                }}
+              />
+              <Form.Text id="settings-footer-counter" className="d-block text-end">
+                {t('settings.footer.counter', {
+                  length: draft.footerText.length,
+                  max: MAX_FOOTER_LENGTH,
+                })}
+              </Form.Text>
+            </Form.Group>
           </Card.Body>
         </Card>
 

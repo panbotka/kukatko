@@ -4542,13 +4542,17 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   key is gone, PK `project_id` (FK `projects`, the seeded row became the bootstrap project's; another project
   without a row reads the defaults) and every method takes `projectUID` right after `ctx` (`internal/settingsapi`
   passes the request's project, `internal/auth`'s registration the project the registration names, the
-  upload-link page the link's).
+  upload-link page the link's). **Migration 0118** adds `footer_text TEXT NOT NULL DEFAULT ''` — the
+  plain-text line every page of the project ends with — and backfills the bootstrap project with
+  "Provozuje SDH Veselice" (only an empty value, so a re-run never overwrites an admin's line).
   `Store` = `NewStore(pool)`: `Get(ctx,projectUID)` (→ the
   zero-value defaults when the row is missing rather than an error, so a hand-deleted row cannot block the
-  sign-in screen), `Set(ctx,projectUID,Update{RegistrationEnabled,RegistrationSecret,WelcomeMarkdown},actorUID,entry)`
-  (upsert of **all three at once** — the flag and the secret guard each other, so they are never saved apart;
-  enabling registration with a blank/whitespace-only secret → `ErrSecretRequired` and nothing is written;
-  the secret is stored trimmed, the Markdown verbatim); the update **writes the audit**
+  sign-in screen), `Set(ctx,projectUID,Update{RegistrationEnabled,RegistrationSecret,WelcomeMarkdown,FooterText},actorUID,entry)`
+  (upsert of **the three registration values at once** — the flag and the secret guard each other, so they
+  are never saved apart; enabling registration with a blank/whitespace-only secret → `ErrSecretRequired` and
+  nothing is written; the secret is stored trimmed, the Markdown verbatim; `FooterText *string` is optional —
+  nil keeps the stored line (`COALESCE($6, footer_text)`), a value is stored trimmed and refused with
+  `ErrFooterMultiline` (a line break) or `ErrFooterTooLong` (over `MaxFooterRunes` = 200 characters)); the update **writes the audit**
   (`settings.update`) in the **same transaction** as the change (mirrors `internal/announcement`).
   **The secret is stored readable, not hashed** — an administrator has to read it back to tell people what
   it is — which is what makes the full record admin-only above. The table is classified **preserved** in
@@ -4564,12 +4568,14 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   registration page needs before there is an account — and **only while registration is open**: a closed
   project is the same 404 `project not found` an unknown slug gets from the guard, so the route is no slug
   oracle (SEC-025); `GET /settings/welcome` behind `RequireAuth` → `{welcome_markdown}` only (the project's;
-  `users.welcome_seen_at` stays per account, so a second project does not greet again); `GET /settings` and
-  `PUT /settings` behind `RequireAdmin` → the full record, secret included; the PUT body
-  `{registration_enabled,registration_secret,welcome_markdown}` with `DisallowUnknownFields` + a 64 KiB limit
-  replaces all three, `ErrSecretRequired` → 400, `updated_at` RFC3339; the audit details carry the flag and
+  `users.welcome_seen_at` stays per account, so a second project does not greet again); `GET /settings/footer`
+  behind `RequireAuth` → `{footer_text}` only (the project's footer line, `footerResponse`); `GET /settings` and
+  `PUT /settings` behind `RequireAdmin` → the full record, secret and footer included; the PUT body
+  `{registration_enabled,registration_secret,welcome_markdown,footer_text?}` with `DisallowUnknownFields` + a
+  64 KiB limit replaces the three registration values (and the footer line when sent; left out, it stays),
+  `ErrSecretRequired`/`ErrFooterTooLong`/`ErrFooterMultiline` → 400, `updated_at` RFC3339; the audit details carry the flag and
   *whether* a secret and a greeting are set, **never the secret itself** — the trail is a permanent record
-  that outlives the secret it would copy; `GET /settings/usage` behind `RequireAdmin` →
+  that outlives the secret it would copy — plus the footer line when the update writes it; `GET /settings/usage` behind `RequireAdmin` →
   `{photos,originals_bytes,max_file_bytes,max_total_bytes}`, the usage beside the admitted project's two
   limits (`null` = none), read-only. `RegisterInstanceRoutes` mounts the **instance's** unguarded
   `GET /settings/public` → `{passkeys_enabled,mail_enabled}` only — the two facts the sign-in screen needs
@@ -4735,10 +4741,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `TestKnownActionsCoverEveryConstant` parses `audit.go` itself so a new constant cannot be added without
   landing in the set; `Store` = `NewStore(pool)` with `Record(ctx,Entry)`
   (its own connection) and **filtered reads** `List(ctx,Filter)`/`Count(ctx,Filter)` (`Filter{ProjectUID,
-  ActorUID,TargetType,TargetUID,Action,Since,Until,Limit,Offset}`, newest-first, limit cap 500/default 100;
+  InstanceOnly,ActorUID,TargetType,TargetUID,Action,Since,Until,Limit,Offset}` — `InstanceOnly` = the entries
+  filed under no project, `audit_log.project_id IS NULL` —, newest-first, limit cap 500/default 100;
   `person.go`: `ProjectPerson(ctx, projectUID, ref)` resolves a uid or username among the project's people —
   its members and the accounts that appear as actors in its trail — else `ErrNoProjectPerson`, the project
-  admin's `?user=` filter;
+  admin's `?user=` filter; `ActorNames(ctx, uids)` → uid → display name (or username) of the accounts that
+  still exist, the `actors` map every listing page carries for the actors of its own entries;
   `List` joins `projects` so a `Record` carries `ProjectUID` and `Project` = the slug, both nil for an
   instance entry) for the admin listing; **projects**: `Entry.ProjectUID` files an entry under a project
   (`audit_log.project_id`); `ProjectScoped(action)` is every known action but the hand-kept
@@ -4766,12 +4774,17 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (HTTP API over the audit trail: `NewAPI(Config{Store,ResolveUser,ResolveProjectUser,ResolveProject,
   RequireMaintainer,RequireAdmin,RequireAuth,RequireSignedIn})`; `RegisterRoutes` (instance, mounted once) mounts `GET /audit`
   behind `RequireMaintainer` (with `project=<slug>` → `Filter.ProjectUID` through `ResolveProject`, unknown →
-  400) and `GET /audit/mine` behind `RequireSignedIn`; `RegisterProjectRoutes` (the `projectAPI.audit` group,
+  400, and `instance_only=true` → `Filter.InstanceOnly` (`parseInstanceOnly`: `true`/`false` only, next to a
+  `project` → 400)) and `GET /audit/mine` behind `RequireSignedIn`; `RegisterProjectRoutes` (the `projectAPI.audit` group,
   under `/p/{project}` only) mounts the same two behind `RequireAdmin`/`RequireAuth`,
-  wrapped in `inProject`, which refuses a `project` parameter (on `/audit/mine` `ownOnly` has already dropped it) and pins `Filter.ProjectUID` to
+  wrapped in `inProject`, which refuses a `project` (on `/audit/mine` `ownOnly` has already dropped it) and an
+  `instance_only` parameter by name and pins `Filter.ProjectUID` to
   `auth.ProjectUIDFromContext`; `parseFilter` from the query `user`/`entity_type`/`entity_uid`/
   `action`/`via`/`decision`/`since`/`until` (RFC3339)/`limit`/`offset` → `audit.Filter` (an invalid
-  time/number/`via`/`decision` → 400), returns `{entries,total,limit,offset,next_offset}` newest-first;
+  time/number/`via`/`decision` → 400), returns `{entries,actors,total,limit,offset,next_offset}` newest-first —
+  `actors` (`respond` → `audit.Store.ActorNames` over `actorUIDs(entries)`) names every account that acted in
+  the page, so a project admin reads a former or waiting member by name without the map ever naming anybody
+  who did not act in an entry the reader may already see;
   **every filter is checked and the parameter set is closed**, because an ignored typo answers 200 + an empty
   list, which reads as "this person did nothing": a key outside `recognisedParams` → 400 naming it
   (`rejectUnknownParams`, sorted so the message is deterministic), an `action` outside `audit.KnownAction` → 400

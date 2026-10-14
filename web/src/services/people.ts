@@ -1,6 +1,6 @@
 import { ApiError } from './auth'
 import { buildPhotoQuery, type Photo, type PhotoListParams, type PhotoListResponse } from './photos'
-import { apiPath } from './api'
+import { apiPath, projectApiPath } from './api'
 
 /**
  * People/face client for the subject catalogue, on-photo face assignment, the
@@ -31,7 +31,12 @@ async function readErrorMessage(res: Response): Promise<string> {
 
 /** Issues a GET and parses the JSON body, throwing ApiError on a non-OK status. */
 async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(apiPath(path), {
+  return getJSONAt<T>(apiPath(path), signal)
+}
+
+/** {@link getJSON} at a full URL — a project named by the caller rather than the current one. */
+async function getJSONAt<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(url, {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -186,9 +191,20 @@ export interface SubjectInput {
   death_year: number | null
 }
 
-/** Lists every subject with its photo and marker counts, ordered by name. */
-export async function fetchSubjects(signal?: AbortSignal): Promise<SubjectCount[]> {
-  const body = await getJSON<SubjectsResponse>('/subjects', signal)
+/**
+ * Lists every subject with its photo and marker counts, ordered by name — of
+ * the current project, or of the project `project` (a slug) when one is named:
+ * an instance page (the account's "who am I" rows) asks about each project the
+ * account belongs to, never only whichever happens to be current.
+ */
+export async function fetchSubjects(
+  signal?: AbortSignal,
+  project?: string,
+): Promise<SubjectCount[]> {
+  const body =
+    project === undefined
+      ? await getJSON<SubjectsResponse>('/subjects', signal)
+      : await getJSONAt<SubjectsResponse>(projectApiPath(project, '/subjects'), signal)
   return body.subjects
 }
 

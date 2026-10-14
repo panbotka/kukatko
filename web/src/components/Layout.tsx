@@ -12,9 +12,10 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { useAuth } from '../auth/AuthContext'
 import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { useIsNavDrawerViewport } from '../hooks/useIsNarrowViewport'
+import { useProjectFooter } from '../hooks/useProjectFooter'
 import { LIBRARY_PATH } from '../lib/libraryView'
 import { bareVersion } from '../lib/version'
-import { useNeutralChrome, useProjectPath } from '../project/ProjectContext'
+import { useNeutralChrome, useProjectPath, useProjectSlug } from '../project/ProjectContext'
 import { stripProjectPrefix } from '../project/paths'
 import { useWaitingOnMe } from '../tasks/TaskSummaryContext'
 
@@ -158,6 +159,10 @@ export function Layout({ children }: { children?: ReactNode }) {
   const projectPath = useProjectPath()
   // No project's chrome on a page that belongs to none (see above).
   const neutral = useNeutralChrome()
+  // The project's own footer line; none in the neutral shell, which belongs to
+  // no project, and none signed out.
+  const slug = useProjectSlug()
+  const footerText = useProjectFooter(neutral || user === null ? null : slug)
   const drawerNav = useIsNavDrawerViewport()
   // The global search palette, opened by the top bar's magnifier on `lg`+ and by
   // the tab bar's search tab below it. Plain state, never the URL: opening and
@@ -536,7 +541,7 @@ export function Layout({ children }: { children?: ReactNode }) {
           <DeactivatedProjectBanner />
           {children ?? <Outlet />}
         </Container>
-        <Footer>
+        <Footer text={footerText}>
           <JobQueueStatus />
         </Footer>
       </div>

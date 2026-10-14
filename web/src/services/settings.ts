@@ -1,5 +1,5 @@
 import { ApiError } from './auth'
-import { apiPath, instancePath } from './api'
+import { apiPath, instancePath, projectApiPath } from './api'
 
 /** Extracts the backend error message from a non-OK response, if present. */
 async function readErrorMessage(res: Response): Promise<string> {
@@ -113,6 +113,8 @@ export interface ProjectSettings {
   registration_enabled: boolean
   registration_secret: string
   welcome_markdown: string
+  /** The plain-text line every page of the project ends with; `''` for none. */
+  footer_text: string
   /** RFC 3339 timestamp of the last save; the seed time until the first one. */
   updated_at: string
   /** UID of the administrator who saved last; absent when nobody has. */
@@ -120,15 +122,21 @@ export interface ProjectSettings {
 }
 
 /**
- * The three values `PUT /api/v1/p/<slug>/settings` replaces. All three travel
+ * The values `PUT /api/v1/p/<slug>/settings` replaces. The first three travel
  * together because the backend writes them together: the registration flag and
- * the secret guard each other, so a partial update has no meaning.
+ * the secret guard each other, so a partial update has no meaning. The footer
+ * line is optional — left out, the stored one stays — and the backend refuses
+ * one with a line break or over {@link MAX_FOOTER_LENGTH} characters (400).
  */
 export interface ProjectSettingsUpdate {
   registration_enabled: boolean
   registration_secret: string
   welcome_markdown: string
+  footer_text?: string
 }
+
+/** The longest footer line the backend stores (`settings.MaxFooterRunes`). */
+export const MAX_FOOTER_LENGTH = 200
 
 /**
  * Reads the current project's full settings from
@@ -153,8 +161,8 @@ export async function fetchProjectSettings(signal?: AbortSignal): Promise<Projec
 }
 
 /**
- * Replaces all three of the current project's settings via
- * `PUT /api/v1/p/<slug>/settings` and returns the persisted record.
+ * Replaces the current project's settings via `PUT /api/v1/p/<slug>/settings`
+ * and returns the persisted record.
  *
  * The backend refuses to enable registration while the secret is blank (400,
  * `settings.ErrSecretRequired`). The message of the resulting {@link ApiError}
@@ -162,7 +170,7 @@ export async function fetchProjectSettings(signal?: AbortSignal): Promise<Projec
  * browser refuses that combination first, so reaching this is the belt to the
  * client-side braces.
  *
- * @param update the new values for all three settings.
+ * @param update the new values; `footer_text` only when it is to change.
  * @param signal optional AbortSignal to cancel the request (e.g. on unmount).
  * @throws ApiError when the response status is not 2xx.
  */
@@ -215,6 +223,36 @@ export async function fetchWelcomeMarkdown(signal?: AbortSignal): Promise<string
     throw new ApiError(res.status, await readErrorMessage(res))
   }
   return ((await res.json()) as WelcomeSettings).welcome_markdown
+}
+
+/** The current project's footer line as any member reads it (`settingsapi.footerResponse`). */
+export interface FooterSettings {
+  footer_text: string
+}
+
+/**
+ * Reads the footer line of the project `slug` from
+ * `GET /api/v1/p/<slug>/settings/footer` — any member may. A project with no
+ * line answers 200 with an empty string.
+ *
+ * It names the project rather than taking the current one: the shell asks for
+ * the footer of the project the page belongs to, and the answer must never be
+ * filed under another one that became current meanwhile.
+ *
+ * @param slug the project whose line is read.
+ * @param signal optional AbortSignal to cancel the request (e.g. on unmount).
+ * @throws ApiError when the response status is not 2xx.
+ */
+export async function fetchFooterText(slug: string, signal?: AbortSignal): Promise<string> {
+  const res = await fetch(projectApiPath(slug, '/settings/footer'), {
+    method: 'GET',
+    credentials: 'same-origin',
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return ((await res.json()) as FooterSettings).footer_text
 }
 
 /**

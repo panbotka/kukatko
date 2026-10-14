@@ -5,7 +5,7 @@ import { RequireAuth, RequireImport, RequireRole } from './auth/ProtectedRoute'
 import { CapabilitiesProvider } from './capabilities/CapabilitiesProvider'
 import { Layout } from './components/Layout'
 import { MorphProvider } from './components/morph/MorphProvider'
-import { MEMBERS_PATH } from './components/navItems'
+import { MEMBERS_PATH, SYSTEM_AUDIT_PATH } from './components/navItems'
 import { PwaStatus } from './components/pwa/PwaStatus'
 import { ToastProvider } from './components/toast/ToastProvider'
 import { ACTIVITY_PATH } from './lib/activityView'
@@ -282,6 +282,10 @@ export function AppRoutes() {
             <Route path="/system/projects" element={<SystemProjectsPage />} />
             <Route path="/system/projects/:slug" element={<SystemProjectPage />} />
             <Route path="/system/users" element={<SystemUsersPage />} />
+            {/* The whole instance's trail: every project's entries and the
+                instance's own (accounts, instance roles), which no project's
+                audit page shows. */}
+            <Route path={SYSTEM_AUDIT_PATH} element={<AuditPage scope="instance" />} />
           </Route>
           {/* Everything else is either an address from before projects existed
               — forwarded into the entry project — or simply unknown. */}

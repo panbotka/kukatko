@@ -41,6 +41,7 @@ const editorAuth = {
   login: vi.fn(),
   logout: vi.fn(),
   refresh: vi.fn(),
+  projects: [],
 } as unknown as AuthContextValue
 
 function renderAccount() {

@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import type { ProjectMembership } from '../services/auth'
-import type { AdminProject } from '../services/projects'
+import { type AdminProject, ProjectApiError } from '../services/projects'
 
 import { SystemProjectPage } from './SystemProjectPage'
 
@@ -199,6 +199,79 @@ describe('SystemProjectPage', () => {
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: 'Přidat mě jako člena' })).not.toBeInTheDocument()
     })
+  })
+
+  it('re-reads the session after a rename, so the switcher and the title follow', async () => {
+    const user = userEvent.setup()
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    updateMock.mockResolvedValue(project({ name: 'Rodina Novákových' }))
+    renderPage([], refresh)
+
+    const name = await screen.findByLabelText('Název')
+    await user.clear(name)
+    await user.type(name, 'Rodina Novákových')
+    await user.click(screen.getByRole('button', { name: 'Uložit změny' }))
+
+    expect(await screen.findByText('Změny jsou uložené.')).toBeInTheDocument()
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves the session alone when only a limit changed', async () => {
+    const user = userEvent.setup()
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    updateMock.mockResolvedValue(project({ max_file_bytes: null }))
+    renderPage([], refresh)
+
+    await user.clear(await screen.findByLabelText('Největší soubor'))
+    await user.click(screen.getByRole('button', { name: 'Uložit změny' }))
+
+    expect(await screen.findByText('Změny jsou uložené.')).toBeInTheDocument()
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('re-reads the session after (de)activating the project', async () => {
+    const user = userEvent.setup()
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    updateMock.mockResolvedValue(project({ active: false }))
+    renderPage([], refresh)
+
+    await user.click(await screen.findByLabelText('Projekt je aktivní'))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Vypnout projekt' }))
+
+    await waitFor(() => {
+      expect(refresh).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('takes "already a member" from a stale session as joined, never as a failure', async () => {
+    const user = userEvent.setup()
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    addMock.mockRejectedValue(new ProjectApiError(409, 'already_member', ''))
+    renderPage([], refresh)
+
+    await user.click(await screen.findByRole('button', { name: 'Přidat mě jako člena' }))
+
+    await waitFor(() => {
+      expect(refresh).toHaveBeenCalled()
+    })
+    expect(screen.queryByText('Členství se nepodařilo přidat.')).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Přidat mě jako člena' })).not.toBeInTheDocument()
+    })
+  })
+
+  it('still reports any other refusal of "add me"', async () => {
+    const user = userEvent.setup()
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    addMock.mockRejectedValue(new ProjectApiError(500, 'internal', ''))
+    renderPage([], refresh)
+
+    await user.click(await screen.findByRole('button', { name: 'Přidat mě jako člena' }))
+
+    expect(await screen.findByText('Členství se nepodařilo přidat.')).toBeInTheDocument()
+    expect(refresh).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Přidat mě jako člena' })).toBeEnabled()
   })
 
   it('hides "add me" from a member of the project', async () => {

@@ -43,7 +43,7 @@ function response(
   total = entries.length,
   offset = 0,
 ): AuditListResponse {
-  return { entries, total, limit: 50, offset, next_offset: nextOffset }
+  return { entries, total, limit: 50, offset, next_offset: nextOffset, actors: {} }
 }
 
 /** Surfaces the current location so the URL-kept page offset can be asserted. */

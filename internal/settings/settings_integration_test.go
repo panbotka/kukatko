@@ -321,3 +321,104 @@ func TestSettingsArePerProject(t *testing.T) {
 		t.Fatalf("bootstrap settings after the other project's write = %+v", bootstrap)
 	}
 }
+
+// TestFooterRoundTrip: a sent footer line is stored trimmed, an update that
+// leaves it out keeps it (nil = untouched), and an empty one clears it — while
+// the registration values beside it are replaced every time.
+func TestFooterRoundTrip(t *testing.T) {
+	store, users, _ := newStore(t)
+	ctx := context.Background()
+	admin := makeAdmin(t, users, "se_footer", "footer")
+
+	saved, err := store.Set(ctx, project.BootstrapUID, settings.Update{
+		WelcomeMarkdown: "Ahoj", FooterText: new("  Provozuje spolek  "),
+	}, admin, updateEntry(admin))
+	if err != nil {
+		t.Fatalf("Set with footer: %v", err)
+	}
+	if saved.FooterText != "Provozuje spolek" {
+		t.Fatalf("saved footer = %q, want the trimmed line", saved.FooterText)
+	}
+
+	kept, err := store.Set(ctx, project.BootstrapUID, settings.Update{WelcomeMarkdown: "Nazdar"},
+		admin, updateEntry(admin))
+	if err != nil {
+		t.Fatalf("Set without footer: %v", err)
+	}
+	if kept.FooterText != "Provozuje spolek" || kept.WelcomeMarkdown != "Nazdar" {
+		t.Fatalf("after an update without the footer = %+v, want the line kept", kept)
+	}
+
+	cleared, err := store.Set(ctx, project.BootstrapUID, settings.Update{FooterText: new("")},
+		admin, updateEntry(admin))
+	if err != nil {
+		t.Fatalf("Set clearing the footer: %v", err)
+	}
+	if cleared.FooterText != "" {
+		t.Fatalf("cleared footer = %q, want none", cleared.FooterText)
+	}
+
+	if _, err := store.Set(ctx, project.BootstrapUID, settings.Update{FooterText: new("a\nb")},
+		admin, updateEntry(admin)); !errors.Is(err, settings.ErrFooterMultiline) {
+		t.Fatalf("Set with a two-line footer error = %v, want ErrFooterMultiline", err)
+	}
+}
+
+// footerMigrationPath is the migration that backfills the bootstrap project's
+// footer line, re-run by TestFooterMigrationBackfillsOnlyTheBootstrap.
+const footerMigrationPath = "../database/migrations/0118_instance_settings_footer.sql"
+
+// TestFooterMigrationBackfillsOnlyTheBootstrap re-runs migration 0118 over rows
+// of its own: the bootstrap project's empty line becomes the sentence its pages
+// always showed, another project's stays empty, and a line an admin wrote is
+// never overwritten by a re-run.
+func TestFooterMigrationBackfillsOnlyTheBootstrap(t *testing.T) {
+	store, users, db := newStore(t)
+	ctx := context.Background()
+	admin := makeAdmin(t, users, "se_backfill", "backfill")
+	const other = "pjsettingsfooterproject001"
+	if _, err := db.Pool().Exec(ctx,
+		"INSERT INTO projects (uid, slug, name) VALUES ($1, 'settings-footer', 'Other')", other); err != nil {
+		t.Fatalf("creating the second project: %v", err)
+	}
+	for _, uid := range []string{project.BootstrapUID, other} {
+		if _, err := store.Set(ctx, uid, settings.Update{FooterText: new("")}, admin, updateEntry(admin)); err != nil {
+			t.Fatalf("seeding %s: %v", uid, err)
+		}
+	}
+	sql, err := os.ReadFile(footerMigrationPath)
+	if err != nil {
+		t.Fatalf("reading %s: %v", footerMigrationPath, err)
+	}
+	runMigration := func() {
+		t.Helper()
+		if _, err := db.Pool().Exec(ctx, string(sql)); err != nil {
+			t.Fatalf("applying %s: %v", footerMigrationPath, err)
+		}
+	}
+	footerOf := func(uid string) string {
+		t.Helper()
+		got, err := store.Get(ctx, uid)
+		if err != nil {
+			t.Fatalf("Get %s: %v", uid, err)
+		}
+		return got.FooterText
+	}
+
+	runMigration()
+	if got := footerOf(project.BootstrapUID); got != "Provozuje SDH Veselice" {
+		t.Fatalf("bootstrap footer after the migration = %q, want the old sentence", got)
+	}
+	if got := footerOf(other); got != "" {
+		t.Fatalf("other project's footer after the migration = %q, want none", got)
+	}
+
+	if _, err := store.Set(ctx, project.BootstrapUID, settings.Update{FooterText: new("Vlastní text")},
+		admin, updateEntry(admin)); err != nil {
+		t.Fatalf("writing a custom footer: %v", err)
+	}
+	runMigration()
+	if got := footerOf(project.BootstrapUID); got != "Vlastní text" {
+		t.Fatalf("bootstrap footer after a re-run = %q, want the admin's line kept", got)
+	}
+}

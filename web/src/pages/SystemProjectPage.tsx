@@ -24,6 +24,7 @@ import {
   type AdminProject,
   addProjectMember,
   fetchAdminProjects,
+  ProjectApiError,
   updateProject,
   type UpdateProjectBody,
 } from '../services/projects'
@@ -208,6 +209,11 @@ export function SystemProjectPage() {
     try {
       adopt(await updateProject(current.uid, body))
       setNotice({ variant: 'success', text: t('systemProject.saved') })
+      // The switcher and the tab title read the project's name off the
+      // session's memberships: a rename shows there only once it is re-read.
+      if (body.name !== undefined) {
+        await refresh()
+      }
     } catch {
       setNotice({ variant: 'danger', text: t('systemProject.saveFailed') })
     } finally {
@@ -222,6 +228,9 @@ export function SystemProjectPage() {
       const next = await updateProject(current.uid, { active })
       // Only the flag: whatever is being typed into the form stays.
       setLoad({ status: 'ready', project: next })
+      // The memberships carry `active` too: the switcher and the project's own
+      // pages tell a deactivated project apart by it.
+      await refresh()
     } catch {
       setNotice({ variant: 'danger', text: t('systemProject.statusFailed') })
     } finally {
@@ -238,12 +247,21 @@ export function SystemProjectPage() {
     setNotice(null)
     try {
       await addProjectMember(current.uid, user.uid, 'admin')
+    } catch (error: unknown) {
+      // Already a member is what the button was for: the session that offered
+      // it was only older than the membership (another tab, the creator's own
+      // admin seat), so it is re-read below like a fresh join.
+      if (!(error instanceof ProjectApiError && error.code === 'already_member')) {
+        setNotice({ variant: 'danger', text: t('systemProject.addMeFailed') })
+        setAdding(false)
+        return
+      }
+    }
+    try {
       setJoined(true)
       setNotice({ variant: 'success', text: t('systemProject.alreadyMember') })
       // The switcher and the chooser read the memberships from the session.
       await refresh()
-    } catch {
-      setNotice({ variant: 'danger', text: t('systemProject.addMeFailed') })
     } finally {
       setAdding(false)
     }

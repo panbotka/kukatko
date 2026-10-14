@@ -11,6 +11,7 @@ interface FailedUpload {
   error?: string
   errorCode?: string
   errorLimitBytes?: number
+  errorUsedBytes?: number
   interrupted?: boolean
 }
 
@@ -19,8 +20,8 @@ interface FailedUpload {
  * reason is the file itself: its bytes are not a photo or a video
  * (`not_media`), its type is one Kukátko does not take (`unsupported_type`),
  * or it is an image whose data is cut short or corrupt (`damaged`) — and the
- * project limits: the file is over the per-file cap (`file_too_large`), or the
- * project's storage is full (`quota_exceeded`).
+ * project limits: the file is over the per-file cap (`file_too_large`), or it
+ * would carry the project's stored originals past the quota (`quota_exceeded`).
  * Sending the same file again would be refused the same way, so no retry is
  * offered for them.
  */
@@ -46,8 +47,10 @@ export function canRetryUpload(item: FailedUpload): boolean {
  * The failure line shown under a file: the translated sentence for a refusal
  * the backend names with a code, the server's own message otherwise (nothing
  * better is known about it), `undefined` when there is nothing to say. A file
- * over the size cap names the cap when the server sent it; the full storage
- * never names a number.
+ * over the size cap names the cap when the server sent it. A file over the
+ * quota says that this upload would cross the limit — not that the project
+ * "reached" it: the project may be well below it, only this file does not fit —
+ * and names how much of the limit is used when the server sent both numbers.
  */
 export function uploadErrorMessage(
   item: FailedUpload,
@@ -60,7 +63,13 @@ export function uploadErrorMessage(
       : t('upload.error.file_too_large_unknown')
   }
   if (item.errorCode === 'quota_exceeded') {
-    return t('upload.error.quota_exceeded')
+    if (item.errorLimitBytes === undefined) {
+      return t('upload.error.quota_exceeded_unknown')
+    }
+    const limit = formatBytes(item.errorLimitBytes, locale)
+    return item.errorUsedBytes !== undefined
+      ? t('upload.error.quota_exceeded', { used: formatBytes(item.errorUsedBytes, locale), limit })
+      : t('upload.error.quota_exceeded_limit', { limit })
   }
   if (item.errorCode === 'not_media') {
     return t('upload.error.not_media')

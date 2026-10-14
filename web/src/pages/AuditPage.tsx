@@ -9,6 +9,7 @@ import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import Table from 'react-bootstrap/Table'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
@@ -17,6 +18,7 @@ import { RecordTable, type RecordColumn } from '../components/RecordTable'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import {
   AUDIT_DEFAULTS,
+  AUDIT_INSTANCE_ONLY,
   type AuditFilters,
   type AuditView,
   auditDetailLinks,
@@ -27,15 +29,31 @@ import {
 } from '../lib/auditView'
 import { formatDateTime } from '../lib/format'
 import { useUrlState } from '../lib/urlState'
+import { projectPathFor } from '../project/paths'
 import { ProjectLink } from '../project/ProjectLink'
 import {
   type AuditChange,
   type AuditChanges,
+  type AuditListParams,
   type AuditListResponse,
   type AuditRecord,
   fetchAuditLog,
+  fetchInstanceAuditLog,
 } from '../services/audit'
-import { type DirectoryUser, listDirectory } from '../services/directory'
+import { listDirectory } from '../services/directory'
+import { type AdminProject, fetchAdminProjects, fetchInstanceAccounts } from '../services/projects'
+
+/**
+ * Which trail the page reads: one project's (`/p/<slug>/audit`, its admin's)
+ * or the whole instance's (`/system/audit`, the system administrator's).
+ */
+export type AuditScope = 'project' | 'instance'
+
+/** One person the actor filter offers. */
+interface ActorOption {
+  uid: string
+  name: string
+}
 
 /** Top-level load status of the audit listing. */
 type State =
@@ -77,14 +95,20 @@ function detailsId(record: AuditRecord): string {
 }
 
 /**
- * Resolves an entry's actor to a display name using the loaded roster, falling
- * back to the raw UID when the user is unknown (e.g. deleted or not yet loaded)
- * and to an em dash for a system action with no actor. An anonymous upload
+ * Resolves an entry's actor to a display name: the page's own `actors` map
+ * first (the server names everybody who acted in the page, former members
+ * included), then the loaded roster, and the raw UID only when neither knows
+ * the account; an em dash for a system action with no actor. An anonymous upload
  * through an upload link has no actor either, but it has somebody behind it: it
  * is named by its link and the name the guest typed (just the link when they
  * typed none).
  */
-function actorLabel(record: AuditRecord, users: Map<string, DirectoryUser>, t: TFunction): string {
+function actorLabel(
+  record: AuditRecord,
+  actors: Readonly<Record<string, string>>,
+  users: Map<string, ActorOption>,
+  t: TFunction,
+): string {
   const actorUid = record.actor_uid
   if (actorUid === null) {
     const guest = uploadLinkActor(record)
@@ -101,28 +125,116 @@ function actorLabel(record: AuditRecord, users: Map<string, DirectoryUser>, t: T
       ? t('audit.uploadLinkActor.anonymous', { title })
       : t('audit.uploadLinkActor.named', { title, name })
   }
+  if (Object.hasOwn(actors, actorUid)) {
+    return actors[actorUid]
+  }
   const user = users.get(actorUid)
   return user ? user.name : actorUid
 }
 
 /**
- * The admin audit-log page (`/audit`): a newest-first, filterable, paginated
- * view of the project's durable audit trail from `GET /api/v1/p/<slug>/audit`.
- * Filters and the page offset live in the URL so Back restores the exact view.
- * Actor UIDs are shown as names by reusing the project's member directory
- * (`GET /api/v1/p/<slug>/users`); name resolution is best-effort and never
- * blocks the table from rendering — an actor who is no longer a member shows
- * as their UID.
+ * Where a link of an entry goes: into the current project on a project's page
+ * (`undefined`), into the entry's own project on the instance page (its slug),
+ * or nowhere for an instance entry there (`null`) — it has no project to open
+ * the thing in.
  */
-export function AuditPage() {
+type LinkProject = string | null | undefined
+
+/** The project an entry's links open in, for `scope` (see {@link LinkProject}). */
+function linkProjectOf(record: AuditRecord, scope: AuditScope): LinkProject {
+  return scope === 'project' ? undefined : record.project
+}
+
+/** Props of {@link EntryLink}. */
+interface EntryLinkProps {
+  to: string
+  project: LinkProject
+  className?: string
+  children: string
+}
+
+/**
+ * A link out of an entry, into the project {@link LinkProject} names; plain
+ * muted text when it names none.
+ */
+function EntryLink({ to, project, className, children }: EntryLinkProps) {
+  if (project === undefined) {
+    return (
+      <ProjectLink to={to} className={className}>
+        {children}
+      </ProjectLink>
+    )
+  }
+  if (project === null) {
+    return <span className={`text-secondary ${className ?? ''}`.trim()}>{children}</span>
+  }
+  return (
+    <Link to={projectPathFor(project, to)} className={className}>
+      {children}
+    </Link>
+  )
+}
+
+/** Props of {@link AuditPage}. */
+interface AuditPageProps {
+  /** Which trail the page reads; a project's unless said otherwise. */
+  scope?: AuditScope
+}
+
+/** Reads the actor filter's people: the project's directory, or every account. */
+async function loadActors(scope: AuditScope, signal: AbortSignal): Promise<ActorOption[]> {
+  if (scope === 'project') {
+    return (await listDirectory(signal)).map((user) => ({ uid: user.uid, name: user.name }))
+  }
+  return (await fetchInstanceAccounts(signal)).map((account) => ({
+    uid: account.uid,
+    name: account.display_name === '' ? account.username : account.display_name,
+  }))
+}
+
+/** Reads one page of the scope's trail. */
+function loadPage(
+  scope: AuditScope,
+  params: AuditListParams,
+  signal: AbortSignal,
+): Promise<AuditListResponse> {
+  return scope === 'project' ? fetchAuditLog(params, signal) : fetchInstanceAuditLog(params, signal)
+}
+
+/**
+ * The audit-log page: a newest-first, filterable, paginated view of a durable
+ * audit trail. Filters and the page offset live in the URL so Back restores the
+ * exact view.
+ *
+ * In a project (`/p/<slug>/audit`, its admin's) it reads that project's trail
+ * from `GET /api/v1/p/<slug>/audit`, and the actor filter offers the project's
+ * member directory (`GET /api/v1/p/<slug>/users`).
+ *
+ * On the instance (`/system/audit`, the system administrator's, `scope` =
+ * `instance`) it reads the whole trail from `GET /api/v1/audit`: every
+ * project's entries and the instance's own — accounts created and edited,
+ * instance roles granted and taken, accounts blocked, passwords reset — which
+ * no project's page shows. A project filter narrows it to one project or to the
+ * instance alone, a column names each entry's project, and an entry's links
+ * open in that entry's project. The actor filter offers every account.
+ *
+ * Actors are named by the page's own `actors` map — the server names everyone
+ * who acted in the page, so a former or a still-waiting member shows by name
+ * rather than as a raw uid — and the roster fills in the rest. Name resolution
+ * never blocks the table from rendering.
+ */
+export function AuditPage({ scope = 'project' }: AuditPageProps) {
   const { t, i18n } = useTranslation()
-  useDocumentTitle(t('audit.title'))
-  const { isAdmin } = useAuth()
+  const instance = scope === 'instance'
+  useDocumentTitle(instance ? t('audit.instanceTitle') : t('audit.title'))
+  const { isAdmin, isMaintainer } = useAuth()
+  const allowed = instance ? isMaintainer : isAdmin
   const [view, setView] = useUrlState<AuditView>(AUDIT_DEFAULTS)
-  const params = useMemo(() => viewToParams(view), [view])
+  const params = useMemo(() => viewToParams(view, scope), [view, scope])
   const [state, setState] = useState<State>({ status: 'loading' })
   const [reloadKey, setReloadKey] = useState(0)
-  const [users, setUsers] = useState<Map<string, DirectoryUser>>(new Map())
+  const [users, setUsers] = useState<Map<string, ActorOption>>(new Map())
+  const [projects, setProjects] = useState<AdminProject[]>([])
   const [draft, setDraft] = useState<AuditFilters>(() => pickFilters(view))
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set())
 
@@ -132,13 +244,13 @@ export function AuditPage() {
   }, [view])
 
   // Load the actor roster once so UIDs can be shown as names. Best-effort: on
-  // failure the table still renders, falling back to the raw UID.
+  // failure the table still renders, naming actors from the page's own map.
   useEffect(() => {
-    if (!isAdmin) {
+    if (!allowed) {
       return undefined
     }
     const controller = new AbortController()
-    listDirectory(controller.signal)
+    loadActors(scope, controller.signal)
       .then((list) => {
         setUsers(new Map(list.map((user) => [user.uid, user])))
       })
@@ -148,16 +260,35 @@ export function AuditPage() {
     return () => {
       controller.abort()
     }
-  }, [isAdmin])
+  }, [allowed, scope])
+
+  // The project filter's choices, on the instance page only. Best-effort too:
+  // without them the filter still offers "everything" and "the instance only".
+  useEffect(() => {
+    if (!allowed || !instance) {
+      return undefined
+    }
+    const controller = new AbortController()
+    fetchAdminProjects(controller.signal)
+      .then((list) => {
+        setProjects([...list].sort((a, b) => a.name.localeCompare(b.name)))
+      })
+      .catch(() => {
+        // The two fixed choices remain.
+      })
+    return () => {
+      controller.abort()
+    }
+  }, [allowed, instance])
 
   // Load the current page whenever the filters or offset (or a retry) change.
   useEffect(() => {
-    if (!isAdmin) {
+    if (!allowed) {
       return undefined
     }
     const controller = new AbortController()
     setState({ status: 'loading' })
-    fetchAuditLog(params, controller.signal)
+    loadPage(scope, params, controller.signal)
       .then((data) => {
         setState({ status: 'ready', data })
       })
@@ -170,15 +301,17 @@ export function AuditPage() {
     return () => {
       controller.abort()
     }
-  }, [isAdmin, params, reloadKey])
+  }, [allowed, scope, params, reloadKey])
 
   const userOptions = useMemo(
     () => [...users.values()].sort((a, b) => a.name.localeCompare(b.name)),
     [users],
   )
 
-  if (!isAdmin) {
-    return <Alert variant="danger">{t('audit.adminOnly')}</Alert>
+  if (!allowed) {
+    return (
+      <Alert variant="danger">{instance ? t('audit.maintainerOnly') : t('audit.adminOnly')}</Alert>
+    )
   }
 
   const offset = params.offset ?? 0
@@ -225,7 +358,8 @@ export function AuditPage() {
       key: 'actor',
       header: t('audit.columns.actor'),
       cellClassName: 'text-break',
-      cell: (record) => actorLabel(record, users, t),
+      cell: (record) =>
+        actorLabel(record, state.status === 'ready' ? state.data.actors : {}, users, t),
     },
     {
       key: 'action',
@@ -237,7 +371,7 @@ export function AuditPage() {
       key: 'target',
       header: t('audit.columns.target'),
       cellClassName: 'text-break',
-      cell: (record) => <AuditTarget record={record} />,
+      cell: (record) => <AuditTarget record={record} project={linkProjectOf(record, scope)} />,
     },
     {
       key: 'ip',
@@ -268,11 +402,27 @@ export function AuditPage() {
     },
   ]
 
+  if (instance) {
+    // Which project each entry is filed under, right after the time: on the
+    // instance's page it is the first thing that tells two entries apart.
+    columns.splice(1, 0, {
+      key: 'project',
+      header: t('audit.columns.project'),
+      cellClassName: 'text-nowrap',
+      cell: (record) =>
+        record.project ?? <span className="text-secondary">{t('audit.instanceEntry')}</span>,
+    })
+  }
+
   return (
     <>
       <div className="mb-3">
-        <h1 className="kk-page-title mb-1">{t('audit.title')}</h1>
-        <p className="text-secondary mb-0">{t('audit.subtitle')}</p>
+        <h1 className="kk-page-title mb-1">
+          {instance ? t('audit.instanceTitle') : t('audit.title')}
+        </h1>
+        <p className="text-secondary mb-0">
+          {instance ? t('audit.instanceSubtitle') : t('audit.subtitle')}
+        </p>
       </div>
 
       <Card className="mb-3">
@@ -283,6 +433,27 @@ export function AuditPage() {
             }}
           >
             <Row className="g-3">
+              {instance && (
+                <Col xs={12} md={6} lg={4}>
+                  <Form.Group controlId="audit-filter-project">
+                    <Form.Label>{t('audit.filters.project')}</Form.Label>
+                    <Form.Select
+                      value={draft.project}
+                      onChange={(e) => {
+                        setDraft((d) => ({ ...d, project: e.target.value }))
+                      }}
+                    >
+                      <option value="">{t('audit.filters.allProjects')}</option>
+                      <option value={AUDIT_INSTANCE_ONLY}>{t('audit.filters.instanceOnly')}</option>
+                      {projects.map((project) => (
+                        <option key={project.uid} value={project.slug}>
+                          {project.name}
+                        </option>
+                      ))}
+                    </Form.Select>
+                  </Form.Group>
+                </Col>
+              )}
               <Col xs={12} md={6} lg={4}>
                 <Form.Group controlId="audit-filter-actor">
                   <Form.Label>{t('audit.filters.actor')}</Form.Label>
@@ -406,7 +577,11 @@ export function AuditPage() {
                 rowKey={(record) => String(record.id)}
                 detail={(record) =>
                   isExpandable(record) && expanded.has(record.id) ? (
-                    <AuditEntryDetails id={detailsId(record)} record={record} />
+                    <AuditEntryDetails
+                      id={detailsId(record)}
+                      record={record}
+                      project={linkProjectOf(record, scope)}
+                    />
                   ) : null
                 }
                 className="mb-0 align-middle"
@@ -463,7 +638,7 @@ export function AuditPage() {
  * keeps the plain muted UID it always had, so the row stays scannable either
  * way: same size, same place, only a link where there is somewhere to go.
  */
-function AuditTarget({ record }: { record: AuditRecord }) {
+function AuditTarget({ record, project }: { record: AuditRecord; project: LinkProject }) {
   const href = auditTargetHref(record)
   return (
     <>
@@ -473,7 +648,9 @@ function AuditTarget({ record }: { record: AuditRecord }) {
           {href === null ? (
             <span className="text-secondary">{record.target_uid}</span>
           ) : (
-            <ProjectLink to={href}>{record.target_uid}</ProjectLink>
+            <EntryLink to={href} project={project}>
+              {record.target_uid}
+            </EntryLink>
           )}
         </div>
       )}
@@ -486,6 +663,8 @@ interface AuditEntryDetailsProps {
   /** The element id the entry's toggle names in `aria-controls`. */
   id: string
   record: AuditRecord
+  /** The project the payload's links open in (see {@link LinkProject}). */
+  project: LinkProject
 }
 
 /**
@@ -503,7 +682,7 @@ interface AuditEntryDetailsProps {
  * one long JSON line used to set the scroll width of the whole responsive table
  * and drag the summary columns sideways with it.
  */
-function AuditEntryDetails({ id, record }: AuditEntryDetailsProps) {
+function AuditEntryDetails({ id, record, project }: AuditEntryDetailsProps) {
   const { t } = useTranslation()
   const changes = readChanges(record.details)
   const { groups, hidden } = auditDetailLinks(record.details)
@@ -518,9 +697,9 @@ function AuditEntryDetails({ id, record }: AuditEntryDetailsProps) {
                 <li key={group.key} className="text-break">
                   <code className="text-secondary">{group.key}</code>{' '}
                   {group.links.map((link) => (
-                    <ProjectLink key={link.href} to={link.href} className="me-2">
+                    <EntryLink key={link.href} to={link.href} project={project} className="me-2">
                       {link.uid}
-                    </ProjectLink>
+                    </EntryLink>
                   ))}
                 </li>
               ))}

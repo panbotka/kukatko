@@ -16,15 +16,18 @@ export interface UseSubjectsResult {
  * level: the faces panel mounts only once the user asks for faces, so browsing a
  * photo never pays for the list. A failure resolves to an empty list — the field
  * then only offers to create a new person, which still gets the job done.
+ *
+ * It reads the current project's people, or those of `project` (a slug) when
+ * one is named — a page outside every project has to say which.
  */
-export function useSubjects(): UseSubjectsResult {
+export function useSubjects(project?: string): UseSubjectsResult {
   const [subjects, setSubjects] = useState<SubjectCount[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
-    fetchSubjects(controller.signal)
+    fetchSubjects(controller.signal, project)
       .then((list) => {
         setSubjects(list)
         setLoading(false)
@@ -39,7 +42,7 @@ export function useSubjects(): UseSubjectsResult {
     return () => {
       controller.abort()
     }
-  }, [])
+  }, [project])
 
   return { subjects, loading }
 }

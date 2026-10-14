@@ -69,12 +69,38 @@ describe('uploadErrorMessage', () => {
     )
   })
 
-  it('says the project storage is full without any numbers', async () => {
-    const item = { errorCode: 'quota_exceeded', error: 'quota_exceeded', errorLimitBytes: 1000 }
+  it('says this upload would cross the quota, with how much of it is used', async () => {
+    const MB = 1024 * 1024
+    // The review's case: 9.7 of 11 MB used, so the project has not "reached"
+    // anything — this file is what does not fit.
+    const item = {
+      errorCode: 'quota_exceeded',
+      error: 'quota_exceeded',
+      errorLimitBytes: 11 * MB,
+      errorUsedBytes: 9.7 * MB,
+    }
     await i18n.changeLanguage('cs')
-    expect(uploadErrorMessage(item, i18n.t)).toBe('Projekt dosáhl limitu úložiště')
+    expect(uploadErrorMessage(item, i18n.t, 'cs')).toBe(
+      'Tento soubor by překročil limit úložiště projektu (využito 9,7 MB z 11,0 MB)',
+    )
     await i18n.changeLanguage('en')
-    expect(uploadErrorMessage(item, i18n.t)).toBe('The project has reached its storage limit')
+    expect(uploadErrorMessage(item, i18n.t, 'en')).toBe(
+      "This upload would exceed the project's storage limit (9.7 MB of 11.0 MB used)",
+    )
+  })
+
+  it('names what the server sent of the quota, and no number it did not', async () => {
+    await i18n.changeLanguage('en')
+    expect(
+      uploadErrorMessage(
+        { errorCode: 'quota_exceeded', errorLimitBytes: 2 * 1024 ** 3 },
+        i18n.t,
+        'en',
+      ),
+    ).toBe("This upload would exceed the project's storage limit of 2.0 GB")
+    expect(uploadErrorMessage({ errorCode: 'quota_exceeded' }, i18n.t)).toBe(
+      "This upload would exceed the project's storage limit",
+    )
   })
 
   it('falls back to the server message, and to nothing for an empty one', () => {

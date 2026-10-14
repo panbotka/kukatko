@@ -4,7 +4,9 @@
 // newest-first, with optional filters (project=<slug>, acting user, entity type
 // and UID, action, review-game decisions via=review, Ano/Ne bucket
 // decision=yes|no, created-at date range) and limit/offset pagination, plus the
-// total matching count so the UI can page; GET /audit/mine is the same listing
+// total matching count so the UI can page — instance_only=true narrows it to
+// the entries filed under no project, the instance's own (accounts, instance
+// roles, blocking), which no project's listing ever shows; GET /audit/mine is the same listing
 // for any signed-in account, narrowed to its own actions in every project.
 // Under a project, GET /p/{project}/audit is that project's admin's listing and
 // GET /p/{project}/audit/mine a member's own actions there — both narrowed to
@@ -68,6 +70,17 @@
 // Those are the caller's own request metadata — the address and browser they
 // themselves acted from — and seeing them is how a user recognises (or disowns)
 // an action, so withholding them would only make the page harder to trust.
+//
+// # Every page names its actors
+//
+// Each page carries actors: the display name of every account that acted in
+// one of its entries (audit.Store.ActorNames). A project admin's directory
+// lists only today's approved members, so the people who acted in the project
+// and have since left — or who are still waiting for approval — used to show
+// as raw uids. The map names exactly the actors of entries the reader was
+// already allowed to read, so it is no oracle: a project admin learns the name
+// of somebody who acted in the project and of nobody else, the same people
+// the project's user filter resolves.
 package auditapi
 
 import (
@@ -219,13 +232,16 @@ func (a *API) projectPeople(projectUID string) ResolveUser {
 }
 
 // listResponse is the JSON body returned by the list endpoint. NextOffset is the
-// offset to request for the following page, or null on the last page.
+// offset to request for the following page, or null on the last page. Actors
+// names the accounts that acted in the page's entries (uid → display name); an
+// account since deleted is absent, its entries already lost their actor.
 type listResponse struct {
-	Entries    []audit.Record `json:"entries"`
-	Total      int            `json:"total"`
-	Limit      int            `json:"limit"`
-	Offset     int            `json:"offset"`
-	NextOffset *int           `json:"next_offset"`
+	Entries    []audit.Record    `json:"entries"`
+	Actors     map[string]string `json:"actors"`
+	Total      int               `json:"total"`
+	Limit      int               `json:"limit"`
+	Offset     int               `json:"offset"`
+	NextOffset *int              `json:"next_offset"`
 }
 
 // handleList parses the query filters, reads the matching page of audit entries
@@ -246,14 +262,17 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 type projectScopeKey struct{}
 
 // inProject wraps a listing handler for a project route: it refuses a project
-// parameter by name (the route names the project) and narrows the listing to
+// parameter by name (the route names the project) — and instance_only, which
+// would contradict it — and narrows the listing to
 // the request's project, which the guard in front resolved. A request that
 // reached it without a project is refused rather than listed unfiltered.
 func (a *API) inProject(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Has(projectParam) {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown query parameter %q", projectParam))
-			return
+		for _, param := range []string{projectParam, instanceOnlyParam} {
+			if r.URL.Query().Has(param) {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown query parameter %q", param))
+				return
+			}
 		}
 		projectUID := auth.ProjectUIDFromContext(r.Context())
 		if projectUID == "" {
@@ -268,7 +287,8 @@ func (a *API) inProject(next http.HandlerFunc) http.HandlerFunc {
 
 // parseRequest builds the request's filter: the query's filters, then the
 // project — the route's (inProject) when it has one, which nothing in the query
-// can widen, or else the query's project=<slug>.
+// can widen, or else the query's project=<slug> or instance_only=true (the two
+// exclude each other).
 //
 // In a project the user filter is resolved among that project's people only
 // (projectPeople), so it answers a foreign or a missing account alike.
@@ -285,6 +305,9 @@ func (a *API) parseRequest(r *http.Request) (audit.Filter, error) {
 	if inProject {
 		filter.ProjectUID = scoped
 		return filter, nil
+	}
+	if filter.InstanceOnly, err = parseInstanceOnly(r.URL.Query()); err != nil {
+		return audit.Filter{}, err
 	}
 	filter.ProjectUID, err = resolveProjectFilter(r.Context(), r.URL.Query().Get(projectParam), a.resolveProject)
 	if err != nil {
@@ -316,7 +339,8 @@ func (a *API) handleListMine(w http.ResponseWriter, r *http.Request) {
 }
 
 // respond reads the page of entries matching filter plus the total count and
-// writes them with the next-page offset. A store failure is answered with 500.
+// the names of the page's actors, and writes them with the next-page offset. A
+// store failure is answered with 500.
 func (a *API) respond(w http.ResponseWriter, r *http.Request, filter audit.Filter) {
 	entries, err := a.store.List(r.Context(), filter)
 	if err != nil {
@@ -328,7 +352,32 @@ func (a *API) respond(w http.ResponseWriter, r *http.Request, filter audit.Filte
 		writeError(w, http.StatusInternalServerError, "counting audit entries failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, buildResponse(filter, entries, total))
+	actors, err := a.store.ActorNames(r.Context(), actorUIDs(entries))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "naming audit actors failed")
+		return
+	}
+	resp := buildResponse(filter, entries, total)
+	resp.Actors = actors
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// actorUIDs returns the distinct actors of entries, in first-seen order;
+// entries without an actor (system actions, anonymous uploads) add none.
+func actorUIDs(entries []audit.Record) []string {
+	seen := make(map[string]struct{}, len(entries))
+	uids := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.ActorUID == nil {
+			continue
+		}
+		if _, dup := seen[*entry.ActorUID]; dup {
+			continue
+		}
+		seen[*entry.ActorUID] = struct{}{}
+		uids = append(uids, *entry.ActorUID)
+	}
+	return uids
 }
 
 // buildResponse assembles the paginated list body, computing the effective limit
@@ -344,6 +393,7 @@ func buildResponse(filter audit.Filter, entries []audit.Record, total int) listR
 	}
 	resp := listResponse{
 		Entries: entries,
+		Actors:  map[string]string{},
 		Total:   total,
 		Limit:   limit,
 		Offset:  filter.Offset,
@@ -377,7 +427,7 @@ const (
 // below, and the frontend's audit client (web/src/services/audit.ts) sends
 // nothing else.
 var recognisedParams = map[string]struct{}{
-	projectParam: {}, userParam: {}, "entity_type": {}, "entity_uid": {}, "action": {},
+	projectParam: {}, instanceOnlyParam: {}, userParam: {}, "entity_type": {}, "entity_uid": {}, "action": {},
 	"via": {}, "decision": {}, "since": {}, "until": {},
 	"limit": {}, "offset": {},
 }
@@ -396,6 +446,28 @@ const projectParam = "project"
 
 // userParam is the listings' actor filter: an account UID or a username.
 const userParam = "user"
+
+// instanceOnlyParam is the instance listing's filter for the entries filed
+// under no project: "true" narrows to them, absent (or "false") does not.
+const instanceOnlyParam = "instance_only"
+
+// parseInstanceOnly reads the instance_only filter and refuses it next to a
+// project filter, which it contradicts: an entry is filed under a project or
+// under none, so the pair could only ever answer an empty page.
+func parseInstanceOnly(q url.Values) (bool, error) {
+	var on bool
+	switch value := q.Get(instanceOnlyParam); value {
+	case "", "false":
+	case "true":
+		on = true
+	default:
+		return false, fmt.Errorf("instance_only must be true or false, not %q", value)
+	}
+	if on && q.Get(projectParam) != "" {
+		return false, errors.New("instance_only and project exclude each other")
+	}
+	return on, nil
+}
 
 // ResolveProjectUser maps the user filter of the project projectUID's listing
 // onto an account UID like ResolveUser, but only among that project's people:

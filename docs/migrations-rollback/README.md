@@ -56,6 +56,11 @@ entered the project yet). Safe at any time: an older release neither reads nor w
 memberships stay approved — that release simply shows those members' names again. Run it first when going
 back to a release older than 0117.
 
+**`0118_down.sql`** drops `instance_settings.footer_text` (the line every page of a project ends with).
+Safe at any time: an older release neither reads nor writes the column and draws its own hard-coded
+footer again; the lines admins wrote are lost, so read them first if they are to come back. Run it first
+when going back to a release older than 0118.
+
 **Every file of the chain has a down script** since the final safety gate (2026-10-13). To go back to
 0.31.0 (schema 0099) — **after stopping the new server**, which would otherwise re-apply the migrations on its
 next (re)start (production: [`OPERATIONS.md`](../OPERATIONS.md), "Upgrade runbook — multi-tenancy" →

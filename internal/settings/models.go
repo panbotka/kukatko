@@ -1,15 +1,19 @@
-// Package settings is the database access layer for the instance-wide settings
-// an administrator edits at runtime: whether self-service registration is open,
-// the shared secret registration asks for, and the Markdown greeting a person
-// sees the first time they sign in. None of the three is a deployment concern —
-// they describe how this instance receives people — so they live in the database
-// and change without a redeploy.
+// Package settings is the database access layer for the settings a project's
+// administrator edits at runtime: whether self-service registration is open,
+// the shared secret registration asks for, the Markdown greeting a person sees
+// the first time they sign in, and the line the footer of every page shows.
+// None of them is a deployment concern — they describe how the project receives
+// people and presents itself — so they live in the database and change without
+// a redeploy.
 //
-// There is at most one settings record, enforced by a single-row table (see
-// migration 0062), so writing is an upsert. The migration seeds the row, so a
-// read normally finds it; Get still answers with the defaults when it does not,
-// because the anonymous sign-in screen asks whether registration is open and a
-// missing row must never turn that into an error page.
+// There is one settings record per project (migration 0102; before it a
+// single-row table, migration 0062), so writing is an upsert. Next to the
+// registration values it holds the project's footer line (migration 0118), the
+// plain-text sentence every page of the project ends with. The migration seeds
+// the bootstrap project's row, so a read normally finds it; Get still answers
+// with the defaults when it does not, because the anonymous sign-in screen asks
+// whether registration is open and a missing row must never turn that into an
+// error page.
 //
 // The store keeps no state beyond the shared pgx pool. A change is audited in
 // the same transaction as the update (mirroring internal/announcement), so the
@@ -23,6 +27,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // ErrSecretRequired is returned by Set when registration is being enabled while
@@ -31,7 +36,21 @@ import (
 // combination can be refused instead of briefly existing.
 var ErrSecretRequired = errors.New("registration secret must not be empty when registration is enabled")
 
-// Settings is the single instance-wide settings record.
+// MaxFooterRunes caps the footer line. It is one line under every page, next
+// to the link to the source code, so a sentence or two is the most it can
+// carry before it stops being a footer.
+const MaxFooterRunes = 200
+
+// ErrFooterTooLong is returned by Set when the footer line is longer than
+// MaxFooterRunes characters.
+var ErrFooterTooLong = errors.New("footer text must be at most 200 characters")
+
+// ErrFooterMultiline is returned by Set when the footer line holds a line
+// break: it is rendered as one line of plain text, where a break would
+// silently vanish.
+var ErrFooterMultiline = errors.New("footer text must be a single line")
+
+// Settings is one project's settings record.
 //
 // RegistrationSecret is stored and returned in readable form on purpose: an
 // administrator has to be able to read it back to tell people what it is. It is
@@ -48,6 +67,9 @@ type Settings struct {
 	// WelcomeMarkdown is the Markdown greeting shown to a person the first time
 	// they sign in. Empty means there is nothing to show.
 	WelcomeMarkdown string `json:"welcome_markdown"`
+	// FooterText is the plain-text line shown in the footer of every page of
+	// the project. Empty means no line.
+	FooterText string `json:"footer_text"`
 	// UpdatedAt is when the settings were last written. It is the seed time
 	// until an administrator first saves them.
 	UpdatedAt time.Time `json:"updated_at"`
@@ -57,9 +79,10 @@ type Settings struct {
 	UpdatedByUID string `json:"updated_by_uid"`
 }
 
-// Update is the set of values a Set call replaces. All three are written
+// Update is the set of values a Set call replaces. The first three are written
 // together — the registration flag and the secret guard each other, so they are
-// never saved apart.
+// never saved apart. FooterText is optional: nil keeps the stored line, so a
+// client written before the footer existed cannot wipe it by saving the rest.
 type Update struct {
 	// RegistrationEnabled is the new self-service registration flag.
 	RegistrationEnabled bool `json:"registration_enabled"`
@@ -67,6 +90,8 @@ type Update struct {
 	RegistrationSecret string `json:"registration_secret"`
 	// WelcomeMarkdown is the new first-sign-in greeting, in Markdown.
 	WelcomeMarkdown string `json:"welcome_markdown"`
+	// FooterText is the new footer line, or nil to keep the stored one.
+	FooterText *string `json:"footer_text,omitempty"`
 }
 
 // validate normalizes an update and reports why it cannot be stored. The secret
@@ -74,12 +99,24 @@ type Update struct {
 // other is a trap rather than part of the secret; the welcome text is left
 // exactly as written, since Markdown's leading whitespace is meaningful.
 // Enabling registration with a blank (or whitespace-only) secret yields
-// ErrSecretRequired.
+// ErrSecretRequired. The footer line is trimmed too, and refused with
+// ErrFooterMultiline when it holds a line break or ErrFooterTooLong when it is
+// over MaxFooterRunes.
 func (u Update) validate() (Update, error) {
 	normalized := u
 	normalized.RegistrationSecret = strings.TrimSpace(u.RegistrationSecret)
 	if normalized.RegistrationEnabled && normalized.RegistrationSecret == "" {
 		return Update{}, ErrSecretRequired
+	}
+	if u.FooterText != nil {
+		footer := strings.TrimSpace(*u.FooterText)
+		if strings.ContainsAny(footer, "\r\n") {
+			return Update{}, ErrFooterMultiline
+		}
+		if utf8.RuneCountInString(footer) > MaxFooterRunes {
+			return Update{}, ErrFooterTooLong
+		}
+		normalized.FooterText = &footer
 	}
 	return normalized, nil
 }

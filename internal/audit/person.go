@@ -41,3 +41,39 @@ func (s *Store) ProjectPerson(ctx context.Context, projectUID, ref string) (stri
 	}
 	return uid, nil
 }
+
+// actorNamesSQL reads the name a person is shown by — the display name, or the
+// username when there is none — for each account of $1, the same rule the
+// project directory applies.
+const actorNamesSQL = `SELECT u.uid, COALESCE(NULLIF(u.display_name, ''), u.username)
+FROM users u
+WHERE u.uid = ANY($1)`
+
+// ActorNames returns the display name of each account in uids that still
+// exists, keyed by uid; an account since deleted is simply absent. It names the
+// actors of a page the caller has already been allowed to read, so it adds no
+// account to what that reader knows: a project admin learns the names of the
+// people who acted in the project — former and still-waiting members too —
+// and of nobody else.
+func (s *Store) ActorNames(ctx context.Context, uids []string) (map[string]string, error) {
+	names := make(map[string]string, len(uids))
+	if len(uids) == 0 {
+		return names, nil
+	}
+	rows, err := s.pool.Query(ctx, actorNamesSQL, uids)
+	if err != nil {
+		return nil, fmt.Errorf("audit: reading actor names: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var uid, name string
+		if err := rows.Scan(&uid, &name); err != nil {
+			return nil, fmt.Errorf("audit: scanning an actor name: %w", err)
+		}
+		names[uid] = name
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("audit: iterating actor names: %w", err)
+	}
+	return names, nil
+}

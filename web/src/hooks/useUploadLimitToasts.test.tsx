@@ -58,7 +58,7 @@ describe('useUploadLimitToasts', () => {
     ])
     expect(toasts).toEqual([
       {
-        message: 'The project has reached its storage limit; no more files will be uploaded.',
+        message: "Some files would exceed the project's storage limit and were not uploaded.",
         variant: 'danger',
       },
       {

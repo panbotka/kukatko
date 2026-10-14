@@ -873,6 +873,10 @@ type Filter struct {
 	// ProjectUID restricts to the entries filed under one project; instance
 	// entries (no project) never match it.
 	ProjectUID string
+	// InstanceOnly restricts to the instance-level entries, those filed under
+	// no project (account creation, instance-role changes, blocking…). Combined
+	// with ProjectUID it matches nothing.
+	InstanceOnly bool
 	// ActorUID restricts to entries by one acting user.
 	ActorUID string
 	// TargetType restricts to one entity kind (for example "photos").
@@ -925,6 +929,9 @@ func (f Filter) buildWhere() (string, []any) {
 		if eq.value != "" {
 			add(eq.expr, eq.value)
 		}
+	}
+	if f.InstanceOnly {
+		clauses = append(clauses, "audit_log.project_id IS NULL")
 	}
 	if len(f.Actions) > 0 {
 		add("action = ANY($%d)", f.Actions)

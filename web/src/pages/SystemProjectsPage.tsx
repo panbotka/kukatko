@@ -6,6 +6,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 
+import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
@@ -44,6 +45,7 @@ type LoadState =
 export function SystemProjectsPage() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
+  const { refresh } = useAuth()
   useDocumentTitle(t('systemProjects.title'))
 
   const [load, setLoad] = useState<LoadState>({ status: 'loading' })
@@ -214,7 +216,9 @@ export function SystemProjectsPage() {
         }}
         onCreated={(project) => {
           setCreating(false)
-          void navigate(systemProjectPath(project.slug))
+          // The creator is the new project's admin: re-read the session first,
+          // so the switcher lists the project and its page offers no "add me".
+          void refresh().then(() => navigate(systemProjectPath(project.slug)))
         }}
       />
     </>

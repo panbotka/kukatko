@@ -104,6 +104,7 @@ func full() settings.Settings {
 		RegistrationEnabled: true,
 		RegistrationSecret:  "rodina2026",
 		WelcomeMarkdown:     "# Vítej",
+		FooterText:          "Provozuje SDH Veselice",
 		UpdatedAt:           time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC),
 		UpdatedByUID:        "us_admin",
 	}
@@ -242,6 +243,33 @@ func TestWelcomeReturnsOnlyTheMarkdown(t *testing.T) {
 	}
 }
 
+// TestFooterReturnsOnlyTheLine: a member reads the project's footer line and
+// nothing else — no secret, no welcome text.
+func TestFooterReturnsOnlyTheLine(t *testing.T) {
+	t.Parallel()
+	rec := do(t, newServer(&fakeStore{current: full()}), http.MethodGet, "/settings/footer", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := decode(t, rec)
+	if len(body) != 1 || body["footer_text"] != "Provozuje SDH Veselice" {
+		t.Fatalf("footer body = %v, want exactly the footer line", body)
+	}
+}
+
+// TestFooterUnsetIsEmptyString: a project with no line answers 200 with an
+// empty string, never a 404 the shell would have to tell from a failure.
+func TestFooterUnsetIsEmptyString(t *testing.T) {
+	t.Parallel()
+	rec := do(t, newServer(&fakeStore{}), http.MethodGet, "/settings/footer", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if body := decode(t, rec); body["footer_text"] != "" {
+		t.Fatalf("footer_text = %v, want an empty string", body["footer_text"])
+	}
+}
+
 // TestGetReturnsTheSecret: the admin record carries the readable secret, which
 // is the reason the route is admin-only.
 func TestGetReturnsTheSecret(t *testing.T) {
@@ -260,6 +288,9 @@ func TestGetReturnsTheSecret(t *testing.T) {
 	if body["updated_by_uid"] != "us_admin" {
 		t.Errorf("updated_by_uid = %v, want us_admin", body["updated_by_uid"])
 	}
+	if body["footer_text"] != "Provozuje SDH Veselice" {
+		t.Errorf("footer_text = %v, want the stored line", body["footer_text"])
+	}
 }
 
 // TestGetStoreErrorIs500 maps an unexpected store failure to a 500 on every read.
@@ -268,7 +299,7 @@ func TestGetStoreErrorIs500(t *testing.T) {
 	srv := newServer(&fakeStore{getErr: errors.New("boom")})
 	// The project public read needs an admitted project first; its store
 	// failure is covered by the integration tests.
-	for _, target := range []string{"/settings/welcome", "/settings"} {
+	for _, target := range []string{"/settings/welcome", "/settings/footer", "/settings"} {
 		rec := do(t, srv, http.MethodGet, target, "")
 		if rec.Code != http.StatusInternalServerError {
 			t.Errorf("GET %s status = %d, want 500", target, rec.Code)
@@ -308,6 +339,55 @@ func TestPutReplacesAllThree(t *testing.T) {
 	for key, value := range store.lastEntry.Details {
 		if str, ok := value.(string); ok && strings.Contains(str, "rodina2026") {
 			t.Fatalf("audit details %q leaked the secret: %q", key, str)
+		}
+	}
+}
+
+// TestPutWithoutFooterKeepsIt: a body from a client that does not know the
+// footer passes no footer down (nil = keep the stored line) and records none in
+// the audit details.
+func TestPutWithoutFooterKeepsIt(t *testing.T) {
+	t.Parallel()
+	store := &fakeStore{setResult: full()}
+	rec := do(t, newServer(store), http.MethodPut, "/settings",
+		`{"registration_enabled":false,"registration_secret":"","welcome_markdown":""}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if store.lastUpdate.FooterText != nil {
+		t.Fatalf("footer passed down = %q, want none", *store.lastUpdate.FooterText)
+	}
+	if _, ok := store.lastEntry.Details["footer_text"]; ok {
+		t.Errorf("audit details = %v, want no footer_text", store.lastEntry.Details)
+	}
+}
+
+// TestPutWithFooterPassesItDown: a sent footer line reaches the store and the
+// audit details carry it, trimmed — it is public to every member anyway.
+func TestPutWithFooterPassesItDown(t *testing.T) {
+	t.Parallel()
+	store := &fakeStore{setResult: full()}
+	rec := do(t, newServer(store), http.MethodPut, "/settings",
+		`{"registration_enabled":false,"registration_secret":"","welcome_markdown":"","footer_text":" Provozuje spolek "}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if store.lastUpdate.FooterText == nil || *store.lastUpdate.FooterText != " Provozuje spolek " {
+		t.Fatalf("footer passed down = %v, want the body's line", store.lastUpdate.FooterText)
+	}
+	if got := store.lastEntry.Details["footer_text"]; got != "Provozuje spolek" {
+		t.Errorf("details.footer_text = %v, want the trimmed line", got)
+	}
+}
+
+// TestPutRejectsUnfitFooter surfaces the store's footer refusals as a 400.
+func TestPutRejectsUnfitFooter(t *testing.T) {
+	t.Parallel()
+	for _, refusal := range []error{settings.ErrFooterTooLong, settings.ErrFooterMultiline} {
+		rec := do(t, newServer(&fakeStore{setErr: refusal}), http.MethodPut, "/settings",
+			`{"registration_enabled":false,"registration_secret":"","welcome_markdown":"","footer_text":"x"}`)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%v: status = %d, want 400", refusal, rec.Code)
 		}
 	}
 }

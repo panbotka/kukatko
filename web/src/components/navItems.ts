@@ -24,6 +24,13 @@ export function systemProjectPath(slug: string): string {
 /** The system administrator's list of every account of the instance. */
 export const SYSTEM_USERS_PATH = '/system/users'
 
+/**
+ * The system administrator's audit trail of the whole instance: every project's
+ * entries and the instance's own (accounts, instance roles, blocking), which no
+ * project's audit page shows.
+ */
+export const SYSTEM_AUDIT_PATH = '/system/audit'
+
 /** A project admin's members page — a page of the project, `/p/<slug>/members`. */
 export const MEMBERS_PATH = '/members'
 
@@ -246,7 +253,7 @@ export interface AdminEntry extends NavEntry {
 /**
  * The "Správa" (Admin) section of the user menu — what used to be two separate
  * dropdowns in the bar: the maintainer's "Provoz" (import, maintenance, system,
- * and the instance's projects and accounts) and the admin's "Správa" (users, audit). Both belong to the signed-in identity
+ * and the instance's projects, accounts and audit) and the admin's "Správa" (users, audit). Both belong to the signed-in identity
  * rather than to browsing the library, and both spent the bar's scarcest
  * resource, width — for a maintainer the inline row overflowed its container
  * below 1400px. Folded into one labelled section of the user dropdown, in ladder
@@ -294,6 +301,13 @@ export const ADMIN_ITEMS: AdminEntry[] = [
     gate: 'maintainer',
   },
   {
+    to: SYSTEM_AUDIT_PATH,
+    labelKey: 'nav.systemAudit',
+    titleKey: 'nav.titles.systemAudit',
+    icon: 'clock-history',
+    gate: 'maintainer',
+  },
+  {
     to: MEMBERS_PATH,
     labelKey: 'nav.members',
     titleKey: 'nav.titles.members',
@@ -322,7 +336,7 @@ export const ADMIN_ITEMS: AdminEntry[] = [
  * heading, no stray divider — which is what a viewer and an editor get.
  *
  * `instanceOnly` keeps just the instance's own pages (maintenance, system,
- * projects, accounts) — what the neutral shell of a page outside any project
+ * projects, accounts, the instance's audit) — what the neutral shell of a page outside any project
  * offers, where a project's members, audit or settings would belong to a
  * library the page is not about.
  */

@@ -3,10 +3,12 @@ import { apiPath, instancePath } from './api'
 
 /**
  * Audit-log client, mirroring the backend JSON shapes from `internal/auditapi`
- * and `internal/audit`. It powers two read-only pages over the same records: a
+ * and `internal/audit`. It powers three read-only pages over the same records: a
  * project's `/p/<slug>/audit` administration listing of that project's trail
  * ({@link fetchAuditLog}, the project-scoped `GET /p/<slug>/audit`, which never
- * holds another project's entries), and every user's own activity page
+ * holds another project's entries), the system administrator's `/system/audit`
+ * over the whole instance ({@link fetchInstanceAuditLog}, `GET /audit`, every
+ * project's entries and the instance's own), and every user's own activity page
  * ({@link fetchMyActivity}, the instance `GET /audit/mine`, across every
  * project), which the server narrows to the caller. Both are
  * newest-first, filterable and offset-paginated. The session cookie is sent
@@ -96,6 +98,12 @@ export interface AuditRecord {
  */
 export interface AuditListResponse {
   entries: AuditRecord[]
+  /**
+   * The display name of every account that acted in one of `entries`, by uid —
+   * former and still-waiting members too, whom no directory lists. An account
+   * since deleted is absent (its entries no longer carry an actor anyway).
+   */
+  actors: Record<string, string>
   total: number
   limit: number
   offset: number
@@ -108,6 +116,10 @@ export interface AuditListResponse {
  * rejects anything else with 400). `limit` is capped at 500 server-side.
  */
 export interface AuditListParams {
+  /** The instance listing only: one project's entries, by slug. */
+  project?: string
+  /** The instance listing only: just the entries filed under no project. */
+  instance_only?: boolean
   user?: string
   action?: string
   entity_type?: string
@@ -133,6 +145,10 @@ function buildAuditQuery(params: AuditListParams): string {
       query.set(key, value)
     }
   }
+  setString('project', params.project)
+  if (params.instance_only === true) {
+    query.set('instance_only', 'true')
+  }
   setString('user', params.user)
   setString('action', params.action)
   setString('entity_type', params.entity_type)
@@ -150,7 +166,11 @@ function buildAuditQuery(params: AuditListParams): string {
   return query.toString()
 }
 
-/** Fetches a page of audit entries newest-first, filtered by `params`. */
+/**
+ * Fetches a page of the current project's audit entries newest-first, filtered
+ * by `params`. `project` and `instance_only` belong to the instance listing
+ * ({@link fetchInstanceAuditLog}); the project's refuses both by name.
+ */
 export async function fetchAuditLog(
   params: AuditListParams = {},
   signal?: AbortSignal,
@@ -161,13 +181,27 @@ export async function fetchAuditLog(
 }
 
 /**
+ * Fetches a page of the whole instance's trail newest-first (`GET /audit`,
+ * maintainer only) — every project's entries and the instance's own — filtered
+ * by `params`, `project` and `instance_only` included.
+ */
+export async function fetchInstanceAuditLog(
+  params: AuditListParams = {},
+  signal?: AbortSignal,
+): Promise<AuditListResponse> {
+  const query = buildAuditQuery(params)
+  const suffix = query === '' ? '' : `?${query}`
+  return getJSON<AuditListResponse>(instancePath(`/audit${suffix}`), signal)
+}
+
+/**
  * Query parameters for `GET /audit/mine` — the same filters as the admin listing
  * except `user`, which the endpoint takes from the session instead. It is left
  * out on purpose: the server narrows every page to the caller and answers a
  * request naming somebody else with 403, so there is nothing for a client to say
  * about whose activity it wants.
  */
-export type MyActivityParams = Omit<AuditListParams, 'user'>
+export type MyActivityParams = Omit<AuditListParams, 'user' | 'project' | 'instance_only'>
 
 /**
  * Fetches a page of the caller's own audit entries, newest-first. The narrowing

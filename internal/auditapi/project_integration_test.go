@@ -227,3 +227,75 @@ func TestProjectListing_noUsernameOracle(t *testing.T) {
 	}
 	badRequest(t, f.maintainer, f.env.baseURL+"/api/v1/audit?user=nobody-by-that-name", "nobody-by-that-name")
 }
+
+// TestProjectListing_namesItsActors proves a page names the accounts that
+// acted in its entries — a former member included, whom the project's
+// directory no longer lists — and nobody else: an account that acted only in
+// another project is not named, so the map is no way to learn about it.
+func TestProjectListing_namesItsActors(t *testing.T) {
+	f := newProjectFixture(t)
+	// vera acted only in v; ola acted in b once and was never (or is no
+	// longer) a member of it.
+	_, veraUID := f.env.loginUser(t, "vera", auth.AccountViewer)
+	_, olaUID := f.env.loginUser(t, "ola", auth.AccountViewer)
+	f.env.seed(t,
+		audit.Entry{ActorUID: veraUID, Action: audit.ActionAlbumCreate, TargetType: "albums", TargetUID: "al-vera",
+			ProjectUID: project.BootstrapUID},
+		audit.Entry{ActorUID: olaUID, Action: audit.ActionAlbumCreate, TargetType: "albums", TargetUID: "al-ola",
+			ProjectUID: f.b.UID},
+	)
+	base := f.env.baseURL + "/api/v1"
+
+	got := list(t, f.adminB, base+"/p/b/audit")
+	if got.Actors[olaUID] != "ola" {
+		t.Errorf("b's actors = %v, want the former member %s named ola", got.Actors, olaUID)
+	}
+	if _, leaked := got.Actors[veraUID]; leaked {
+		t.Errorf("b's actors = %v, name %s who acted only in v", got.Actors, veraUID)
+	}
+	if len(got.Actors) != 1 {
+		t.Errorf("b's actors = %v, want exactly the page's one actor", got.Actors)
+	}
+
+	// The maintainer's whole trail names both; an actor-less page names nobody
+	// and is still an object, never null.
+	whole := list(t, f.maintainer, base+"/audit")
+	if whole.Actors[olaUID] != "ola" || whole.Actors[veraUID] != "vera" {
+		t.Errorf("instance actors = %v, want ola and vera named", whole.Actors)
+	}
+	status, body := rawGet(t, f.maintainer, base+"/audit?instance_only=true")
+	if status != http.StatusOK || !strings.Contains(body, `"actors":{}`) {
+		t.Errorf("actor-less page = %d %s, want an empty actors object", status, body)
+	}
+}
+
+// TestInstanceListing_instanceOnly proves instance_only=true narrows the
+// maintainer's trail to the entries filed under no project — the ones no
+// project's page shows — and that it is refused next to a project filter, with
+// a value other than true/false, and on a project's own listing.
+func TestInstanceListing_instanceOnly(t *testing.T) {
+	f := newProjectFixture(t)
+	base := f.env.baseURL + "/api/v1"
+
+	only := list(t, f.maintainer, base+"/audit?instance_only=true")
+	if seen := targets(only); len(seen) != 1 || seen[0] != "us-x" {
+		t.Errorf("?instance_only=true targets = %v, want only the instance entry [us-x]", seen)
+	}
+	for _, e := range only.Entries {
+		if e.ProjectUID != nil {
+			t.Errorf("instance-only entry %d is filed under %s", e.ID, *e.ProjectUID)
+		}
+	}
+	if only.Total != 1 {
+		t.Errorf("?instance_only=true total = %d, want 1", only.Total)
+	}
+	whole := targets(list(t, f.maintainer, base+"/audit?instance_only=false"))
+	for _, want := range []string{"ph-v", "ph-b", "us-x"} {
+		if !slices.Contains(whole, want) {
+			t.Errorf("?instance_only=false targets = %v, want the whole trail (%s missing)", whole, want)
+		}
+	}
+	badRequest(t, f.maintainer, base+"/audit?instance_only=true&project=b", "exclude")
+	badRequest(t, f.maintainer, base+"/audit?instance_only=yes", "instance_only")
+	badRequest(t, f.adminV, base+"/p/v/audit?instance_only=true", "instance_only")
+}

@@ -5,7 +5,9 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
+import { useProjectFooter } from '../hooks/useProjectFooter'
 import i18n from '../i18n'
+import { setCurrentProjectSlug } from '../services/api'
 import { ApiError } from '../services/auth'
 import type { ProjectSettings } from '../services/settings'
 
@@ -40,6 +42,7 @@ function settings(overrides: Partial<ProjectSettings> = {}): ProjectSettings {
     registration_enabled: false,
     registration_secret: 'veselice',
     welcome_markdown: '',
+    footer_text: '',
     updated_at: '2026-08-20T09:00:00Z',
     updated_by_uid: 'u1',
     ...overrides,
@@ -227,9 +230,38 @@ describe('SettingsPage', () => {
       registration_enabled: true,
       registration_secret: 'veselice',
       welcome_markdown: 'Ahoj',
+      footer_text: '',
     })
     // The form now matches what is stored, so there is nothing left to save.
     expect(screen.getByRole('button', { name: 'Save settings' })).toBeDisabled()
+  })
+
+  it("edits the project's footer line and tells the footer on screen", async () => {
+    const user = userEvent.setup()
+    setCurrentProjectSlug('v')
+    fetchMock.mockResolvedValue(settings({ footer_text: 'Provozuje SDH Veselice' }))
+    updateMock.mockResolvedValue(settings({ footer_text: 'Provozuje rodina' }))
+    // The footer the shell would draw under the page: it reads nothing here
+    // (no server), so only the page's announcement can fill it.
+    function FooterProbe() {
+      return <output data-testid="footer-probe">{useProjectFooter('v')}</output>
+    }
+    render(<FooterProbe />)
+    renderPage()
+
+    const field = await screen.findByLabelText('Footer text')
+    expect(field).toHaveValue('Provozuje SDH Veselice')
+    expect(field).toHaveAttribute('maxlength', '200')
+    expect(screen.getByText('22 / 200 characters')).toBeInTheDocument()
+    await user.clear(field)
+    await user.type(field, 'Provozuje rodina')
+    await user.click(screen.getByRole('button', { name: 'Save settings' }))
+
+    expect(await screen.findByText('The settings were saved.')).toBeInTheDocument()
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ footer_text: 'Provozuje rodina' }),
+    )
+    expect(screen.getByTestId('footer-probe')).toHaveTextContent('Provozuje rodina')
   })
 
   it('repeats the server’s own rejection when the save fails', async () => {

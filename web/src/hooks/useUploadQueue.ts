@@ -43,6 +43,12 @@ export interface UploadQueueItem {
    * refusal (`file_too_large`, `quota_exceeded`) and the server named it.
    */
   errorLimitBytes?: number
+  /**
+   * The project's stored bytes when the quota refused the file
+   * (`quota_exceeded`) and the server said so — what the limit is measured
+   * against.
+   */
+  errorUsedBytes?: number
   /** Non-fatal backend warnings (for example a near-duplicate match). */
   warnings?: UploadWarning[]
   /**
@@ -251,6 +257,7 @@ export function useUploadQueue(
         error: undefined,
         errorCode: undefined,
         errorLimitBytes: undefined,
+        errorUsedBytes: undefined,
         interrupted: undefined,
       })
 
@@ -271,6 +278,7 @@ export function useUploadQueue(
             error: result.outcome === 'error' ? (result.error ?? '') : undefined,
             errorCode: result.outcome === 'error' ? result.code : undefined,
             errorLimitBytes: result.outcome === 'error' ? result.limit_bytes : undefined,
+            errorUsedBytes: result.outcome === 'error' ? result.used_bytes : undefined,
           })
         })
         .catch((error: unknown) => {

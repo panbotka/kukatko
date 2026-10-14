@@ -24,7 +24,6 @@
     "retry": "Try again"
   },
   "footer": {
-    "operator": "Operated by SDH Veselice",
     "github": "GitHub",
     "githubTitle": "View the project's source code on GitHub",
     "jobs": {
@@ -104,7 +103,8 @@
       "tasks": "Tasks",
       "uploadLinks": "Links anyone can use to upload photos into chosen albums",
       "systemProjects": "Create, edit and deactivate the instance’s projects",
-      "systemUsers": "Every account of the instance, its system role and memberships"
+      "systemUsers": "Every account of the instance, its system role and memberships",
+      "systemAudit": "Show the audit log of the whole instance, account changes outside projects included"
     },
     "expand": "Expand",
     "review": "Review",
@@ -125,7 +125,8 @@
     "tasks": "Tasks",
     "uploadLinks": "Upload links",
     "systemProjects": "Projects",
-    "systemUsers": "Accounts"
+    "systemUsers": "Accounts",
+    "systemAudit": "Instance audit"
   },
   "help": {
     "title": "Help",
@@ -694,12 +695,14 @@
     },
     "subject": {
       "title": "Who I am in the library",
-      "hint": "Pick the person of the library that is you. The app can then show you the photos you are on, and person:me works in a search.",
+      "hint": "In every project you are a member of, you can pick the person of its library that is you. The app can then show you the photos you are on there, and person:me works in a search.",
       "publishWarning": "Note: once you pick a person, their cover photo is shown next to every comment you have written — everybody who opens the photo sees it. The \"private person\" flag hides nothing today.",
-      "pickLabel": "Find a person",
       "clear": "Unlink",
       "unknownPerson": "The linked person is no longer in the library.",
-      "error": "The link could not be saved. Please try again."
+      "error": "The link could not be saved. Please try again.",
+      "pickLabelIn": "Find a person in {{project}}",
+      "clearIn": "Unlink in {{project}}",
+      "noProjects": "You are not an approved member of any project yet, so there is nobody to pick."
     },
     "picture": {
       "title": "My picture",
@@ -2910,11 +2913,13 @@
       "interrupted": "The connection dropped",
       "file_too_large": "The file is larger than the allowed {{limit}}",
       "file_too_large_unknown": "The file is larger than the project allows",
-      "quota_exceeded": "The project has reached its storage limit"
+      "quota_exceeded": "This upload would exceed the project's storage limit ({{used}} of {{limit}} used)",
+      "quota_exceeded_limit": "This upload would exceed the project's storage limit of {{limit}}",
+      "quota_exceeded_unknown": "This upload would exceed the project's storage limit"
     },
     "toast": {
       "fileTooLarge": "Some files are larger than the project allows and were not uploaded.",
-      "quotaExceeded": "The project has reached its storage limit; no more files will be uploaded."
+      "quotaExceeded": "Some files would exceed the project's storage limit and were not uploaded."
     },
     "progress": {
       "barLabel": "Overall upload progress",
@@ -3823,6 +3828,13 @@
       "body": "The settings have unsaved changes. Leaving now throws them away.",
       "confirm": "Leave without saving",
       "cancel": "Stay here"
+    },
+    "footer": {
+      "title": "Footer",
+      "help": "One line of plain text at the end of every page of the project — who runs the library, for instance. Leave it empty for no line; only the link to the source code stays.",
+      "label": "Footer text",
+      "placeholder": "Operated by…",
+      "counter": "{{length}} / {{max}} characters"
     }
   },
   "members": {
@@ -3945,7 +3957,7 @@
   },
   "audit": {
     "title": "Audit log",
-    "subtitle": "A durable record of changes on this instance, newest first. Filter by actor, action, entity or date.",
+    "subtitle": "A durable record of changes in this project, newest first. Filter by actor, action, entity or date.",
     "adminOnly": "This page is available to administrators only.",
     "loading": "Loading the audit log…",
     "error": "The audit log could not be loaded.",
@@ -3960,7 +3972,8 @@
       "action": "Action",
       "target": "Target",
       "ip": "IP",
-      "details": "Details"
+      "details": "Details",
+      "project": "Project"
     },
     "filters": {
       "actor": "Actor",
@@ -3973,7 +3986,10 @@
       "since": "From",
       "until": "To",
       "apply": "Filter",
-      "reset": "Clear filters"
+      "reset": "Clear filters",
+      "project": "Project",
+      "allProjects": "Every project and the instance",
+      "instanceOnly": "The instance only (no project)"
     },
     "details": {
       "show": "Show details",
@@ -4000,7 +4016,11 @@
       "anonymous": "Link “{{title}}”",
       "untitledNamed": "Untitled link · {{name}}",
       "untitled": "Untitled link"
-    }
+    },
+    "instanceTitle": "Instance audit log",
+    "instanceSubtitle": "A durable record of changes across the whole instance, newest first: every project's entries and those that belong to no project — accounts created and edited, system roles, blocking, password resets.",
+    "maintainerOnly": "This page is available to the system administrator only.",
+    "instanceEntry": "instance"
   },
   "expand": {
     "title": "Expand a collection",

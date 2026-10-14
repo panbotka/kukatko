@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
@@ -51,6 +51,7 @@ vi.mock('./services/settings', () => ({
     Promise.resolve({ project_name: 'Rodina', registration_enabled: true }),
   ),
   fetchWelcomeMarkdown: vi.fn(() => new Promise(() => undefined)),
+  fetchFooterText: vi.fn(() => Promise.resolve('')),
 }))
 
 // Before the shell's welcome decides whether to ask who the reader is, it asks
@@ -732,7 +733,11 @@ describe('routing — projects', () => {
       // The switcher is the way into a project, not the fallback project's name.
       expect(await screen.findByTestId('project-switcher')).toHaveTextContent(/^My projects$/)
       expect(screen.queryByRole('link', { name: 'Albums' })).not.toBeInTheDocument()
-      expect(screen.queryByText('Veselice')).not.toBeInTheDocument()
+      // The chrome names no project; the account page's own content may (its
+      // "who am I" card has a row per project, each naming it).
+      const bar = document.querySelector('nav.navbar')
+      expect(bar).not.toBeNull()
+      expect(within(bar as HTMLElement).queryByText('Veselice')).not.toBeInTheDocument()
       unmount()
     }
   })
