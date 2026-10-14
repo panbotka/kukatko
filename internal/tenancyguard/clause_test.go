@@ -76,6 +76,32 @@ func TestPredicateColumns(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			got := slices.DeleteFunc(slices.Sorted(maps.Keys(predicateColumns(tt.stmt))), isChildKey)
+			if !slices.Equal(got, tt.want) && (len(got) > 0 || len(tt.want) > 0) {
+				t.Errorf("predicateColumns(%q) project columns = %q, want %q", tt.stmt, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPredicateColumns_childKeys checks the keyed child tables' parent keys are
+// recorded under the same rule as a project column: in a predicate position
+// only, never from a select list or ordering.
+func TestPredicateColumns_childKeys(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		stmt string
+		want []string
+	}{
+		{name: "WHERE on the parent key", stmt: "SELECT phash FROM photo_phashes WHERE photo_uid = $1", want: []string{"photo_uid"}},
+		{name: "qualified ANY", stmt: "SELECT 1 FROM markers m WHERE m.subject_uid = ANY($1)", want: []string{"subject_uid"}},
+		{name: "select list only", stmt: "SELECT photo_uid FROM photo_phashes ORDER BY photo_uid"},
+		{name: "a column only spelled like it", stmt: "SELECT 1 FROM photo_phashes WHERE other_photo_uid = $1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := slices.Sorted(maps.Keys(predicateColumns(tt.stmt)))
 			if !slices.Equal(got, tt.want) && (len(got) > 0 || len(tt.want) > 0) {
 				t.Errorf("predicateColumns(%q) = %q, want %q", tt.stmt, got, tt.want)

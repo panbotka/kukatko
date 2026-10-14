@@ -787,7 +787,10 @@ to `## Package map` in `CLAUDE.md`.
   and import verify are all untouched: they are about data integrity, not browsing.
   `SetPhash`/`GetPhash` (the upsert **restamps `created_at`** on every write: the stamp is when the thumbnails
   were last built, which is what the processing report's `thumbnail.at` — and through it the viewer's rebuild
-  watch — reads), `SetEdit`/`GetEdit`; dedup on SHA256 `file_hash` + external IDs
+  watch — reads), `NearestPhash(projectUID, phash)` (the ingest near-duplicate lookup: the closest pHash
+  **of that project's photos only**, joined through `photos.project_id` — the warning names the match, so a
+  whole-table search handed an uploader, even an anonymous one on an upload link, another project's uid;
+  empty project = `ErrNoProject`), `SetEdit`/`GetEdit`; dedup on SHA256 `file_hash` + external IDs
   `photoprism_uid`/`photoprism_file_hash`(SHA1)/`photosorter_uid`; tables in migration
   `0003_photos.sql`: `photos`, `photo_files` (one primary/photo), `photo_phashes`,
   `photo_edits` (all-or-nothing crop, rotation 0/90/180/270); video columns in migration
@@ -1501,7 +1504,10 @@ to `## Package map` in `CLAUDE.md`.
   either is turned; **per-file** `FileResult{Filename,Status,
   Outcome (created/duplicate/error),PhotoUID,Error,Warnings}` — never returns an error, everything is in the result;
   **race**: concurrent identical uploads → one photo (storage hard-link + unique `file_hash`), the loser
-  a clean duplicate; **near-dup warning** config-gated via `photos.NearestPhash`; `JobEnqueuer` =
+  a clean duplicate; **near-dup warning** config-gated via `photos.NearestPhash`, searched **in the new
+  photo's own project only** (`photo.ProjectID`; a byte-identical or near-identical file already in
+  another project is neither its duplicate nor named in a warning — the same bytes become a photo of the
+  uploader's project, per the `(project_id, file_hash)` dedup key); `JobEnqueuer` =
   a TODO hook `EnqueueImageEmbed`/`EnqueueFaceDetect`, default `NopEnqueuer` until the queue exists;
   the three **switchable** enqueuers are separate one-method interfaces (`OCREnqueuer`, `PlacesEnqueuer`,
   `SidecarEnqueuer`), all satisfied by `jobs.Enqueuer`, and **a nil one is how "the feature is off" reaches
@@ -7312,6 +7318,18 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     column inside `CREATE TABLE`, `DROP COLUMN`/`DROP TABLE`) and `TestRootTables_matchMigrations` requires
     the schema's project tables to be exactly `RootTables` ∪ `ReadScopedTables` ∪ `ExemptTables` — a new
     root table cannot be forgotten in the list.
+  - `KeyedChildTables` lists the child tables of a root table that carry **no** project column
+    (`photo_phashes`, `photo_files`, `photo_edits`, `photo_places`, `photo_hls_renditions`,
+    `face_detections`, `markers`, `photo_labels`, `album_photos`), each with the keys that tie a row to a
+    parent the caller resolves inside a project (`photo_uid`; `markers` also `subject_uid`/`uid`, the two
+    membership tables their album/label). A **read** of one (`FROM`/`JOIN`, never a `DELETE`'s own `FROM`)
+    must name, in a predicate position, a project column (the join to its parent filtered on the project)
+    or one of those keys. What it catches is the **whole-table scan** — the upload's near-duplicate lookup
+    (`SELECT … FROM photo_phashes ORDER BY dist LIMIT 1`) searched every project's pHashes and named the
+    match to the uploader until 2026-10-14. Limits: a key is trusted however the caller built it
+    (`photo_uid = ANY($1)`), a `JOIN` to the parent on the key counts as keyed (the parent root table is then
+    judged on its own), writes are not judged, and a child table missing from the list is not checked at
+    all — add a new photo-keyed table there.
   - `Scan(root, dirs...)` parses every non-test `.go` file under `internal/` and `cmd/` (`go/parser`, one
     goroutine per package; ~0.2 s on the Pi) and **folds** each string expression into a statement text:
     literals, `+` chains, package-level `const`/`var` values (a value folded in at a use site is judged
@@ -7322,8 +7340,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `buildWhere(projectUID, …)`, `env.project`) or carries a literal with a project column, which stands in
     for the project. The text is split on `;`; a statement naming a root table after upper-case `FROM`,
     `JOIN`, `UPDATE` or `INTO` (`DELETE FROM`/`INSERT INTO` included; lower-case is error-message prose)
-    must name that table's column **in a predicate position**; a read-scoped table is checked the same way,
-    but only where it is read (`FROM`/`JOIN`). **One finding per statement**, at the line
+    must name that table's column **in a predicate position**; a read-scoped or keyed child table is
+    checked the same way, but only where it is read (`FROM`/`JOIN`). **One finding per statement**, at the line
     of its first unscoped table name (a raw string's own line, not the literal's first).
   - **The predicate rule** (`clause.go`, `predicateColumns`): a token-position heuristic, not a parser. It
     walks the statement keeping one clause per parenthesis level — a nested level starts in its parent's

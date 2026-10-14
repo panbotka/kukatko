@@ -159,20 +159,32 @@ func (s *Store) GetPhash(ctx context.Context, photoUID string) (Phash, error) {
 	return p, nil
 }
 
-// NearestPhash returns the photo UID whose stored perceptual hash is closest to
-// phash, together with that Hamming distance (number of differing bits over the
-// 64-bit pHash). It powers the near-duplicate warning at ingest time. Only the
-// pHash is compared; the gradient dHash is stored for future use. It returns
-// ErrPhashNotFound when no photo_phashes rows exist yet (the first upload).
+// NearestPhash returns the photo UID of projectUID whose stored perceptual hash
+// is closest to phash, together with that Hamming distance (number of differing
+// bits over the 64-bit pHash). It powers the near-duplicate warning at ingest
+// time. Only the pHash is compared; the gradient dHash is stored for future use.
+// It returns ErrPhashNotFound when no photo of the project has a hash yet (its
+// first upload), and ErrNoProject for an empty projectUID.
+//
+// The search never leaves the project: an upload's warning names the photo it
+// resembles, so a match in another project would hand the uploader — possibly
+// an anonymous one on an upload link — a foreign photo's uid.
 //
 // The distance is computed in PostgreSQL: each bigint hash is reinterpreted as
 // bit(64), XORed, and its set bits counted with bit_count.
-func (s *Store) NearestPhash(ctx context.Context, phash int64) (uid string, distance int, err error) {
-	const q = `SELECT photo_uid, bit_count((phash::bit(64)) # ($1::bigint::bit(64))) AS dist
-		FROM photo_phashes
-		ORDER BY dist ASC, photo_uid
+func (s *Store) NearestPhash(
+	ctx context.Context, projectUID string, phash int64,
+) (uid string, distance int, err error) {
+	if err := requireProject(projectUID); err != nil {
+		return "", 0, err
+	}
+	const q = `SELECT ph.photo_uid, bit_count((ph.phash::bit(64)) # ($2::bigint::bit(64))) AS dist
+		FROM photo_phashes ph
+		JOIN photos ON photos.uid = ph.photo_uid
+		WHERE photos.project_id = $1
+		ORDER BY dist ASC, ph.photo_uid
 		LIMIT 1`
-	if err := s.pool.QueryRow(ctx, q, phash).Scan(&uid, &distance); err != nil {
+	if err := s.pool.QueryRow(ctx, q, projectUID, phash).Scan(&uid, &distance); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", 0, ErrPhashNotFound
 		}

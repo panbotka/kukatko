@@ -139,3 +139,63 @@ func assertSeparateDerivedKeys(t *testing.T, thumbs *thumb.Thumbnailer, photoA, 
 		_ = reader.Close()
 	}
 }
+
+// TestIngest_nearDuplicateWarningStaysInItsProject uploads a picture into A and
+// then, into B, the same picture at another JPEG quality (a near-duplicate of
+// A's) and a byte-identical copy of A's file. Neither upload into B may name A's
+// photo — the warning carries the matched uid, and B's uploader must not learn
+// it: the first finds nothing in an empty B, the byte-identical copy becomes
+// B's own photo (not A's duplicate) and is warned about B's earlier upload
+// only. A near-duplicate uploaded into A is still warned about A's photo.
+func TestIngest_nearDuplicateWarningStaysInItsProject(t *testing.T) {
+	env := newEnv(t, config.DuplicateConfig{Enabled: true, PhashMaxDiff: 12})
+	ctx := t.Context()
+	projects := project.NewStore(env.db.Pool())
+	projectA, err := projects.Get(ctx, project.BootstrapUID)
+	if err != nil {
+		t.Fatalf("Get bootstrap: %v", err)
+	}
+	projectB, err := projects.Create(ctx, audit.Meta{}, project.CreateParams{Slug: "near-b", Name: "Near B"})
+	if err != nil {
+		t.Fatalf("Create project B: %v", err)
+	}
+	original := jpegBytes(t, 120, 120, 120, 95)
+
+	inA := env.svc.Ingest(ctx, projectA, bytes.NewReader(original), "hi.jpg", env.uploader)
+	if inA.Outcome != ingest.OutcomeCreated {
+		t.Fatalf("upload into A = %+v, want created", inA)
+	}
+	nearInB := env.svc.Ingest(ctx, projectB, bytes.NewReader(jpegBytes(t, 120, 120, 120, 40)), "lo.jpg", env.uploader)
+	if nearInB.Outcome != ingest.OutcomeCreated || hasWarning(nearInB.Warnings, "near_duplicate") {
+		t.Fatalf("near-duplicate into an empty B = %+v, want created with no near_duplicate warning", nearInB)
+	}
+	sameInB := env.svc.Ingest(ctx, projectB, bytes.NewReader(original), "hi.jpg", env.uploader)
+	if sameInB.Outcome != ingest.OutcomeCreated || sameInB.PhotoUID == inA.PhotoUID {
+		t.Fatalf("byte-identical copy into B = %+v, want a photo of B's own, not A's %s", sameInB, inA.PhotoUID)
+	}
+	assertWarnedAbout(t, "byte-identical copy into B", sameInB, nearInB.PhotoUID)
+	for _, res := range []ingest.FileResult{nearInB, sameInB} {
+		for _, w := range res.Warnings {
+			if w.PhotoUID == inA.PhotoUID || strings.Contains(w.Message, inA.PhotoUID) {
+				t.Errorf("upload into B warned about A's photo: %+v", w)
+			}
+		}
+	}
+
+	nearInA := env.svc.Ingest(ctx, projectA, bytes.NewReader(jpegBytes(t, 120, 120, 120, 60)), "mid.jpg", env.uploader)
+	if nearInA.Outcome != ingest.OutcomeCreated {
+		t.Fatalf("near-duplicate into A = %+v, want created", nearInA)
+	}
+	assertWarnedAbout(t, "near-duplicate into A", nearInA, inA.PhotoUID)
+}
+
+// assertWarnedAbout checks res carries a near_duplicate warning naming wantUID.
+func assertWarnedAbout(t *testing.T, what string, res ingest.FileResult, wantUID string) {
+	t.Helper()
+	for _, w := range res.Warnings {
+		if w.Code == "near_duplicate" && w.PhotoUID == wantUID {
+			return
+		}
+	}
+	t.Errorf("%s warnings = %+v, want a near_duplicate naming %s", what, res.Warnings, wantUID)
+}

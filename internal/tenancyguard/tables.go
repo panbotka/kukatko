@@ -56,6 +56,32 @@ var ReadScopedTables = map[string]string{
 	"audit_log": "project_id",
 }
 
+// KeyedChildTables are the child tables of a root table that carry no project
+// column of their own, mapped to the columns that key a row to a parent the
+// caller resolves inside a project (a photo, a subject, an album, a label — or
+// the row's own uid, handed out by a project-scoped listing). A read of one
+// (FROM or JOIN, other than a DELETE's own FROM) must constrain it — in a
+// predicate position, like a root table — by a project column (the join to its
+// parent filtered on the project) or by one of those keys.
+// What the guard catches is the whole-table scan: a neighbour search such as
+// "the nearest pHash of all" reads every project's rows and names none of them.
+//
+// The parent key is a heuristic, not a proof: `WHERE photo_uid = ANY($1)` is
+// accepted however the caller built $1, and a JOIN to the parent on that key
+// counts as keyed (the parent root table is then judged on its own). Writes are
+// not judged — a child row is written for a parent the caller already holds.
+var KeyedChildTables = map[string][]string{
+	"photo_phashes":        {"photo_uid"},
+	"photo_files":          {"photo_uid"},
+	"photo_edits":          {"photo_uid"},
+	"photo_places":         {"photo_uid"},
+	"photo_hls_renditions": {"photo_uid"},
+	"face_detections":      {"photo_uid"},
+	"markers":              {"photo_uid", "subject_uid", "uid"},
+	"photo_labels":         {"photo_uid", "label_uid"},
+	"album_photos":         {"photo_uid", "album_uid"},
+}
+
 // ExemptTables are the tables that carry a project column but are not catalogue
 // roots, each with the reason the guard leaves its statements alone. They are
 // listed (rather than silently ignored) so the migration cross-check still
@@ -70,3 +96,7 @@ var ExemptTables = map[string]string{
 
 // projectColumns are the column names that tie a row to a project.
 var projectColumns = []string{"project_id", "project_uid"}
+
+// childProjectColumn is the project column a keyed child table's read is
+// scoped by: the one its parent root table carries.
+const childProjectColumn = "project_id"

@@ -42,7 +42,8 @@ type clauseScan struct {
 	found  map[string]bool
 }
 
-// predicateColumns returns the project columns that stmt names in a position
+// predicateColumns returns the project columns (and keyed child tables' parent
+// keys) that stmt names in a position
 // that constrains or writes its rows: after WHERE, in a JOIN … ON condition, in
 // an INSERT column list, in an UPDATE … SET list or in an ON CONFLICT target —
 // at any depth, so a CTE's or subquery's own predicate counts. A project column
@@ -100,10 +101,21 @@ func (s *clauseScan) word(w string) {
 		s.levels[top] = opens
 	case w == projectMark && s.levels[top] != clauseOther:
 		s.found[w] = true
-	case s.levels[top] == clauseScope && slices.Contains(projectColumns, w):
+	case s.levels[top] == clauseScope && (slices.Contains(projectColumns, w) || isChildKey(w)):
 		s.found[w] = true
 	}
 	s.prev = upper
+}
+
+// isChildKey reports whether w is the parent key of a keyed child table, which
+// scopes that table's read the way a project column scopes a root table's.
+func isChildKey(w string) bool {
+	for _, keys := range KeyedChildTables {
+		if slices.Contains(keys, w) {
+			return true
+		}
+	}
+	return false
 }
 
 // isWordByte reports whether c belongs to a SQL identifier or keyword.

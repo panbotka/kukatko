@@ -667,7 +667,7 @@ func (s *Service) hashPixels(ctx context.Context, photo photos.Photo, pixels *st
 // near-duplicate and stores its pHash/dHash.
 func (s *Service) storePhash(ctx context.Context, photo photos.Photo, img image.Image) []Warning {
 	hashes := phash.Compute(img)
-	warnings := s.nearDuplicateWarning(ctx, hashes.Phash)
+	warnings := s.nearDuplicateWarning(ctx, photo, hashes.Phash)
 	if err := s.photos.SetPhash(ctx, photos.Phash{
 		PhotoUID: photo.UID, Phash: hashes.Phash, Dhash: hashes.Dhash,
 	}); err != nil {
@@ -738,14 +738,16 @@ func (s *Service) decodeOriginal(ctx context.Context, photo photos.Photo) (image
 }
 
 // nearDuplicateWarning returns a near-duplicate warning when detection is
-// enabled and an existing photo's pHash lies within the configured distance.
-// It is called before the new photo's own pHash is stored, so it never matches
-// the photo against itself.
-func (s *Service) nearDuplicateWarning(ctx context.Context, ph int64) []Warning {
+// enabled and an existing photo of photo's own project has a pHash within the
+// configured distance. Another project's photos are never searched — the
+// warning names the match, and an uploader must not learn a foreign uid. It is
+// called before the new photo's own pHash is stored, so it never matches the
+// photo against itself.
+func (s *Service) nearDuplicateWarning(ctx context.Context, photo photos.Photo, ph int64) []Warning {
 	if !s.dup.Enabled {
 		return nil
 	}
-	uid, distance, err := s.photos.NearestPhash(ctx, ph)
+	uid, distance, err := s.photos.NearestPhash(ctx, photo.ProjectID, ph)
 	if err != nil || distance > s.dup.PhashMaxDiff {
 		return nil
 	}

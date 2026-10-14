@@ -80,3 +80,42 @@ func candidateUIDs(list []photos.StackCandidate, err error) ([]string, error) {
 	}
 	return uids, err
 }
+
+// TestNearestPhash_staysInItsProject gives A's photo the exact pHash asked for
+// and B's a far one: asked from B, the nearest photo is B's own however much
+// closer A's is, asked from A it is A's — and once B has no hash at all, B
+// finds nothing rather than A's photo. Without a project the read is refused.
+// This is the lookup behind the upload's near-duplicate warning, which names
+// the photo it finds.
+func TestNearestPhash_staysInItsProject(t *testing.T) {
+	store, db := newStore(t)
+	f := projecttest.Seed(t, db.Pool())
+	ctx := t.Context()
+	const query, far = int64(0x0F0F), int64(-1)
+	for uid, hash := range map[string]int64{f.A.PhotoUID: query, f.B.PhotoUID: far} {
+		if err := store.SetPhash(ctx, photos.Phash{PhotoUID: uid, Phash: hash, Dhash: hash}); err != nil {
+			t.Fatalf("SetPhash(%s): %v", uid, err)
+		}
+	}
+
+	for _, tc := range []struct {
+		tenant   *projecttest.Tenant
+		wantDist int
+	}{{&f.A, 0}, {&f.B, 56}} {
+		uid, dist, err := store.NearestPhash(ctx, tc.tenant.ProjectUID, query)
+		if err != nil || uid != tc.tenant.PhotoUID || dist != tc.wantDist {
+			t.Errorf("NearestPhash(%s) = (%q, %d, %v), want its own photo %q at %d",
+				tc.tenant.ProjectUID, uid, dist, err, tc.tenant.PhotoUID, tc.wantDist)
+		}
+	}
+
+	if _, err := db.Pool().Exec(ctx, `DELETE FROM photo_phashes WHERE photo_uid = $1`, f.B.PhotoUID); err != nil {
+		t.Fatalf("dropping B's hash: %v", err)
+	}
+	if uid, _, err := store.NearestPhash(ctx, f.B.ProjectUID, query); !errors.Is(err, photos.ErrPhashNotFound) {
+		t.Errorf("NearestPhash(B) with no hash in B = (%q, %v), want ErrPhashNotFound", uid, err)
+	}
+	if _, _, err := store.NearestPhash(ctx, "", query); !errors.Is(err, photos.ErrNoProject) {
+		t.Errorf("NearestPhash without a project = %v, want ErrNoProject", err)
+	}
+}

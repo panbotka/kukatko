@@ -24,6 +24,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/audit/audittest"
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/ingest"
 	"github.com/panbotka/kukatko/internal/jobs"
@@ -78,6 +79,7 @@ func newIsolationEnv(t *testing.T) *isolationEnv {
 		Ingest: ingest.New(ingest.Config{
 			Storage: fs, Photos: e.photos, Thumbnailer: thumb.New(fs, t.TempDir()),
 			Enqueuer: enqueuer, OCR: enqueuer, TempDir: t.TempDir(),
+			Duplicate: config.DuplicateConfig{Enabled: true, PhashMaxDiff: 12},
 		}),
 		RequireCurator: authAPI.RequireCurator, OptionalAuth: authAPI.OptionalAuth,
 	})
@@ -119,6 +121,16 @@ func (e *isolationEnv) upload(
 	t *testing.T, code string, content []byte, cookies []*http.Cookie,
 ) (string, []*http.Cookie) {
 	t.Helper()
+	res, cookies := e.uploadResult(t, code, content, cookies)
+	return res.PhotoUID, cookies
+}
+
+// uploadResult is upload returning the whole per-file result, warnings
+// included.
+func (e *isolationEnv) uploadResult(
+	t *testing.T, code string, content []byte, cookies []*http.Cookie,
+) (ingest.FileResult, []*http.Cookie) {
+	t.Helper()
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	_ = mw.WriteField("name", "Jana")
@@ -136,7 +148,7 @@ func (e *isolationEnv) upload(
 	if set := resp.Cookies(); len(set) > 0 {
 		cookies = set
 	}
-	return out.Results[0].PhotoUID, cookies
+	return out.Results[0], cookies
 }
 
 // send issues a request with cookies and returns the response with its body
@@ -197,6 +209,57 @@ func TestPublicUpload_landsInTheLinksProject(t *testing.T) {
 	if other.FilePath == photo.FilePath {
 		t.Errorf("A's and B's copies share the key %q", photo.FilePath)
 	}
+}
+
+// TestPublicUpload_nearDuplicateWarningStaysInTheLinksProject uploads a picture
+// through A's link, then through B's link the same picture at another JPEG
+// quality — a near-duplicate of A's — and a byte-identical copy
+// of A's file. The anonymous uploader on B's link must never be handed A's
+// photo uid: the near-duplicate finds nothing in B, the byte-identical copy is
+// B's own new photo and may only be warned about B's earlier upload.
+func TestPublicUpload_nearDuplicateWarningStaysInTheLinksProject(t *testing.T) {
+	e := newIsolationEnv(t)
+	original := jpegQuality(t, 95)
+
+	inA, _ := e.uploadResult(t, e.f.A.UploadLinkCode, original, nil)
+	nearInB, _ := e.uploadResult(t, e.f.B.UploadLinkCode, jpegQuality(t, 40), nil)
+	sameInB, _ := e.uploadResult(t, e.f.B.UploadLinkCode, original, nil)
+
+	if nearInB.Outcome != ingest.OutcomeCreated || sameInB.Outcome != ingest.OutcomeCreated ||
+		sameInB.PhotoUID == inA.PhotoUID {
+		t.Fatalf("uploads into B = %+v / %+v, want two photos of B's own, neither A's %s", nearInB, sameInB, inA.PhotoUID)
+	}
+	if len(nearInB.Warnings) != 0 {
+		t.Errorf("near-duplicate into an empty B warned %+v, want nothing", nearInB.Warnings)
+	}
+	for _, res := range []ingest.FileResult{nearInB, sameInB} {
+		for _, w := range res.Warnings {
+			if w.PhotoUID == inA.PhotoUID || strings.Contains(w.Message, inA.PhotoUID) {
+				t.Errorf("upload through B's link named A's photo: %+v", w)
+			}
+		}
+	}
+	if _, err := e.photos.GetByUIDInProject(t.Context(), e.f.B.ProjectUID, sameInB.PhotoUID); err != nil {
+		t.Errorf("the byte-identical copy is not B's photo: %v", err)
+	}
+}
+
+// jpegQuality encodes one fixed, detailed picture at the given JPEG quality, so
+// two qualities are two different files of the same picture (pHash-near) and
+// one quality twice is the same bytes.
+func jpegQuality(t *testing.T, quality int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 64, 48))
+	for y := range 48 {
+		for x := range 64 {
+			img.Set(x, y, color.RGBA{R: uint8(x * 4), G: uint8(y * 5), B: uint8((x + y) * 2), A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); err != nil {
+		t.Fatalf("encoding the JPEG: %v", err)
+	}
+	return buf.Bytes()
 }
 
 // TestRegistrationThroughLink_joinsOnlyTheLinksProject uploads anonymously

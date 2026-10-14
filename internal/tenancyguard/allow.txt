@@ -115,6 +115,7 @@ internal/photos/store_stacks.go:525 repairStackTx gets a stack_uid read from a m
 internal/photos/store_stacks.go:535 repairStackTx gets a stack_uid read from a member proved in the project; stacks never span projects
 internal/photos/store_stacks.go:539 repairStackTx gets a stack_uid read from a member proved in the project; stacks never span projects
 internal/photos/store_verify.go:13 instance-wide integrity count, used by backup restore verification and the maintenance scan
+internal/photos/store_verify.go:25 ListFilePaths feeds the post-restore integrity check, which reconciles the whole bucket (every project) against the catalogue
 internal/photos/store_verify.go:63 ListCataloguedFiles feeds the instance-wide maintenance scan, which reconciles storage per project itself
 internal/photos/store_videometa.go:99 metajob reprobeVideo is worker-only; the photo is loaded from the job payload via GetForJob
 

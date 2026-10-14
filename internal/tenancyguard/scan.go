@@ -150,12 +150,16 @@ var rootRef = func() *regexp.Regexp {
 	return regexp.MustCompile(`\b(?:FROM|JOIN|UPDATE|INTO)\s+(` + strings.Join(tables, "|") + `)\b`)
 }()
 
-// readRef matches a read-scoped table named after the SQL keywords that read
-// it. A DELETE's own FROM is matched too, as the first alternative, so that the
-// leftmost match consumes it and judge can skip it: deleting is a write.
+// readRef matches a read-scoped table or a keyed child table named after the
+// SQL keywords that read it. A DELETE's own FROM is matched too, as the first
+// alternative, so that the leftmost match consumes it and judge can skip it:
+// deleting is a write.
 var readRef = func() *regexp.Regexp {
-	tables := make([]string, 0, len(ReadScopedTables))
+	tables := make([]string, 0, len(ReadScopedTables)+len(KeyedChildTables))
 	for t := range ReadScopedTables {
+		tables = append(tables, t)
+	}
+	for t := range KeyedChildTables {
 		tables = append(tables, t)
 	}
 	sort.Strings(tables)
@@ -163,14 +167,25 @@ var readRef = func() *regexp.Regexp {
 }()
 
 // scopedRef is one reference a statement makes to a table the guard checks:
-// where the table name sits in the statement and the column that scopes it.
+// where the table name sits in the statement, the column that scopes it and —
+// for a keyed child table — the parent keys that scope it just as well.
 type scopedRef struct {
 	start, end int
 	column     string
+	keys       []string
+}
+
+// scopedBy reports whether the columns a statement names in predicate
+// positions scope this reference: its project column or one of its keys.
+func (r scopedRef) scopedBy(scoped map[string]bool) bool {
+	if scoped[r.column] {
+		return true
+	}
+	return slices.ContainsFunc(r.keys, func(key string) bool { return scoped[key] })
 }
 
 // scopedRefs returns the references of stmt the guard checks, in order: every
-// root-table reference and every read of a read-scoped table.
+// root-table reference and every read of a read-scoped or keyed child table.
 func scopedRefs(stmt string) []scopedRef {
 	var refs []scopedRef
 	for _, m := range rootRef.FindAllStringSubmatchIndex(stmt, -1) {
@@ -180,7 +195,12 @@ func scopedRefs(stmt string) []scopedRef {
 		if strings.HasPrefix(stmt[m[2]:m[3]], "DELETE") {
 			continue
 		}
-		refs = append(refs, scopedRef{start: m[4], end: m[5], column: ReadScopedTables[stmt[m[4]:m[5]]]})
+		table := stmt[m[4]:m[5]]
+		if keys, child := KeyedChildTables[table]; child {
+			refs = append(refs, scopedRef{start: m[4], end: m[5], column: childProjectColumn, keys: keys})
+			continue
+		}
+		refs = append(refs, scopedRef{start: m[4], end: m[5], column: ReadScopedTables[table]})
 	}
 	sort.Slice(refs, func(i, j int) bool { return refs[i].start < refs[j].start })
 	return refs
@@ -273,7 +293,7 @@ func (p *pkgScan) judge(stmt string, offset int, pieces []piece, starts []int) (
 	}
 	for _, ref := range scopedRefs(stmt) {
 		table := stmt[ref.start:ref.end]
-		if scoped[ref.column] {
+		if ref.scopedBy(scoped) {
 			continue
 		}
 		if u.tables == nil {

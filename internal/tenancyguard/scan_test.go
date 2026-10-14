@@ -168,8 +168,27 @@ func TestScanFiles(t *testing.T) {
 			body: "func f() error { return fmt.Errorf(\"update photos: %w\", err) }",
 		},
 		{
-			name: "child tables are not roots",
-			body: "func f() { q(\"SELECT 1 FROM photo_files JOIN photo_labels ON true\") }",
+			name: "a whole-table read of a keyed child table is a finding",
+			body: "func f() {\nq(\"SELECT photo_uid FROM photo_phashes ORDER BY phash LIMIT 1\")\n" +
+				"q(\"SELECT 1 FROM photo_files JOIN photo_labels ON true\")\n}",
+			want: []string{"4:photo_phashes", "5:photo_files,photo_labels"},
+		},
+		{
+			name: "a keyed child table read by its parent key or through the project is scoped",
+			body: "func f() {\nq(\"SELECT phash FROM photo_phashes WHERE photo_uid = $1\")\n" +
+				"q(\"SELECT 1 FROM markers WHERE subject_uid = ANY($1)\")\n" +
+				"q(\"SELECT ph.photo_uid FROM photo_phashes ph JOIN photos p ON p.uid = ph.photo_uid " +
+				"WHERE p.project_id = $1\")\n}",
+		},
+		{
+			name: "a join to the parent on its key leaves the parent judged on its own",
+			body: "func f() { q(\"SELECT ph.photo_uid FROM photo_phashes ph JOIN photos p ON p.uid = ph.photo_uid\") }",
+			want: []string{"3:photos"},
+		},
+		{
+			name: "writes to a keyed child table are not judged",
+			body: "func f() {\nq(\"INSERT INTO photo_phashes (photo_uid, phash) VALUES ($1, $2)\")\n" +
+				"q(\"DELETE FROM photo_files\")\nq(\"UPDATE photo_edits SET x = 1\")\n}",
 		},
 		{
 			name: "project_invites is scoped by project_uid",

@@ -483,7 +483,7 @@ func TestNearestPhash(t *testing.T) {
 	store, _ := newStore(t)
 	ctx := t.Context()
 
-	if _, _, err := store.NearestPhash(ctx, 0); !errors.Is(err, photos.ErrPhashNotFound) {
+	if _, _, err := store.NearestPhash(ctx, project.BootstrapUID, 0); !errors.Is(err, photos.ErrPhashNotFound) {
 		t.Fatalf("NearestPhash on empty table = %v, want ErrPhashNotFound", err)
 	}
 
@@ -504,7 +504,7 @@ func TestNearestPhash(t *testing.T) {
 		t.Fatalf("SetPhash far: %v", err)
 	}
 
-	uid, distance, err := store.NearestPhash(ctx, 0b1)
+	uid, distance, err := store.NearestPhash(ctx, project.BootstrapUID, 0b1)
 	if err != nil {
 		t.Fatalf("NearestPhash: %v", err)
 	}
