@@ -3948,10 +3948,15 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `proof` run on the write's transaction): `RejectLabel`/`UnrejectLabel` prove the photo **and** the
   label in the project (`labelProof`), `DismissDuplicate`/`UndismissDuplicate`/
   `ConfirmDuplicate`/`UnconfirmDuplicate` prove both photos of the pair (`pairProof`) — otherwise
-  `ErrTargetNotFound`, no row, no audit entry; `ErrNoProject` without a project. The bulk reads
-  (`LabelRejectionsForLabel`, `DismissedDuplicatePairs`, `ConfirmedDuplicatePairs`) stay keyed by uid: the
-  label is resolved in the project by its caller, the pair lists are only intersected with one project's
-  duplicate scan, and no write joins two projects. The review game passes its session's project to the
+  `ErrTargetNotFound`, no row, no audit entry; `ErrNoProject` without a project.
+  **Repeated-marker dismissals** do the same: `DismissDuplicateMarkers`/`UndismissDuplicateMarkers` take
+  `projectUID` and prove the photo **and** the subject with the face opinions' proof (`inProjectAuditedTx`).
+  Until 2026-10-14 they took no project, so a curator of one project could settle another's group
+  (SECURITY_AUDIT SEC-024). `LabelRejectionsForLabel` stays keyed by a label its caller resolved in the
+  project. The three **bulk exclusion lists** a per-project scan reads (`DismissedDuplicatePairs`,
+  `ConfirmedDuplicatePairs`, `DismissedDuplicateMarkerGroups`) take `projectUID` (`ErrNoProject` without
+  one). They join the opinion's photos (and the group's subject) on `project_id`, so they return only that
+  project's rows, never the whole instance's. The review game passes its session's project to the
   label and pair writes like the HTTP layer does. The face opinions close the gap where a rejection wasn't kept and the same
   wrong face was offered endlessly, so the review work never shrank; tables `face_rejections`/
   `label_rejections` in migration `0031_feedback_rejections.sql`: `face_rejections` keyed by the face identity
@@ -3992,8 +3997,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   stable (adding one photo merges two groups), whereas a pair is an edge the detector actually
   drew. `DismissDuplicate`/`UndismissDuplicate` (idempotent audited insert/delete, actions
   `duplicate.dismiss`/`duplicate.undismiss`), `IsDuplicateDismissed`, bulk
-  `DismissedDuplicatePairs()` (→ `[]DuplicateDismissalKey`, the whole table in one query — detection
-  scans the catalog in one pass and needs the whole exclusion set up front); sentinel `ErrSamePhoto`
+  `DismissedDuplicatePairs(ctx, projectUID)` (→ `[]DuplicateDismissalKey`, the project's whole set in one
+  query — detection scans the project's catalog in one pass and needs the whole exclusion set up front); sentinel `ErrSamePhoto`
   (→400, a photo isn't a duplicate of itself). **Why it exists:** duplicate detection is derived state,
   recomputed on every `GET /duplicates` from hashes and embeddings, which the user's
   disagreement doesn't change — without persistence the same pair would be offered forever).
@@ -4003,7 +4008,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   the unordered pair and the `CHECK (photo_uid COLLATE "C" < other_uid COLLATE "C")` — carried **from the start**
   here, unlike `0034`, which needed `0038` to repair it. `ConfirmDuplicate`/`UnconfirmDuplicate` (idempotent
   audited insert/delete, actions `duplicate.confirm`/`duplicate.unconfirm`), `IsDuplicateConfirmed`, bulk
-  `ConfirmedDuplicatePairs()`. **Why it exists:** the duplicates page only ever offered one way to agree —
+  `ConfirmedDuplicatePairs(ctx, projectUID)`. **Why it exists:** the duplicates page only ever offered one way to agree —
   merging, which archives copies and is not something a curator does one pair at a time from a game — so
   agreement evaporated and a group somebody had already looked at was indistinguishable from one nobody had.
   It changes **nothing** about detection: a confirmed pair is still detected, still shown, still mergeable; what
@@ -4021,11 +4026,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   the **(photo, subject) pair**, which is exactly the group `internal/dupmarkers` shows; deliberately **not** by
   the markers, whose uids come and go when a photo is re-detected and whose replacement would resurrect a
   settled group. `UNIQUE (photo_uid, subject_uid)`, both FKs `ON DELETE CASCADE`, `dismissed_by` FK users
-  `ON DELETE SET NULL`. `DismissDuplicateMarkers`/`UndismissDuplicateMarkers` (idempotent audited
-  insert/delete, actions `duplicate_marker.dismiss`/`duplicate_marker.undismiss`),
-  `IsDuplicateMarkersDismissed`, bulk `DismissedDuplicateMarkerGroups()`
-  (→ `[]DuplicateMarkerDismissalKey`, the whole table in one query — the listing recomputes its groups in one
-  pass and needs the whole exclusion set up front). **Why it exists:** the repeated-marker listing is derived
+  `ON DELETE SET NULL`. `DismissDuplicateMarkers`/`UndismissDuplicateMarkers(ctx, projectUID, key, entry)`
+  (idempotent audited insert/delete, actions `duplicate_marker.dismiss`/`duplicate_marker.undismiss`; the
+  photo and the subject must both be the project's, else `ErrTargetNotFound`),
+  `IsDuplicateMarkersDismissed`, bulk `DismissedDuplicateMarkerGroups(ctx, projectUID)`
+  (→ `[]DuplicateMarkerDismissalKey`, the project's whole set in one query — the listing recomputes its
+  groups in one pass and needs the whole exclusion set up front). **Why it exists:** the repeated-marker listing is derived
   state too, so without this the same false alarm would be re-offered on every reload and a curator would keep
   clicking past it),
   `internal/feedbackapi/`
@@ -5672,7 +5678,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   and the candidates are verified by the full Hamming distance), embeddings through HNSW (`vectors.FindDuplicatePairs`).
   All behind the interfaces `PhotoSource` (`ListByUIDsInProject`)/`PhashSource` (`ListActivePhashes`)/`EmbeddingSource`
   (`FindDuplicatePairs`, nil turns embedding grouping off)/`FeedbackStore` (`DismissedDuplicatePairs` +
-  `ConfirmedDuplicatePairs`, nil leaves every edge in place and marks nothing) → unit-testable with fakes; `Service` =
+  `ConfirmedDuplicatePairs`, both called with the project being scanned; nil leaves every edge in place and
+  marks nothing) → unit-testable with fakes; `Service` =
   `New(Config{Photos,Phashes,Embeddings,Feedback,PhashMaxDiff,EmbeddingMaxDist,Neighbours})` (panics on nil
   Photos/Phashes; `PhashMaxDiff<0` turns pHash off, `EmbeddingMaxDist<=0` turns embeddings off);
   **Dismissed pairs** (`feedback.DismissedDuplicatePairs`, "nechat obě" from the compare view) are registered in
@@ -5776,7 +5783,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `internal/facematch` and a separate task, and mixing the two would mean neither count falls when either is
   fixed. Read-only: it finds the groups, every repair goes through an existing write path.
   `MarkerSource` (`ListRepeatedMarkers`, satisfied by `*Store`)/`DismissalSource`
-  (`DismissedDuplicateMarkerGroups`, satisfied by `*feedback.Store`) →
+  (`DismissedDuplicateMarkerGroups(ctx, projectUID)`, the project's dismissals only, satisfied by
+  `*feedback.Store`) →
   `Service = New(Config{Markers,Dismissals})`, **`FindGroups(ctx,projectUID,limit,offset)`** (the project's
   photos only — `ListRepeatedMarkers(ctx, projectUID)` filters `p.project_id`; `ErrNoProject` without one) →
   `Result{Groups,Total,Limit,Offset,NextOffset}`; a `Group{PhotoUID,PhotoTitle,TakenAt,Width,Height,
@@ -7023,7 +7031,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     really changes something — how `internal/memberapi` queues the approval mail); nothing is stamped on
     the account — its approval is derived from its memberships (`auth`'s `accountApprovedSQL`);
     `RemoveMember` → `project.member.remove`; `SetSubject(…, *string)` → `project.member.subject` (+
-    `previous_subject_uid`; nil clears; unknown subject = `ErrSubjectNotFound`). A change to nothing writes
+    `previous_subject_uid`; nil clears; a subject that is not the project's — unknown, or another
+    project's — is `ErrSubjectNotFound`, checked on the write's transaction with the query
+    `internal/auth`'s `checkSubject` runs). A change to nothing writes
     neither the row nor an audit entry. Every write **locks the project row** first, so concurrent changes
     to one project's members are serialised and the **last-admin guard** cannot be raced: `SetRole` away
     from admin and `RemoveMember` of an admin return `ErrLastAdmin` when no other admin would remain

@@ -338,7 +338,8 @@ func TestRemoveMember(t *testing.T) {
 }
 
 // TestSetSubject verifies setting and clearing the "this is me" person, the
-// audit, the no-op, ErrSubjectNotFound and the ON DELETE SET NULL of the link.
+// audit, the no-op, ErrSubjectNotFound (a uid naming nothing and another
+// project's subject alike) and the ON DELETE SET NULL of the link.
 func TestSetSubject(t *testing.T) {
 	store, db, meta := newStore(t)
 	ctx := context.Background()
@@ -368,6 +369,14 @@ func TestSetSubject(t *testing.T) {
 		project.ErrSubjectNotFound) {
 		t.Errorf("SetSubject(unknown subject) error = %v, want ErrSubjectNotFound", err)
 	}
+	foreign := seedForeignSubject(t, store, db, meta)
+	if _, err := store.SetSubject(ctx, meta, project.BootstrapUID, "us_member_a", &foreign); !errors.Is(err,
+		project.ErrSubjectNotFound) {
+		t.Errorf("SetSubject(another project's subject) error = %v, want ErrSubjectNotFound", err)
+	}
+	if n := len(auditRecords(t, db, audit.ActionProjectMemberSubject)); n != 1 {
+		t.Errorf("refused subject changes recorded audit rows (%d rows, want 1)", n)
+	}
 	if _, err := store.SetSubject(ctx, meta, project.BootstrapUID, "us_missing", &subject); !errors.Is(err,
 		project.ErrNotMember) {
 		t.Errorf("SetSubject(non-member) error = %v, want ErrNotMember", err)
@@ -386,6 +395,24 @@ func TestSetSubject(t *testing.T) {
 	if err != nil || cleared.SubjectUID != nil {
 		t.Errorf("SetSubject(nil) = %+v, %v", cleared, err)
 	}
+}
+
+// seedForeignSubject creates a second project holding one person and returns
+// that person's uid — a subject that exists, just not in the bootstrap project.
+func seedForeignSubject(t *testing.T, store *project.Store, db *database.DB, meta audit.Meta) string {
+	t.Helper()
+	ctx := context.Background()
+	other, err := store.Create(ctx, meta, project.CreateParams{Slug: "cizi", Name: "Cizí"})
+	if err != nil {
+		t.Fatalf("creating the foreign project: %v", err)
+	}
+	const subjectUID = "sbj_foreign"
+	if _, err := db.Pool().Exec(ctx,
+		`INSERT INTO subjects (uid, slug, name, type, project_id) VALUES ($1, $2, $3, 'person', $4)`,
+		subjectUID, subjectUID, subjectUID, other.UID); err != nil {
+		t.Fatalf("seeding the foreign subject: %v", err)
+	}
+	return subjectUID
 }
 
 // TestTouchLastProject verifies the last project is remembered without an audit

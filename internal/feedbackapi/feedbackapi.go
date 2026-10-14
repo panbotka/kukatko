@@ -68,15 +68,15 @@ type Store interface {
 	UnconfirmDuplicate(
 		ctx context.Context, projectUID string, key feedback.DuplicateConfirmationKey, entry audit.Entry,
 	) error
-	// DismissDuplicateMarkers records that a person really IS marked more than
-	// once on a photo, idempotently and audited.
+	// DismissDuplicateMarkers records that a person of the project really IS
+	// marked more than once on a photo of the project, idempotently and audited.
 	DismissDuplicateMarkers(
-		ctx context.Context, key feedback.DuplicateMarkerDismissalKey, entry audit.Entry,
+		ctx context.Context, projectUID string, key feedback.DuplicateMarkerDismissalKey, entry audit.Entry,
 	) error
-	// UndismissDuplicateMarkers takes a repeated-marker dismissal back,
-	// idempotently and audited.
+	// UndismissDuplicateMarkers takes a repeated-marker dismissal back inside
+	// the project, idempotently and audited.
 	UndismissDuplicateMarkers(
-		ctx context.Context, key feedback.DuplicateMarkerDismissalKey, entry audit.Entry,
+		ctx context.Context, projectUID string, key feedback.DuplicateMarkerDismissalKey, entry audit.Entry,
 	) error
 }
 

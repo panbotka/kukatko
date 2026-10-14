@@ -220,3 +220,142 @@ func assertAuditProject(t *testing.T, pool *pgxpool.Pool, action, projectUID str
 		t.Errorf("audit entries of %s: %d, %d of them in project %s; want all", action, total, inProject, projectUID)
 	}
 }
+
+// TestDuplicateMarkerDismissals_neverCrossProjects dismisses and un-dismisses
+// repeated-marker groups from inside B naming A's photo, A's subject and no
+// project: every one is refused (ErrTargetNotFound / ErrNoProject) and writes
+// no row and no audit entry. An existing dismissal of A's survives B's attempt
+// to take it back, and B's own dismissal is recorded and stamped with B's
+// project.
+func TestDuplicateMarkerDismissals_neverCrossProjects(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	pool := db.Pool()
+	f := projecttest.Seed(t, pool)
+	store := feedback.NewStore(pool)
+	ctx := t.Context()
+	dismiss := audit.Entry{Action: audit.ActionDuplicateMarkerDismiss, TargetType: "subjects"}
+	undismiss := audit.Entry{Action: audit.ActionDuplicateMarkerUndismiss, TargetType: "subjects"}
+
+	refused := []struct {
+		name    string
+		project string
+		key     feedback.DuplicateMarkerDismissalKey
+		want    error
+	}{
+		{"A's group", f.B.ProjectUID,
+			feedback.DuplicateMarkerDismissalKey{PhotoUID: f.A.PhotoUID, SubjectUID: f.A.SubjectUID},
+			feedback.ErrTargetNotFound},
+		{"A's photo", f.B.ProjectUID,
+			feedback.DuplicateMarkerDismissalKey{PhotoUID: f.A.PhotoUID, SubjectUID: f.B.SubjectUID},
+			feedback.ErrTargetNotFound},
+		{"A's subject", f.B.ProjectUID,
+			feedback.DuplicateMarkerDismissalKey{PhotoUID: f.B.PhotoUID, SubjectUID: f.A.SubjectUID},
+			feedback.ErrTargetNotFound},
+		{"no project", "",
+			feedback.DuplicateMarkerDismissalKey{PhotoUID: f.B.PhotoUID, SubjectUID: f.B.SubjectUID},
+			feedback.ErrNoProject},
+	}
+	for _, c := range refused {
+		if err := store.DismissDuplicateMarkers(ctx, c.project, c.key, dismiss); !errors.Is(err, c.want) {
+			t.Errorf("DismissDuplicateMarkers(%s) = %v, want %v", c.name, err, c.want)
+		}
+	}
+	assertNoOpinions(t, pool, "duplicate_marker_dismissals", audit.ActionDuplicateMarkerDismiss)
+
+	aGroup := feedback.DuplicateMarkerDismissalKey{PhotoUID: f.A.PhotoUID, SubjectUID: f.A.SubjectUID}
+	if err := store.DismissDuplicateMarkers(ctx, f.A.ProjectUID, aGroup, dismiss); err != nil {
+		t.Fatalf("DismissDuplicateMarkers on A's own group: %v", err)
+	}
+	for _, c := range refused {
+		if err := store.UndismissDuplicateMarkers(ctx, c.project, c.key, undismiss); !errors.Is(err, c.want) {
+			t.Errorf("UndismissDuplicateMarkers(%s) = %v, want %v", c.name, err, c.want)
+		}
+	}
+	if ok, err := store.IsDuplicateMarkersDismissed(ctx, aGroup); err != nil || !ok {
+		t.Errorf("A's dismissal after B's take-back attempts = %v, %v; want still dismissed", ok, err)
+	}
+	var undone int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM audit_log WHERE action = $1",
+		audit.ActionDuplicateMarkerUndismiss).Scan(&undone); err != nil {
+		t.Fatalf("counting take-back audit entries: %v", err)
+	}
+	if undone != 0 {
+		t.Errorf("refused take-backs left %d audit entries", undone)
+	}
+
+	own := feedback.DuplicateMarkerDismissalKey{PhotoUID: f.B.PhotoUID, SubjectUID: f.B.SubjectUID}
+	if err := store.DismissDuplicateMarkers(ctx, f.B.ProjectUID, own, dismiss); err != nil {
+		t.Fatalf("DismissDuplicateMarkers on B's own group: %v", err)
+	}
+	var stamped int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM audit_log WHERE action = $1 AND project_id = $2",
+		audit.ActionDuplicateMarkerDismiss, f.B.ProjectUID).Scan(&stamped); err != nil {
+		t.Fatalf("reading B's audit entries: %v", err)
+	}
+	if stamped != 1 {
+		t.Errorf("B's dismissal audit entries stamped with B = %d, want 1", stamped)
+	}
+}
+
+// TestExclusionLists_scopedToProject records one near-duplicate dismissal, one
+// confirmation and one repeated-marker dismissal in each project and asserts
+// each project's bulk lists return its own row and never the other project's.
+func TestExclusionLists_scopedToProject(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	pool := db.Pool()
+	f := projecttest.Seed(t, pool)
+	store := feedback.NewStore(pool)
+	ctx := t.Context()
+	entry := audit.Entry{Action: audit.ActionDuplicateDismiss, TargetType: "photos"}
+
+	want := map[projecttest.Side]string{}
+	for _, side := range []projecttest.Side{projecttest.SideA, projecttest.SideB} {
+		tn := f.Tenant(side)
+		other := insertPhoto(t, pool, tn.ProjectUID)
+		want[side] = tn.PhotoUID
+		if err := store.DismissDuplicate(ctx, tn.ProjectUID,
+			feedback.DuplicateDismissalKey{PhotoUID: tn.PhotoUID, OtherUID: other}, entry); err != nil {
+			t.Fatalf("DismissDuplicate in %s: %v", side, err)
+		}
+		if err := store.ConfirmDuplicate(ctx, tn.ProjectUID,
+			feedback.DuplicateConfirmationKey{PhotoUID: tn.PhotoUID, OtherUID: other}, entry); err != nil {
+			t.Fatalf("ConfirmDuplicate in %s: %v", side, err)
+		}
+		if err := store.DismissDuplicateMarkers(ctx, tn.ProjectUID,
+			feedback.DuplicateMarkerDismissalKey{PhotoUID: tn.PhotoUID, SubjectUID: tn.SubjectUID}, entry); err != nil {
+			t.Fatalf("DismissDuplicateMarkers in %s: %v", side, err)
+		}
+	}
+
+	for _, side := range []projecttest.Side{projecttest.SideA, projecttest.SideB} {
+		projectUID := f.Tenant(side).ProjectUID
+		dismissed, err := store.DismissedDuplicatePairs(ctx, projectUID)
+		if err != nil {
+			t.Fatalf("DismissedDuplicatePairs(%s): %v", side, err)
+		}
+		confirmed, err := store.ConfirmedDuplicatePairs(ctx, projectUID)
+		if err != nil {
+			t.Fatalf("ConfirmedDuplicatePairs(%s): %v", side, err)
+		}
+		groups, err := store.DismissedDuplicateMarkerGroups(ctx, projectUID)
+		if err != nil {
+			t.Fatalf("DismissedDuplicateMarkerGroups(%s): %v", side, err)
+		}
+		if len(dismissed) != 1 || !pairNames(dismissed[0].PhotoUID, dismissed[0].OtherUID, want[side]) {
+			t.Errorf("%s's dismissed pairs = %+v, want only its own pair with %s", side, dismissed, want[side])
+		}
+		if len(confirmed) != 1 || !pairNames(confirmed[0].PhotoUID, confirmed[0].OtherUID, want[side]) {
+			t.Errorf("%s's confirmed pairs = %+v, want only its own pair with %s", side, confirmed, want[side])
+		}
+		if len(groups) != 1 || groups[0].PhotoUID != want[side] {
+			t.Errorf("%s's dismissed marker groups = %+v, want only its own group on %s", side, groups, want[side])
+		}
+	}
+}
+
+// pairNames reports whether the pair (a, b) names uid.
+func pairNames(a, b, uid string) bool {
+	return a == uid || b == uid
+}

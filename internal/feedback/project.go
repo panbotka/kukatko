@@ -27,16 +27,17 @@ var ErrNoProject = errors.New("feedback: no project given")
 // (FaceRejectionsForSubject, FaceConfirmationsForSubject) and the Is… probes stay
 // keyed by uid: their callers resolve the subject inside the project first.
 //
-// The label and near-duplicate opinions follow the same rule. label_rejections
-// is scoped through its photo AND its label: the label writes prove both in the
-// project. duplicate_dismissals and duplicate_confirmations are scoped through
-// their two photos: the pair writes prove both in the project. A target outside
-// it is ErrTargetNotFound, with no row and no audit entry. The bulk reads
-// (LabelRejectionsForLabel, DismissedDuplicatePairs, ConfirmedDuplicatePairs)
-// and the Is… probes stay keyed by uid as above: a label is resolved inside the
-// project by its caller first, and the pair lists are only ever intersected with
-// a duplicate scan that is itself confined to one project's photos — since no
-// write can join two projects, a pair never names a foreign photo next to an own.
+// The label, near-duplicate and repeated-marker opinions follow the same rule.
+// label_rejections is scoped through its photo AND its label: the label writes
+// prove both in the project. duplicate_dismissals and duplicate_confirmations are
+// scoped through their two photos: the pair writes prove both in the project.
+// duplicate_marker_dismissals is scoped through its photo AND its subject, with
+// the face opinions' proof. A target outside it is ErrTargetNotFound, with no row
+// and no audit entry. The Is… probes stay keyed by uid as above, and
+// LabelRejectionsForLabel by a label its caller resolved inside the project. The
+// bulk exclusion lists a per-project scan reads (DismissedDuplicatePairs,
+// ConfirmedDuplicatePairs, DismissedDuplicateMarkerGroups) take the project and
+// return only the rows whose photos — and subject — are all its own.
 
 // faceTargetInProjectSQL reports whether the photo ($1) and the subject ($2) of a
 // face opinion both belong to the project ($3).

@@ -28,9 +28,11 @@ DELETE FROM duplicate_confirmations WHERE photo_uid = $1 AND other_uid = $2`,
 SELECT EXISTS (
     SELECT 1 FROM duplicate_confirmations WHERE photo_uid = $1 AND other_uid = $2)`,
 	listSQL: `
-SELECT photo_uid, other_uid
-FROM duplicate_confirmations
-ORDER BY photo_uid, other_uid`,
+SELECT d.photo_uid, d.other_uid
+FROM duplicate_confirmations d
+JOIN photos p ON p.uid = d.photo_uid AND p.project_id = $1
+JOIN photos o ON o.uid = d.other_uid AND o.project_id = $1
+ORDER BY d.photo_uid, d.other_uid`,
 	record: "confirming duplicate",
 	remove: "un-confirming duplicate",
 	check:  "checking duplicate confirmation",
@@ -90,12 +92,13 @@ func (s *Store) IsDuplicateConfirmed(ctx context.Context, key DuplicateConfirmat
 	return s.hasPair(ctx, duplicateConfirmations, pair)
 }
 
-// ConfirmedDuplicatePairs returns every confirmed pair in canonical (smaller uid
-// first) order. It is the bulk lookup duplicate detection uses to mark the
-// human-confirmed groups in one read, without an N+1. No confirmations yields an
-// empty (non-nil) slice, nil error.
-func (s *Store) ConfirmedDuplicatePairs(ctx context.Context) ([]DuplicateConfirmationKey, error) {
-	pairs, err := s.listPairs(ctx, duplicateConfirmations)
+// ConfirmedDuplicatePairs returns every confirmed pair of projectUID (both photos
+// the project's) in canonical (smaller uid first) order. It is the bulk lookup
+// duplicate detection uses to mark the human-confirmed groups in one read,
+// without an N+1. No confirmations yields an empty (non-nil) slice, nil error; an
+// empty projectUID is ErrNoProject.
+func (s *Store) ConfirmedDuplicatePairs(ctx context.Context, projectUID string) ([]DuplicateConfirmationKey, error) {
+	pairs, err := s.listPairs(ctx, projectUID, duplicateConfirmations)
 	if err != nil {
 		return nil, err
 	}

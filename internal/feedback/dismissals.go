@@ -30,9 +30,11 @@ DELETE FROM duplicate_dismissals WHERE photo_uid = $1 AND other_uid = $2`,
 SELECT EXISTS (
     SELECT 1 FROM duplicate_dismissals WHERE photo_uid = $1 AND other_uid = $2)`,
 	listSQL: `
-SELECT photo_uid, other_uid
-FROM duplicate_dismissals
-ORDER BY photo_uid, other_uid`,
+SELECT d.photo_uid, d.other_uid
+FROM duplicate_dismissals d
+JOIN photos p ON p.uid = d.photo_uid AND p.project_id = $1
+JOIN photos o ON o.uid = d.other_uid AND o.project_id = $1
+ORDER BY d.photo_uid, d.other_uid`,
 	record: "dismissing duplicate",
 	remove: "un-dismissing duplicate",
 	check:  "checking duplicate dismissal",
@@ -90,12 +92,13 @@ func (s *Store) IsDuplicateDismissed(ctx context.Context, key DuplicateDismissal
 	return s.hasPair(ctx, duplicateDismissals, pair)
 }
 
-// DismissedDuplicatePairs returns every dismissed pair in canonical (smaller uid
-// first) order. It is the bulk lookup duplicate detection uses to drop the
-// dismissed edges from its similarity graph in one read, without an N+1. No
-// dismissals yields an empty (non-nil) slice, nil error.
-func (s *Store) DismissedDuplicatePairs(ctx context.Context) ([]DuplicateDismissalKey, error) {
-	pairs, err := s.listPairs(ctx, duplicateDismissals)
+// DismissedDuplicatePairs returns every dismissed pair of projectUID (both photos
+// the project's) in canonical (smaller uid first) order. It is the bulk lookup
+// duplicate detection uses to drop the dismissed edges from its similarity graph
+// in one read, without an N+1. No dismissals yields an empty (non-nil) slice, nil
+// error; an empty projectUID is ErrNoProject.
+func (s *Store) DismissedDuplicatePairs(ctx context.Context, projectUID string) ([]DuplicateDismissalKey, error) {
+	pairs, err := s.listPairs(ctx, projectUID, duplicateDismissals)
 	if err != nil {
 		return nil, err
 	}

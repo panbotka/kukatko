@@ -104,12 +104,12 @@ type EmbeddingSource interface {
 // groups are built. *feedback.Store satisfies it. A nil FeedbackStore disables
 // dismissal filtering (every detected edge stands).
 type FeedbackStore interface {
-	// DismissedDuplicatePairs returns every pair a user dismissed as not a
-	// duplicate.
-	DismissedDuplicatePairs(ctx context.Context) ([]feedback.DuplicateDismissalKey, error)
-	// ConfirmedDuplicatePairs returns every pair a user confirmed as really the
-	// same shot.
-	ConfirmedDuplicatePairs(ctx context.Context) ([]feedback.DuplicateConfirmationKey, error)
+	// DismissedDuplicatePairs returns every pair of the project a user
+	// dismissed as not a duplicate.
+	DismissedDuplicatePairs(ctx context.Context, projectUID string) ([]feedback.DuplicateDismissalKey, error)
+	// ConfirmedDuplicatePairs returns every pair of the project a user
+	// confirmed as really the same shot.
+	ConfirmedDuplicatePairs(ctx context.Context, projectUID string) ([]feedback.DuplicateConfirmationKey, error)
 }
 
 // Config bundles the dependencies and thresholds of a Service. Photos and Phashes
@@ -286,13 +286,13 @@ func (s *Service) buildGraph(ctx context.Context, projectUID string) (*graph, er
 	g := newGraph()
 	g.addPhashes(hashes)
 
-	dismissed, err := s.dismissedPairs(ctx)
+	dismissed, err := s.dismissedPairs(ctx, projectUID)
 	if err != nil {
 		return nil, err
 	}
 	g.addDismissals(dismissed)
 
-	confirmed, err := s.confirmedPairs(ctx)
+	confirmed, err := s.confirmedPairs(ctx, projectUID)
 	if err != nil {
 		return nil, err
 	}
@@ -308,26 +308,28 @@ func (s *Service) buildGraph(ctx context.Context, projectUID string) (*graph, er
 	return g, nil
 }
 
-// dismissedPairs returns the pairs the user settled as "not duplicates", or nil
-// when no feedback store is wired.
-func (s *Service) dismissedPairs(ctx context.Context) ([]feedback.DuplicateDismissalKey, error) {
+// dismissedPairs returns the project's pairs the user settled as "not
+// duplicates", or nil when no feedback store is wired.
+func (s *Service) dismissedPairs(ctx context.Context, projectUID string) ([]feedback.DuplicateDismissalKey, error) {
 	if s.cfg.Feedback == nil {
 		return nil, nil
 	}
-	pairs, err := s.cfg.Feedback.DismissedDuplicatePairs(ctx)
+	pairs, err := s.cfg.Feedback.DismissedDuplicatePairs(ctx, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("duplicates: listing dismissed pairs: %w", err)
 	}
 	return pairs, nil
 }
 
-// confirmedPairs returns the pairs a user confirmed as really the same shot, or
-// nil when no feedback store is wired.
-func (s *Service) confirmedPairs(ctx context.Context) ([]feedback.DuplicateConfirmationKey, error) {
+// confirmedPairs returns the project's pairs a user confirmed as really the same
+// shot, or nil when no feedback store is wired.
+func (s *Service) confirmedPairs(
+	ctx context.Context, projectUID string,
+) ([]feedback.DuplicateConfirmationKey, error) {
 	if s.cfg.Feedback == nil {
 		return nil, nil
 	}
-	pairs, err := s.cfg.Feedback.ConfirmedDuplicatePairs(ctx)
+	pairs, err := s.cfg.Feedback.ConfirmedDuplicatePairs(ctx, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("duplicates: listing confirmed pairs: %w", err)
 	}

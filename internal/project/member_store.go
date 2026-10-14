@@ -244,7 +244,10 @@ func (s *Store) ApproveWith(
 // and records ActionProjectMemberSubject (previous and new subject) in the same
 // transaction. Setting the subject the member already has records nothing. It
 // returns ErrNotFound for an unknown project, ErrNotMember when the account is
-// not a member and ErrSubjectNotFound for an unknown subject.
+// not a member and ErrSubjectNotFound — writing nothing — unless subjectUID
+// names a person of projectUID: another project's subject is nobody here, the
+// same answer as a uid that names nothing (the rule internal/auth's
+// checkSubject applies on the self-service path).
 func (s *Store) SetSubject(
 	ctx context.Context, meta audit.Meta, projectUID, userUID string, subjectUID *string,
 ) (*Member, error) {
@@ -255,12 +258,36 @@ func (s *Store) SetSubject(
 		if sameSubject(current.SubjectUID, subjectUID) {
 			return false, nil
 		}
+		if err := requireSubjectInProject(ctx, tx, projectUID, subjectUID); err != nil {
+			return false, err
+		}
 		entry.Details["role"] = string(current.Role)
 		entry.Details["previous_subject_uid"] = current.SubjectUID
 		return true, execMember(ctx, tx,
 			`UPDATE project_members SET subject_uid = $3 WHERE project_uid = $1 AND user_uid = $2`,
 			projectUID, userUID, subjectUID)
 	})
+}
+
+// subjectInProjectSQL reports whether the subject $1 is a person of the project
+// $2 — the query internal/auth's checkSubject runs.
+const subjectInProjectSQL = `SELECT EXISTS (SELECT 1 FROM subjects WHERE uid = $1 AND project_id = $2)`
+
+// requireSubjectInProject returns ErrSubjectNotFound unless subjectUID (nil: no
+// link, always fine) names a person of projectUID, run on the transaction of the
+// write it guards.
+func requireSubjectInProject(ctx context.Context, tx pgx.Tx, projectUID string, subjectUID *string) error {
+	if subjectUID == nil {
+		return nil
+	}
+	var ok bool
+	if err := tx.QueryRow(ctx, subjectInProjectSQL, *subjectUID, projectUID).Scan(&ok); err != nil {
+		return fmt.Errorf("checking subject %s: %w", *subjectUID, err)
+	}
+	if !ok {
+		return fmt.Errorf("%w: %s in project %s", ErrSubjectNotFound, *subjectUID, projectUID)
+	}
+	return nil
 }
 
 // RemoveMember removes the account userUID from the project projectUID and

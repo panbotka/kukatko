@@ -20,14 +20,14 @@ type fakeFeedback struct {
 
 // DismissedDuplicatePairs returns the canned pairs or error.
 func (f fakeFeedback) DismissedDuplicatePairs(
-	_ context.Context,
+	_ context.Context, _ string,
 ) ([]feedback.DuplicateDismissalKey, error) {
 	return f.pairs, f.err
 }
 
 // ConfirmedDuplicatePairs returns the canned confirmations or error.
 func (f fakeFeedback) ConfirmedDuplicatePairs(
-	_ context.Context,
+	_ context.Context, _ string,
 ) ([]feedback.DuplicateConfirmationKey, error) {
 	return f.confirmed, f.err
 }

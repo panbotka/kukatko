@@ -103,14 +103,14 @@ func (f *fakeStore) UnconfirmDuplicate(
 }
 
 func (f *fakeStore) DismissDuplicateMarkers(
-	_ context.Context, key feedback.DuplicateMarkerDismissalKey, entry audit.Entry,
+	_ context.Context, _ string, key feedback.DuplicateMarkerDismissalKey, entry audit.Entry,
 ) error {
 	f.called, f.dupMarkerKey, f.entry = "DismissDuplicateMarkers", key, entry
 	return f.err
 }
 
 func (f *fakeStore) UndismissDuplicateMarkers(
-	_ context.Context, key feedback.DuplicateMarkerDismissalKey, entry audit.Entry,
+	_ context.Context, _ string, key feedback.DuplicateMarkerDismissalKey, entry audit.Entry,
 ) error {
 	f.called, f.dupMarkerKey, f.entry = "UndismissDuplicateMarkers", key, entry
 	return f.err

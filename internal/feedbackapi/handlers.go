@@ -191,7 +191,8 @@ func (a *API) handleDuplicateUnconfirm(w http.ResponseWriter, r *http.Request) {
 // photo — and answers 204, so the repeated-marker review stops offering the group.
 // Nothing is detached or invalidated by it. The write is idempotent, so dismissing
 // the same group twice is a no-op. A malformed body or a missing identifier answers
-// 400; a non-existent photo or subject answers 404.
+// 400; a photo or subject that does not exist in the request's project answers
+// 404 (another project's alike).
 func (a *API) handleMarkerDismiss(w http.ResponseWriter, r *http.Request) {
 	in, err := decodeMarkerDismissal(r)
 	if err != nil {
@@ -201,7 +202,8 @@ func (a *API) handleMarkerDismiss(w http.ResponseWriter, r *http.Request) {
 	key := in.toKey()
 	entry := a.auditEntry(r, audit.ActionDuplicateMarkerDismiss, "subjects", key.SubjectUID,
 		map[string]any{"photo_uid": key.PhotoUID})
-	if err := a.store.DismissDuplicateMarkers(r.Context(), key, entry); err != nil {
+	err = a.store.DismissDuplicateMarkers(r.Context(), auth.ProjectUIDFromContext(r.Context()), key, entry)
+	if err != nil {
 		status, msg := rejectionStatus(err)
 		writeError(w, status, msg)
 		return
@@ -212,7 +214,8 @@ func (a *API) handleMarkerDismiss(w http.ResponseWriter, r *http.Request) {
 // handleMarkerUndismiss takes back the repeated-marker dismissal in the request
 // body and answers 204, letting the group be offered for review again.
 // Un-dismissing a group that was never dismissed is a no-op. A malformed body or a
-// missing identifier answers 400.
+// missing identifier answers 400; a photo or subject outside the request's
+// project answers 404.
 func (a *API) handleMarkerUndismiss(w http.ResponseWriter, r *http.Request) {
 	in, err := decodeMarkerDismissal(r)
 	if err != nil {
@@ -222,7 +225,8 @@ func (a *API) handleMarkerUndismiss(w http.ResponseWriter, r *http.Request) {
 	key := in.toKey()
 	entry := a.auditEntry(r, audit.ActionDuplicateMarkerUndismiss, "subjects", key.SubjectUID,
 		map[string]any{"photo_uid": key.PhotoUID})
-	if err := a.store.UndismissDuplicateMarkers(r.Context(), key, entry); err != nil {
+	err = a.store.UndismissDuplicateMarkers(r.Context(), auth.ProjectUIDFromContext(r.Context()), key, entry)
+	if err != nil {
 		status, msg := rejectionStatus(err)
 		writeError(w, status, msg)
 		return

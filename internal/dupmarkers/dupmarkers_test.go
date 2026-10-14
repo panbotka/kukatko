@@ -47,7 +47,7 @@ type fakeDismissals struct {
 
 // DismissedDuplicateMarkerGroups implements dupmarkers.DismissalSource.
 func (f fakeDismissals) DismissedDuplicateMarkerGroups(
-	context.Context,
+	context.Context, string,
 ) ([]feedback.DuplicateMarkerDismissalKey, error) {
 	return f.keys, f.err
 }

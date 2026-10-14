@@ -114,7 +114,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   membership, inactive projects included, by name; `subject_uid` is the account's "this is me" in that
   project) and `last_project_slug` (the project the account last entered, `""` when none). The
   per-project facts live in `projects`: the frontend reads the role and the linked person of the
-  current project from there. `user.role` is the account record's five-rung role (see *Roles on the
+  current project from there. The top-level **`user.subject_uid`** is the **bootstrap project's**
+  membership link (MT04 transition value). It is kept for compatibility with clients older than projects
+  and is wrong for any other project. Read `projects[].subject_uid` of the current project instead, as
+  the SPA does: `AuthContext` overlays it onto `user`. `user.role` is the account record's five-rung role (see *Roles on the
   admin user endpoints*) and `"maintainer"` for a maintainer; `user.instance_role` repeats the
   instance role.
   **Project resolution (every project-scoped route):** the project comes from the `{project}` URL
@@ -2183,7 +2186,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   the face's photo or the subject is not one of the request's project (or does not exist — the `DELETE`s
   included, which used to answer 204 for a missing target), recording nothing; likewise the two label
   routes answer **404** unless both the photo and the label belong to the request's project, and the four
-  near-duplicate-photo routes unless both photos of the pair do (the `DELETE`s included) — an opinion about
+  near-duplicate-photo routes unless both photos of the pair do, and the two repeated-marker routes
+  unless both the photo and the subject do (the `DELETE`s included) — an opinion about
   another project's row reads exactly like one about a missing uid, and writes no row and no audit entry;
   `POST /feedback/duplicate-dismissals` `{photo_uid,other_uid}` → 204 ("these two photos are NOT
   duplicates") and `DELETE /feedback/duplicate-dismissals` (same body) → 204 (undo);

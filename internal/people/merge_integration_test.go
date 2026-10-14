@@ -167,7 +167,7 @@ func TestMergeSubjects_movesEverything(t *testing.T) {
 		actorEntry(actor, audit.ActionFaceReject, "subjects", source.UID, nil)); err != nil {
 		t.Fatalf("RejectFace: %v", err)
 	}
-	if err := env.feedback.DismissDuplicateMarkers(ctx,
+	if err := env.feedback.DismissDuplicateMarkers(ctx, testProject,
 		feedback.DuplicateMarkerDismissalKey{PhotoUID: p1, SubjectUID: source.UID},
 		actorEntry(actor, audit.ActionDuplicateMarkerDismiss, "subjects", source.UID, nil)); err != nil {
 		t.Fatalf("DismissDuplicateMarkers: %v", err)
@@ -253,7 +253,7 @@ func TestMergeSubjects_samePhotoKeepsBothMarkers(t *testing.T) {
 	keeper := makeSubject(t, env.people, "Petr K.")
 	markPhoto(t, env.people, shared, source.UID)
 	markPhoto(t, env.people, shared, keeper.UID)
-	if err := env.feedback.DismissDuplicateMarkers(ctx,
+	if err := env.feedback.DismissDuplicateMarkers(ctx, testProject,
 		feedback.DuplicateMarkerDismissalKey{PhotoUID: shared, SubjectUID: source.UID},
 		actorEntry(actor, audit.ActionDuplicateMarkerDismiss, "subjects", source.UID, nil)); err != nil {
 		t.Fatalf("DismissDuplicateMarkers: %v", err)

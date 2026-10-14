@@ -144,8 +144,11 @@ type MarkerSource interface {
 // DismissalSource lists the (photo, subject) groups a user has already settled as
 // "this really is them twice". *feedback.Store satisfies it.
 type DismissalSource interface {
-	// DismissedDuplicateMarkerGroups returns every dismissed group.
-	DismissedDuplicateMarkerGroups(ctx context.Context) ([]feedback.DuplicateMarkerDismissalKey, error)
+	// DismissedDuplicateMarkerGroups returns every dismissed group of the
+	// project.
+	DismissedDuplicateMarkerGroups(
+		ctx context.Context, projectUID string,
+	) ([]feedback.DuplicateMarkerDismissalKey, error)
 }
 
 // Config bundles the Service's collaborators. Both fields are required.
@@ -184,7 +187,7 @@ func (s *Service) FindGroups(ctx context.Context, projectUID string, limit, offs
 	if err != nil {
 		return Result{}, fmt.Errorf("dupmarkers: listing markers: %w", err)
 	}
-	dismissed, err := s.dismissals.DismissedDuplicateMarkerGroups(ctx)
+	dismissed, err := s.dismissals.DismissedDuplicateMarkerGroups(ctx, projectUID)
 	if err != nil {
 		return Result{}, fmt.Errorf("dupmarkers: listing dismissals: %w", err)
 	}

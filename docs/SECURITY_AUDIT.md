@@ -36,6 +36,8 @@ and **SEC-020** (a Web Push subscription endpoint made the server POST to intern
 **SEC-023** (CSRF defence rests solely on `SameSite=Strict`; a `text/plain` JSON body is accepted on every
 cookie-authenticated write) was confirmed on **2026-10-09** and is open: it is safe only while every host
 under the registrable domain is trusted, and behaviour is unchanged pending a product decision.
+**SEC-024** (a curator of one project could dismiss another project's repeated-marker group) was found
+and fixed on **2026-10-14**.
 Everything else below is open as written.
 
 > **Severity scale:** critical / high / medium / low / info. A weakness that is not
@@ -966,6 +968,49 @@ Everything else below is open as written.
 ---
 
 
+### SEC-024 — MEDIUM — **FIXED** — A curator of one project could settle another project's repeated-marker review
+
+- **Origin:** found on **2026-10-14** by the tenancy validation after the multi-tenancy programme. The
+  tenancy guard (`internal/tenancyguard`) checks only root tables. `duplicate_marker_dismissals` is a child
+  table with no `project_id` column of its own, so the guard could not catch this.
+- **Where (before the fix):** `feedback.Store.DismissDuplicateMarkers` / `UndismissDuplicateMarkers`
+  (`internal/feedback/markerdismissals.go`), behind `POST`/`DELETE
+  /api/v1/p/{project}/feedback/duplicate-marker-dismissals` (`RequireCurator`). Neither method took a
+  project. Each ran a bare `INSERT`/`DELETE` keyed by `(photo_uid, subject_uid)`, and the foreign key was
+  the only check. Every other opinion in the package already proved its targets in the request's project.
+- **Attack scenario:** a curator of A posts B's photo and subject uids under `/p/A/…`. The dismissal is
+  written, so B's `GET /duplicate-markers` silently stops offering a mistake B never settled (or offers it
+  again after a `DELETE`). The 204-vs-404 answer also tells A which of B's uids exist, and the audit
+  entry is written in A's trail naming B's subject.
+- **Second half — the exclusion lists were instance-wide.** `DismissedDuplicatePairs`,
+  `ConfirmedDuplicatePairs` and `DismissedDuplicateMarkerGroups` read their whole tables. A per-project
+  scan (`internal/duplicates`, `internal/dupmarkers`) therefore received every project's rows. Only the
+  scan's own project filter kept them from having an effect, so a stray cross-project row like the one
+  above affected another project's listing.
+- **Fix:**
+  1. Both marker-dismissal writes take the project after the context and run the face opinions' proof
+     (`requireFaceTargetInProject`) on the write's transaction: the photo **and** the subject must be the
+     project's. A foreign pair is `ErrTargetNotFound`, the same 404 as a uid that exists nowhere (same
+     status, `Content-Type` and body). No row and no audit entry are written. The handlers pass the
+     request's project, and the audit entry carries it.
+  2. The three exclusion lists take the project (`ErrNoProject` without one). They join the opinion's
+     photos (and, for a marker group, its subject) on `project_id`, so they return only that project's
+     rows. Their consumers pass the project they are computing for.
+  3. `project.Store.SetSubject` had no production caller, but it linked a membership to any subject. It now
+     runs the query `internal/auth`'s `checkSubject` runs: another project's subject is
+     `ErrSubjectNotFound`, and nothing is written.
+- **Regression tests:** `TestDuplicateMarkerDismissals_foreignGroupIsMissing`
+  (`internal/dupmarkersapi`, through the real routes: A's curator against B's group answers the same 404
+  as a missing uid. B's listing still shows the group after the foreign `POST`, and B's dismissal survives
+  the foreign `DELETE`). `TestDuplicateMarkerDismissals_neverCrossProjects` and
+  `TestExclusionLists_scopedToProject` (`internal/feedback`). `TestExclusionListsNeedAProject` (unit).
+  `TestSetSubject`'s foreign-subject case (`internal/project`). The HTTP test fails against the pre-fix
+  store with a 204, a written row and a group missing from B's listing.
+- **Not addressed here:** extending the tenancy guard to child tables is a separate task.
+- **Fixed:** 2026-10-14.
+
+---
+
 ## Multi-tenancy (projects) — the tenant boundary
 
 Reviewed **2026-10-13** at the end of the multi-tenancy programme (the alias removal, step 39 of 40). One
@@ -979,7 +1024,10 @@ below is open; each is an attack scenario with the mitigation that closes it and
   method over a root table takes the project and every statement names `project_id` (`make check`'s
   `internal/tenancyguard` fails on one that does not); a uid of another project is answered **exactly like
   a uid that does not exist** — same status, same `Content-Type`, byte-identical body — and a listing simply
-  lacks it, so a probe cannot tell "elsewhere" from "nowhere". An unknown slug, a project the caller is no
+  lacks it, so a probe cannot tell "elsewhere" from "nowhere". A child table with no `project_id` of its
+  own (the opinions in `internal/feedback`, membership links) is scoped through its parents: the write proves
+  every parent in the project on its own transaction, and a bulk read joins the parents on `project_id`
+  (SEC-024 was the one write that did not). An unknown slug, a project the caller is no
   member of and a deactivated one are one and the same 404 (`auth.enterProject`). There is **no default
   project** any more: a catalogue path without `/p/<slug>/` is the API's 404 and a project-scoped guard
   reached without a project is a 500, so no request can fall into `v` by omission, and no request path may

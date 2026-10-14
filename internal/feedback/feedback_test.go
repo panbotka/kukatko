@@ -35,8 +35,8 @@ func TestEmptyKeyValidation(t *testing.T) {
 		{"UnrejectLabel", store.UnrejectLabel(ctx, projectUID, labelKey, entry)},
 		{"ConfirmFace", store.ConfirmFace(ctx, projectUID, confirmKey, entry)},
 		{"UnconfirmFace", store.UnconfirmFace(ctx, projectUID, confirmKey, entry)},
-		{"DismissDuplicateMarkers", store.DismissDuplicateMarkers(ctx, markerKey, entry)},
-		{"UndismissDuplicateMarkers", store.UndismissDuplicateMarkers(ctx, markerKey, entry)},
+		{"DismissDuplicateMarkers", store.DismissDuplicateMarkers(ctx, projectUID, markerKey, entry)},
+		{"UndismissDuplicateMarkers", store.UndismissDuplicateMarkers(ctx, projectUID, markerKey, entry)},
 	}
 	for _, c := range checks {
 		if !errors.Is(c.err, feedback.ErrEmptyKey) {
@@ -64,5 +64,32 @@ func TestEmptyKeyValidation(t *testing.T) {
 	}
 	if _, err := store.IsDuplicateMarkersDismissed(ctx, markerKey); !errors.Is(err, feedback.ErrEmptyKey) {
 		t.Errorf("IsDuplicateMarkersDismissed empty key = %v, want ErrEmptyKey", err)
+	}
+}
+
+// TestExclusionListsNeedAProject checks that the three bulk exclusion lists a
+// per-project scan reads refuse an empty project with ErrNoProject before
+// touching the database — there is no "every project's" list to fall back to.
+func TestExclusionListsNeedAProject(t *testing.T) {
+	t.Parallel()
+
+	store := feedback.NewStore(nil)
+	ctx := context.Background()
+	if _, err := store.DismissedDuplicatePairs(ctx, ""); !errors.Is(err, feedback.ErrNoProject) {
+		t.Errorf("DismissedDuplicatePairs without a project = %v, want ErrNoProject", err)
+	}
+	if _, err := store.ConfirmedDuplicatePairs(ctx, ""); !errors.Is(err, feedback.ErrNoProject) {
+		t.Errorf("ConfirmedDuplicatePairs without a project = %v, want ErrNoProject", err)
+	}
+	if _, err := store.DismissedDuplicateMarkerGroups(ctx, ""); !errors.Is(err, feedback.ErrNoProject) {
+		t.Errorf("DismissedDuplicateMarkerGroups without a project = %v, want ErrNoProject", err)
+	}
+	key := feedback.DuplicateMarkerDismissalKey{PhotoUID: "ph1", SubjectUID: "su1"}
+	entry := audit.Entry{Action: audit.ActionDuplicateMarkerDismiss}
+	if err := store.DismissDuplicateMarkers(ctx, "", key, entry); !errors.Is(err, feedback.ErrNoProject) {
+		t.Errorf("DismissDuplicateMarkers without a project = %v, want ErrNoProject", err)
+	}
+	if err := store.UndismissDuplicateMarkers(ctx, "", key, entry); !errors.Is(err, feedback.ErrNoProject) {
+		t.Errorf("UndismissDuplicateMarkers without a project = %v, want ErrNoProject", err)
 	}
 }

@@ -475,7 +475,7 @@ func TestDuplicateDismissalLifecycle(t *testing.T) {
 		}
 	}
 
-	pairs, err := f.feedback.DismissedDuplicatePairs(ctx)
+	pairs, err := f.feedback.DismissedDuplicatePairs(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("DismissedDuplicatePairs: %v", err)
 	}
@@ -576,11 +576,11 @@ func TestDuplicateMarkerDismissalLifecycle(t *testing.T) {
 		ActorUID:   user,
 	}
 
-	if err := f.feedback.DismissDuplicateMarkers(ctx, key, entry); err != nil {
+	if err := f.feedback.DismissDuplicateMarkers(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("DismissDuplicateMarkers: %v", err)
 	}
 	// Dismissing the same group twice is a no-op, not a unique-constraint error.
-	if err := f.feedback.DismissDuplicateMarkers(ctx, key, entry); err != nil {
+	if err := f.feedback.DismissDuplicateMarkers(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("DismissDuplicateMarkers (repeat): %v", err)
 	}
 	if n := f.count(t, "SELECT count(*) FROM duplicate_marker_dismissals"); n != 1 {
@@ -601,7 +601,7 @@ func TestDuplicateMarkerDismissalLifecycle(t *testing.T) {
 		t.Fatalf("audit rows after two dismissals = %d, want 2", n)
 	}
 
-	groups, err := f.feedback.DismissedDuplicateMarkerGroups(ctx)
+	groups, err := f.feedback.DismissedDuplicateMarkerGroups(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("DismissedDuplicateMarkerGroups: %v", err)
 	}
@@ -611,21 +611,22 @@ func TestDuplicateMarkerDismissalLifecycle(t *testing.T) {
 
 	undo := entry
 	undo.Action = audit.ActionDuplicateMarkerUndismiss
-	if err := f.feedback.UndismissDuplicateMarkers(ctx, key, undo); err != nil {
+	if err := f.feedback.UndismissDuplicateMarkers(ctx, project.BootstrapUID, key, undo); err != nil {
 		t.Fatalf("UndismissDuplicateMarkers: %v", err)
 	}
 	if ok, _ := f.feedback.IsDuplicateMarkersDismissed(ctx, key); ok {
 		t.Fatal("IsDuplicateMarkersDismissed after undismiss = true, want false")
 	}
 	// Un-dismissing what was never dismissed is a no-op, not an error.
-	if err := f.feedback.UndismissDuplicateMarkers(ctx, key, undo); err != nil {
+	if err := f.feedback.UndismissDuplicateMarkers(ctx, project.BootstrapUID, key, undo); err != nil {
 		t.Fatalf("UndismissDuplicateMarkers (repeat): %v", err)
 	}
 }
 
 // TestDuplicateMarkerDismissalRejectsBadKeys checks an incomplete key never reaches
-// the database and a group naming a photo or subject that does not exist trips the
-// foreign key, so the HTTP layer can answer 400/404 rather than 500.
+// the database and a group naming a photo or subject that does not exist in the
+// project is ErrTargetNotFound, so the HTTP layer can answer 400/404 rather than
+// 500.
 func TestDuplicateMarkerDismissalRejectsBadKeys(t *testing.T) {
 	f := newFixtures(t)
 	ctx := t.Context()
@@ -634,13 +635,13 @@ func TestDuplicateMarkerDismissalRejectsBadKeys(t *testing.T) {
 	entry := audit.Entry{Action: audit.ActionDuplicateMarkerDismiss, TargetType: "subjects"}
 
 	partial := feedback.DuplicateMarkerDismissalKey{PhotoUID: photo}
-	if err := f.feedback.DismissDuplicateMarkers(ctx, partial, entry); !errors.Is(err, feedback.ErrEmptyKey) {
+	if err := f.feedback.DismissDuplicateMarkers(ctx, project.BootstrapUID, partial, entry); !errors.Is(err, feedback.ErrEmptyKey) {
 		t.Fatalf("DismissDuplicateMarkers(partial) = %v, want ErrEmptyKey", err)
 	}
 	ghostPhoto := feedback.DuplicateMarkerDismissalKey{
 		PhotoUID: "ph_nonexistent00000000000", SubjectUID: subject,
 	}
-	if err := f.feedback.DismissDuplicateMarkers(ctx, ghostPhoto, entry); !errors.Is(
+	if err := f.feedback.DismissDuplicateMarkers(ctx, project.BootstrapUID, ghostPhoto, entry); !errors.Is(
 		err, feedback.ErrTargetNotFound,
 	) {
 		t.Fatalf("DismissDuplicateMarkers(ghost photo) = %v, want ErrTargetNotFound", err)
@@ -648,7 +649,7 @@ func TestDuplicateMarkerDismissalRejectsBadKeys(t *testing.T) {
 	ghostSubject := feedback.DuplicateMarkerDismissalKey{
 		PhotoUID: photo, SubjectUID: "sb_nonexistent00000000000",
 	}
-	if err := f.feedback.DismissDuplicateMarkers(ctx, ghostSubject, entry); !errors.Is(
+	if err := f.feedback.DismissDuplicateMarkers(ctx, project.BootstrapUID, ghostSubject, entry); !errors.Is(
 		err, feedback.ErrTargetNotFound,
 	) {
 		t.Fatalf("DismissDuplicateMarkers(ghost subject) = %v, want ErrTargetNotFound", err)
@@ -694,7 +695,7 @@ func TestDuplicateConfirmationLifecycle(t *testing.T) {
 		t.Fatalf("archived photos = %d, want 0 — a confirmation must never merge", n)
 	}
 
-	pairs, err := f.feedback.ConfirmedDuplicatePairs(ctx)
+	pairs, err := f.feedback.ConfirmedDuplicatePairs(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("ConfirmedDuplicatePairs: %v", err)
 	}

@@ -39,7 +39,7 @@ type pairOpinion struct {
 	deleteSQL string
 	// existsSQL checks one pair.
 	existsSQL string
-	// listSQL reads the whole table in a deterministic order.
+	// listSQL reads one project's ($1) pairs in a deterministic order.
 	listSQL string
 	// record, remove, check and list are the gerunds the four operations use in
 	// their error messages, so a failure names what was being attempted.
@@ -91,14 +91,16 @@ func (s *Store) hasPair(ctx context.Context, op pairOpinion, k photoPair) (bool,
 	return exists, nil
 }
 
-// listPairs reads every recorded pair in canonical order. It is the bulk lookup
-// duplicate detection uses, because the scan walks the catalogue in one pass and
-// needs the whole set up front — there is no per-photo entry point to filter by.
-// It is not filtered by project: the scan only ever looks a pair up among its own
-// project's photos, and no write joins two projects (see project.go). An empty
-// table yields an empty (non-nil) slice.
-func (s *Store) listPairs(ctx context.Context, op pairOpinion) ([]photoPair, error) {
-	rows, err := s.pool.Query(ctx, op.listSQL)
+// listPairs reads every pair of projectUID — both photos the project's — in
+// canonical order. It is the bulk lookup duplicate detection uses, because the
+// scan walks one project's catalogue in one pass and needs the whole set up
+// front — there is no per-photo entry point to filter by. An empty projectUID is
+// ErrNoProject; a project without pairs yields an empty (non-nil) slice.
+func (s *Store) listPairs(ctx context.Context, projectUID string, op pairOpinion) ([]photoPair, error) {
+	if projectUID == "" {
+		return nil, ErrNoProject
+	}
+	rows, err := s.pool.Query(ctx, op.listSQL, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("feedback: listing %s: %w", op.list, err)
 	}

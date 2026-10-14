@@ -29,32 +29,38 @@ SELECT EXISTS (
     SELECT 1 FROM duplicate_marker_dismissals
     WHERE photo_uid = $1 AND subject_uid = $2)`
 
-// listDuplicateMarkerDismissalsSQL reads every dismissed group, in a deterministic
-// order. The whole table is read at once because the repeated-marker listing
-// recomputes its groups in one pass and needs the full exclusion set up front —
-// there is no per-photo entry point to filter by.
+// listDuplicateMarkerDismissalsSQL reads every dismissed group of one project
+// ($1), in a deterministic order. The project's whole set is read at once because
+// the repeated-marker listing recomputes its groups in one pass and needs the
+// full exclusion set up front — there is no per-photo entry point to filter by.
+// The table carries no project of its own: a group belongs to the project of its
+// photo and its subject, and both must be the project's.
 const listDuplicateMarkerDismissalsSQL = `
-SELECT photo_uid, subject_uid
-FROM duplicate_marker_dismissals
-ORDER BY photo_uid, subject_uid`
+SELECT d.photo_uid, d.subject_uid
+FROM duplicate_marker_dismissals d
+JOIN photos p ON p.uid = d.photo_uid AND p.project_id = $1
+JOIN subjects s ON s.uid = d.subject_uid AND s.project_id = $1
+ORDER BY d.photo_uid, d.subject_uid`
 
 // DismissDuplicateMarkers records that the person named by key really is marked
 // more than once on key's photo — a double exposure, a mirror, a photo of a photo
-// — and writes entry in the same transaction. The write is idempotent (dismissing
-// the same group twice is a no-op, not an error) and dismissed_by is taken from
-// entry.ActorUID (empty stored as NULL).
+// — inside projectUID and writes entry in the same transaction. The write is
+// idempotent (dismissing the same group twice is a no-op, not an error),
+// dismissed_by is taken from entry.ActorUID (empty stored as NULL) and the
+// entry's ProjectUID defaults to projectUID.
 //
 // It never mutates the markers: none is detached, invalidated or deleted. It only
 // records the opinion, which the repeated-marker listing reads to stop offering
-// the group. It returns ErrEmptyKey if the key lacks a uid, or ErrTargetNotFound
-// if the photo or subject does not exist.
+// the group. It returns ErrEmptyKey if the key lacks a uid, ErrNoProject without
+// a project, or ErrTargetNotFound — writing nothing — unless the photo and the
+// subject both exist in projectUID.
 func (s *Store) DismissDuplicateMarkers(
-	ctx context.Context, key DuplicateMarkerDismissalKey, entry audit.Entry,
+	ctx context.Context, projectUID string, key DuplicateMarkerDismissalKey, entry audit.Entry,
 ) error {
 	if !key.valid() {
 		return ErrEmptyKey
 	}
-	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
+	return s.inProjectAuditedTx(ctx, projectUID, key.PhotoUID, key.SubjectUID, entry, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, insertDuplicateMarkerDismissalSQL,
 			key.PhotoUID, key.SubjectUID, nullable(entry.ActorUID))
 		if isForeignKeyViolation(err) {
@@ -69,17 +75,19 @@ func (s *Store) DismissDuplicateMarkers(
 }
 
 // UndismissDuplicateMarkers removes the repeated-marker dismissal identified by
-// key and writes entry in the same transaction, letting a user take the decision
-// back so the group is offered for review again. Un-dismissing a group that was
-// never dismissed still records the action but changes no rows. It returns
-// ErrEmptyKey if the key lacks a uid.
+// key inside projectUID and writes entry in the same transaction, letting a user
+// take the decision back so the group is offered for review again. Un-dismissing
+// a group that was never dismissed still records the action but changes no rows.
+// It returns ErrEmptyKey if the key lacks a uid, ErrNoProject without a project,
+// or ErrTargetNotFound — removing nothing — unless the photo and the subject
+// both exist in projectUID.
 func (s *Store) UndismissDuplicateMarkers(
-	ctx context.Context, key DuplicateMarkerDismissalKey, entry audit.Entry,
+	ctx context.Context, projectUID string, key DuplicateMarkerDismissalKey, entry audit.Entry,
 ) error {
 	if !key.valid() {
 		return ErrEmptyKey
 	}
-	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
+	return s.inProjectAuditedTx(ctx, projectUID, key.PhotoUID, key.SubjectUID, entry, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, deleteDuplicateMarkerDismissalSQL, key.PhotoUID, key.SubjectUID)
 		if err != nil {
 			return fmt.Errorf("feedback: un-dismissing repeated markers of %s on %s: %w",
@@ -108,14 +116,18 @@ func (s *Store) IsDuplicateMarkersDismissed(
 	return exists, nil
 }
 
-// DismissedDuplicateMarkerGroups returns every dismissed (photo, subject) group in
-// a deterministic order. It is the bulk lookup the repeated-marker listing uses to
-// drop the settled groups in one read, without an N+1. No dismissals yields an
-// empty (non-nil) slice, nil error.
+// DismissedDuplicateMarkerGroups returns every dismissed (photo, subject) group of
+// projectUID — the photo and the subject both the project's — in a deterministic
+// order. It is the bulk lookup the repeated-marker listing uses to drop the
+// settled groups in one read, without an N+1. No dismissals yields an empty
+// (non-nil) slice, nil error; an empty projectUID is ErrNoProject.
 func (s *Store) DismissedDuplicateMarkerGroups(
-	ctx context.Context,
+	ctx context.Context, projectUID string,
 ) ([]DuplicateMarkerDismissalKey, error) {
-	rows, err := s.pool.Query(ctx, listDuplicateMarkerDismissalsSQL)
+	if projectUID == "" {
+		return nil, ErrNoProject
+	}
+	rows, err := s.pool.Query(ctx, listDuplicateMarkerDismissalsSQL, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("feedback: listing repeated-marker dismissals: %w", err)
 	}
