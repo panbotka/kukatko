@@ -9,6 +9,7 @@ import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { ToastContext, type ToastOptions } from '../components/toast/ToastContext'
 import { type UploadQueueItem } from '../hooks/useUploadQueue'
 import i18n from '../i18n'
+import { setCurrentProjectSlug } from '../services/api'
 import { ApiError } from '../services/auth'
 import { type BulkResult } from '../services/bulk'
 import { type AlbumSummary, type LabelCount } from '../services/organize'
@@ -16,11 +17,17 @@ import { type UploadFileOptions, type UploadFileResult } from '../services/uploa
 
 import { UploadPage } from './UploadPage'
 
-vi.mock('../services/upload', () => ({
-  uploadFile: vi.fn(),
-  isAbortError: (error: unknown): boolean =>
-    error instanceof DOMException && error.name === 'AbortError',
-}))
+vi.mock('../services/upload', async () => {
+  // The real URL rule, so a test can move the current project and see where a
+  // file goes; only the request itself is a stand-in.
+  const { apiPath } = await import('../services/api')
+  return {
+    uploadFile: vi.fn(),
+    projectUploadUrl: () => apiPath('/upload'),
+    isAbortError: (error: unknown): boolean =>
+      error instanceof DOMException && error.name === 'AbortError',
+  }
+})
 
 // jsdom has no layout, so the real virtualized list renders nothing. This
 // stand-in renders every item, which is all the assertions here need.
@@ -238,6 +245,39 @@ describe('UploadPage — stage 1, pick', () => {
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
     expect(screen.getByText('0 / 2')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Upload \(/ })).not.toBeInTheDocument()
+  })
+
+  it('sends every picked file to the project it was picked in, even after a switch', async () => {
+    // The project the API layer names is module state the project provider
+    // moves on a switch; a file that only gets its turn afterwards must still
+    // go where it was picked, never into the project the address names now.
+    setCurrentProjectSlug('a')
+    const settles: ((result: UploadFileResult) => void)[] = []
+    uploadMock.mockImplementation(
+      () =>
+        new Promise<UploadFileResult>((resolve) => {
+          settles.push(resolve)
+        }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+
+    await pickFiles(user, [file('1.jpg'), file('2.jpg'), file('3.jpg'), file('4.jpg')])
+    expect(uploadMock).toHaveBeenCalledTimes(3)
+
+    setCurrentProjectSlug('b')
+    await act(async () => {
+      settles.forEach((resolve, index) => {
+        resolve(created(`ph${String(index)}`))
+      })
+      await Promise.resolve()
+    })
+    await waitFor(() => {
+      expect(uploadMock).toHaveBeenCalledTimes(4)
+    })
+
+    const urls = uploadMock.mock.calls.map(([, options]) => options?.url)
+    expect(urls).toEqual(Array.from({ length: 4 }, () => '/api/v1/p/a/upload'))
   })
 
   it('takes files pasted anywhere on the page and uploads them too', async () => {

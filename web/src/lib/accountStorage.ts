@@ -16,6 +16,28 @@ export function accountStorageKey(prefix: string, user: string | undefined): str
 }
 
 /**
+ * The storage key an account's copy of `prefix` **in one project** lives under:
+ * `<prefix>.<uid>.<slug>`. For what an account saw, dismissed or played in a
+ * library — a digest, a daily round — which is about that library's photos and
+ * must neither carry over into another project nor be overwritten from there.
+ * The account comes first, so {@link isAccountStorageKey} and the sign-out sweep
+ * claim it like any other account key.
+ *
+ * Returns null without a user or without a project, read the same way as
+ * {@link accountStorageKey}'s null: nothing stored, nothing written.
+ */
+export function accountProjectStorageKey(
+  prefix: string,
+  user: string | undefined,
+  project: string | null | undefined,
+): string | null {
+  const key = accountStorageKey(prefix, user)
+  return key === null || project === undefined || project === null || project === ''
+    ? null
+    : `${key}.${project}`
+}
+
+/**
  * Whether `key` is `prefix` itself or one account's copy of it
  * (`prefix.<uid>`). The dot is part of the match, so `kukatko.review.daily`
  * never claims `kukatko.review.dailyish`.

@@ -46,6 +46,12 @@ export interface UploadQueueItem {
   /** Non-fatal backend warnings (for example a near-duplicate match). */
   warnings?: UploadWarning[]
   /**
+   * Where this file is sent, fixed when it was queued (see
+   * {@link UseUploadQueueOptions.endpoint}); `undefined` leaves the URL to the
+   * upload function. A retry goes to the same place.
+   */
+  url?: string
+  /**
    * True when `status` is `error` because the request never got an answer: the
    * network dropped, the browser cut the connection (a phone that locked or sent
    * the page to the background), or the reverse proxy answered 502/503/504. Sending the file again is safe — the
@@ -63,6 +69,14 @@ export interface UseUploadQueueOptions {
    * waiting files are not burned through as instant failures.
    */
   paused?: boolean
+  /**
+   * The URL a file is sent to, asked **once per file, when it is queued** — not
+   * when it starts — and kept on the item. The signed-in upload page answers
+   * with its project's upload route: a batch picked in project a then goes to a
+   * even when a file only gets its turn after the address names project b. The
+   * upload link's page leaves it out, its uploader names the link itself.
+   */
+  endpoint?: () => string
 }
 
 /** Aggregate counts across the queue, feeding the overall-progress header. */
@@ -174,7 +188,7 @@ function statusFor(outcome: UploadFileResult['outcome']): QueueItemStatus {
  */
 export function useUploadQueue(
   upload: UploadFn = uploadFile,
-  { paused = false }: UseUploadQueueOptions = {},
+  { paused = false, endpoint }: UseUploadQueueOptions = {},
 ): UseUploadQueueResult {
   const [items, setItems] = useState<UploadQueueItem[]>([])
   const pausedRef = useRef(paused)
@@ -185,6 +199,8 @@ export function useUploadQueue(
   // and the uploader's name) without restarting anything.
   const uploadRef = useRef(upload)
   uploadRef.current = upload
+  const endpointRef = useRef(endpoint)
+  endpointRef.current = endpoint
 
   // A committed snapshot read synchronously by the pump (which runs from an
   // effect, after the matching render, so the ref is always up to date there).
@@ -241,6 +257,7 @@ export function useUploadQueue(
       uploadRef
         .current(item.file, {
           signal: controller.signal,
+          url: item.url,
           onProgress: (fraction) => {
             patch(item.id, { progress: fraction })
           },
@@ -292,6 +309,9 @@ export function useUploadQueue(
     if (incoming.length === 0) {
       return
     }
+    // Read here, at enqueue, outside the state updater: the project the reader
+    // is in when they pick the files is the one the files belong to.
+    const url = endpointRef.current?.()
     setItems((prev) => {
       const seen = new Set(prev.map((item) => fileKey(item.file)))
       const additions: UploadQueueItem[] = []
@@ -301,7 +321,7 @@ export function useUploadQueue(
           continue
         }
         seen.add(key)
-        additions.push({ id: nextId(), file, status: 'queued', progress: 0 })
+        additions.push({ id: nextId(), file, status: 'queued', progress: 0, url })
       }
       return additions.length > 0 ? [...prev, ...additions] : prev
     })

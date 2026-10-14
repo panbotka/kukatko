@@ -269,8 +269,8 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   // The daily-mix flag lives in localStorage and outlives a test otherwise, so
   // every test starts on a day whose mix has not been played.
-  window.localStorage.removeItem(`${DAILY_STORAGE_PREFIX}.u1`)
-  window.localStorage.removeItem(`${DAILY_STORAGE_PREFIX}.u2`)
+  window.localStorage.removeItem(`${DAILY_STORAGE_PREFIX}.u1.v`)
+  window.localStorage.removeItem(`${DAILY_STORAGE_PREFIX}.u2.v`)
   leaderboardMock.mockReset().mockResolvedValue(emptyBoard())
   queueMock.mockReset()
   answerMock.mockReset().mockResolvedValue({ result: 'assigned', answered: 1, remaining: 0 })
@@ -1049,13 +1049,13 @@ describe('ReviewPage rounds', () => {
     expect(within(summary).getByTestId('review-daily-done')).toHaveTextContent('Done for today')
     // „Splněno" is a fact about the day, not a locked door: the game goes on.
     expect(within(summary).getByTestId('review-next-round')).toHaveTextContent('One more round?')
-    expect(window.localStorage.getItem(`${DAILY_STORAGE_PREFIX}.u1`)).not.toBeNull()
+    expect(window.localStorage.getItem(`${DAILY_STORAGE_PREFIX}.u1.v`)).not.toBeNull()
   })
 
   it('still offers today’s mix to the next player on a device where it was played', async () => {
     // Somebody else finished today's mix in this browser; that is no reason to
     // deny this player theirs.
-    window.localStorage.setItem(`${DAILY_STORAGE_PREFIX}.u1`, localDayKey(new Date()))
+    window.localStorage.setItem(`${DAILY_STORAGE_PREFIX}.u1.v`, localDayKey(new Date()))
     queueMock.mockResolvedValue(makeQueue([faceQuestion('q1', 'Alice')]))
     renderSignedIn('u2')
     await screen.findByTestId('review-question')

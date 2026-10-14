@@ -60,8 +60,10 @@ export interface UploadFileOptions {
   /** Aborts the in-flight request when triggered. */
   signal?: AbortSignal
   /**
-   * Where to post the file; defaults to the curator upload (`/api/v1/p/<slug>/upload`).
-   * An upload link posts to `/api/v1/u/<code>/upload` instead.
+   * Where to post the file; defaults to {@link projectUploadUrl} of the project
+   * current **when the request starts**. The upload page's queue fixes it when a
+   * file is queued instead, so a file never follows the reader into another
+   * project. An upload link posts to `/api/v1/u/<code>/upload`.
    */
   url?: string
   /**
@@ -69,6 +71,15 @@ export interface UploadFileOptions {
    * once, in order, so a field after the file would arrive too late to apply.
    */
   fields?: Record<string, string>
+}
+
+/**
+ * The signed-in upload route of the current project, `/api/v1/p/<slug>/upload`,
+ * as it reads at the moment of the call — which is why the upload page asks for
+ * it once per file at enqueue (`useUploadQueue`'s `endpoint`) and keeps it.
+ */
+export function projectUploadUrl(): string {
+  return apiPath('/upload')
 }
 
 /**
@@ -198,7 +209,7 @@ function errorMessage(body: unknown): string | undefined {
  *   {@link isAbortError}).
  */
 export function uploadFile(file: File, options: UploadFileOptions = {}): Promise<UploadFileResult> {
-  const { onProgress, signal, url = apiPath('/upload'), fields = {} } = options
+  const { onProgress, signal, url = projectUploadUrl(), fields = {} } = options
 
   return new Promise<UploadFileResult>((resolve, reject) => {
     if (signal?.aborted) {

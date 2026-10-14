@@ -9,6 +9,7 @@ import { useWhatsNew } from '../../hooks/useWhatsNew'
 import { formatDateTimeMinutes } from '../../lib/format'
 import { LIBRARY_PATH } from '../../lib/libraryView'
 import { readDismissedWhatsNew, writeDismissedWhatsNew } from '../../lib/whatsNewDismissal'
+import { useProjectSlug } from '../../project/ProjectContext'
 import { ProjectLink } from '../../project/ProjectLink'
 import { Icon } from '../Icon'
 
@@ -98,8 +99,9 @@ export function WhatsNewPanel() {
   const { t, i18n } = useTranslation()
   const summary = useWhatsNew()
   const { user } = useAuth()
+  const project = useProjectSlug()
   const [dismissedSince, setDismissedSince] = useState<string>(() =>
-    readDismissedWhatsNew(user?.uid),
+    readDismissedWhatsNew(user?.uid, project),
   )
   // Shut by default and not remembered: the resting state of the library is the
   // one that shows photographs, and a digest is read once and then acted on (or
@@ -167,7 +169,7 @@ export function WhatsNewPanel() {
       dismissible
       closeLabel={t('whatsNew.dismiss')}
       onClose={() => {
-        writeDismissedWhatsNew(user?.uid, since)
+        writeDismissedWhatsNew(user?.uid, project, since)
         setDismissedSince(since)
       }}
     >

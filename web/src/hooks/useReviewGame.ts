@@ -15,6 +15,7 @@ import {
   type ReviewSnapshot,
   writeReviewSnapshot,
 } from '../lib/reviewSnapshot'
+import { useProjectSlug } from '../project/ProjectContext'
 import {
   confirmDuplicate,
   confirmFace,
@@ -228,9 +229,16 @@ export interface ReviewGame {
   end: () => void
 }
 
-/** The run `user` left behind for `source`; null without a user (no persistence). */
-function restoreRun(user: string | undefined, source: ReviewSource): ReviewSnapshot | null {
-  return user === undefined ? null : readReviewSnapshot(user, source)
+/**
+ * The run `user` left behind in `project` for `source`; null without a user or
+ * a project (no persistence).
+ */
+function restoreRun(
+  user: string | undefined,
+  project: string | null,
+  source: ReviewSource,
+): ReviewSnapshot | null {
+  return user === undefined || project === null ? null : readReviewSnapshot(user, project, source)
 }
 
 /**
@@ -275,7 +283,7 @@ function restoreRun(user: string | undefined, source: ReviewSource): ReviewSnaps
  *
  * Given the signed-in `user`, a run in progress survives leaving the page: every
  * change is written to a session-scoped snapshot (see `lib/reviewSnapshot`) and
- * a remount for the same user and source picks the run up where it was — the
+ * a remount for the same user, project and source picks the run up where it was — the
  * same card, round position, tallies and combo, with no request re-sent and no
  * fetch until the resumed queue runs out. Failed answers ride along and stay
  * retryable; an answer still in flight when the page went away settles on its
@@ -285,8 +293,11 @@ function restoreRun(user: string | undefined, source: ReviewSource): ReviewSnaps
  * session leave nothing behind.
  */
 export function useReviewGame(source: ReviewSource = 'both', user?: string): ReviewGame {
+  // The project the run is played in. Fixed for the hook's life: a project
+  // switch remounts the page (see `ProjectGate`).
+  const project = useProjectSlug()
   // Read once, on mount: everything below starts from it or from scratch.
-  const [restored] = useState(() => restoreRun(user, source))
+  const [restored] = useState(() => restoreRun(user, project, source))
   const [queue, setQueue] = useState<ReviewCard[]>(restored?.queue ?? [])
   const [round, setRound] = useState<RoundProgress>(restored?.round ?? NO_ROUND)
   const [summary, setSummary] = useState<RoundSummary | null>(null)
@@ -349,7 +360,7 @@ export function useReviewGame(source: ReviewSource = 'both', user?: string): Rev
   /** The session's answer count, for the milestone comparison. */
   const answeredRef = useRef(restored?.answered ?? 0)
   /** Whether today's mix is already behind the player (read once, then tracked). */
-  const dailyDoneRef = useRef(dailyMixDone(user, new Date()))
+  const dailyDoneRef = useRef(dailyMixDone(user, project, new Date()))
 
   /** Replaces the queue in both the ref (truth) and state (render mirror). */
   const commitQueue = useCallback((next: ReviewCard[]) => {
@@ -594,12 +605,12 @@ export function useReviewGame(source: ReviewSource = 'both', user?: string): Rev
       const finished = roundRef.current
       const completedDaily = finished.daily && !dailyDoneRef.current
       if (completedDaily) {
-        markDailyMixDone(user, new Date())
+        markDailyMixDone(user, project, new Date())
         dailyDoneRef.current = true
       }
       setSummary({ ...finished, completedDaily })
     },
-    [user],
+    [user, project],
   )
 
   const answer = useCallback(
@@ -748,7 +759,7 @@ export function useReviewGame(source: ReviewSource = 'both', user?: string): Rev
   // over (its summary card is up), the queue is empty, or the cards in hand
   // belong to a source the player has just switched away from.
   useEffect(() => {
-    if (user === undefined || endedRef.current) {
+    if (user === undefined || project === null || endedRef.current) {
       return
     }
     if (summary !== null || queue.length === 0 || queueSourceRef.current !== source) {
@@ -758,6 +769,7 @@ export function useReviewGame(source: ReviewSource = 'both', user?: string): Rev
     writeReviewSnapshot({
       version: REVIEW_SNAPSHOT_VERSION,
       user,
+      project,
       source,
       queue,
       round,
@@ -772,7 +784,20 @@ export function useReviewGame(source: ReviewSource = 'both', user?: string): Rev
       markers: Object.fromEntries(markerRef.current),
       failed,
     })
-  }, [user, source, queue, round, summary, combo, answered, session, touched, remaining, failed])
+  }, [
+    user,
+    project,
+    source,
+    queue,
+    round,
+    summary,
+    combo,
+    answered,
+    session,
+    touched,
+    remaining,
+    failed,
+  ])
 
   const end = useCallback(() => {
     endedRef.current = true

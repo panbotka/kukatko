@@ -97,11 +97,11 @@ describe('the daily mix flag', () => {
     } as unknown as Storage
     const today = new Date(2026, 7, 9, 10, 0)
 
-    expect(dailyMixDone('u1', today, storage)).toBe(false)
-    markDailyMixDone('u1', today, storage)
-    expect(store.get(`${DAILY_STORAGE_PREFIX}.u1`)).toBe('2026-08-09')
-    expect(dailyMixDone('u1', today, storage)).toBe(true)
-    expect(dailyMixDone('u1', new Date(2026, 7, 10, 10, 0), storage)).toBe(false)
+    expect(dailyMixDone('u1', 'v', today, storage)).toBe(false)
+    markDailyMixDone('u1', 'v', today, storage)
+    expect(store.get(`${DAILY_STORAGE_PREFIX}.u1.v`)).toBe('2026-08-09')
+    expect(dailyMixDone('u1', 'v', today, storage)).toBe(true)
+    expect(dailyMixDone('u1', 'v', new Date(2026, 7, 10, 10, 0), storage)).toBe(false)
   })
 
   it('keeps one player’s finished mix from counting for another', () => {
@@ -112,11 +112,28 @@ describe('the daily mix flag', () => {
     } as unknown as Storage
     const today = new Date(2026, 7, 9, 10, 0)
 
-    markDailyMixDone('u1', today, storage)
-    expect(dailyMixDone('u2', today, storage)).toBe(false)
+    markDailyMixDone('u1', 'v', today, storage)
+    expect(dailyMixDone('u2', 'v', today, storage)).toBe(false)
     // The global flag an older build wrote belongs to nobody in particular.
     store.set(DAILY_STORAGE_PREFIX, '2026-08-09')
-    expect(dailyMixDone('u2', today, storage)).toBe(false)
+    expect(dailyMixDone('u2', 'v', today, storage)).toBe(false)
+  })
+
+  it('keeps a mix finished in one project from counting in another', () => {
+    const store = new Map<string, string>()
+    const storage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => store.set(key, value),
+    } as unknown as Storage
+    const today = new Date(2026, 7, 9, 10, 0)
+
+    markDailyMixDone('u1', 'a', today, storage)
+    expect(dailyMixDone('u1', 'a', today, storage)).toBe(true)
+    expect(dailyMixDone('u1', 'b', today, storage)).toBe(false)
+    // Without a project there is nothing to read or write.
+    markDailyMixDone('u1', null, today, storage)
+    expect(dailyMixDone('u1', null, today, storage)).toBe(false)
+    expect([...store.keys()]).toEqual([`${DAILY_STORAGE_PREFIX}.u1.a`])
   })
 
   it('neither reads nor writes without a player', () => {
@@ -127,9 +144,9 @@ describe('the daily mix flag', () => {
     } as unknown as Storage
     const today = new Date(2026, 7, 9, 10, 0)
 
-    markDailyMixDone(undefined, today, storage)
+    markDailyMixDone(undefined, 'v', today, storage)
     expect(store.size).toBe(0)
-    expect(dailyMixDone(undefined, today, storage)).toBe(false)
+    expect(dailyMixDone(undefined, 'v', today, storage)).toBe(false)
   })
 
   it('survives storage that refuses to work', () => {
@@ -144,9 +161,9 @@ describe('the daily mix flag', () => {
       },
     } as unknown as Storage
     const now = new Date(2026, 7, 9)
-    expect(dailyMixDone('u1', now, hostile)).toBe(false)
+    expect(dailyMixDone('u1', 'v', now, hostile)).toBe(false)
     expect(() => {
-      markDailyMixDone('u1', now, hostile)
+      markDailyMixDone('u1', 'v', now, hostile)
     }).not.toThrow()
   })
 })

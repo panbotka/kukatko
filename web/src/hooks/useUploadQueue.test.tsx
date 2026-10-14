@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { apiPath, setCurrentProjectSlug } from '../services/api'
 import { ApiError } from '../services/auth'
 import { type UploadFileOptions, type UploadFileResult } from '../services/upload'
 
@@ -417,5 +418,60 @@ describe('useUploadQueue', () => {
     await waitFor(() => {
       expect(uploadMock).toHaveBeenCalledTimes(2)
     })
+  })
+
+  it('sends every file to the project it was queued in, even one that starts after a switch', async () => {
+    // What the upload page passes: the project's upload route, read at enqueue.
+    // The module-level slug is what `apiPath` reads, and what the project
+    // provider moves when the address names another project.
+    setCurrentProjectSlug('a')
+    const { result: hook } = renderHook(() =>
+      useUploadQueue(uploadMock, { endpoint: () => apiPath('/upload') }),
+    )
+
+    act(() => {
+      hook.current.addFiles([file('1.jpg'), file('2.jpg'), file('3.jpg'), file('4.jpg')])
+    })
+    await waitFor(() => {
+      expect(uploadMock).toHaveBeenCalledTimes(MAX_CONCURRENT_UPLOADS)
+    })
+
+    // The reader moves to project b while three files are in flight and the
+    // fourth still waits for a free slot.
+    setCurrentProjectSlug('b')
+    for (let index = 0; index < MAX_CONCURRENT_UPLOADS; index += 1) {
+      await settle(index, result('created', `ph${String(index)}`))
+    }
+    await waitFor(() => {
+      expect(uploadMock).toHaveBeenCalledTimes(4)
+    })
+    await settle(3, result('created', 'ph3'))
+
+    expect(pending.map((call) => call.options.url)).toEqual(
+      Array.from({ length: 4 }, () => '/api/v1/p/a/upload'),
+    )
+  })
+
+  it('retries a failed file at the project it was queued in', async () => {
+    setCurrentProjectSlug('a')
+    const { result: hook } = renderHook(() =>
+      useUploadQueue(uploadMock, { endpoint: () => apiPath('/upload') }),
+    )
+    act(() => {
+      hook.current.addFiles([file('a.jpg')])
+    })
+    await waitFor(() => {
+      expect(uploadMock).toHaveBeenCalledTimes(1)
+    })
+    await fail(0, new ApiError(503, 'unavailable'))
+
+    setCurrentProjectSlug('b')
+    act(() => {
+      hook.current.retryFailed()
+    })
+    await waitFor(() => {
+      expect(uploadMock).toHaveBeenCalledTimes(2)
+    })
+    expect(pending[1].options.url).toBe('/api/v1/p/a/upload')
   })
 })

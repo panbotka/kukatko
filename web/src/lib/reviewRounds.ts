@@ -1,7 +1,7 @@
 import { type Photo } from '../services/photos'
 import { type ReviewBreather, type ReviewQuestion } from '../services/review'
 
-import { accountStorageKey } from './accountStorage'
+import { accountProjectStorageKey } from './accountStorage'
 
 /**
  * The round arithmetic of the review game, kept DOM-free so the decisions that
@@ -108,9 +108,11 @@ export function milestoneCrossed(before: number, after: number): number | null {
 
 /**
  * Where the "today's mix is done" flag lives: a date string under this prefix
- * completed by the player's uid (see {@link accountStorageKey}). Per account
- * because the family shares devices, and the second person to play today is
- * owed their own daily mix. Cleared at sign-out.
+ * completed by the player's uid and the project's slug (see
+ * {@link accountProjectStorageKey}). Per account because the family shares
+ * devices, and the second person to play today is owed their own daily mix; per
+ * project because the mix is made of one library's questions, and finishing it
+ * in one project says nothing about another's. Cleared at sign-out.
  */
 export const DAILY_STORAGE_PREFIX = 'kukatko.review.daily'
 
@@ -140,16 +142,18 @@ function safeStorage(): Storage | undefined {
 }
 
 /**
- * Whether `user` has already finished today's mix on this device. False without
- * a user and for a flag stamped by anybody else: an unknown answer offers the
- * daily mix again, which is the harmless way to be wrong.
+ * Whether `user` has already finished today's mix of `project` on this device.
+ * False without a user or a project and for a flag stamped by anybody else: an
+ * unknown answer offers the daily mix again, which is the harmless way to be
+ * wrong.
  */
 export function dailyMixDone(
   user: string | undefined,
+  project: string | null,
   now: Date,
   storage: Storage | undefined = safeStorage(),
 ): boolean {
-  const key = accountStorageKey(DAILY_STORAGE_PREFIX, user)
+  const key = accountProjectStorageKey(DAILY_STORAGE_PREFIX, user, project)
   if (key === null) {
     return false
   }
@@ -160,13 +164,14 @@ export function dailyMixDone(
   }
 }
 
-/** Records that `user` has finished today's mix; a no-op without a user. */
+/** Records that `user` has finished today's mix of `project`; a no-op without either. */
 export function markDailyMixDone(
   user: string | undefined,
+  project: string | null,
   now: Date,
   storage: Storage | undefined = safeStorage(),
 ): void {
-  const key = accountStorageKey(DAILY_STORAGE_PREFIX, user)
+  const key = accountProjectStorageKey(DAILY_STORAGE_PREFIX, user, project)
   if (key === null) {
     return
   }

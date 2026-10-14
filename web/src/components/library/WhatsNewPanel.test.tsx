@@ -22,7 +22,7 @@ const { fetchWhatsNew } = await import('../../services/whatsNew')
 const fetchMock = vi.mocked(fetchWhatsNew)
 
 /** The localStorage key the panel persists u1's dismissal under. */
-const DISMISS_KEY = 'kukatko.whatsNew.dismissedSince.u1'
+const DISMISS_KEY = 'kukatko.whatsNew.dismissedSince.u1.v'
 
 /** A digest with one of everything, for the render and link assertions. */
 const FULL_DIGEST: WhatsNew = {

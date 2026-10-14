@@ -321,7 +321,7 @@ here.
   question asked a fortnight ago is still on the line and one they already answered is not. It goes quiet
   the moment they have replied, because it is an invitation rather than a tally, and it is how the work
   queue reaches a person who never opens the task list. **Dismiss is keyed on the digest's `since`** in localStorage
-  under `kukatko.whatsNew.dismissedSince.<uid>` (`lib/whatsNewDismissal.ts`: `readDismissedWhatsNew`/
+  under `kukatko.whatsNew.dismissedSince.<uid>.<slug>` (`lib/whatsNewDismissal.ts`: `readDismissedWhatsNew`/
   `writeDismissedWhatsNew`, mirrors `announcementDismissal.ts`) — `since` is constant for the length of a visit, so closing the panel closes it
   for **this** visit through every reload and every walk around the app, and the next visit's fresh `since`
   brings it back. The dismiss `X` is the shared ink close glyph in a 44 × 44 box centred on the first line
@@ -5909,8 +5909,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   scanned tail **resumes** from the last offset instead of re-walking. A fresh walk reports `pending` rather than
   leaving the previous photo's pair standing — those uids belong to the photo before, not this one. In-flight
   requests abort on a `uid`/`params` change or unmount; `enabled: false` reports no neighbours without fetching;
-  `useUploadQueue(upload = uploadFile)` = the upload queue (the upload function is read through a ref when
-  each file starts, so the public upload-link page passes a fresh closure bound to its code every render):
+  `useUploadQueue(upload = uploadFile, { paused, endpoint })` = the upload queue (the upload function is read
+  through a ref when each file starts, so the public upload-link page passes a fresh closure bound to its code
+  every render; `endpoint` is asked **once per file at enqueue** and kept as `item.url`, which every start and
+  retry of that file sends to — `UploadPage` passes `projectUploadUrl`, so a file goes to the project it was
+  picked in and never to the one the address names when its turn comes):
   `addFiles` (dedup on name+size+mtime)/`removeItem`/
   `retry`/`retryFailed`/`clear`, a concurrency ceiling `MAX_CONCURRENT_UPLOADS` (3),
   per-file status+progress, a summary of counts + `progress` (the **overall** fraction of the batch 0–1,
@@ -6455,8 +6458,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   a skip resets it, an undo restores what it was), `session` (the yes/no/skip split), `touched` (the photos
   decided about, capped at `TOUCHED_LIMIT = 24` for the closing mosaic), `milestone` (10/25/50, via
   `milestoneCrossed`) and the **daily-mix flag** in `localStorage` (`dailyMixDone`/`markDailyMixDone`, under
-  `kukatko.review.daily.<uid>` so the second family member to play today still gets their daily mix; without a
-  user it neither reads nor writes; the value is the **local** day — a UTC key would flip over mid-evening). `advance()` moves past a card that
+  `kukatko.review.daily.<uid>.<slug>` so the second family member to play today still gets their daily mix, and a
+  mix finished in one project does not count in another; without a user or a project it neither reads nor writes; the value is the **local** day — a UTC key would flip over mid-evening). `advance()` moves past a card that
   asks nothing and deliberately touches **no** counter — a pause that scored points would not be a pause.
   Answers stay **optimistic** (`answer` moves the UI
   immediately and the request finishes in the background; a failure falls into `failed` for an explicit retry — it never blocks
@@ -6483,7 +6486,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   refill effect already ran behind the in-flight latch, dropping it also **bumps a reload key**, otherwise
   nothing would ever fetch the source the player actually chose. `useReviewGame(source, user)` makes a run
   **resumable**: given the signed-in user's uid (`ReviewPage` reads it null-safely from `AuthContext`) every change
-  is written to a snapshot in **`sessionStorage`** (`lib/reviewSnapshot`, key `kukatko.review.run`, versioned) —
+  is written to a snapshot in **`sessionStorage`** (`lib/reviewSnapshot`, key `kukatko.review.run`, versioned,
+  v2 records the `project` it was played in — `useProjectSlug()` — and resumes only there) —
   the cards exactly as `GET /review/queue` handed them over plus the counters, the seen-set, the undone ids that
   must take the direct paths, the markers learned during undo and the `failed` answers; no animation, drag, DOM
   or image data. A mount for the same user and source starts **from** it: same card, round, tallies and combo,
@@ -8490,11 +8494,15 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
   `prefix.<uid>`, null without a user — the pattern `pushPromptAnswer.ts` set), and **sign-out removes it**.
   A key with another uid in it is simply never read, so another account's state reads as absent; storage that
   is unreadable, foreign or corrupt fails the safe way (banner shown, panel shown, grid at its top, daily mix
-  offered). The one other pattern in the app — a stored value that records its user and is refused on a
-  mismatch — is `lib/reviewSnapshot.ts`, which keeps a single key because there is one game per tab.
+  offered). What an account saw or played **in one library** also carries the project's slug
+  (`accountProjectStorageKey(prefix, user, project)` → `prefix.<uid>.<slug>`, null without either), so it neither
+  carries over into another project nor is overwritten from there. The one other pattern in the app — a stored
+  value that records its user and project and is refused on a mismatch — is `lib/reviewSnapshot.ts`, which keeps
+  a single key because there is one game per tab.
   **User-scoped, cleared at sign-out:** `kukatko.announcement.dismissedAt.<uid>.<slug>` (local, per project),
-  `kukatko.whatsNew.dismissedSince.<uid>` (local), `kukatko.review.daily.<uid>` (local),
-  `kukatko.gridScroll.<uid>` (session), plus `kukatko.review.run` (session, user recorded inside) and
+  `kukatko.whatsNew.dismissedSince.<uid>.<slug>` (local, per project), `kukatko.review.daily.<uid>.<slug>` (local,
+  per project), `kukatko.gridScroll.<uid>` (session; its key already holds the `/p/<slug>` path), plus
+  `kukatko.review.run` (session, user and project recorded inside) and
   `kukatko.lastPickedLocation` (session — where one account was geotagging is not where the next starts).
   **User-scoped, kept across sign-out:** `kukatko.language.<uid>` (a preference, and signing back in should
   find it) and `kukatko.pushPrompt.answered.<uid>` (a push subscription belongs to the browser and outlives the
@@ -8609,6 +8617,32 @@ somewhere real; it is `null` only for an account with nothing to enter. The prov
 effects before its parent's, so an effect here would be too late for a freshly opened project.
 `TaskSummaryProvider` and `NotificationInboxProvider` take `useProjectSlug()` into their polling
 effect's dependencies, so a project change aborts, clears and refetches.
+
+**A project switch remounts every page.** `ProjectGate` renders `<Outlet key={slug} />`. The switcher
+keeps the reader on a list page (`KEEP_ON_SWITCH`: `/p/a/albums` → `/p/b/albums`), and Back/Forward
+moves between projects the same way; both match the same route element at the same place, so without
+the key React kept the page — its state, and effects keyed on the page's own inputs, never on the
+project — and showed a's albums, library, people, labels and tasks under b's name, with every
+thumbnail and action sending a's uids to b's API. With the key, everything below the gate (the `Layout`
+shell included) unmounts: page state, per-page caches (`useFilterValues`, `useUploaders`, the timeline
+and facets, the what's-new digest) and selections go, and the effects' cleanups abort the requests still
+in flight for a, so a late answer has no component left to land in. **Page code therefore never puts
+the project into its dependencies.** What lives *above* the gate must handle a switch itself: the
+header providers refetch on `useProjectSlug()` (above), `useAnnouncement` tags its answer with the slug,
+`CapabilitiesProvider` holds instance facts only, the command palette resets on close and refetches its
+history on open; no module-level cache holds project data. Browser storage that names a library's
+content is keyed by the project (see *Browser storage*). **The upload queue is cancelled by a switch,
+not carried over:** the page remounts, which aborts the files in flight and drops the queued ones; the
+switcher is a link, so `useLeaveGuard` first asks "Odejít během nahrávání?" exactly as for any other way
+out. Carrying the batch on into the old project behind the reader's back was the alternative; it was
+rejected because the queue, its progress and the album filing all live in the page, which is gone, and
+a silent upload into a project the reader has left is the surprise this fixes. Independently, each file's
+URL is fixed at enqueue (`useUploadQueue`'s `endpoint`), so no code path can send a file to a project
+other than the one it was queued in. Tests: `App.projectSwitch.test.tsx` (`/p/a/albums` → `/p/b/albums`
+refetches with b and never shows a's albums; a's answer landing after the switch is ignored and its
+request aborted; Back refetches a; a switch on `/p/a/upload` aborts the batch and sends nothing to b),
+`useUploadQueue.test.tsx` and `UploadPage.test.tsx` (files picked in a go to a's endpoint after the slug
+moves to b, retries included).
 
 **Links: `useProjectPath()`** returns `(path) => string` — `/p/<slug>` + a page's own path
 (`projectPathFor`). The library `/` becomes the bare `/p/<slug>` (`/?q=x` → `/p/<slug>?q=x`). It is

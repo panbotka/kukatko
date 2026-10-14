@@ -19,6 +19,7 @@ import { useUploadOrganize } from '../hooks/useUploadOrganize'
 import { useUploadQueue } from '../hooks/useUploadQueue'
 import { SHARE_PARAM } from '../pwa/shareContract'
 import { collectSharedFiles, type SharedFiles } from '../pwa/shareTarget'
+import { projectUploadUrl, uploadFile } from '../services/upload'
 
 /**
  * The upload page: **one stage on screen at a time**, and the upload starts by
@@ -56,6 +57,13 @@ import { collectSharedFiles, type SharedFiles } from '../pwa/shareTarget'
  * Because the queue only exists in this tab, leaving mid-upload throws it away —
  * so {@link useLeaveGuard} holds an in-app link back and asks first, and lets
  * the browser put its own warning on a tab close.
+ *
+ * Switching project is leaving too: the switcher's link is held back by the
+ * same question, and once confirmed the project layout remounts this page, which
+ * aborts what is in flight and drops what is queued — the batch is cancelled,
+ * never carried over. Each file's URL is also fixed when it is queued
+ * (`endpoint`), so not even a file that starts late can follow the reader into
+ * the other project.
  */
 export function UploadPage() {
   const { t } = useTranslation()
@@ -73,7 +81,7 @@ export function UploadPage() {
     retry,
     retryFailed,
     clear,
-  } = useUploadQueue()
+  } = useUploadQueue(uploadFile, { endpoint: projectUploadUrl })
   // A file over the size cap, or a project out of storage, is marked in the list
   // with its reason; a toast says it to someone not looking at the list.
   useUploadLimitToasts(items)

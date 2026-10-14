@@ -1,11 +1,12 @@
-import { accountStorageKey } from './accountStorage'
+import { accountProjectStorageKey } from './accountStorage'
 
 /**
  * localStorage key prefix under which the `since` of an account's dismissed
- * digest is persisted; the account's uid completes it (see
- * {@link accountStorageKey}), so one family member closing their digest does
- * not close the next one's. Cleared at sign-out with the rest of the account's
- * browser state.
+ * digest is persisted; the account's uid and the project's slug complete it
+ * (see {@link accountProjectStorageKey}), so one family member closing their
+ * digest does not close the next one's, and closing one project's digest
+ * neither hides another project's nor is undone by it. Cleared at sign-out
+ * with the rest of the account's browser state.
  *
  * Keying on the digest's reference point (rather than on a plain boolean) is what
  * gives dismissal exactly the lifetime the panel needs: `since` is constant for
@@ -16,12 +17,15 @@ import { accountStorageKey } from './accountStorage'
 export const WHATS_NEW_DISMISSAL_PREFIX = 'kukatko.whatsNew.dismissedSince'
 
 /**
- * Reads the `since` of the digest `user` last dismissed, or the empty string
- * when none was dismissed, there is no user, or storage is unavailable
- * (private mode) — all of which show the panel.
+ * Reads the `since` of the digest `user` last dismissed in `project`, or the
+ * empty string when none was dismissed, there is no user or project, or storage
+ * is unavailable (private mode) — all of which show the panel.
  */
-export function readDismissedWhatsNew(user: string | undefined): string {
-  const key = accountStorageKey(WHATS_NEW_DISMISSAL_PREFIX, user)
+export function readDismissedWhatsNew(
+  user: string | undefined,
+  project: string | null | undefined,
+): string {
+  const key = accountProjectStorageKey(WHATS_NEW_DISMISSAL_PREFIX, user, project)
   if (key === null) {
     return ''
   }
@@ -34,12 +38,16 @@ export function readDismissedWhatsNew(user: string | undefined): string {
 }
 
 /**
- * Persists that `user` dismissed the digest with this `since`. Failures
- * (storage disabled / quota) are swallowed: dismissal is best-effort and must
- * never break the library.
+ * Persists that `user` dismissed the digest of `project` with this `since`.
+ * Failures (storage disabled / quota) are swallowed: dismissal is best-effort
+ * and must never break the library.
  */
-export function writeDismissedWhatsNew(user: string | undefined, since: string): void {
-  const key = accountStorageKey(WHATS_NEW_DISMISSAL_PREFIX, user)
+export function writeDismissedWhatsNew(
+  user: string | undefined,
+  project: string | null | undefined,
+  since: string,
+): void {
+  const key = accountProjectStorageKey(WHATS_NEW_DISMISSAL_PREFIX, user, project)
   if (key === null) {
     return
   }

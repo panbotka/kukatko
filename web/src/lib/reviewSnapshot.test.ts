@@ -42,6 +42,7 @@ function snapshot(overrides: Partial<ReviewSnapshot> = {}): ReviewSnapshot {
   return {
     version: REVIEW_SNAPSHOT_VERSION,
     user: 'u1',
+    project: 'v',
     source: 'both',
     queue: [questionCard(question('q3')), questionCard(question('q4'))],
     round: {
@@ -85,7 +86,7 @@ describe('review snapshot', () => {
     const run = snapshot()
     writeReviewSnapshot(run)
 
-    expect(readReviewSnapshot('u1', 'both')).toEqual(run)
+    expect(readReviewSnapshot('u1', 'v', 'both')).toEqual(run)
   })
 
   it('lives in sessionStorage, never in localStorage', () => {
@@ -98,23 +99,41 @@ describe('review snapshot', () => {
   it('never hands one user’s run to another account', () => {
     writeReviewSnapshot(snapshot({ user: 'u1' }))
 
-    expect(readReviewSnapshot('u2', 'both')).toBeNull()
-    expect(readReviewSnapshot('', 'both')).toBeNull()
+    expect(readReviewSnapshot('u2', 'v', 'both')).toBeNull()
+    expect(readReviewSnapshot('', 'v', 'both')).toBeNull()
+  })
+
+  it('resumes a run only in the project it was played in', () => {
+    // Its questions name one library's photos and faces; resumed elsewhere its
+    // answers and retries would be posted to the other project.
+    writeReviewSnapshot(snapshot({ project: 'a' }))
+
+    expect(readReviewSnapshot('u1', 'b', 'both')).toBeNull()
+    expect(readReviewSnapshot('u1', '', 'both')).toBeNull()
+    expect(readReviewSnapshot('u1', 'a', 'both')).not.toBeNull()
+  })
+
+  it('ignores a run stored before runs named their project', () => {
+    const older: Record<string, unknown> = { ...snapshot(), version: 1 }
+    delete older.project
+    storeRaw(older)
+
+    expect(readReviewSnapshot('u1', 'v', 'both')).toBeNull()
   })
 
   it('ignores a run taken for a different source', () => {
     writeReviewSnapshot(snapshot({ source: 'people' }))
 
-    expect(readReviewSnapshot('u1', 'labels')).toBeNull()
-    expect(readReviewSnapshot('u1', 'people')).not.toBeNull()
+    expect(readReviewSnapshot('u1', 'v', 'labels')).toBeNull()
+    expect(readReviewSnapshot('u1', 'v', 'people')).not.toBeNull()
   })
 
   it('returns null when nothing is stored, and after a clear', () => {
-    expect(readReviewSnapshot('u1', 'both')).toBeNull()
+    expect(readReviewSnapshot('u1', 'v', 'both')).toBeNull()
 
     writeReviewSnapshot(snapshot())
     clearReviewSnapshot()
-    expect(readReviewSnapshot('u1', 'both')).toBeNull()
+    expect(readReviewSnapshot('u1', 'v', 'both')).toBeNull()
   })
 
   it.each([
@@ -124,11 +143,12 @@ describe('review snapshot', () => {
     ['an array', '[]'],
   ])('rejects %s', (_name, raw) => {
     storeRaw(raw)
-    expect(readReviewSnapshot('u1', 'both')).toBeNull()
+    expect(readReviewSnapshot('u1', 'v', 'both')).toBeNull()
   })
 
   it.each<[string, (run: Record<string, unknown>) => void]>([
-    ['another version', (run) => (run.version = 2)],
+    ['another version', (run) => (run.version = REVIEW_SNAPSHOT_VERSION + 1)],
+    ['a missing project', (run) => delete run.project],
     ['a missing version', (run) => delete run.version],
     ['an unknown source', (run) => (run.source = 'everything')],
     ['an empty queue', (run) => (run.queue = [])],
@@ -180,7 +200,7 @@ describe('review snapshot', () => {
     corrupt(run)
     storeRaw(run)
 
-    expect(readReviewSnapshot('u1', 'both')).toBeNull()
+    expect(readReviewSnapshot('u1', 'v', 'both')).toBeNull()
   })
 
   it('treats storage that throws as no storage at all', () => {
@@ -202,6 +222,6 @@ describe('review snapshot', () => {
     expect(() => {
       clearReviewSnapshot(broken)
     }).not.toThrow()
-    expect(readReviewSnapshot('u1', 'both', broken)).toBeNull()
+    expect(readReviewSnapshot('u1', 'v', 'both', broken)).toBeNull()
   })
 })

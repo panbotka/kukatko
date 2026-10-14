@@ -24,7 +24,9 @@ import { type ReviewCard } from './reviewRounds'
  * Session storage, not local: a run is a sitting, and a half-played round from
  * last week is not where anybody wants to land. It is also scoped to the user
  * who played it, because a shared browser must never hand one account's queue
- * — or its tallies — to another.
+ * — or its tallies — to another, and to the project it was played in: its
+ * questions name one library's photos, faces and labels, and resumed in another
+ * project its answers would be posted there.
  */
 
 /** sessionStorage key holding the run. One key: there is one game per tab. */
@@ -34,13 +36,15 @@ export const REVIEW_SNAPSHOT_KEY = 'kukatko.review.run'
  * The snapshot's shape version. Bump it whenever the stored shape changes: a
  * snapshot of any other version is ignored, never half-read.
  */
-export const REVIEW_SNAPSHOT_VERSION = 1
+export const REVIEW_SNAPSHOT_VERSION = 2
 
 /** Everything a resumed run needs, as it is written to storage. */
 export interface ReviewSnapshot {
   version: typeof REVIEW_SNAPSHOT_VERSION
   /** The uid of the user who played the run; nobody else may resume it. */
   user: string
+  /** The slug of the project the run was played in; it resumes only there. */
+  project: string
   /** The "Na co se ptát" source the queue was built for. */
   source: ReviewSource
   /** The local queue, the card on screen first. */
@@ -103,14 +107,15 @@ export function clearReviewSnapshot(storage: Storage | undefined = safeStorage()
 }
 
 /**
- * The run `user` left behind for `source`, or null when there is none to
- * resume: nothing stored, storage unavailable, a payload that does not parse or
- * does not have the shape this build writes, another user's run, or a run over
- * a different source. Null always means "start a fresh round", so the caller
+ * The run `user` left behind in `project` for `source`, or null when there is
+ * none to resume: nothing stored, storage unavailable, a payload that does not
+ * parse or does not have the shape this build writes, another user's run, a run
+ * of another project, or a run over a different source. Null always means "start a fresh round", so the caller
  * never has to tell the reasons apart.
  */
 export function readReviewSnapshot(
   user: string,
+  project: string,
   source: ReviewSource,
   storage: Storage | undefined = safeStorage(),
 ): ReviewSnapshot | null {
@@ -120,7 +125,7 @@ export function readReviewSnapshot(
   } catch {
     return null
   }
-  if (raw === null || user === '') {
+  if (raw === null || user === '' || project === '') {
     return null
   }
   let parsed: unknown
@@ -130,7 +135,7 @@ export function readReviewSnapshot(
     return null
   }
   const snapshot = asSnapshot(parsed)
-  if (snapshot?.user !== user || snapshot.source !== source) {
+  if (snapshot?.user !== user || snapshot.project !== project || snapshot.source !== source) {
     return null
   }
   return snapshot
@@ -276,6 +281,7 @@ function asSnapshot(value: unknown): ReviewSnapshot | null {
   }
   const valid =
     isString(value.user) &&
+    isString(value.project) &&
     REVIEW_SOURCES.some((source) => source === value.source) &&
     Array.isArray(value.queue) &&
     value.queue.length > 0 &&
