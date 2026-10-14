@@ -102,6 +102,16 @@ type Report struct {
 	// Sampled by key. Like OrphanProject it is reported and never repaired; a
 	// maintainer decides.
 	LegacyLayout Finding `json:"legacy_layout"`
+	// RootDerived are thumbnails and streaming segments at the root of the store
+	// whose photo already lives under its project's prefix: what a storage move
+	// could not move (a throttled or erroring store) or what a move before the
+	// derived bookkeeping left behind. Nothing serves them — the photo's URLs
+	// name its prefixed keys — so its tiles are blank wherever the prefixed copy
+	// is missing. Found by listing the bucket's root thumb/ and hls/ trees and
+	// matching each key's content hash to a moved photo; sampled by root key and
+	// not counted again under LegacyLayout. Listing them is the dry run of
+	// `maintenance repair --root-derived`.
+	RootDerived Finding `json:"root_derived"`
 	// MissingOriginals are photos whose primary original is absent on disk.
 	MissingOriginals Finding `json:"missing_originals"`
 	// OrphanFiles are originals in some project's tree with no catalogue row —
@@ -206,7 +216,7 @@ func (r Report) findings() []Finding {
 		r.MissingFaces, r.MissingPhashes, r.MissingPlaces, r.TransposedDimensions,
 		r.TransposedFaceBoxes, r.DuplicateFaceMarkers, r.SidewaysFaceDetections,
 		r.ImpossibleDates, r.MissingRenditions, r.OrphanSegments.Finding, r.UnscheduledSteps,
-		r.OrphanProject, r.LegacyLayout,
+		r.OrphanProject, r.LegacyLayout, r.RootDerived,
 	}
 }
 

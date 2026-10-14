@@ -210,7 +210,8 @@ type OrphanImporter interface {
 // disables the reverse-geocode backfill), Sidecar (nil means the sidecar export
 // is off), Streaming (a zero value means this instance does not stream) and
 // Processing (nil leaves the unscheduled-steps finding empty and its repair
-// unavailable). A non-positive SampleLimit uses defaultSampleLimit.
+// unavailable) and RootDerived (nil leaves the root-derived finding empty and
+// its repair unavailable). A non-positive SampleLimit uses defaultSampleLimit.
 type Config struct {
 	Photos      PhotoCatalog
 	Vectors     VectorCatalog
@@ -227,6 +228,7 @@ type Config struct {
 	Sidecar     SidecarScheduler
 	Streaming   Streaming
 	Processing  ProcessingGaps
+	RootDerived RootDerivedMover
 	SampleLimit int
 }
 
@@ -248,6 +250,7 @@ type Service struct {
 	sidecar     SidecarScheduler
 	streaming   Streaming
 	processing  ProcessingGaps
+	rootDerived RootDerivedMover
 	sampleLimit int
 }
 
@@ -278,6 +281,7 @@ func New(cfg Config) *Service {
 		sidecar:     cfg.Sidecar,
 		streaming:   cfg.Streaming,
 		processing:  cfg.Processing,
+		rootDerived: cfg.RootDerived,
 		sampleLimit: limit,
 	}
 }
@@ -332,6 +336,12 @@ func (s *Service) scanTotals(ctx context.Context) (Report, error) {
 		return Report{}, err
 	}
 	ledger := newProjectLedger(projects, s.sampleLimit)
+	rootDerived, err := s.findRootDerived(ctx)
+	if err != nil {
+		return Report{}, err
+	}
+	rootKeys := rootDerivedKeys(rootDerived)
+	ledger.rootDerived = keySet(rootKeys)
 	missingOriginals, missingThumbs, err := s.scanFiles(ctx, ledger)
 	if err != nil {
 		return Report{}, err
@@ -351,6 +361,7 @@ func (s *Service) scanTotals(ctx context.Context) (Report, error) {
 		Projects:          ledger.reports(),
 		OrphanProject:     findingFrom(rec.orphanProject, s.sampleLimit),
 		LegacyLayout:      findingFrom(rec.legacy, s.sampleLimit),
+		RootDerived:       findingFrom(rootKeys, s.sampleLimit),
 		MissingOriginals:  missingOriginals,
 		OrphanFiles:       findingFrom(rec.orphanKeys(), s.sampleLimit),
 		MissingThumbnails: missingThumbs,

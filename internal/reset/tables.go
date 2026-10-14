@@ -66,6 +66,7 @@ var catalogueTables = []string{
 	"review_skips",
 	"saved_searches",
 	"search_history",
+	"storage_rekey_derived_failures",
 	"subject_families",
 	"subject_family_children",
 	"subjects",

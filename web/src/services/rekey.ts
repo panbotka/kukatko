@@ -62,6 +62,11 @@ export interface RekeyRun {
   errors: RekeyRunError[] | null
   /** Every error the run ever met. */
   error_count: number
+  /**
+   * Moved photos whose thumbnails or streaming segments are still at the root,
+   * waiting for a retry. A run ends `done` only when this is 0.
+   */
+  derived_failed: number
   started_at: string
   updated_at: string
   /** Absent until the run is done. */

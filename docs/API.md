@@ -439,7 +439,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   worker does the moving; these routes only steer it. Refusals are `{"error":"<code>"}`.
   A **run** is `{uid, project_uid, state: running|paused|done|failed, target_prefix, total_photos,
   total_bytes, done_photos, done_bytes, last_key, pending_photo_uid?, pending_old_key?, errors: [{key,
-  message, at}] (the last 50, oldest first), error_count, started_at, updated_at, finished_at?}`.
+  message, at}] (the last 50, oldest first), error_count, derived_failed, started_at, updated_at,
+  finished_at?}`. **`derived_failed`** counts the project's moved photos whose thumbnails or streaming
+  segments are still at the store root (`storage_rekey_derived_failures`): every further pass retries them,
+  and a run ends `done` only when it is 0 — otherwise `failed`, for `retry`.
   - `GET /projects/{uid}/rekey` → the project's latest run; **404 `not_found`** when it never had one
     (or the project does not exist).
   - `POST /projects/{uid}/rekey` (no body) → **201** + the new `running` run: switches the project's
@@ -449,7 +452,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     404 `not_found` for an unknown project. A project whose last run is done or failed may be started again.
   - `POST /projects/{uid}/rekey/pause` → 200 + the run, now `paused` (the job stops after the photo in
     hand); `POST …/resume` → `running` again; `POST …/retry` → a `failed` run back to `running` with its
-    cursor reset (its error count and ring kept). **409 `invalid_state`** when the latest run is not in the
+    cursor reset (its error count and ring kept). Resume and retry also restart the retry of the recorded
+    derived failures. **409 `invalid_state`** when the latest run is not in the
     state the action starts from; 404 `not_found` when there is no run.
 - **Members (project admin) (`/api/v1/p/{project}/members`, `internal/memberapi`):** a project admin's
   management of the members of **their** project. Mounted **only under `/p/{project}`** and every route **`RequireAdmin`** — the project's admin, or a maintainer, who enters every project
@@ -2826,7 +2830,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `missing_originals`/`orphan_files`/`missing_thumbnails`/`missing_embeddings`/`missing_faces`/
   `missing_phashes`/`missing_places`/`transposed_dimensions`/`transposed_face_boxes`/
   `duplicate_face_markers`/`sideways_face_detections`/`impossible_dates`/`missing_renditions`/
-  `orphan_segments`/`unscheduled_steps` + the totals
+  `orphan_segments`/`unscheduled_steps`/`root_derived` + the totals
   `photos`/`files_in_db`/`store`). **`store`** is the inventory of whichever store the instance keeps its
   originals in — `{kind,originals,error?}`, `kind` being `disk` (the local originals root) or `object` (the
   bucket) — so an `r2` instance reports what the bucket holds instead of the empty local root. `error` is set
@@ -2837,22 +2841,26 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   whose findings add up to the instance-wide ones — and two findings belong to no project: `orphan_project`
   (objects under `projects/<uid>/` for a project that does not exist) and `legacy_layout` (root-layout objects
   once no project uses the root layout). Neither has a repair; both make the report non-clean, and
-  `orphan_files` / `import_orphans` never include them.
+  `orphan_files` / `import_orphans` never include them. **`root_derived`** are thumbnails and streaming
+  segments at the root whose photo already lives under its project's prefix (bucket listing, sampled by root
+  key, not counted again under `legacy_layout`); its repair is `root_derived`.
   `POST /maintenance/repair`
   `{thumbnails,embeddings,faces,phashes,import_orphans,places,dimensions,face_markers,sideways_faces,`
-  `impossible_dates,missing_renditions,delete_orphan_segments,unscheduled_steps}`
+  `impossible_dates,missing_renditions,delete_orphan_segments,unscheduled_steps,root_derived}`
   (each opt-in)
   → `RepairResult`
   with scheduling counts (`*_enqueued` + `orphans_imported/skipped/failed` +
   `dimensions_fixed`/`face_boxes_fixed`/`face_boxes_skipped`/`face_links_cleared`/
   `faces_skipped_videos` (the clips the face repair passed over — detection does not run on footage)/
   `sideways_faces_enqueued`/`impossible_dates_cleared`/`renditions_dropped`/
-  `orphan_segments_deleted`/`orphan_segments_kept`/`steps_scheduled`);
+  `orphan_segments_deleted`/`orphan_segments_kept`/`steps_scheduled`/
+  `root_derived_moved`/`root_derived_objects`/`root_derived_failed`);
   `DisallowUnknownFields`, an empty selection →
   400, an orphan import without an importer → 503 (`ErrOrphanImportUnavailable`), a place backfill with no
   mapy.com key → 503 (`ErrPlaceBackfillUnavailable`), a streaming repair on an instance with
   `video.hls.enabled: false` → 503 (`ErrStreamingUnavailable`), a gap repair on a service wired without the
-  processing service → 503 (`ErrProcessingUnavailable`). `unscheduled_steps` counts, per (photo, step) and
+  processing service → 503 (`ErrProcessingUnavailable`), a root-derived repair on a service wired without the
+  storage move → 503 (`ErrRootDerivedUnavailable`). `unscheduled_steps` counts, per (photo, step) and
   sampled as `<photo_uid>/<step>`, every step a **live** photo is owed that nothing will deliver — exactly the
   steps its `processing` block calls `pending` (no evidence, no unfinished job, not switched off) — **except
   `places`**, whose pending backlog is deliberately deferred (geocoding is paid, worked off in batches) and is

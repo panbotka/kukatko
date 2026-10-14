@@ -46,9 +46,12 @@ type RekeyRun struct {
 	DoneBytes    int64        `json:"done_bytes"`
 	Errors       []RekeyError `json:"errors"`
 	ErrorCount   int          `json:"error_count"`
-	StartedAt    time.Time    `json:"started_at"`
-	UpdatedAt    time.Time    `json:"updated_at"`
-	FinishedAt   *time.Time   `json:"finished_at"`
+	// DerivedFailed counts the moved photos whose thumbnails or streaming
+	// segments are still at the root, waiting for a retry.
+	DerivedFailed int64      `json:"derived_failed"`
+	StartedAt     time.Time  `json:"started_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	FinishedAt    *time.Time `json:"finished_at"`
 }
 
 // rekeyPath renders the path of a project's storage move.
@@ -102,7 +105,7 @@ func WriteRekeyRun(w io.Writer, run RekeyRun) error {
 		finished = formatStamp(*run.FinishedAt)
 	}
 	shown := run.Errors[max(len(run.Errors)-shownRekeyErrors, 0):]
-	rows := make([][2]string, 0, 9+len(shown))
+	rows := make([][2]string, 0, 10+len(shown))
 	rows = append(rows, [][2]string{
 		{"RUN", run.UID},
 		{"STATE", run.State},
@@ -111,6 +114,7 @@ func WriteRekeyRun(w io.Writer, run RekeyRun) error {
 			" (" + rekeyPercent(run.DonePhotos, run.TotalPhotos) + ")"},
 		{"ORIGINALS", formatSize(run.DoneBytes) + " of " + formatSize(run.TotalBytes)},
 		{"ERRORS", strconv.Itoa(run.ErrorCount)},
+		{"DERIVED FAILED", strconv.FormatInt(run.DerivedFailed, 10)},
 		{"STARTED", formatStamp(run.StartedAt)},
 		{"UPDATED", formatStamp(run.UpdatedAt)},
 		{"FINISHED", finished},

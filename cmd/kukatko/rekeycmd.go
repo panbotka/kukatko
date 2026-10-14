@@ -250,6 +250,10 @@ func printRekeyRun(cmd *cobra.Command, run rekey.Run) {
 		run.StartedAt.UTC().Format("2006-01-02 15:04:05Z"), run.UpdatedAt.UTC().Format("2006-01-02 15:04:05Z"),
 		finished)
 	cmd.PrintErrf("errors: %d\n", run.ErrorCount)
+	if run.DerivedFailed > 0 {
+		cmd.PrintErrf("derived failed: %d photo(s) keep thumbnails or streaming segments at the root; "+
+			"the run retries them, --retry a failed run\n", run.DerivedFailed)
+	}
 	shown := run.Errors[max(len(run.Errors)-rekeyShownErrors, 0):]
 	for _, failure := range shown {
 		key := failure.Key

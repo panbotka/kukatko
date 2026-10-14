@@ -66,6 +66,7 @@ function run(state: RekeyState, overrides: Partial<RekeyRun> = {}): RekeyRun {
     last_key: '2019/07/IMG_20190714_123456_0042_some_very_long_original_name.jpg',
     errors: [],
     error_count: 0,
+    derived_failed: 0,
     started_at: '2026-10-13T08:00:00Z',
     updated_at: '2026-10-13T08:05:00Z',
     ...overrides,
@@ -220,6 +221,31 @@ describe('StorageMoveCard', () => {
     await user.click(screen.getByRole('button', { name: 'Zkusit znovu' }))
     expect(retryMock).toHaveBeenCalledWith('pjv')
     expect(await screen.findByRole('button', { name: 'Pozastavit' })).toBeInTheDocument()
+  })
+
+  it('warns about a failed move whose derived objects stayed behind and retries it', async () => {
+    const user = userEvent.setup()
+    fetchMock.mockResolvedValue(run('failed', { done_photos: 1000, derived_failed: 3 }))
+    retryMock.mockResolvedValue(run('running', { done_photos: 1000, derived_failed: 3 }))
+    renderCard()
+
+    const warning = await screen.findByTestId('storage-move-derived-failed')
+    expect(warning).toHaveTextContent('U 3 fotek zůstaly náhledy nebo segmenty videa')
+    expect(warning).toHaveTextContent('„Zkusit znovu“ je přesune.')
+
+    await user.click(screen.getByRole('button', { name: 'Zkusit znovu' }))
+    expect(retryMock).toHaveBeenCalledWith('pjv')
+    expect(await screen.findByTestId('storage-move-derived-failed')).toHaveTextContent(
+      'Přesun je zkouší znovu',
+    )
+  })
+
+  it('shows no derived warning while nothing stayed behind', async () => {
+    fetchMock.mockResolvedValue(run('running'))
+    renderCard()
+
+    expect(await screen.findByTestId('storage-move-counts')).toBeInTheDocument()
+    expect(screen.queryByTestId('storage-move-derived-failed')).not.toBeInTheDocument()
   })
 
   it('sums up a done move with the new prefix and the finish time', async () => {

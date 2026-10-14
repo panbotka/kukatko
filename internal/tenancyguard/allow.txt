@@ -126,7 +126,7 @@ internal/phototask/store_write.go:353 touch is only called from AddPhotos/Remove
 internal/processing/store.go:43 evidenceFrom fragment; the uid query runs only on photos loaded scoped (photoInProject, ingest); the scan has project_id
 
 # internal/rekey
-internal/rekey/store.go:153 rekey service; deliberately checks every project before deleting an old object key that any row still names
+internal/rekey/store.go:161 rekey service; deliberately checks every project before deleting an old object key that any row still names
 
 # internal/reset
 internal/reset/reset.go:496 guarded instance-wide library wipe (maintenance reset CLI), reads every catalogued file path

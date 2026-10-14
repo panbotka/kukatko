@@ -28,6 +28,7 @@ function run(state: RekeyState, done = 0): RekeyRun {
     last_key: '',
     errors: [],
     error_count: 0,
+    derived_failed: 0,
     started_at: '2026-10-13T08:00:00Z',
     updated_at: '2026-10-13T08:00:00Z',
   }

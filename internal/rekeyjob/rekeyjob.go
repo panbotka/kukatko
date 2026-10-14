@@ -120,7 +120,7 @@ func New(cfg Config) *Service {
 //   - done or failed, or no run at all: it completes, and nothing re-enqueues it.
 //
 // A run that the step itself failed (too many errors) or that Finish failed
-// (photos left behind) completes the job too: the run says failed, and Retry
+// (photos, or their thumbnails and segments, left behind) completes the job too: the run says failed, and Retry
 // schedules a new job. A failure that is not about the run — the database or
 // the store unreachable — is returned as it is, so the queue retries it with
 // backoff; the run stays exactly resumable. A payload naming no project is a
@@ -179,6 +179,9 @@ func (s *Service) finish(ctx context.Context, run rekey.Run) error {
 		return nil
 	case errors.Is(err, rekey.ErrPhotosRemain):
 		s.logEnd(ctx, run, "storage move failed: photos left in the old layout")
+		return nil
+	case errors.Is(err, rekey.ErrDerivedRemain):
+		s.logEnd(ctx, run, "storage move failed: derived objects left in the old layout")
 		return nil
 	case errors.Is(err, rekey.ErrPendingCleanup), errors.Is(err, rekey.ErrNotRunning):
 		// Something is still to do, or the run changed state: read it again.

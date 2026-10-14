@@ -964,20 +964,40 @@ to `## Package map` in `CLAUDE.md`.
   original unless a verifying copy is already there → **verify** (size = `photos.file_size`, then the copy's
   ETag = the source's *content* ETag, else stream it and compare SHA-256 with `file_hash`) → one transaction
   moves `photos.file_path`, the `photo_files` row and names the photo in `pending_photo_uid`/`pending_old_key`
-  → copy the derived objects that exist (a missing one is skipped) and delete each old one → delete the old
-  original (never while any photo row names it) → count it, advance `last_key`, clear pending. A crash before
+  → move the derived objects that exist (a missing one is skipped): the sidecar on its own, the thumbnails
+  and segments **together** (`moveTracked` in `derived.go`: every one copied first, the root copies deleted
+  only when all copies succeeded) → delete the old original (never while any photo row names it) → count it,
+  advance `last_key`, clear pending. A thumbnail/segment copy that fails keeps **every** root thumbnail and
+  segment of the photo and records it in **`storage_rekey_derived_failures`** (migration `0115`; photo uid,
+  project, `kinds`, last `message`, `attempts`; emptied by the wipe) before the photo is counted; the run's
+  `DerivedFailed` (`derived_failed`) counts the project's rows. Once no photo is left in the old layout,
+  `Step` retries the recorded photos instead (`stepDerived`, uid order after the run's `derived_cursor`,
+  which `Resume`/`Retry` reset): re-plan the photo's root thumbnails/segments against the prefix its row
+  points at, keep a prefixed copy that exists, copy a missing one, delete the root copies only once all
+  exist, then forget the photo (or refresh its record). A crash before
   the commit leaves both copies and the old row (the next pass re-verifies the copy); a crash after it leaves
   the photo pending, and the next step verifies the new copy again — re-copying from the still-present old key
   when it does not verify — before deleting anything. A per-photo failure goes into the `errors` ring (last
   50 `{key, message, at}`) and is skipped; `error_count > 100` fails the run (`ErrRunFailed`); a cancelled
   context or `storage.IsSystemic` error returns without recording. **`Finish(ctx, run)`**: no photo left in
   the old layout (else the run fails with `ErrPhotosRemain`; `ErrPendingCleanup` while one is pending) →
+  **sweep** the bucket's root `thumb/` and `hls/` trees for objects of moved photos (matched by the content
+  hash in the key) not yet recorded — recorded, derived cursor reset, `ErrPendingCleanup` so the job steps
+  them → no recorded derived failure left (else the run fails with `ErrDerivedRemain`) →
   enqueue `family_export` for the project and a `sidecar` rewrite for **every** photo → copy the root
   `families.yaml` under the prefix when no export landed there yet, then delete the root one and every root
   `sidecars/` key **only once a listing shows its prefixed replacement** (nothing at the root is touched while
   any project is still in the root layout) → `done`. The local thumbnail cache is not moved: it is a
-  regenerable cache, and the published objects are. Tests: `plan_test.go` (plan, rendition names,
-  verification over an in-memory fake with S3-style ETags) and `rekey_integration_test.go` (tag
+  regenerable cache, and the published objects are. **`FindRootDerived(ctx)`** /
+  **`MoveRootDerived(ctx, found)`** are the same root sweep and retry for every project a move touched,
+  read-only and repairing respectively (`RootDerivedPhoto{UID, ProjectUID, Moves}`,
+  `RootDerivedResult{Photos, Objects, Failed}`) — the `root_derived` check and repair of
+  `internal/maintenance`. Tests: `plan_test.go` (plan, rendition names,
+  verification over an in-memory fake with S3-style ETags), `derived_test.go` (the two-phase move: a copy
+  failure keeps every root object, a retry moves them, a newer prefixed copy is kept, a systemic failure is
+  fatal; the key-hash parsers), `derived_integration_test.go` (a derived failure keeps the root tiles and a
+  later pass moves them with `derived_failed` back to 0; a failed run retried; the final sweep; the
+  maintenance find/move; the retry query's project scoping and order) and `rekey_integration_test.go` (tag
   `integration`, real DB + the fake): a full run, a crash after copy and after commit, a verification failure
   (old kept, run continues, `Finish` fails it, `Retry` completes it), the error threshold, pause/resume and
   the `Start` refusals, the transitions' audit entries and their one queued job, the preview, with an
@@ -992,8 +1012,8 @@ to `## Package map` in `CLAUDE.md`.
   of that batch's share of the pace (`processed/PerSecond` s minus the time the batch took, never negative),
   so the job holds its slot for about a second and a restart loses at most the photo in hand; the pass over
   → `Finish` and complete; **paused** → a deferral of `PausedRecheck` (1 min); **done/failed/no run** →
-  complete, nothing re-enqueues it. `ErrRunFailed` (the step failed the run) and `ErrPhotosRemain` (Finish
-  failed it) complete the job — the run says failed, `Retry` queues a new one; `ErrNotRunning` and
+  complete, nothing re-enqueues it. `ErrRunFailed` (the step failed the run), `ErrPhotosRemain` and
+  `ErrDerivedRemain` (Finish failed it) complete the job — the run says failed, `Retry` queues a new one; `ErrNotRunning` and
   `ErrPendingCleanup` defer 0 s (read the run again); anything else (database, store) is returned so the
   queue retries with backoff. One slot (`internal/worker`). Tests: `rekeyjob_test.go` (every state and
   outcome over a fake mover, the pace with a frozen clock) and `rekeyjob_integration_test.go` (tag
@@ -5071,7 +5091,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `Report{Photos,FilesInDB,Store,Projects,OrphanProject,LegacyLayout,MissingOriginals,OrphanFiles,MissingThumbnails,
   MissingEmbeddings,MissingFaces,MissingPhashes,MissingPlaces,TransposedDimensions,TransposedFaceBoxes,
   DuplicateFaceMarkers,SidewaysFaceDetections,ImpossibleDates,MissingRenditions,OrphanSegments,
-  UnscheduledSteps}` — each class is a
+  UnscheduledSteps,RootDerived}` — each class is a
   `Finding{Count,Samples}` (`OrphanSegments` is a `SegmentOrphans`, a `Finding` plus `Bytes`)
   (a count + a limited sample of identifiers); `representativeThumbSize`=`tile_224` is the proxy for the presence of
   thumbnails, an orphan = an original **in the store** with no `photo_files.file_path`, `Report.Clean()`;
@@ -5098,7 +5118,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   to the instance-wide ones. `OrphanFiles` and the orphan import cover only the originals of a **real** project's
   tree; `OrphanProject`/`LegacyLayout` are reported, never repaired, and make `Clean()` false;
   **`Repair(ctx,RepairOptions{Thumbnails,Embeddings,Faces,Phashes,ImportOrphans,Places,Dimensions,FaceMarkers,
-  SidewaysFaces,ImpossibleDates,MissingRenditions,DeleteOrphanSegments,UnscheduledSteps},meta audit.Meta)`**
+  SidewaysFaces,ImpossibleDates,MissingRenditions,DeleteOrphanSegments,UnscheduledSteps,RootDerived},meta audit.Meta)`**
   (each opt-in,
   idempotent, in a fixed order) → `RepairResult` with the scheduling counts: thumbnails/phashes enqueue
   `thumbnail` jobs (`EnqueueThumbnail`), embeddings/faces call the backfill, the orphan import goes through the
@@ -5113,6 +5133,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   double-counted and queued behind the curator's back;
   the repair schedules each through `processing.Service.Run` (`StepsScheduled`; a step that stopped applying in
   the meantime is skipped). Unwired → an empty finding and `ErrProcessingUnavailable` for the repair.
+  **`RootDerived`** (`rootderived.go`): the optional `Config.RootDerived` (`RootDerivedMover`, satisfied by
+  `*rekey.Service`) lists the thumbnails and streaming segments a storage move left at the root for photos whose
+  row already points under their project's prefix — from the bucket listing, never the local thumbnail cache —
+  sampled by root key; the ledger's `rootDerived` set makes the reconciler skip those keys, so they are not
+  counted again as `LegacyLayout`. The repair hands them to `MoveRootDerived` (a prefixed copy that exists is
+  kept, root copies deleted only once all exist; `RootDerivedMoved`/`RootDerivedObjects`/`RootDerivedFailed`).
+  Unwired → an empty finding and `ErrRootDerivedUnavailable` for the repair.
   **`Places`** is the reverse-geocode backfill: `MissingPlaces` is its dry run (`MissingPlaces` finding —
   live photos carrying coordinates with no `photo_places` row, the same predicate as
   `system.LibrarySummary.PhotosPendingGeocode` and the dashboard's `PhotosWithoutPlace`) and the repair calls

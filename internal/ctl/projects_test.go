@@ -248,7 +248,7 @@ func TestWriteRekeyRun(t *testing.T) {
 	}
 	run, err := DecodeRekeyRun([]byte(`{"uid":"rk1","state":"done","target_prefix":"projects/pj1/",
 		"total_photos":4,"total_bytes":2048,"done_photos":4,"done_bytes":2048,"error_count":7,
-		"errors":[` + strings.Join(errorsJSON, ",") + `],
+		"derived_failed":3,"errors":[` + strings.Join(errorsJSON, ",") + `],
 		"started_at":"2026-10-13T09:00:00Z","updated_at":"2026-10-13T10:00:00Z","finished_at":"2026-10-13T10:00:00Z"}`))
 	if err != nil {
 		t.Fatalf("DecodeRekeyRun: %v", err)
@@ -258,7 +258,9 @@ func TestWriteRekeyRun(t *testing.T) {
 		t.Fatalf("WriteRekeyRun: %v", err)
 	}
 	out := buf.String()
-	for _, want := range []string{"rk1", "done", "4 of 4 (100.0%)", "2.0 KiB of 2.0 KiB", "kg: m", "kc: m"} {
+	for _, want := range []string{
+		"rk1", "done", "4 of 4 (100.0%)", "2.0 KiB of 2.0 KiB", "kg: m", "kc: m", "DERIVED FAILED  3",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("run table lacks %q:\n%s", want, out)
 		}

@@ -37,11 +37,16 @@ that migration 0114 dropped from every `project_id` column, for a release whose 
 insert without naming the project. It leaves NOT NULL and the foreign keys alone. Run it first when
 going back to a release older than 0114.
 
+**`0115_down.sql`** drops `storage_rekey_derived_failures` (the storage move's record of photos whose
+thumbnails or streaming segments stayed at the root) and the run's `derived_cursor`. It is safe at any
+time: an older release neither reads nor retries those rows, and `kukatko maintenance scan` finds the
+objects again from a bucket listing. Run it first when going back to a release older than 0115.
+
 **Every file of the chain has a down script** since the final safety gate (2026-10-13). To go back to
 0.31.0 (schema 0099):
 
 ```sh
-for f in 0114 0113 0112 0111 0110 0109 0108 0107 0106 0105 0104 0103 0102 0101 0100; do
+for f in 0115 0114 0113 0112 0111 0110 0109 0108 0107 0106 0105 0104 0103 0102 0101 0100; do
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f docs/migrations-rollback/${f}_down.sql || break
 done
 ```

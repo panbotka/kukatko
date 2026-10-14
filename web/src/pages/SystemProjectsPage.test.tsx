@@ -62,6 +62,7 @@ function move(projectUid: string, state: RekeyState, done: number): RekeyRun {
     last_key: '',
     errors: [],
     error_count: 0,
+    derived_failed: 0,
     started_at: '2026-10-13T08:00:00Z',
     updated_at: '2026-10-13T08:00:00Z',
   }

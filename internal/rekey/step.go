@@ -18,6 +18,10 @@ import (
 // It re-reads the run first, refusing one that is not running with
 // ErrNotRunning, and finishes the photo a crashed step left pending before
 // taking new ones. Photos are taken in file_path order after the run's cursor.
+// Once none is left in the old layout, the step retries instead the derived
+// objects of the photos recorded in storage_rekey_derived_failures, in uid
+// order after the run's derived cursor (stepDerived); the pass is over when
+// both are exhausted.
 // A photo that fails is recorded in the run's error ring and skipped; when that
 // pushes the run past MaxErrors the run is failed and Step returns
 // ErrRunFailed. A pause that lands mid-batch is honoured after the photo in
@@ -51,7 +55,7 @@ func (s *Service) Step(ctx context.Context, run Run, batchSize int) (processed i
 		return 0, false, err
 	}
 	if len(batch) == 0 {
-		return 0, true, nil
+		return s.stepDerived(ctx, run, batchSize)
 	}
 	return s.stepBatch(ctx, run, batch)
 }
@@ -177,29 +181,34 @@ func (s *Service) commitMove(ctx context.Context, run Run, photo PhotoFiles, ori
 }
 
 // completePhoto finishes a photo whose row already points at its new key: it
-// copies the derived objects that exist, deletes the old original and the old
-// derived objects it copied, then counts the photo and clears it as pending. A
-// derived object that cannot be copied keeps its old key, and that — or a
-// deletion that fails — is recorded as an error of the photo; the photo still
-// counts as moved, since its row points at a verified copy.
+// moves the derived objects that exist, deletes the old original, then counts
+// the photo and clears it as pending. The photo counts as moved whatever
+// happens to its derived objects, since its row points at a verified copy.
+//
+// Thumbnails and streaming segments move together (moveTracked): all are copied
+// before any root copy is deleted, and when one cannot be copied none of them is
+// deleted and the photo is recorded in storage_rekey_derived_failures for the
+// retry — before it is counted, so a crash in between never loses the record.
+// The sidecar moves on its own (Finish rewrites every sidecar anyway). Every
+// problem is also recorded as an error of the run.
 func (s *Service) completePhoto(ctx context.Context, run Run, photo PhotoFiles, moves []Move) (State, error) {
-	var problems []error
-	for _, move := range moves[1:] {
-		if err := s.moveDerived(ctx, move); err != nil {
-			if fatal(ctx, err) {
-				return "", err
-			}
-			problems = append(problems, err)
-		}
+	tracked, others := splitTracked(moves[1:])
+	outcome, err := s.moveTracked(ctx, tracked, false)
+	if err != nil {
+		return "", err
 	}
-	if err := s.deleteOldOriginal(ctx, moves[0]); err != nil {
-		if fatal(ctx, err) {
-			return "", err
-		}
-		problems = append(problems, err)
+	problems, err := s.moveRest(ctx, others, moves[0])
+	if err != nil {
+		return "", err
+	}
+	if outcome.problem != nil {
+		problems = append([]error{outcome.problem}, problems...)
+	}
+	if err := s.noteDerived(ctx, run.ProjectUID, photo.UID, outcome); err != nil {
+		return "", err
 	}
 	var state string
-	err := s.pool.QueryRow(ctx, completePhotoSQL, run.UID, photo.FileSize, moves[0].From).Scan(&state)
+	err = s.pool.QueryRow(ctx, completePhotoSQL, run.UID, photo.FileSize, moves[0].From).Scan(&state)
 	if err != nil {
 		return "", fmt.Errorf("rekey: counting %s: %w", photo.UID, err)
 	}
@@ -207,6 +216,28 @@ func (s *Service) completePhoto(ctx context.Context, run Run, photo PhotoFiles, 
 		return s.recordError(ctx, run.UID, moves[0].From, "", errors.Join(problems...))
 	}
 	return State(state), nil
+}
+
+// moveRest moves the untracked derived objects (the sidecar) one by one and
+// deletes the old original, returning the per-photo problems it met; a fatal
+// failure is returned as the error.
+func (s *Service) moveRest(ctx context.Context, others []Move, original Move) ([]error, error) {
+	var problems []error
+	for _, move := range others {
+		if err := s.moveDerived(ctx, move); err != nil {
+			if fatal(ctx, err) {
+				return nil, err
+			}
+			problems = append(problems, err)
+		}
+	}
+	if err := s.deleteOldOriginal(ctx, original); err != nil {
+		if fatal(ctx, err) {
+			return nil, err
+		}
+		problems = append(problems, err)
+	}
+	return problems, nil
 }
 
 // moveDerived copies one derived object to its new key and deletes the old one.

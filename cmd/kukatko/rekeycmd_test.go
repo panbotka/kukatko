@@ -155,14 +155,15 @@ func TestRunRekey_status(t *testing.T) {
 			fake := &fakeRekey{run: rekey.Run{
 				UID: "rk1", State: tt.state, TargetPrefix: "projects/pjv/", TotalPhotos: 200, DonePhotos: 50,
 				TotalBytes: 4 << 30, DoneBytes: 1 << 30, ErrorCount: 7, Errors: errorsSeen,
-				StartedAt: at, UpdatedAt: at,
+				DerivedFailed: 2, StartedAt: at, UpdatedAt: at,
 			}}
 			stdout, stderr, err := runRekeyCaptured(t, fake, rekeyStatus)
 			if !errors.Is(err, tt.wantErr) || (tt.wantErr == nil && err != nil) {
 				t.Errorf("status of a %s run = %v, want %v", tt.state, err, tt.wantErr)
 			}
 			for _, want := range []string{"run rk1: " + string(tt.state), "50 of 200 moved (25.0%)",
-				"1.0 GiB of 4.0 GiB", "errors: 7", "2023/01/g.jpg: copy does not match"} {
+				"1.0 GiB of 4.0 GiB", "errors: 7", "2023/01/g.jpg: copy does not match",
+				"derived failed: 2 photo(s)"} {
 				if !strings.Contains(stderr, want) {
 					t.Errorf("status stderr lacks %q:\n%s", want, stderr)
 				}

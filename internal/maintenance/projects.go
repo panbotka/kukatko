@@ -59,6 +59,10 @@ type projectLedger struct {
 	// storage prefix is empty), or "" once no project does — after the bootstrap
 	// project's storage move.
 	rootOwner string
+	// rootDerived are the root keys of derived objects whose photo has moved
+	// under its prefix: reported as RootDerived, so the reconciliation passes
+	// over them rather than counting them as legacy too.
+	rootDerived map[string]struct{}
 }
 
 // newProjectLedger returns a ledger with one empty tally per project, keeping
@@ -249,6 +253,9 @@ func (r *reconciler) attribute(obj StoreEntry) (string, attribution) {
 func (r *reconciler) observe(obj StoreEntry) {
 	if obj.Kind == storekeys.KindOriginal {
 		r.result.originals++
+	}
+	if _, moved := r.ledger.rootDerived[obj.Key]; moved && obj.ProjectUID == "" {
+		return
 	}
 	owner, verdict := r.attribute(obj)
 	switch verdict {

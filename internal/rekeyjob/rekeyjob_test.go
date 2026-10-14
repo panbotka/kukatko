@@ -129,6 +129,13 @@ func TestHandle_states(t *testing.T) {
 			steps: 1, finishes: 1,
 		},
 		{
+			name: "derived objects left behind complete the failed run",
+			mover: fakeMover{
+				run: rekey.Run{State: rekey.StateRunning}, done: true, finishErr: rekey.ErrDerivedRemain,
+			},
+			steps: 1, finishes: 1,
+		},
+		{
 			name: "a pending cleanup at the end is read again",
 			mover: fakeMover{
 				run: rekey.Run{State: rekey.StateRunning}, done: true, finishErr: rekey.ErrPendingCleanup,

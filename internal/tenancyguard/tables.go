@@ -53,6 +53,8 @@ var ExemptTables = map[string]string{
 	"project_members": "account table: a user's memberships are read across projects by design " +
 		"(sign-in, the project switcher)",
 	"storage_rekey_runs": "maintainer-only run state of the storage move, addressed by the run's own uid",
+	"storage_rekey_derived_failures": "maintainer-only bookkeeping of the storage move, keyed by the " +
+		"photo's uid; internal/rekey reads it per project",
 }
 
 // projectColumns are the column names that tie a row to a project.

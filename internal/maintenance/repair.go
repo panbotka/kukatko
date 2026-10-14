@@ -22,6 +22,10 @@ var ErrOrphanImportUnavailable = errors.New("maintenance: orphan import not conf
 // the repair refuses rather than filling the queue with work no handler claims.
 var ErrPlaceBackfillUnavailable = errors.New("maintenance: place geocoding not configured")
 
+// ErrRootDerivedUnavailable indicates a repair of derived objects left at the
+// root was requested on a service wired without the storage move.
+var ErrRootDerivedUnavailable = errors.New("maintenance: the storage move is not configured")
+
 // RepairOptions selects which repairs to run. Every repair is opt-in; the zero
 // value runs nothing. Thumbnail and pHash repairs enqueue jobs (processed by the
 // background worker with bounded concurrency); embedding and face repairs enqueue
@@ -73,6 +77,11 @@ type RepairOptions struct {
 	// that nothing has scheduled — the `pending` steps of its processing report —
 	// one job per (photo, step).
 	UnscheduledSteps bool `json:"unscheduled_steps"`
+	// RootDerived moves the thumbnails and streaming segments a storage move left
+	// at the root for photos already under their project's prefix: each object
+	// is copied under the prefix where it is missing there, and a photo's root
+	// copies are deleted only once every one of them exists under the prefix.
+	RootDerived bool `json:"root_derived"`
 }
 
 // Any reports whether at least one repair is selected.
@@ -93,6 +102,7 @@ func (o RepairOptions) flags() []bool {
 		o.Thumbnails, o.Embeddings, o.Faces, o.Phashes, o.ImportOrphans,
 		o.Places, o.Dimensions, o.FaceMarkers, o.SidewaysFaces,
 		o.ImpossibleDates, o.MissingRenditions, o.DeleteOrphanSegments, o.UnscheduledSteps,
+		o.RootDerived,
 	}
 }
 
@@ -161,6 +171,14 @@ type RepairResult struct {
 	// repair enqueued. It counts work scheduled, not done: the embedding and face
 	// jobs among them wait for the box like any other.
 	StepsScheduled int `json:"steps_scheduled"`
+	// RootDerivedMoved is the number of photos whose derived objects left at the
+	// root were all moved under their prefix, RootDerivedObjects how many objects
+	// those were, and RootDerivedFailed the number of photos that kept objects at
+	// the root (the store refused a copy or a deletion; nothing of theirs was
+	// deleted unless it exists under the prefix).
+	RootDerivedMoved   int `json:"root_derived_moved"`
+	RootDerivedObjects int `json:"root_derived_objects"`
+	RootDerivedFailed  int `json:"root_derived_failed"`
 }
 
 // Repair runs the selected repairs and returns what each scheduled or did. It is
@@ -187,6 +205,7 @@ func (s *Service) Repair(ctx context.Context, opts RepairOptions, meta audit.Met
 		s.repairMissingRenditions,
 		s.repairOrphanSegments,
 		s.repairUnscheduledSteps,
+		s.repairRootDerived,
 		func(ctx context.Context, opts RepairOptions, res *RepairResult) error {
 			return s.repairImpossibleDates(ctx, opts, meta, res)
 		},

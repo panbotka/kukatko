@@ -75,7 +75,7 @@ configuration key both here **and** into `config.example.yaml`.
   `maintenance repair` with the flags
   `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`/`--places`/`--dimensions`/
   `--face-markers`/`--sideways-faces`/`--impossible-dates`/`--missing-renditions`/`--delete-orphan-segments`/
-  `--unscheduled-steps`
+  `--unscheduled-steps`/`--root-derived`
   (each opt-in; thumbnails/phashes enqueue `thumbnail` jobs drained by a running server's worker,
   embeddings/faces backfill, orphan import synchronously via the upload pipeline. `--faces` prints the
   videos it passed over on its own line (`videos skipped by face detection=N`): detection does not run on
@@ -128,6 +128,12 @@ configuration key both here **and** into `config.example.yaml`.
   sampled as `<photo_uid>/<step>`. It is the catch-up for an upload cut short after its original was stored
   (2026-10-05: no thumbnails, no jobs); since the pipeline now finishes regardless of the client and a
   re-upload of the same file completes its photo, a non-zero count is worth a look rather than routine.
+  `--root-derived` moves the thumbnails and streaming segments a storage move left at the **store root** for
+  photos whose row already points under their project's prefix (the scan's `root derived` line, sampled by
+  root key, is its dry run; see "`maintenance scan` — the per-project report"). It drives the storage move's
+  own rules (`internal/rekey`): an object already under the prefix is kept, a missing one is copied there, and
+  a photo's root copies are deleted **only once every one of them exists under the prefix**; it prints
+  `root derived objects moved: photos=N objects=M failed=K` — a failed photo kept everything at the root.
   `--impossible-dates` is the fourth flag that writes the catalogue directly, and the only one that **removes**
   something: it withdraws the capture date of every photo dated to a year no photograph can have been taken in
   — before 1826 or further ahead than next year, the same range `internal/exif` enforces on an incoming
@@ -451,11 +457,12 @@ instance-wide findings:
 | --- | --- |
 | `projects[]` | One entry per project (deactivated ones included), in listing order: `uid`, `slug`, `name`, `storage_prefix`, `photos` (with a primary file), `files_in_db`, `originals` (in the store, attributed to it), and its share of `missing_originals`, `orphan_files` and `missing_thumbnails`. The shares add up to the instance-wide findings. |
 | `orphan_project` | Objects of any kind under `projects/<uid>/` for a uid no project has — e.g. what a purge whose store half failed left behind. Never repaired: a maintainer decides. |
+| `root_derived` | Thumbnails and streaming segments at the **root** whose photo already lives under its project's prefix — what a storage move could not move, or what a move before 0115 left behind. Found from the **bucket listing** (the root `thumb/` and `hls/` trees, matched to a moved photo by the content hash in the key — never the local thumbnail cache), only for projects a storage move touched, sampled by root key and **not** counted again under `legacy_layout`. Nothing serves them (a photo's URLs name its prefixed keys), so a tile whose prefixed copy is missing shows blank. `maintenance repair --root-derived` moves them. |
 | `legacy_layout` | Root-layout objects once **no** project uses the root layout (the bootstrap project's storage has moved): an original no catalogue row points at, and — once no catalogued file lives at the root any more — every thumbnail, sidecar, segment or `families.yaml` still there. Half-way through the move a root original the catalogue still points at is the project's own, and the root's derived objects are still in use. Never repaired. |
 
 `orphan_files` (and so `repair --import-orphans`) counts only originals of a **real** project's tree; an original
 under an orphan project or in the legacy layout is reported by the two findings above instead and never offered
-for import — no project would receive it. Both findings make the report non-clean.
+for import — no project would receive it. All three findings make the report non-clean.
 
 ### `kukatko maintenance reset` — the guarded library wipe
 
@@ -677,9 +684,9 @@ automatically.** Design: `internal/rekey` (the safe per-photo move) and `interna
 | --- | --- |
 | `kukatko storage rekey v --dry-run` | Changes nothing. Prints how many photos and bytes of originals would move, the target prefix and the first 20 planned moves (`old → new (+N derived keys)`); refuses exactly what a start would refuse. |
 | `kukatko storage rekey v` | **Starts** the move: switches the project's storage prefix (new uploads land in the new layout at once), records a `running` run with its totals, queues the `storage_rekey` job — all in one transaction, audited (`project.storage_prefix`, `project.rekey.start`). |
-| `kukatko storage rekey v --status` | Prints the latest run: state, photos and bytes moved of the total, timestamps, the error count and the last 5 errors. |
+| `kukatko storage rekey v --status` | Prints the latest run: state, photos and bytes moved of the total, timestamps, the error count, `derived failed: N` when moved photos keep thumbnails/segments at the root, and the last 5 errors. |
 | `kukatko storage rekey v --pause` / `--resume` | Pauses the running move (the job stops after the photo in hand and re-reads the run once a minute) / resumes it (the waiting job is made runnable at once). Audited. |
-| `kukatko storage rekey v --retry` | Starts another pass of a **failed** move over every photo still in the old layout. Audited. |
+| `kukatko storage rekey v --retry` | Starts another pass of a **failed** move over every photo still in the old layout and every recorded derived failure. Audited. |
 
 The same actions over the API: `GET`/`POST /projects/{uid}/rekey`, `POST …/rekey/{pause,resume,retry}`
 (maintainer, [`API.md`](API.md)), `kukatko ctl projects rekey <slug> [--status|--pause|--resume|--retry]`,
@@ -699,8 +706,38 @@ the copy (size, and ETag or SHA-256 against `photos.file_hash`) → point the ro
 old objects. A crash anywhere leaves both copies or only the verified new one; the next pass re-verifies and
 continues. A photo that fails is recorded (last 50 errors kept) and skipped; more than 100 errors fail the run.
 
+**Derived objects that did not move.** A thumbnail or segment copy that fails **after** the row moved (an
+R2 429/5xx is a per-photo failure, not a dead store) cannot undo the photo — its original is verified under
+the new prefix — so the photo still counts as moved and its old original is deleted, but **none of its root
+thumbnails or segments are deleted**. The photo is recorded durably in `storage_rekey_derived_failures`
+(migration 0115: photo uid, the kinds still at the root, the last error, attempts) and the run's
+**`derived_failed`** counts those rows (`--status`, the API, the „Úložiště" card). Once the pass has no photo
+left in the old layout, every further step of the job — and the pass a `--resume` or `--retry` starts —
+re-plans the derived objects of the recorded photos: a prefixed copy that exists is kept, a missing one is
+copied from the root, the root copies are deleted only once every prefixed one exists, and the record is
+cleared. Before closing, the run also **sweeps the bucket**: a moved photo whose thumbnails or segments a
+listing still finds at the root (e.g. from a move before 0115) is recorded and retried the same way.
+
+**Before you start — pre-move checks.** Run these against the project (here `v`) first; each must return
+**0 rows**:
+
+```sql
+-- every row has a size and a SHA-256 the copy can be verified against
+SELECT uid, file_path, file_size, file_hash FROM photos
+WHERE project_id = 'pj0000000000000000veselice'
+  AND (file_size <= 0 OR file_hash !~ '^[0-9a-f]{64}$');
+-- no original over 5 GiB: a server-side copy cannot take it (ErrTooLargeToCopy),
+-- so such a photo stays in the old layout and the run can never end done
+SELECT uid, file_path, file_size FROM photos
+WHERE project_id = 'pj0000000000000000veselice' AND file_size > 5 * 1024^3;
+```
+
+A row with no size or a malformed hash fails verification and is left behind; an original over 5 GiB needs
+a multipart copy the move does not do — resolve either before starting.
+
 **When to start.** Only after the multi-tenant release is live and verified — step 7 of the upgrade runbook
-above: inventory B diffed clean, the UI spot-checked, **a fresh backup** taken. Then:
+above: inventory B diffed clean, the UI spot-checked, **a fresh backup** taken. **Keep that pre-move dump**:
+once old keys are deleted it is the **only rollback** of the move. Then:
 
 1. `kukatko storage rekey v --dry-run` — the counts must match what the library holds (photos, bytes of
    originals; `kukatko maintenance scan` beforehand should report nothing missing).
@@ -713,24 +750,38 @@ above: inventory B diffed clean, the UI spot-checked, **a fresh backup** taken. 
 4. If it competes with serving, `--pause` (or „Pozastavit" on the page), lower `storage.rekey.per_second`,
    restart, `--resume` („Pokračovat").
 
-**What "done" means.** The run's state is `done` and `finished_at` is set: every photo row of the project
-points under `projects/<uid>/`, the sidecar of every photo and the project's `families.yaml` have been
-re-queued for writing under the new prefix, and the root `families.yaml` and root sidecars that have their
-replacement listed under the prefix are deleted (nothing at the root is touched while another project still
-lives there). Then run `kukatko maintenance scan`: anything still in the root layout is reported as an orphan
-(a derived object that could not be copied, an object no row named) — review it before deleting anything.
+**Old keys have no grace period.** A photo's old objects are deleted the moment it has moved. A browser tab
+opened before that still holds signed URLs of the old keys, so its tiles (and a playing video's segments)
+may 404 until the page is reloaded — expected, nothing to repair.
 
-**What to do with `failed`.** `--status` lists the last errors (`key: message`). A run fails when it met more
-than 100 errors, or when its pass ended with photos it could not move (the error says how many). Typical
-causes: an original missing from the store (`maintenance scan` reports it — restore it from backup, or
-archive and purge the photo), a copy that does not verify (the store is corrupting writes — stop and
-investigate), a store that refuses requests (credentials, quota). Fix the cause, then `--retry`: the next
-pass takes again every photo still in the old layout; nothing already moved is redone. The old original is
-**never** deleted before the row points at a verified copy, so a failed run loses nothing.
+**What "done" means.** The run's state is `done` and `finished_at` is set: every photo row of the project
+points under `projects/<uid>/`, **no photo is left in `storage_rekey_derived_failures`** (`derived_failed`
+is 0 — a run with derived failures ends `failed` instead), the sidecar of every photo and the project's
+`families.yaml` have been re-queued for writing under the new prefix, and the root `families.yaml` and root
+sidecars that have their replacement listed under the prefix are deleted (nothing at the root is touched
+while another project still lives there). Then:
+
+1. **Run `kukatko backup` right away** — the first backup of the new layout; the pre-move dump stays the only
+   way back to the old one.
+2. Run `kukatko maintenance scan`: `root derived` should be 0 (if not, `maintenance repair --root-derived`);
+   anything else still in the root layout is reported as an orphan or legacy object (an object no row named)
+   — review it before deleting anything.
+
+**What to do with `failed`.** `--status` lists the last errors (`key: message`) and, when photos keep
+derived objects at the root, `derived failed: N`. A run fails when it met more than 100 errors, when its pass
+ended with photos it could not move (the error says how many), or when photos still have thumbnails or
+segments at the root (`derived_failed` > 0; the card shows the count with „Zkusit znovu"). Typical causes: an
+original missing from the store (`maintenance scan` reports it — restore it from backup, or archive and purge
+the photo), a copy that does not verify (the store is corrupting writes — stop and investigate), a store that
+refuses or throttles requests (credentials, quota, rate). Fix the cause, then `--retry`: the next pass takes
+again every photo still in the old layout and every recorded derived failure; nothing already moved is
+redone. The old original is **never** deleted before the row points at a verified copy, so a failed run
+loses nothing.
 
 **If the job is dead.** A failure that is not about one photo (database or store unreachable) is retried by
-the queue with backoff; after its attempts are spent the job is dead while the run still says `running`.
-Requeue it from the maintainer's `/jobs`, or `--pause` and `--resume` the run, which queues a fresh one.
+the queue with backoff; after its attempts are spent the job is dead-lettered while the run still says
+`running` — and nothing steps it. Unstick it with **`--pause` then `--resume`** (or „Pozastavit" /
+„Pokračovat"), which queues a fresh job; requeueing it from the maintainer's `/jobs` works too.
 
 ### `kukatko ctl` — remote API client
 

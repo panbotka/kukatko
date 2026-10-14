@@ -8754,7 +8754,10 @@ fotek · 420,0 MB z 1 000,0 MB · 42 %", while running the rate („600 fotek/mi
 polls exist) and the ETA (`etaPhrase` from `lib/uploadEta`), started/updated, the last key (monospace,
 middle-truncated to 48 chars, full key in `title`), the error count as a toggle (`aria-expanded`) over the
 last errors **newest first**, and **Pozastavit** (running) / **Pokračovat** (paused) / **Zkusit znovu**
-(failed, with an explanatory danger alert); **done** — a success alert „Přesun je hotový. Objekty projektu
+(failed, with an explanatory danger alert); whenever the run's **`derived_failed`** is above 0, a warning
+alert (`data-testid="storage-move-derived-failed"`) „U N fotek zůstaly náhledy nebo segmenty videa ve starém
+umístění…" followed by what moves them — the running pass („Přesun je zkouší znovu…"), „Zkusit znovu" on a
+failed run, or `kukatko maintenance repair --root-derived` on a done one; **done** — a success alert „Přesun je hotový. Objekty projektu
 leží pod projects/…, dokončeno …" (`finished_at`). The state badge (Probíhá/Pozastaveno/Hotovo/Selhalo)
 sits by the title. A start refused `already_running` re-reads and shows that run; `invalid_state` on an
 action re-reads („Stav přesunu se mezitím změnil…"). The polling is **`hooks/useRekeyRun(uid)`** →
@@ -8783,7 +8786,7 @@ a refused empty form, create with limits in bytes → detail, `slug_taken` on th
 `pages/SystemProjectPage.test.tsx` (pick by slug, storage root text, unknown slug, save of changed
 fields only, deactivate confirm + cancel, add-me + hidden for a member),
 `components/system/StorageMoveCard.test.tsx` (the four states, the confirmation gates the start,
-pause/resume/retry, errors newest first, the measured rate + ETA under fake timers, `already_running`,
+pause/resume/retry, errors newest first, the derived-failure warning and its retry, the measured rate + ETA under fake timers, `already_running`,
 load retry), `hooks/useRekeyRun.test.tsx` (3 s / 15 s cadence, stop on done, hidden-tab suspension,
 the rate, `adopt` — fake timers with `shouldAdvanceTime`), `lib/rekeyProgress.test.ts`,
 `services/rekey.test.ts` (URLs, 404 → `null`, codes), the move chip in `SystemProjectsPage.test.tsx`,

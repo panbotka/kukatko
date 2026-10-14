@@ -27,6 +27,13 @@ import (
 // pass recorded errors for — the run is failed and ErrPhotosRemain returned;
 // Retry starts another pass over them.
 //
+// Before anything is rewritten it sweeps the root for thumbnails and streaming
+// segments of the project's moved photos (a bucket listing): a photo found there
+// and not yet recorded is recorded for the retry and ErrPendingCleanup returned,
+// so the next steps move it. When recorded photos remain after that — their
+// derived objects could not be moved this pass — the run is failed and
+// ErrDerivedRemain returned; Retry tries them again.
+//
 // A root object that cannot be removed is recorded in the run's errors and left
 // behind; the maintenance scan reports it. Nothing at the root is removed while
 // another project is still in the root layout.
@@ -44,6 +51,9 @@ func (s *Service) Finish(ctx context.Context, run Run) (Run, error) {
 		return run, ErrPendingCleanup
 	}
 	if run, err = s.checkNoneRemain(ctx, run); err != nil {
+		return run, err
+	}
+	if run, err = s.settleDerived(ctx, run); err != nil {
 		return run, err
 	}
 	if err := s.enqueueRewrites(ctx, run.ProjectUID); err != nil {
@@ -67,6 +77,42 @@ func (s *Service) checkNoneRemain(ctx context.Context, run Run) (Run, error) {
 		return run, nil
 	}
 	cause := fmt.Errorf("%w: %d photo(s) could not be moved", ErrPhotosRemain, remaining)
+	if _, err := s.recordError(ctx, run.UID, "", "", cause); err != nil {
+		return run, err
+	}
+	failed, err := queryRun(ctx, s.pool, ErrNoRun, setStateSQL, run.UID, string(StateFailed))
+	if err != nil {
+		return run, err
+	}
+	return failed, cause
+}
+
+// settleDerived sweeps the root for derived objects of the run's moved photos
+// nobody recorded — returning ErrPendingCleanup when it recorded any, so the
+// next steps move them — and then fails the run with ErrDerivedRemain while
+// recorded photos remain. Otherwise it returns the run as it is.
+func (s *Service) settleDerived(ctx context.Context, run Run) (Run, error) {
+	swept, err := s.sweepRootDerived(ctx, run)
+	if err != nil {
+		return run, err
+	}
+	if swept > 0 {
+		s.log.InfoContext(ctx, "rekey: derived objects found at the root", "run", run.UID, "photos", swept)
+		return run, ErrPendingCleanup
+	}
+	return s.checkNoDerivedRemain(ctx, run)
+}
+
+// checkNoDerivedRemain fails the run, and returns it failed with
+// ErrDerivedRemain, while moved photos of its project still have derived
+// objects recorded at the root; otherwise it returns the run as it is.
+func (s *Service) checkNoDerivedRemain(ctx context.Context, run Run) (Run, error) {
+	run, err := s.reload(ctx, run.UID)
+	if err != nil || run.DerivedFailed == 0 {
+		return run, err
+	}
+	cause := fmt.Errorf("%w: %d photo(s) keep thumbnails or streaming segments at the root",
+		ErrDerivedRemain, run.DerivedFailed)
 	if _, err := s.recordError(ctx, run.UID, "", "", cause); err != nil {
 		return run, err
 	}

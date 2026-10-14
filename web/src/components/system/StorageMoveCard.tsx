@@ -184,6 +184,29 @@ export function StorageMoveCard({ project }: StorageMoveCardProps) {
     )
   }
 
+  /**
+   * The warning about photos whose thumbnails or segments did not move yet,
+   * with what will move them: the running pass itself, „Zkusit znovu" on a
+   * failed run, or the maintenance repair once the run is over.
+   */
+  function renderDerivedFailed(current: RekeyRun) {
+    if (current.derived_failed <= 0) {
+      return null
+    }
+    const next =
+      current.state === 'failed'
+        ? t('systemProject.storageMove.derivedRetry')
+        : current.state === 'done'
+          ? t('systemProject.storageMove.derivedRepair')
+          : t('systemProject.storageMove.derivedRetrying')
+    return (
+      <Alert variant="warning" className="mb-3" data-testid="storage-move-derived-failed">
+        <Icon name="exclamation-triangle" className="me-2" />
+        {t('systemProject.storageMove.derivedFailed', { count: current.derived_failed })} {next}
+      </Alert>
+    )
+  }
+
   function renderDone(current: RekeyRun) {
     return (
       <>
@@ -195,6 +218,7 @@ export function StorageMoveCard({ project }: StorageMoveCardProps) {
           })}
         </Alert>
         {renderPrefix(current.target_prefix)}
+        {renderDerivedFailed(current)}
         {renderErrors(current)}
       </>
     )
@@ -211,6 +235,7 @@ export function StorageMoveCard({ project }: StorageMoveCardProps) {
             {t('systemProject.storageMove.failedText')}
           </Alert>
         )}
+        {renderDerivedFailed(current)}
         <ProgressBar className="mb-2">
           <ProgressBar
             now={percent}

@@ -98,6 +98,10 @@ func newMaintenanceRepairCmd() *cobra.Command {
 		"enqueue every processing step a live photo is owed and nothing has scheduled "+
 			"(the steps its processing report calls pending — what an interrupted upload "+
 			"leaves behind); 'maintenance scan' is its dry run")
+	cmd.Flags().Bool("root-derived", false,
+		"move the thumbnails and streaming segments a storage move left at the root for "+
+			"photos already under their project's prefix; a root copy is deleted only once "+
+			"every object of its photo exists under the prefix; 'maintenance scan' is its dry run")
 	return cmd
 }
 
@@ -274,6 +278,12 @@ func printProjectBreakdown(cmd *cobra.Command, report maintenance.Report) {
 	if len(report.LegacyLayout.Samples) > 0 {
 		cmd.Printf("    e.g. %v\n", report.LegacyLayout.Samples)
 	}
+	// The dry run of `repair --root-derived`: a moved photo's thumbnails and
+	// segments still at the root (bucket listing), sampled by root key.
+	cmd.Printf("  root derived:       %d\n", report.RootDerived.Count)
+	if len(report.RootDerived.Samples) > 0 {
+		cmd.Printf("    e.g. %v\n", report.RootDerived.Samples)
+	}
 }
 
 // runMaintenanceRepair reads the repair flags and runs the selected repairs,
@@ -286,7 +296,8 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 	if !opts.Any() {
 		cmd.Println("no repair selected; pass --thumbnails, --embeddings, --faces, --phashes, " +
 			"--import-orphans, --places, --dimensions, --face-markers, --sideways-faces, " +
-			"--impossible-dates, --missing-renditions, --delete-orphan-segments or --unscheduled-steps")
+			"--impossible-dates, --missing-renditions, --delete-orphan-segments, --unscheduled-steps " +
+			"or --root-derived")
 		return nil
 	}
 	svc, cleanup, err := openMaintenanceService(cmd)
@@ -320,6 +331,8 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 	cmd.Printf("orphan segments deleted=%d kept=%d (kept = an unfinished encode is still writing them)\n",
 		result.OrphanSegmentsDeleted, result.OrphanSegmentsKept)
 	cmd.Printf("unscheduled steps scheduled=%d\n", result.StepsScheduled)
+	cmd.Printf("root derived objects moved: photos=%d objects=%d failed=%d\n",
+		result.RootDerivedMoved, result.RootDerivedObjects, result.RootDerivedFailed)
 	return nil
 }
 
@@ -341,6 +354,7 @@ func repairOptionsFromFlags(cmd *cobra.Command) (maintenance.RepairOptions, erro
 		"missing-renditions":     &opts.MissingRenditions,
 		"delete-orphan-segments": &opts.DeleteOrphanSegments,
 		"unscheduled-steps":      &opts.UnscheduledSteps,
+		"root-derived":           &opts.RootDerived,
 	} {
 		val, err := flags.GetBool(name)
 		if err != nil {

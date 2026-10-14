@@ -12,9 +12,13 @@ import (
 )
 
 // runColumns is the column list every read of a run selects, in scanRun order.
+// derived_failed is counted, not stored: the rows of the project waiting for
+// their derived objects to move.
 const runColumns = `uid, project_uid, state, target_prefix, total_photos, done_photos, total_bytes,
 	done_bytes, last_key, pending_photo_uid, pending_old_key, errors, error_count,
-	started_at, updated_at, finished_at`
+	started_at, updated_at, finished_at, derived_cursor,
+	(SELECT count(*) FROM storage_rekey_derived_failures f
+	 WHERE f.project_uid = storage_rekey_runs.project_uid) AS derived_failed`
 
 // rowScanner is the one method scanRun needs of a pgx.Row or pgx.Rows.
 type rowScanner interface {
@@ -31,7 +35,8 @@ func scanRun(row rowScanner) (Run, error) {
 	)
 	err := row.Scan(&run.UID, &run.ProjectUID, &state, &run.TargetPrefix, &run.TotalPhotos,
 		&run.DonePhotos, &run.TotalBytes, &run.DoneBytes, &run.LastKey, &run.PendingPhotoUID,
-		&run.PendingOldKey, &errors, &run.ErrorCount, &run.StartedAt, &run.UpdatedAt, &run.FinishedAt)
+		&run.PendingOldKey, &errors, &run.ErrorCount, &run.StartedAt, &run.UpdatedAt, &run.FinishedAt,
+		&run.DerivedCursor, &run.DerivedFailed)
 	if err != nil {
 		return Run{}, err //nolint:wrapcheck // callers map pgx.ErrNoRows and wrap the rest.
 	}
@@ -75,10 +80,13 @@ const latestRunSQL = `SELECT ` + runColumns + ` FROM storage_rekey_runs
 WHERE project_uid = $1 ORDER BY started_at DESC, uid DESC LIMIT 1`
 
 // transitionSQL moves a project's most recent run from state $2 to $3; $4 resets
-// the cursor (Retry starts a fresh pass over the photos the last one left).
+// the cursor (Retry starts a fresh pass over the photos the last one left). A
+// run put back to running also restarts its retry of derived objects, so a
+// resume or a retry tries every recorded photo again.
 const transitionSQL = `
 UPDATE storage_rekey_runs SET state = $3, updated_at = now(),
-	last_key = CASE WHEN $4 THEN '' ELSE last_key END
+	last_key = CASE WHEN $4 THEN '' ELSE last_key END,
+	derived_cursor = CASE WHEN $3 = 'running' THEN '' ELSE derived_cursor END
 WHERE uid = (SELECT uid FROM storage_rekey_runs WHERE project_uid = $1
              ORDER BY started_at DESC, uid DESC LIMIT 1)
   AND state = $2

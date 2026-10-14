@@ -201,6 +201,17 @@ func TestRepairProcessingUnavailable(t *testing.T) {
 	}
 }
 
+// TestRepairRootDerivedUnavailable verifies ErrRootDerivedUnavailable maps to
+// 503: a service wired without the storage move cannot move root objects.
+func TestRepairRootDerivedUnavailable(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{repairErr: maintenance.ErrRootDerivedUnavailable}
+	rec := do(newRouter(svc), http.MethodPost, "/maintenance/repair", `{"root_derived":true}`)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", rec.Code)
+	}
+}
+
 // TestRepairUnavailable verifies a nil service answers 503.
 func TestRepairUnavailable(t *testing.T) {
 	t.Parallel()

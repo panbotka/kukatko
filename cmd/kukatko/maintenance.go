@@ -182,6 +182,12 @@ func buildMaintenanceService(
 	if err != nil {
 		return nil, err
 	}
+	// The storage move owns the rules for moving a photo's derived objects out
+	// of the root; the check of what it left there drives the same service.
+	rootDerived, err := buildRekeyService(cfg, db)
+	if err != nil {
+		return nil, err
+	}
 	// The scan and the repair are instance-wide; the backfill listings they
 	// read are per project, so the adapters walk every active project.
 	projects := project.NewStore(db.Pool())
@@ -206,6 +212,7 @@ func buildMaintenanceService(
 			Service:  buildProcessingService(cfg, db, jobs.NewStore(db.Pool()), enqueuer),
 			projects: projects,
 		},
+		RootDerived: rootDerived,
 	}), nil
 }
 

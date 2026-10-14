@@ -25,6 +25,19 @@
 // cursor of the pass, and a photo that fails is recorded in the run's error ring
 // and skipped, so one unreadable file never blocks the library.
 //
+// # Derived objects that did not move
+//
+// A thumbnail or streaming segment that cannot be copied after the row moved
+// does not undo the photo: its original is safe under the new prefix either way.
+// The photo is recorded in storage_rekey_derived_failures with the kinds still at
+// the root, and none of its root thumbnails or segments are deleted. Once the
+// pass has no photo left in the old layout, every further step re-plans the
+// derived objects of the recorded photos (derived.go): it copies what the new
+// prefix lacks, deletes the root copies only once the prefixed ones exist, and
+// forgets the photo on success. Finish first sweeps the root for derived objects
+// of moved photos nobody recorded, then ends the run done only when no record of
+// the project is left — failed with ErrDerivedRemain otherwise, for Retry.
+//
 // # Shape
 //
 // Plan is pure: it lists the keys one photo occupies and where each must go.
@@ -95,8 +108,13 @@ var (
 	// starts another pass over them.
 	ErrPhotosRemain = errors.New("rekey: photos are still in the old layout")
 	// ErrPendingCleanup is returned by Finish while a photo's old objects still
-	// await deletion; Step finishes that first.
+	// await deletion — a crashed step's pending photo, or derived objects its
+	// root sweep just found and recorded; Step finishes that first.
 	ErrPendingCleanup = errors.New("rekey: a moved photo's old objects are not deleted yet")
+	// ErrDerivedRemain is returned by Finish when moved photos still have
+	// thumbnails or streaming segments at the root that the pass could not move
+	// (Run.DerivedFailed). The run is failed; Retry tries them again.
+	ErrDerivedRemain = errors.New("rekey: derived objects are still in the old layout")
 	// ErrVerifyFailed is the per-photo error of a copy that does not hold the
 	// bytes the catalogue promises. The old original is kept.
 	ErrVerifyFailed = errors.New("rekey: the copy does not match the original")
@@ -145,6 +163,13 @@ type Run struct {
 	Errors []RunError `json:"errors"`
 	// ErrorCount counts every error the run ever met.
 	ErrorCount int `json:"error_count"`
+	// DerivedFailed counts the project's moved photos whose thumbnails or
+	// streaming segments are still at the root, waiting for a retry: the rows
+	// of storage_rekey_derived_failures. A run is done only when it is zero.
+	DerivedFailed int64 `json:"derived_failed"`
+	// DerivedCursor is the photo uid the retry of derived objects continues
+	// after within a pass; Resume and Retry reset it.
+	DerivedCursor string `json:"-"`
 	// StartedAt, UpdatedAt and FinishedAt are the run's timestamps; FinishedAt
 	// is nil until the run is done.
 	StartedAt  time.Time  `json:"started_at"`
