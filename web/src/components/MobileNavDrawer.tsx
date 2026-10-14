@@ -7,7 +7,7 @@ import { useAuth } from '../auth/AuthContext'
 import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { LIBRARY_PATH } from '../lib/libraryView'
 import { bareVersion } from '../lib/version'
-import { useProjectPath } from '../project/ProjectContext'
+import { useNeutralChrome, useProjectPath } from '../project/ProjectContext'
 import { useWaitingOnMe } from '../tasks/TaskSummaryContext'
 
 import { Icon } from './Icon'
@@ -107,13 +107,17 @@ export function MobileNavDrawer({
   const waitingOnMe = useWaitingOnMe()
   // Each entry is a page's own path; this puts it into the current project.
   const projectPath = useProjectPath()
+  // Outside a project the drawer offers no library's pages — only the way into
+  // a project, the account and the instance's own administration (the same
+  // neutral shell the bar draws; see `useNeutralChrome`).
+  const neutral = useNeutralChrome()
   // "My photos", offered only to an account that has said which person of the
   // library it is — the same gate the desktop user menu applies, from the same
   // builder, so the two menus cannot drift.
-  const myPhotos = myPhotosItem(user?.subject_uid)
+  const myPhotos = neutral ? null : myPhotosItem(user?.subject_uid)
   // The administration rows of the account block, per-item gated exactly as the
   // desktop user menu gates them; empty means the group is not rendered at all.
-  const admin = adminItems({ isAdmin, isMaintainer })
+  const admin = adminItems({ isAdmin, isMaintainer, instanceOnly: neutral })
 
   // Each of the bar's dropdowns becomes one section, unfolded, behind the very
   // same role gate — a closed gate drops the whole section, exactly as it drops
@@ -125,16 +129,18 @@ export function MobileNavDrawer({
 
   // The everyday block leads (it is what the bar shows loudest), then the browse
   // destinations, then the role-gated clusters in ladder order.
-  const sections: DrawerSection[] = [
-    {
-      id: 'main',
-      labelKey: 'nav.sections.main',
-      // The review game is curation; the upload CTA is open to every signed-in
-      // role. The leaderboard they used to sandwich now lives in Procházet.
-      items: [...PRIMARY_ITEMS, ...(canCurate ? [REVIEW_ITEM] : []), UPLOAD_ITEM],
-    },
-    ...groups.map((group) => ({ id: group.id, labelKey: group.labelKey, items: group.items })),
-  ]
+  const sections: DrawerSection[] = neutral
+    ? []
+    : [
+        {
+          id: 'main',
+          labelKey: 'nav.sections.main',
+          // The review game is curation; the upload CTA is open to every signed-in
+          // role. The leaderboard they used to sandwich now lives in Procházet.
+          items: [...PRIMARY_ITEMS, ...(canCurate ? [REVIEW_ITEM] : []), UPLOAD_ITEM],
+        },
+        ...groups.map((group) => ({ id: group.id, labelKey: group.labelKey, items: group.items })),
+      ]
 
   /**
    * One tap row: icon, label, action tooltip. The root entry (the library) is
@@ -202,8 +208,8 @@ export function MobileNavDrawer({
             </h2>
             {renderRow(ACCOUNT_ITEM)}
             {myPhotos && renderRow(myPhotos)}
-            {renderRow(STATS_ITEM)}
-            {renderRow(HELP_ITEM)}
+            {!neutral && renderRow(STATS_ITEM)}
+            {!neutral && renderRow(HELP_ITEM)}
             <KeyboardShortcutsHelp variant="row" />
             {/* Administration: one labelled group between the account rows and
                 sign-out, in the same place the desktop user menu puts it. A

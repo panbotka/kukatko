@@ -987,3 +987,112 @@ describe('the project switcher in the bar', () => {
     expect(document.getElementById('user-menu')).toHaveTextContent('User One')
   })
 })
+
+describe('the neutral shell outside a project', () => {
+  /** An approved membership of the project `slug`. */
+  function member(
+    slug: string,
+    name: string,
+    extra: Partial<ProjectMembership> = {},
+  ): ProjectMembership {
+    return { uid: `p-${slug}`, slug, name, active: true, role: 'admin', approved: true, ...extra }
+  }
+
+  /**
+   * The shell at `path` with the context `ctx` — by default the entry rule's
+   * fallback project `v` on a page that does not belong to it.
+   */
+  function renderWith(
+    value: AuthContextValue,
+    path: string,
+    ctx: Partial<ProjectContextValue> = {},
+  ) {
+    const projects = [member('v', 'Veselice'), member('rodina', 'Rodina')]
+    const project: ProjectContextValue = {
+      project: projects[0],
+      projects,
+      status: 'ready',
+      inAddress: false,
+      switchProject: vi.fn(),
+      ...ctx,
+    }
+    return render(
+      <I18nextProvider i18n={i18n}>
+        <AuthContext.Provider value={value}>
+          <CapabilitiesContext.Provider value={CAPABILITIES_DEFAULT}>
+            <ProjectContext.Provider value={project}>
+              <MemoryRouter initialEntries={[path]}>
+                <Routes>
+                  <Route element={<Layout />}>
+                    <Route path={path} element={<div>page content</div>} />
+                  </Route>
+                </Routes>
+              </MemoryRouter>
+            </ProjectContext.Provider>
+          </CapabilitiesContext.Provider>
+        </AuthContext.Provider>
+      </I18nextProvider>,
+    )
+  }
+
+  it('names no project and offers no library navigation on an instance page', async () => {
+    const user = userEvent.setup()
+    renderWith(auth({ isMaintainer: true }), '/account')
+
+    expect(screen.queryByText('Veselice')).not.toBeInTheDocument()
+    for (const name of ['Library', 'Albums', 'Labels', 'Upload']) {
+      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
+    }
+    // The switcher is the way into a project instead.
+    const toggle = screen.getByRole('button', { name: 'My projects' })
+    await user.click(toggle)
+    expect(await screen.findByRole('link', { name: 'Veselice' })).toHaveAttribute('href', '/p/v')
+    expect(screen.getByRole('link', { name: 'Rodina' })).toHaveAttribute('href', '/p/rodina')
+    expect(screen.getByRole('link', { name: 'All projects…' })).toHaveAttribute('href', '/projects')
+  })
+
+  it("keeps the account and the instance's own administration, drops the project's", async () => {
+    const user = userEvent.setup()
+    renderWith(auth({ isMaintainer: true }), '/p/zzz', { status: 'not-member' })
+
+    await user.click(screen.getByRole('button', { name: 'User One' }))
+    for (const name of ['My account', 'Maintenance', 'System', 'Projects', 'Accounts']) {
+      expect(screen.getByRole('link', { name })).toBeInTheDocument()
+    }
+    for (const name of ['Import', 'Members', 'Audit', 'Statistics', 'Help']) {
+      expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
+    }
+  })
+
+  it('draws no tab bar on a phone, and the drawer no library sections', async () => {
+    mockViewport(true)
+    const user = userEvent.setup()
+    renderWith(auth(), '/account')
+
+    expect(screen.queryByRole('navigation', { name: 'Primary navigation' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open the menu' }))
+    const drawer = await screen.findByRole('dialog')
+    expect(within(drawer).queryByRole('link', { name: 'Albums' })).not.toBeInTheDocument()
+    expect(within(drawer).getByRole('link', { name: 'Veselice' })).toHaveAttribute('href', '/p/v')
+    expect(within(drawer).getByRole('link', { name: 'My account' })).toBeInTheDocument()
+  })
+
+  it('warns inside a deactivated project, and only inside it', () => {
+    const stary = member('stary', 'Starý', { active: false })
+    const { unmount } = renderWith(auth({ isMaintainer: true }), '/p/stary/albums', {
+      project: stary,
+      inAddress: true,
+    })
+    const banner = screen.getByTestId('deactivated-project-banner')
+    expect(banner).toHaveTextContent('The project Starý is deactivated.')
+    expect(within(banner).getByRole('link', { name: 'project settings' })).toHaveAttribute(
+      'href',
+      '/system/projects/stary',
+    )
+    unmount()
+
+    // The same project as an instance page's fallback is no reason to warn.
+    renderWith(auth({ isMaintainer: true }), '/account', { project: stary })
+    expect(screen.queryByTestId('deactivated-project-banner')).not.toBeInTheDocument()
+  })
+})

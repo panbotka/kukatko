@@ -113,15 +113,29 @@ describe('ProjectSwitcher — bar', () => {
     )
   })
 
-  it('opens every project at its home from an instance page', async () => {
+  it('names no project on an instance page, and opens every project at its home', async () => {
     const user = userEvent.setup()
     renderSwitcher(value([member('v'), member('rodina')], false), { variant: 'bar' }, '/account')
-    await user.click(screen.getByRole('button', { name: 'Veselice' }))
+    // The context's project is only the entry rule's fallback: not named.
+    expect(screen.queryByRole('button', { name: 'Veselice' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'My projects' }))
 
-    expect(await screen.findByRole('link', { name: /Projekt rodina/ })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: 'Veselice' })).toHaveAttribute('href', '/p/v')
+    expect(screen.getByRole('link', { name: /Projekt rodina/ })).toHaveAttribute(
       'href',
       '/p/rodina',
     )
+    expect(screen.getByRole('link', { name: 'All projects…' })).toHaveAttribute('href', '/projects')
+  })
+
+  it('is a plain link to the chooser outside a project when no menu fits', () => {
+    renderSwitcher(
+      value([member('v'), member('rodina')], false),
+      { variant: 'bar', menu: false },
+      '/account',
+    )
+
+    expect(screen.getByRole('link', { name: 'My projects' })).toHaveAttribute('href', '/projects')
   })
 
   it('offers only the projects that can be entered', async () => {
@@ -150,10 +164,12 @@ describe('ProjectSwitcher — bar', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
-  it('renders nothing without a project', () => {
+  it('renders nothing outside a provider', () => {
     const { container } = renderSwitcher(null)
     expect(container.querySelector('.kk-project-switcher')).toBeNull()
+  })
 
+  it('leads an account with no project to the chooser', () => {
     const none: ProjectContextValue = {
       project: null,
       projects: [],
@@ -161,8 +177,8 @@ describe('ProjectSwitcher — bar', () => {
       inAddress: false,
       switchProject: vi.fn(),
     }
-    renderSwitcher(none)
-    expect(screen.queryByTestId('project-switcher')).not.toBeInTheDocument()
+    renderSwitcher(none, { variant: 'bar' }, '/account')
+    expect(screen.getByRole('link', { name: 'My projects' })).toHaveAttribute('href', '/projects')
   })
 })
 

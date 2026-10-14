@@ -165,6 +165,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/rekeyapi` — maintainer-only `/projects/{uid}/rekey` (status, start, pause/resume/retry), audited by `internal/rekey`
 - `internal/rekeyjob` — the `storage_rekey` job: one batch of `storage.rekey.per_second` photos per pass, then it defers itself; one worker slot
 - `internal/reset` — the guarded library wipe (`kukatko maintenance reset`): dry run by default, typed database + bucket name, target + schema checks, storage deletion confined to Kukátko's own prefixes, audited in the truncation's transaction; never touches accounts/announcement/audit/migrations
+- `internal/resolveapi` — all-signed-in `GET /resolve/{kind}/{uid}`: the project of an old unprefixed link's entity, told only to a caller who may enter it; one identical 404 otherwise, rate-limited per caller
 - `internal/restoreapi` — maintainer-only **read-only** `/restore/*` (destructive restore only via CLI)
 - `internal/review` — the review game: one-question-at-a-time queue of face/label candidates, mixed from a confident tier and the uncertainty band; answers reuse existing write paths
 - `internal/reviewapi` — `GET /review/queue`, `POST /review/answer` (RequireCurator)
@@ -293,8 +294,7 @@ commit. Always, at the end of every task, in this order:
    `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
 
 ## Out of scope
-- **Photo book** — deliberately not built.
-- Public sharing / share links are not a priority.
+- **Photo book** — deliberately not built. Public sharing / share links are not a priority.
 
 ## Language
 Code, comments, commits, identifiers **in English**. UI texts via i18n (cs default, en).

@@ -1,7 +1,7 @@
 import type { ParseKeys } from 'i18next'
 
 import { LIBRARY_PATH } from '../lib/libraryView'
-import { PROJECTS_PATH } from '../project/paths'
+import { isInstancePath, PROJECTS_PATH } from '../project/paths'
 
 /**
  * The work queue's route. Named because the shell singles it out: it is the
@@ -320,10 +320,21 @@ export const ADMIN_ITEMS: AdminEntry[] = [
  * The entries of {@link ADMIN_ITEMS} the given roles may actually reach, in menu
  * order. An empty result means the section is not rendered at all — no orphan
  * heading, no stray divider — which is what a viewer and an editor get.
+ *
+ * `instanceOnly` keeps just the instance's own pages (maintenance, system,
+ * projects, accounts) — what the neutral shell of a page outside any project
+ * offers, where a project's members, audit or settings would belong to a
+ * library the page is not about.
  */
-export function adminItems(roles: { isAdmin: boolean; isMaintainer: boolean }): NavEntry[] {
-  return ADMIN_ITEMS.filter((entry) =>
-    entry.gate === 'maintainer' ? roles.isMaintainer : roles.isAdmin,
+export function adminItems(roles: {
+  isAdmin: boolean
+  isMaintainer: boolean
+  instanceOnly?: boolean
+}): NavEntry[] {
+  return ADMIN_ITEMS.filter(
+    (entry) =>
+      (entry.gate === 'maintainer' ? roles.isMaintainer : roles.isAdmin) &&
+      (roles.instanceOnly !== true || isInstancePath(entry.to)),
   )
 }
 

@@ -162,6 +162,14 @@ internal/rekey/step.go:320 rekey service; deliberately checks every project befo
 internal/reset/reset.go:496 guarded instance-wide library wipe (maintenance reset CLI), reads every catalogued file path
 internal/reset/reset.go:498 guarded instance-wide library wipe (maintenance reset CLI), reads every catalogued thumbnail set
 
+# internal/resolveapi
+internal/resolveapi/store.go:71 the old-link resolver finds which project holds a uid, so it spans every project; the caller's access to the found project (maintainer, or approved member of an active one) is its scope
+internal/resolveapi/store.go:72 the old-link resolver finds which project holds a uid, so it spans every project; the caller's access to the found project (maintainer, or approved member of an active one) is its scope
+internal/resolveapi/store.go:73 the old-link resolver finds which project holds a uid, so it spans every project; the caller's access to the found project (maintainer, or approved member of an active one) is its scope
+internal/resolveapi/store.go:74 the old-link resolver finds which project holds a uid, so it spans every project; the caller's access to the found project (maintainer, or approved member of an active one) is its scope
+internal/resolveapi/store.go:75 the old-link resolver finds which project holds a uid, so it spans every project; the caller's access to the found project (maintainer, or approved member of an active one) is its scope
+internal/resolveapi/store.go:76 the old-link resolver finds which project holds a uid, so it spans every project; the caller's access to the found project (maintainer, or approved member of an active one) is its scope
+
 # internal/storagemigrate
 internal/storagemigrate/store.go:70 instance-wide storage migration progress, used only by the `kukatko storage` CLI
 internal/storagemigrate/store.go:98 instance-wide storage migration work list, used only by the `kukatko storage` CLI

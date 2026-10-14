@@ -14,11 +14,12 @@ import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { useIsNavDrawerViewport } from '../hooks/useIsNarrowViewport'
 import { LIBRARY_PATH } from '../lib/libraryView'
 import { bareVersion } from '../lib/version'
-import { useProjectPath } from '../project/ProjectContext'
+import { useNeutralChrome, useProjectPath } from '../project/ProjectContext'
 import { stripProjectPrefix } from '../project/paths'
 import { useWaitingOnMe } from '../tasks/TaskSummaryContext'
 
 import { AnnouncementBanner } from './AnnouncementBanner'
+import { DeactivatedProjectBanner } from './DeactivatedProjectBanner'
 import { Footer } from './Footer'
 import { Icon } from './Icon'
 import { JobQueueStatus } from './JobQueueStatus'
@@ -136,6 +137,16 @@ import { WelcomeModal } from './welcome/WelcomeModal'
  * bar is a moving target and the user menu wears the account's display name, so
  * the band would return with the next item. The drawer does not care how many
  * items there are, and on a touch screen it is the better navigation anyway.
+ *
+ * **Outside a project the shell is neutral** ({@link useNeutralChrome}): on an
+ * instance page (`/account`, `/system…`, `/maintenance`) and on a `/p/<slug>`
+ * the account may not enter, the context's project is only the entry rule's
+ * fallback, so nothing of it is drawn — no project name (the switcher becomes
+ * the way *into* a project), no library navigation, search, bell or tab bar,
+ * no announcement banner and no welcome. What stays is what belongs to the
+ * account and the instance: the user menu with the account, the instance's own
+ * administration and sign-out. A maintainer inside a deactivated project gets
+ * the full shell plus {@link DeactivatedProjectBanner}.
  */
 export function Layout({ children }: { children?: ReactNode }) {
   const { t } = useTranslation()
@@ -145,6 +156,8 @@ export function Layout({ children }: { children?: ReactNode }) {
   // The nav entries are the pages' own paths; this puts each into the current
   // project (an instance page such as the account passes through unchanged).
   const projectPath = useProjectPath()
+  // No project's chrome on a page that belongs to none (see above).
+  const neutral = useNeutralChrome()
   const drawerNav = useIsNavDrawerViewport()
   // The global search palette, opened by the top bar's magnifier on `lg`+ and by
   // the tab bar's search tab below it. Plain state, never the URL: opening and
@@ -175,15 +188,17 @@ export function Layout({ children }: { children?: ReactNode }) {
   // "My photos", offered only to an account that has said which person of the
   // library it is. An entry that leads nowhere is worse than no entry, so an
   // unlinked account simply does not get one.
-  const myPhotos = myPhotosItem(user?.subject_uid)
+  const myPhotos = neutral ? null : myPhotosItem(user?.subject_uid)
   // The user menu's "Správa" section, filtered per item rather than as a whole:
   // empty for a viewer or an editor, two entries for an admin, all five for a
   // maintainer.
-  const admin = adminItems({ isAdmin, isMaintainer })
+  const admin = adminItems({ isAdmin, isMaintainer, instanceOnly: neutral })
   // The "Nástroje" dropdown, likewise gated per item: the face and collection
   // tools for a curator, duplicates and the trash on top for an editor, and no
   // dropdown at all for a viewer.
   const tools = toolsGroup({ canCurate, canWrite })
+  // The tasks count belongs to the project; a neutral shell wears none.
+  const waiting = neutral ? 0 : waitingOnMe
 
   // Close the collapsed menu on every navigation, whatever control was tapped
   // (top-level link, group dropdown item, or user menu item all change the
@@ -336,11 +351,13 @@ export function Layout({ children }: { children?: ReactNode }) {
               does not need the width of something you can type into. Below `lg`
               the tab bar's search tab is the palette's door instead, so only the
               dialog and its shortcuts are mounted there. */}
-          <SearchCommand
-            open={paletteOpen}
-            onOpenChange={setPaletteOpen}
-            showTrigger={!drawerNav}
-          />
+          {!neutral && (
+            <SearchCommand
+              open={paletteOpen}
+              onOpenChange={setPaletteOpen}
+              showTrigger={!drawerNav}
+            />
+          )}
           {/* Where the reader stands: the current project's name, and on `lg`+
               a menu of the others when there are others. It is the one item of
               the row that gives way to a long name (it shrinks and ellipsises,
@@ -353,33 +370,39 @@ export function Layout({ children }: { children?: ReactNode }) {
               link in the DOM. */}
           {!drawerNav && (
             <Navbar.Collapse id={MOBILE_MENU_ID}>
+              {/* The library's navigation, or — in the neutral shell — just the
+                  room it would take, so the user menu stays at the far end. */}
               <Nav className="me-auto">
-                {/* The everyday loop, loudest first. Library (the homepage), Albums,
-                    Labels and Search are the always-visible entry points. */}
-                {PRIMARY_ITEMS.map((entry) => renderLink(entry))}
-                {/* The remaining browse destinations — saved searches and the
-                    leaderboard among them — one level down. */}
-                {renderGroup(BROWSE_GROUP)}
-                {/* The review game: curators and above, and kept in plain sight. */}
-                {canCurate && renderLink(REVIEW_ITEM)}
-                {/* Adding photos is the loop's payoff: the bar's one filled CTA,
-                    open to every signed-in role. */}
-                {renderLink(UPLOAD_ITEM, { cta: true })}
+                {!neutral && (
+                  <>
+                    {/* The everyday loop, loudest first. Library (the homepage), Albums,
+                        Labels and Search are the always-visible entry points. */}
+                    {PRIMARY_ITEMS.map((entry) => renderLink(entry))}
+                    {/* The remaining browse destinations — saved searches and the
+                        leaderboard among them — one level down. */}
+                    {renderGroup(BROWSE_GROUP)}
+                    {/* The review game: curators and above, and kept in plain sight. */}
+                    {canCurate && renderLink(REVIEW_ITEM)}
+                    {/* Adding photos is the loop's payoff: the bar's one filled CTA,
+                        open to every signed-in role. */}
+                    {renderLink(UPLOAD_ITEM, { cta: true })}
 
-                {/* A divider fences off the quieter power-user cluster, but only
-                    when the current role actually has something below it. */}
-                {tools !== null && <div className="kukatko-nav-divider" aria-hidden="true" />}
+                    {/* A divider fences off the quieter power-user cluster, but only
+                        when the current role actually has something below it. */}
+                    {tools !== null && <div className="kukatko-nav-divider" aria-hidden="true" />}
 
-                {/* The tools (expand, faces, duplicates, …), per item by role;
-                    hidden from viewers. The administration that used to follow
-                    it here now hangs off the user menu instead. */}
-                {tools !== null && renderGroup(tools)}
+                    {/* The tools (expand, faces, duplicates, …), per item by role;
+                        hidden from viewers. The administration that used to follow
+                        it here now hangs off the user menu instead. */}
+                    {tools !== null && renderGroup(tools)}
+                  </>
+                )}
               </Nav>
               {/* The bell (the in-app inbox) and the shortcuts: two bare icon
                   buttons, ~39px of the bar's slack for the bell — its badge sits
                   on the corner and costs no width. */}
               <Nav className="align-items-center gap-2">
-                <NotificationBell />
+                {!neutral && <NotificationBell />}
                 <KeyboardShortcutsHelp />
               </Nav>
               {user && (
@@ -416,8 +439,8 @@ export function Layout({ children }: { children?: ReactNode }) {
                     {myPhotos && renderMenuItem(myPhotos)}
                     {/* The library statistics: open to every signed-in role, so
                         they hang off the user menu rather than a gated group. */}
-                    {renderMenuItem(STATS_ITEM)}
-                    {renderMenuItem(HELP_ITEM)}
+                    {!neutral && renderMenuItem(STATS_ITEM)}
+                    {!neutral && renderMenuItem(HELP_ITEM)}
                     {/* Administration, once two dropdowns of its own in the bar:
                         one labelled section between the account block and
                         sign-out. Rendered only for the entries the role actually
@@ -471,14 +494,14 @@ export function Layout({ children }: { children?: ReactNode }) {
           {/* On a phone the bell stands just before the hamburger: the inbox
               is news, and news behind a closed menu is no news. It takes the
               trailing push (`ms-auto`) so the pair sits together at the edge. */}
-          {drawerNav && user && <NotificationBell className="ms-auto me-2" />}
+          {drawerNav && user && !neutral && <NotificationBell className="ms-auto me-2" />}
           <Navbar.Toggle
             aria-controls={MOBILE_MENU_ID}
             label={t('nav.openMenu')}
-            className={`position-relative${drawerNav && user ? '' : ' ms-auto'}`}
+            className={`position-relative${drawerNav && user && !neutral ? '' : ' ms-auto'}`}
           >
             <span className="navbar-toggler-icon" />
-            <WaitingBadge count={waitingOnMe} over />
+            <WaitingBadge count={waiting} over />
           </Navbar.Toggle>
         </Container>
       </Navbar>
@@ -507,7 +530,10 @@ export function Layout({ children }: { children?: ReactNode }) {
             page that fills the viewport — the map on a phone — can drop it
             without an `!important`. */}
         <Container as="main" className="pt-3 pt-md-4 kukatko-main">
-          <AnnouncementBanner />
+          {/* The project's own notices: none in the neutral shell, where the
+              context's project is not the page's. */}
+          {!neutral && <AnnouncementBanner />}
+          <DeactivatedProjectBanner />
           {children ?? <Outlet />}
         </Container>
         <Footer>
@@ -517,15 +543,16 @@ export function Layout({ children }: { children?: ReactNode }) {
       {/* Phone only: the everyday destinations as a fixed bottom strip, so they
           do not cost a hamburger open-then-tap. Renders nothing on `lg`+, where
           the top bar above is already the whole navigation. */}
-      <MobileTabBar onOpenSearch={openPalette} />
+      {!neutral && <MobileTabBar onOpenSearch={openPalette} />}
       {/* Shown once, to an account that has never seen it, over whatever it
           landed on. It renders nothing — and asks the backend nothing — for
           everybody else, which is almost every page load. */}
-      <WelcomeModal onSettled={settleWelcome} />
+      {!neutral && <WelcomeModal onSettled={settleWelcome} />}
       {/* Asked once per account and browser whether to send notifications —
           only after the welcome is out of the way, so two dialogs never stack.
-          It also renders nothing, and asks nothing, once answered. */}
-      {welcomeSettled && <PushPrompt />}
+          It also renders nothing, and asks nothing, once answered. Like the
+          welcome it waits for a page inside a project. */}
+      {welcomeSettled && !neutral && <PushPrompt />}
     </div>
   )
 }

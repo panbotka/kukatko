@@ -273,7 +273,9 @@ here.
   matches the target: the line renders for `isMaintainer`, which is the very predicate `/system`'s
   `RequireRole role="maintainer"` guard uses, so nobody is offered a link to a page that would answer
   them with `ForbiddenPage`),
-  `AnnouncementBanner` (**the project's announcement at the top of the content**: in `Layout` right **before `<Outlet/>`**,
+  `DeactivatedProjectBanner` (the maintainer's warning inside a deactivated project, right after the
+  announcement; see "Projects in the address bar"),
+  `AnnouncementBanner` (**the project's announcement at the top of the content**: in `Layout` right **before `<Outlet/>`** — never in the neutral shell of a page outside a project —
   so every member sees it on every page **inside the shell**; it reads the project the app works in from
   `ProjectContext` (null-safe, no `useProject`) and keys everything on its slug — another project's banner is
   never shown, not even while a switch's request is in flight, and without a project it asks nothing; routes **outside `Layout`**
@@ -1997,9 +1999,12 @@ here.
   `/p/<slug>/` with a toast (`invitePage.accepted`, or `alreadyMember` when `changed` is false). Signed
   out: **„Zaregistrovat se"** → `/register?invite=<code>` and **„Přihlásit se"** →
   `/login?returnTo=/invite/<code>`, plus a note when registering grants less than accepting
-  (`registration_role` ≠ `role`). Every unusable code — the backend's one 404 — is the generic
-  `NotFoundPage`, the same for every reason; an invite that dies between loading and accepting turns into
-  it too. Texts in `invitePage.*`; `InvitePage.test.tsx` (signed in, signed out, invalid).
+  (`registration_role` ≠ `role`). Every unusable code — the backend's one 404 — is one dead-invite page
+  in the same `AuthFrame` (`data-testid="invite-dead"`, icon `envelope-x`): „Tahle pozvánka už neplatí —
+  Požádejte toho, kdo vám ji poslal, o novou." (`invitePage.deadTitle`/`deadHint`), byte-identical for
+  unknown, expired, revoked and used-up codes — it never says which, only what to do next; an invite
+  that dies between loading and accepting turns into it too. Texts in `invitePage.*`;
+  `InvitePage.test.tsx` (signed in, signed out, dead — and identical for two reasons).
   `LoginPage` honours a **`?returnTo=`** query ahead of the guard's stashed location, but only a local path
   (one leading `/`, never `//` or `/\`), so a link cannot send a fresh sign-in to another host,
   `UploadLinkPage` (route **`/u/:code`**, **public** — whoever holds an upload link may upload without
@@ -5100,6 +5105,9 @@ here.
   one sentence and a primary link home — the same treatment as every other "nothing here" screen.
   i18n `notFound.*` (cs/en). Tests: `NotFoundPage.test.tsx` (renders through `EmptyState`, both
   languages, the link points at `/`)),
+  `PendingApprovalPage` (`/p/<slug>` for a membership still waiting for approval — rendered by
+  `ProjectGate`, see "Projects in the address bar": `EmptyState` with `hourglass-split`, the project's name
+  from the membership, a link to `/projects`; `pendingApproval.*`; `PendingApprovalPage.test.tsx`),
   `ForbiddenPage` (**no route of its own** — the route guards render it *in place of* the route the
   current role may not enter, so `/review`, `/duplicates`, `/upload-links`, `/import`, … no longer bounce a
   viewer to the library without a word. Drawn with `EmptyState` (`shield-lock` glyph, `titleAs="h1"`)
@@ -8601,25 +8609,57 @@ same pick to `setCurrentProjectSlug` when a session arrives (it replaced the tra
 **Old addresses** (`project/LegacyRedirect.tsx`): the instance-level `*` route matches the path
 against `createRoutesFromChildren(PROJECT_ROUTES)` with `matchRoutes` (`isProjectPage`, the project's
 own `*` excluded), so the list of forwarded addresses *is* the list of pages — nothing is typed
-twice. A match is `<Navigate replace>` to `/p/<target>` + the same path, **query and hash kept**
-(`/photos/abc?x=1#h` → `/p/v/photos/abc?x=1#h`); no target → `/projects`; no match → `NotFoundPage`.
+twice. No match → `NotFoundPage`. A match is `<Navigate replace>` to `/p/<target>` + the same path,
+**query and hash kept** (`/photos/abc?x=1#h` → `/p/<target>/photos/abc?x=1#h`), and the target
+depends on the page. **A page about one entity** (`legacyEntityOf` in `paths.ts`: `photos/:uid`,
+`albums/:uid` and its `/faces`, `labels/:uid`, `tasks/:uid`, `people/:uid` and its `/tree` but not
+`people/clusters`, `n/:uid`) asks the backend's resolver (`services/resolve.ts`,
+`GET /api/v1/resolve/{kind}/{uid}`, spinner meanwhile) and goes to **the project holding the entity**
+— an old e-mail's task opens in its project even when the reader last worked in another; the
+resolver's one 404 (nothing the reader may enter) renders `NotFoundPage` in place; a failure to ask
+(429, 5xx, offline) falls back on the entry rule. **Any other page** (`/albums`, `/map`,
+`/share-target`) goes to the entry project, or `/projects` without one.
 This is also what makes the unprefixed deep links the app does not control keep working: the push
 deeplink `/n/<uid>` (`notification.PathPrefix`), the share sheet's `/share-target?share=…` (the
 service worker still redirects there), the manifest shortcut `/upload` and every old bookmark.
 
 **`ProjectProvider` + `useProject()`** (`project/ProjectProvider.tsx`, `ProjectContext.ts`), directly
-under `AuthProvider`: `{ project, projects, status, switchProject(slug) }`. The current project is
-the `/p/:slug` of the location (`projectSlugInPath`, read with `useLocation`, since the provider sits
-above the routes) matched against `me.projects` (approved, active). `status` is `loading` until the
-session is known, `not-member` when the slug matches no such membership — `ProjectGate` then renders
-the ordinary `NotFoundPage` inside `Layout`, so a stranger cannot tell a foreign project from a
-missing one — else `ready`. On an instance page (`/account`, `/system`), or when `not-member`,
+under `AuthProvider`: `{ project, projects, status, inAddress, switchProject(slug) }`. The current
+project is the `/p/:slug` of the location (`projectSlugInPath`, read with `useLocation`, since the
+provider sits above the routes) matched against `me.projects`. `status`, and what `ProjectGate` renders
+for it:
+
+| `status` | when | `ProjectGate` |
+| --- | --- | --- |
+| `ready` | an approved membership of an active project — or **the maintainer**, who enters every existing project like the API does: a deactivated one, an unapproved membership, no membership at all | the project's pages (`<Outlet key={slug}>`) |
+| `pending` | a membership of an **active** project still waiting for approval (the API's `403 pending_approval`) | `PendingApprovalPage` in the neutral `Layout`: „Čeká na schválení — Vaše členství v projektu <name> ještě musí schválit správce projektu…" + „Zpět na projekty" (`pendingApproval.*`) |
+| `not-member` | no membership, a deactivated project (non-maintainer, pending or not), or no such project | the ordinary `NotFoundPage` in the neutral `Layout` — a stranger cannot tell a foreign project from a missing one |
+| `loading` | the session is not known yet, or the maintainer's lookup is on its way | a spinner |
+
+A project the maintainer is **no member of** is not in `GET /auth/me`, so the provider looks it up in
+the system administrator's list (`fetchAdminProjects`, once per slug, `useMaintainerLookup`) and enters
+it as `{role: 'admin', approved: true, active}`; only a slug no project has (or a failed lookup) is
+`not-member`. A membership the maintainer holds — deactivated or unapproved — needs no lookup. On an
+instance page (`/account`, `/system`), or when not `ready`,
 `project` is the entry-rule project, so the shell's links, the bell and the task badge still point
 somewhere real; it is `null` only for an account with nothing to enter. The provider calls
 `setCurrentProjectSlug` **during render**: pages fetch in their own effects and React runs a child's
 effects before its parent's, so an effect here would be too late for a freshly opened project.
 `TaskSummaryProvider` and `NotificationInboxProvider` take `useProjectSlug()` into their polling
 effect's dependencies, so a project change aborts, clears and refetches.
+
+**Neutral chrome outside a project** (`useNeutralChrome()` = a provider is mounted and `inAddress` is
+false: an instance page, or a `/p/:slug` that is `pending`/`not-member`). The context's project there is
+only the entry rule's fallback, so `Layout` draws nothing of it: no project name (the switcher becomes
+„Moje projekty", below), no library navigation, search palette, bell, waiting badge or tab bar, no
+announcement banner, no welcome or push prompt; the user menu keeps **Můj účet**, the instance's own
+administration (`adminItems({…, instanceOnly: true})` — maintenance, system, projects, accounts; never a
+project's import, members, audit or settings) and sign-out, and `MobileNavDrawer` the same (no library
+sections, no statistics or help). **A deactivated project the maintainer opened** gets the full shell plus
+`DeactivatedProjectBanner` (`components/`, a non-dismissible warning `Alert` above the page: „Projekt
+**<name>** je deaktivovaný. Vidíte ho jen jako správce systému — jeho členové se do něj nedostanou. Znovu
+ho zapnete ve správě projektu." with the last words a link to `/system/projects/<slug>`,
+`projectDeactivated.banner`); it renders only when `inAddress` and `project.active === false`.
 
 **A project switch remounts every page.** `ProjectGate` renders `<Outlet key={slug} />`. The switcher
 keeps the reader on a list page (`KEEP_ON_SWITCH`: `/p/a/albums` → `/p/b/albums`), and Back/Forward
@@ -8708,9 +8748,11 @@ person and its tree, task, notification, `/people/clusters`), as is any other pa
 the slideshow), an instance page (`/account`, `/account/activity` — „my activity" is instance-level)
 or an address outside `fromSlug` → the destination's home `/p/<to>`. The query and hash are dropped:
 filters name uids as often as free text. `ProjectProvider.switchProject(slug)` navigates through the
-same function; the switcher passes `fromSlug = ''` when `inAddress` is false, so from an instance
-page every project opens at its home. `ProjectContextValue.inAddress` is that flag: the address
-names the project and the account belongs to it.
+same function. `ProjectContextValue.inAddress` is the flag the switcher reads: the address names the
+project and the account may enter it. When it is false (the neutral shell) there is no current project
+to name, so the switcher is **„Moje projekty"** (`projectSwitcher.choose`) — a dropdown of every
+enterable project, each opening at its home, plus „Všechny projekty…"; a plain link to `/projects` below
+`lg` or without any enterable project; in the drawer a „Moje projekty" section of the same rows.
 
 **Width** (Chromium over the real `Layout`, maintainer „Tomáš Kozák", Czech labels, 3 tasks
 waiting, 2026-10-12). The bar had ~11px of slack left at 1200px, so the switcher pays its way: the
@@ -8734,12 +8776,19 @@ Tests: `project/paths.test.ts` (entry rule's three branches + the unusable-last 
 pages, query/hash dropped, instance pages), `components/ProjectSwitcher.test.tsx` (static vs
 dropdown, enterable-only, list route kept vs home, `menu={false}`, the drawer variant),
 `pages/ProjectsPage.test.tsx` (normal / inactive / pending / empty, the maintainer link, the tab
-title), the „project switcher in the bar" cases in `Layout.test.tsx`, the drawer's „Projekt" section
+title), the „project switcher in the bar" and „neutral shell outside a project" cases (no project
+chrome on an instance page or a not-member slug, instance-only administration, no tab bar/library
+sections on a phone, the deactivated banner) in `Layout.test.tsx`, `pages/PendingApprovalPage.test.tsx`
+(cs + en), `services/resolve.test.ts`, `legacyEntityOf` in `paths.test.ts`, the drawer's „Projekt" section
 and enumeration in `MobileNavDrawer.test.tsx`, `switchProject` in `ProjectProvider.test.tsx`, `project/ProjectProvider.test.tsx` (current
-project from the URL, predicates from the project role, the maintainer, `not-member`, instance
-pages, a visitor), `App.test.tsx` "routing — projects" (`/` → `/p/v`; `/photos/abc?x=1#h` →
-`/p/v/photos/abc?x=1#h`; → `/projects` without a project; a foreign slug renders the not-found
-page; the chooser's links) — the rest of `App.test.tsx` mounts `AppRoutes` inside a
+project from the URL, predicates from the project role, the maintainer, `not-member`, `pending` — and
+`not-member` for a pending or approved membership of a deactivated project —, the maintainer entering a
+deactivated membership without a lookup and a non-member project through one, instance pages, a
+visitor), `App.test.tsx` "routing — projects" (`/` → `/p/v`; `/photos/abc?x=1#h` →
+`/p/v/photos/abc?x=1#h`; an old task link opens in the resolver's project, not the last one; which
+pages ask the resolver; its 404 renders not-found in place, its failure falls back on the entry
+project; → `/projects` without a project; a foreign slug renders the not-found page; the pending page
+and the neutral shell; the maintainer in a deactivated project with its banner; the chooser's links) — the rest of `App.test.tsx` mounts `AppRoutes` inside a
 `ProjectProvider` with a `v` membership and reaches most pages through the old-address redirect;
 `build/pwa.test.ts` (a `/p/…` navigation gets the shell).
 

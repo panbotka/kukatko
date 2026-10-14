@@ -216,10 +216,15 @@ the same way, by its slug in the URL (`/api/v1/p/<project>/…`).
 - **Addresses now start with `/p/<project>`.** One instance can hold several independent libraries
   (projects), so every page of a library carries it: the library is `/p/v`, a photo
   `/p/v/photos/…`, an album `/p/v/albums/…`. With a single project nothing else changes — opening
-  `/` lands in it, and every older link or bookmark (`/photos/…`, `/albums/…`, a notification's
-  `/n/…`) is forwarded to the same page in the project you last worked in, filters and all. An
-  account in several projects without a remembered one gets a short list to pick from at
-  `/projects`; a project you do not belong to looks exactly like a page that does not exist.
+  `/` lands in it, and every older link or bookmark is forwarded into a project, filters and all: a
+  link to one photo, album, label, task, person or notification (`/photos/…`, `/tasks/…`, `/n/…`) opens
+  in the project that holds it — an old e-mail keeps working after you moved on to another library —
+  and a link to a list (`/albums`, `/map`) in the project you last worked in. An account in several
+  projects without a remembered one gets a short list to pick from at `/projects`; a project you do
+  not belong to looks exactly like a page that does not exist, while one whose administrator has not
+  approved you yet says it is *waiting for approval*. Pages outside any project — your account, the
+  system pages, a page that does not exist — wear no project's name, menu or banner. A dead invitation
+  link says it is no longer valid and to ask whoever sent it for a new one.
 - **Which project you are in is always on screen.** The project's name leads the top bar (and the
   phone menu, and the browser tab's title). In more than one project it opens a menu of the others:
   switching keeps the page you were on when it is a list — albums stay albums, the people stay the
@@ -232,7 +237,7 @@ the same way, by its slug in the URL (`/api/v1/p/<project>/…`).
   one — the slug is checked as you type, because it is the project's address and cannot change
   later — with an optional largest-file limit and a quota for all originals together. A project's own
   page edits its name, description and limits, switches it off (its members can no longer open it;
-  nothing is deleted) or back on, adds you as its administrator when you are not a member yet, and
+  nothing is deleted — you still can, under a banner saying it is off) or back on, adds you as its administrator when you are not a member yet, and
   shows where in the storage its files live. A project that still lives in the root of the storage
   (the original library, from before projects) is moved under its own prefix from that same page:
   *Spustit přesun* — after a confirmation that repeats the promise: every file is copied and verified

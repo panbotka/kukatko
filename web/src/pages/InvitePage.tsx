@@ -7,6 +7,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { AuthFrame } from '../components/AuthFrame'
+import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
 import { useToast } from '../components/toast/ToastContext'
@@ -17,8 +18,6 @@ import {
   InviteApiError,
   type PublicInvite,
 } from '../services/invites'
-
-import { NotFoundPage } from './NotFoundPage'
 
 /** Fetch lifecycle of the invite the address names. */
 type LoadState =
@@ -45,8 +44,10 @@ function isNotFound(error: unknown): boolean {
  * once) and „Přihlásit se" (`/login?returnTo=/invite/<code>`, back here
  * afterwards).
  *
- * An unusable code — unknown, expired, revoked, used up — is the ordinary
- * not-found page, the same for every reason, exactly as the backend answers.
+ * An unusable code — unknown, expired, revoked, used up — gets one and the same
+ * page for every reason, exactly as the backend answers: "this invitation is no
+ * longer valid, ask whoever sent it for a new one". It never says which reason
+ * it was, so it is no oracle of codes; it only says what to do next.
  */
 export function InvitePage() {
   const { t, i18n } = useTranslation()
@@ -114,11 +115,18 @@ export function InvitePage() {
   }
 
   if (load.status === 'notFound') {
-    // Outside any project's layout, so the page brings its own gutter.
+    // One page for every reason, exactly as the backend answers: it never says
+    // which one, only what to do about it.
     return (
-      <div className="container py-5">
-        <NotFoundPage />
-      </div>
+      <AuthFrame title={t('invitePage.title')}>
+        <div data-testid="invite-dead">
+          <EmptyState
+            icon={<Icon name="envelope-x" />}
+            title={t('invitePage.deadTitle')}
+            hint={t('invitePage.deadHint')}
+          />
+        </div>
+      </AuthFrame>
     )
   }
 

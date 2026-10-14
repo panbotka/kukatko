@@ -3289,12 +3289,22 @@
     "title": "Projekt {{name}} — přepnout do jiného",
     "switchTo": "Přepnout do projektu {{name}}",
     "all": "Všechny projekty…",
-    "allTitle": "Zobrazit všechny vaše projekty"
+    "allTitle": "Zobrazit všechny vaše projekty",
+    "choose": "Moje projekty",
+    "chooseTitle": "Otevřít některý z vašich projektů"
   },
   "notFound": {
     "title": "Stránka nenalezena",
     "message": "Požadovaná stránka neexistuje.",
     "back": "Zpět na domovskou stránku"
+  },
+  "projectDeactivated": {
+    "banner": "Projekt <strong>{{name}}</strong> je deaktivovaný. Vidíte ho jen jako správce systému — jeho členové se do něj nedostanou. Znovu ho zapnete ve <manage>správě projektu</manage>."
+  },
+  "pendingApproval": {
+    "title": "Čeká na schválení",
+    "message": "Vaše členství v projektu {{project}} ještě musí schválit správce projektu. Jakmile ho schválí, projekt se vám tady otevře.",
+    "projects": "Zpět na projekty"
   },
   "forbidden": {
     "title": "Sem nemáte přístup",
@@ -4108,7 +4118,9 @@
     "signedOutHint": "Máte už v Kukátku účet? Přihlaste se a pozvánku přijmete. Jestli ne, zaregistrujte se — registrační slovo nepotřebujete a účet bude rovnou schválený.",
     "registrationRole": "Při registraci přes pozvánku dostanete roli {{role}}. Vyšší vám pak může dát správce projektu.",
     "register": "Zaregistrovat se",
-    "login": "Přihlásit se"
+    "login": "Přihlásit se",
+    "deadTitle": "Tahle pozvánka už neplatí",
+    "deadHint": "Požádejte toho, kdo vám ji poslal, o novou."
   },
   "linkAddress": {
     "copy": "Kopírovat",

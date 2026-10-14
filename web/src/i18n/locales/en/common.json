@@ -3135,12 +3135,22 @@
     "title": "Project {{name}} — switch to another",
     "switchTo": "Switch to the project {{name}}",
     "all": "All projects…",
-    "allTitle": "Show all your projects"
+    "allTitle": "Show all your projects",
+    "choose": "My projects",
+    "chooseTitle": "Open one of your projects"
   },
   "notFound": {
     "title": "Page not found",
     "message": "The requested page does not exist.",
     "back": "Back to home"
+  },
+  "projectDeactivated": {
+    "banner": "The project <strong>{{name}}</strong> is deactivated. You see it only as the system administrator — its members cannot get in. Switch it back on in the <manage>project settings</manage>."
+  },
+  "pendingApproval": {
+    "title": "Waiting for approval",
+    "message": "Your membership of the project {{project}} still has to be approved by the project admin. Once they approve it, the project opens here.",
+    "projects": "Back to projects"
   },
   "forbidden": {
     "title": "You can't open this page",
@@ -3924,7 +3934,9 @@
     "signedOutHint": "Do you already have a Kukátko account? Sign in and accept the invitation. If not, register — you need no registration word and the account is approved at once.",
     "registrationRole": "Registering through the invitation gives you the role {{role}}. A project administrator can give you a higher one afterwards.",
     "register": "Register",
-    "login": "Sign in"
+    "login": "Sign in",
+    "deadTitle": "This invitation is no longer valid",
+    "deadHint": "Ask whoever sent it to you for a new one."
   },
   "linkAddress": {
     "copy": "Copy",

@@ -33,8 +33,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `GET /users` + `PATCH /users/{uid}` (both maintainer-only), `/push/*`, `/jobs`, `/system`, `/backup`,
   `/maintenance/scan|repair|audit/purge`, `/restore`, `/audit`, the public `/u/{code}` (no prefix:
   **the link resolves its own project** from `upload_links.project_id` and files the upload there), the
-  public `/invite/{code}`, the sign-in screen's anonymous `GET /settings/public`, plus `/metrics` and
-  `/healthz` outside `/api/v1`.
+  public `/invite/{code}`, the sign-in screen's anonymous `GET /settings/public`, the old-link resolver
+  `GET /resolve/{kind}/{uid}`, plus `/metrics` and `/healthz` outside `/api/v1`.
 - **The one anonymous project route:** `GET /api/v1/p/{project}/settings/public` answers without a
   session (`auth.RequireActiveProject`, which admits an existing, active project and records it for
   `auth.PublicProjectFromContext` — never as an authorised project). An unknown slug, a deactivated
@@ -554,6 +554,23 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     the invite's role gets `changed: false` — nothing written, **no use counted** — so accepting twice is
     idempotent, even once the invite's cap is reached. An admin invite accepted this way grants admin.
     Unauthenticated → 401.
+- **Old-link resolver (`GET /api/v1/resolve/{kind}/{uid}`, `internal/resolveapi`):** which project an
+  address from before projects existed means — `/photos/<uid>` in a bookmark, `/tasks/<uid>` in an old
+  e-mail, a notification row stored without `/p/<slug>`. **Any signed-in account** (`RequireSignedIn`;
+  the route names no project). `kind` is `photo|album|label|task|subject|notification`.
+  - → **200 `{"slug": "<project>"}`** only when the caller may **enter** the project holding the entity,
+    by the project guard's rules: a maintainer every project (deactivated or not, member or not), anybody
+    else as an **approved member of an active project**. A notification resolves only for its addressee
+    (a maintainer included).
+  - Everything else — an unknown kind, a uid nothing holds, an entity of a project the caller cannot
+    enter (foreign, deactivated, membership pending), somebody else's notification — is the **same 404
+    `{"error":"not found"}`**, byte for byte, so it is no oracle of another project's contents. Inside an
+    enterable project it tells only *which* project; the page then applies its own visibility rules.
+  - Rate-limited **per caller** from the `ratelimit.comment` settings in a bucket of its own (→ 429);
+    unauthenticated → 401. The SPA asks it for every unprefixed entity address (see `docs/FRONTEND.md`,
+    `LegacyRedirect`). Nothing produces unprefixed links any more (every notification link goes through
+    `notifydeliver`, which puts it under `/p/<slug>`); the resolver is for the rows and mails written
+    before that.
 - **API tokens (`/api/v1/auth/tokens`, all behind `RequireAuth`):** long-lived bearer credentials for
   non-interactive clients (CLI, scripts, agents). `POST /auth/tokens` (`{name, expires_at?, unlimited?}`) → 201
   `{token:{id,user_uid,name,created_at,expires_at?,last_used_at?,revoked_at?,unlimited}, secret:"kkt_<id>_<secret>"}`

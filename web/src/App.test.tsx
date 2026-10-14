@@ -101,7 +101,17 @@ vi.mock('./services/notifications', async (importOriginal) => {
   }
 })
 
+// An old entity link asks the resolver which project it belongs to; unless a
+// test says otherwise, the answer is the bootstrap project every fixture is in.
+vi.mock('./services/resolve', () => ({
+  resolveEntityProject: vi.fn(() => Promise.resolve('v')),
+}))
+
 const { fetchPhotos, fetchTimeline } = await import('./services/photos')
+const { resolveEntityProject } = await import('./services/resolve')
+const resolveMock = vi.mocked(resolveEntityProject)
+const { fetchAdminProjects } = await import('./services/projects')
+const adminProjectsMock = vi.mocked(fetchAdminProjects)
 const fetchPhotosMock = vi.mocked(fetchPhotos)
 const fetchTimelineMock = vi.mocked(fetchTimeline)
 
@@ -221,6 +231,9 @@ beforeEach(async () => {
   fetchPhotosMock.mockResolvedValue(EMPTY_PAGE)
   fetchTimelineMock.mockReset()
   fetchTimelineMock.mockResolvedValue(EMPTY_TIMELINE)
+  resolveMock.mockReset()
+  resolveMock.mockResolvedValue('v')
+  adminProjectsMock.mockReset()
 })
 
 describe('routing', () => {
@@ -586,7 +599,8 @@ describe('routing — projects', () => {
   })
 
   it('sends an old address to the chooser when there is no project to forward to', async () => {
-    renderRoutes(['/photos/abc?x=1#h'], 0, homelessAuth)
+    // A list page: an entity page would ask the resolver, which knows best.
+    renderRoutes(['/albums?x=1#h'], 0, homelessAuth)
 
     await waitFor(() => {
       expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/projects$/)
@@ -615,6 +629,147 @@ describe('routing — projects', () => {
 
     expect(await screen.findByTestId('not-found-page')).toBeInTheDocument()
     expect(screen.getByTestId('pathname')).toHaveTextContent('/nowhere/at/all')
+  })
+
+  it('opens an old entity link in the project holding the entity, not the last one', async () => {
+    // Two projects, the last one used is v — but the task lives in rodina.
+    const twoProjects: AuthContextValue = {
+      ...viewerAuth,
+      projects: [memberOfV('viewer'), { ...memberOfV('viewer'), uid: 'pr', slug: 'rodina' }],
+    }
+    resolveMock.mockResolvedValue('rodina')
+    renderRoutes(['/tasks/tk1?c=2#x'], 0, twoProjects)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/p\/rodina\/tasks\/tk1$/)
+    })
+    expect(screen.getByTestId('search')).toHaveTextContent(/^\?c=2$/)
+    expect(screen.getByTestId('hash')).toHaveTextContent(/^#x$/)
+    expect(resolveMock).toHaveBeenCalledWith('task', 'tk1', expect.any(AbortSignal))
+  })
+
+  it('asks the resolver about each kind of entity page, and only those', async () => {
+    const cases: [string, string, string][] = [
+      ['/photos/ph1', 'photo', 'ph1'],
+      ['/albums/al1/faces', 'album', 'al1'],
+      ['/labels/lb1', 'label', 'lb1'],
+      ['/people/su1/tree', 'subject', 'su1'],
+      ['/n/nt1', 'notification', 'nt1'],
+    ]
+    for (const [path, kind, uid] of cases) {
+      resolveMock.mockClear()
+      const { unmount } = renderRoutes([path], 0, curatorAuth)
+      await waitFor(() => {
+        expect(screen.getByTestId('pathname')).toHaveTextContent(`/p/v${path}`)
+      })
+      expect(resolveMock).toHaveBeenCalledWith(kind, uid, expect.any(AbortSignal))
+      unmount()
+    }
+
+    // A list page — and the cluster review under /people — names no entity.
+    for (const path of ['/albums', '/people/clusters']) {
+      resolveMock.mockClear()
+      const { unmount } = renderRoutes([path], 0, curatorAuth)
+      await waitFor(() => {
+        expect(screen.getByTestId('pathname')).toHaveTextContent(`/p/v${path}`)
+      })
+      expect(resolveMock).not.toHaveBeenCalled()
+      unmount()
+    }
+  })
+
+  it('says not found for an old entity link the reader may not open', async () => {
+    resolveMock.mockResolvedValue(null)
+    renderRoutes(['/photos/foreign'])
+
+    expect(await screen.findByTestId('not-found-page')).toBeInTheDocument()
+    // Rendered in place: no project is guessed for the link.
+    expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/photos\/foreign$/)
+  })
+
+  it('falls back on the entry project when the resolver cannot be asked', async () => {
+    resolveMock.mockRejectedValue(new Error('resolve request failed: 429'))
+    renderRoutes(['/photos/abc'])
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/p\/v\/photos\/abc$/)
+    })
+  })
+
+  it('tells a member still waiting for approval so, in a neutral shell', async () => {
+    const pending = {
+      ...viewerAuth,
+      projects: [
+        memberOfV('viewer'),
+        {
+          uid: 'pr',
+          slug: 'rodina',
+          name: 'Rodina',
+          active: true,
+          role: 'viewer',
+          approved: false,
+        },
+      ],
+    } as unknown as AuthContextValue
+    renderRoutes(['/p/rodina/albums'], 0, pending)
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Waiting for approval' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/membership of the project Rodina/)).toBeInTheDocument()
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/p/rodina/albums')
+    // Not the entry project's chrome: no library navigation, no project name.
+    expect(screen.queryByRole('link', { name: 'Albums' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Veselice')).not.toBeInTheDocument()
+  })
+
+  it('draws no other project’s chrome around an unknown slug or an instance page', async () => {
+    for (const path of ['/p/zzz', '/account']) {
+      const { unmount } = renderRoutes([path])
+      await waitFor(() => {
+        expect(screen.getByTestId('pathname')).toHaveTextContent(path)
+      })
+      // The switcher is the way into a project, not the fallback project's name.
+      expect(await screen.findByTestId('project-switcher')).toHaveTextContent(/^My projects$/)
+      expect(screen.queryByRole('link', { name: 'Albums' })).not.toBeInTheDocument()
+      expect(screen.queryByText('Veselice')).not.toBeInTheDocument()
+      unmount()
+    }
+  })
+
+  it('lets the maintainer into a deactivated project, with a banner saying so', async () => {
+    const maintainer = {
+      ...adminAuth,
+      instanceRole: 'maintainer',
+      isMaintainer: true,
+      canImport: true,
+    } as unknown as AuthContextValue
+    adminProjectsMock.mockResolvedValue([
+      {
+        uid: 'pc',
+        slug: 'stary',
+        name: 'Starý',
+        description: '',
+        active: false,
+        storage_prefix: '',
+        max_file_bytes: null,
+        max_total_bytes: null,
+        members_count: 1,
+        photos_count: 0,
+        originals_bytes: 0,
+        created_at: '2026-10-01T00:00:00Z',
+        updated_at: '2026-10-01T00:00:00Z',
+      },
+    ])
+    renderRoutes(['/p/stary/members'], 0, maintainer)
+
+    expect(await screen.findByRole('heading', { name: 'Members' })).toBeInTheDocument()
+    const banner = screen.getByTestId('deactivated-project-banner')
+    expect(banner).toHaveTextContent('The project Starý is deactivated.')
+    expect(screen.getByRole('link', { name: 'project settings' })).toHaveAttribute(
+      'href',
+      '/system/projects/stary',
+    )
   })
 
   it('lists the projects on the chooser as links into each', async () => {

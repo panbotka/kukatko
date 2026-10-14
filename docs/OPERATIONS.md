@@ -2440,7 +2440,8 @@ pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 
   authenticated user**, not by IP (`Limiter.KeyedMiddleware`, mounted *inside* the auth guard so the
   principal is on the context): a household shares one address, and throttling everyone's conversation
   because one person is chatty would be wrong. The same `comment` settings, each in a bucket of its own and
-  keyed the same way, also throttle a task's thread and `POST /push/subscriptions` (`internal/notificationapi`).
+  keyed the same way, also throttle a task's thread, `POST /push/subscriptions` (`internal/notificationapi`)
+  and the old-link resolver `GET /resolve/{kind}/{uid}` (`internal/resolveapi`).
   Login has its own limiter (`auth.login_rate_*`), the geocode
   proxy too (`maps.*`). **`upload_link`** (default 2/60) throttles the public upload-link routes
   (`GET /u/{code}` and its upload) per client IP, ahead of the code lookup; **`upload_link_per_link`**

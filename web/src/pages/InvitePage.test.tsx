@@ -123,15 +123,30 @@ describe('InvitePage', () => {
     expect(screen.getByText(/dostanete roli editor\./)).toBeInTheDocument()
   })
 
-  it('shows the generic not-found page for an unusable code', async () => {
+  it('says an unusable code is no longer valid and whom to ask, never why', async () => {
     fetchMock.mockRejectedValue(new InviteApiError(404, 'not_found'))
     renderPage('NOPE2345')
 
-    expect(await screen.findByTestId('not-found-page')).toBeInTheDocument()
+    const dead = await screen.findByTestId('invite-dead')
+    expect(dead).toHaveTextContent('Tahle pozvánka už neplatí')
+    expect(dead).toHaveTextContent('Požádejte toho, kdo vám ji poslal, o novou.')
     expect(screen.queryByTestId('invite-page')).not.toBeInTheDocument()
   })
 
-  it('turns into the not-found page when the invite died before accepting', async () => {
+  it('draws the very same page for every reason a code is unusable', async () => {
+    // The backend answers one 404 for unknown, expired, revoked and used-up
+    // codes; the page must not grow a difference the API does not have.
+    fetchMock.mockRejectedValue(new InviteApiError(404, 'not_found'))
+    const first = renderPage('UNKNOWN1')
+    const html = (await screen.findByTestId('invite-dead')).outerHTML
+    first.unmount()
+
+    fetchMock.mockRejectedValue(new InviteApiError(404, 'not found'))
+    renderPage('REVOKED2')
+    expect((await screen.findByTestId('invite-dead')).outerHTML).toBe(html)
+  })
+
+  it('turns into the dead-invite page when the invite died before accepting', async () => {
     fetchMock.mockResolvedValue(invite({ signed_in: true }))
     acceptMock.mockRejectedValue(new InviteApiError(404, 'not_found'))
     const user = userEvent.setup()
@@ -139,7 +154,7 @@ describe('InvitePage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Přijmout pozvánku' }))
 
-    expect(await screen.findByTestId('not-found-page')).toBeInTheDocument()
+    expect(await screen.findByTestId('invite-dead')).toBeInTheDocument()
     expect(toastShow).not.toHaveBeenCalled()
   })
 })

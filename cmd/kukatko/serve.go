@@ -503,5 +503,6 @@ func readAPIOptions(
 		server.WithAPI(buildProjectsAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(invites.RegisterPublicRoutes),
 		server.WithAPI(settingsAPI.RegisterInstanceRoutes),
+		server.WithAPI(buildResolveAPI(cfg, db, authAPI).RegisterRoutes),
 	}
 }

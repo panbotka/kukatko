@@ -1,14 +1,20 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue, useAuth } from '../auth/AuthContext'
 import { getCurrentProjectSlug, setCurrentProjectSlug } from '../services/api'
 import type { InstanceRole, ProjectMembership } from '../services/auth'
+import { type AdminProject, fetchAdminProjects } from '../services/projects'
 
 import { useProject, useProjectPath } from './ProjectContext'
 import { ProjectProvider } from './ProjectProvider'
+
+vi.mock('../services/projects', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/projects')>()),
+  fetchAdminProjects: vi.fn(),
+}))
 
 const MEMBERSHIPS: ProjectMembership[] = [
   {
@@ -63,6 +69,33 @@ function Probe() {
   )
 }
 
+/** `auth(instanceRole)` with the memberships replaced by `projects`. */
+function authWith(
+  projects: ProjectMembership[],
+  instanceRole: InstanceRole = 'user',
+): AuthContextValue {
+  return { ...auth(instanceRole), projects }
+}
+
+/** A project of the system administrator's list (`GET /projects`). */
+function adminProject(slug: string, active: boolean): AdminProject {
+  return {
+    uid: `p-${slug}`,
+    slug,
+    name: `Name ${slug}`,
+    description: '',
+    active,
+    storage_prefix: '',
+    max_file_bytes: null,
+    max_total_bytes: null,
+    members_count: 1,
+    photos_count: 0,
+    originals_bytes: 0,
+    created_at: '2026-10-01T00:00:00Z',
+    updated_at: '2026-10-01T00:00:00Z',
+  }
+}
+
 function renderAt(path: string, value: AuthContextValue = auth()) {
   return render(
     <AuthContext.Provider value={value}>
@@ -77,6 +110,10 @@ function renderAt(path: string, value: AuthContextValue = auth()) {
 
 beforeEach(() => {
   setCurrentProjectSlug(null)
+})
+
+afterEach(() => {
+  vi.mocked(fetchAdminProjects).mockReset()
 })
 
 describe('ProjectProvider', () => {
@@ -150,6 +187,98 @@ describe('ProjectProvider', () => {
     expect(screen.getByTestId('role')).toHaveTextContent('-')
     expect(screen.getByTestId('link')).toHaveTextContent('/projects')
     expect(getCurrentProjectSlug()).toBeNull()
+  })
+
+  it('reports a membership still waiting for approval as pending', () => {
+    renderAt(
+      '/p/novy',
+      authWith([
+        ...MEMBERSHIPS,
+        { uid: 'pn', slug: 'novy', name: 'Nový', active: true, role: 'viewer', approved: false },
+      ]),
+    )
+
+    expect(screen.getByTestId('status')).toHaveTextContent('pending')
+    // Like not-member, the shell keeps working in the entry project.
+    expect(screen.getByTestId('project')).toHaveTextContent('rodina')
+  })
+
+  it('reports a pending membership of a deactivated project as not-member, like any other', () => {
+    renderAt(
+      '/p/novy',
+      authWith([
+        ...MEMBERSHIPS,
+        { uid: 'pn', slug: 'novy', name: 'Nový', active: false, role: 'viewer', approved: false },
+      ]),
+    )
+
+    expect(screen.getByTestId('status')).toHaveTextContent('not-member')
+  })
+
+  it('reports an approved membership of a deactivated project as not-member', () => {
+    renderAt(
+      '/p/stary',
+      authWith([
+        ...MEMBERSHIPS,
+        { uid: 'ps', slug: 'stary', name: 'Starý', active: false, role: 'admin', approved: true },
+      ]),
+    )
+
+    expect(screen.getByTestId('status')).toHaveTextContent('not-member')
+    expect(vi.mocked(fetchAdminProjects)).not.toHaveBeenCalled()
+  })
+
+  describe('the maintainer', () => {
+    it('enters a deactivated project it belongs to without asking anything', () => {
+      renderAt(
+        '/p/stary/members',
+        authWith(
+          [
+            ...MEMBERSHIPS,
+            {
+              uid: 'ps',
+              slug: 'stary',
+              name: 'Starý',
+              active: false,
+              role: 'admin',
+              approved: true,
+            },
+          ],
+          'maintainer',
+        ),
+      )
+
+      expect(screen.getByTestId('status')).toHaveTextContent('ready')
+      expect(screen.getByTestId('project')).toHaveTextContent('stary')
+      expect(screen.getByTestId('role')).toHaveTextContent('maintainer')
+      expect(getCurrentProjectSlug()).toBe('stary')
+      expect(vi.mocked(fetchAdminProjects)).not.toHaveBeenCalled()
+    })
+
+    it('looks up a project it is no member of and enters it, deactivated or not', async () => {
+      vi.mocked(fetchAdminProjects).mockResolvedValue([
+        adminProject('cizi', false),
+        adminProject('v', true),
+      ])
+      renderAt('/p/cizi/albums', auth('maintainer'))
+
+      // Nothing is guessed while the list is on its way.
+      expect(screen.getByTestId('status')).toHaveTextContent('loading')
+
+      expect(await screen.findByText('ready')).toBeInTheDocument()
+      expect(screen.getByTestId('project')).toHaveTextContent('cizi')
+      expect(screen.getByTestId('role')).toHaveTextContent('maintainer')
+      expect(screen.getByTestId('link')).toHaveTextContent('/p/cizi/albums')
+      expect(getCurrentProjectSlug()).toBe('cizi')
+    })
+
+    it('still gets not-found for a slug no project has', async () => {
+      vi.mocked(fetchAdminProjects).mockResolvedValue([adminProject('v', true)])
+      renderAt('/p/zzz', auth('maintainer'))
+
+      expect(await screen.findByText('not-member')).toBeInTheDocument()
+      expect(screen.getByTestId('project')).toHaveTextContent('rodina')
+    })
   })
 
   describe('switchProject', () => {

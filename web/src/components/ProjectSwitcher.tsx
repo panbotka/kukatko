@@ -52,6 +52,13 @@ export interface ProjectSwitcherProps {
  * nothing to open — because a menu with only "All projects…" in it would be a
  * door to a page listing the very project you are in.
  *
+ * **Outside a project** (an instance page, or a `/p/<slug>` the account may not
+ * enter — see `useNeutralChrome`) there is no current project to name: the
+ * context's is only the entry rule's fallback, and naming it would claim the
+ * page for it. The switcher then becomes the way *into* a project — "Projekty",
+ * with every enterable project (each opening at its home) and "All projects…"
+ * — or, where no menu fits, a plain link to the chooser.
+ *
  * **Width.** In the bar the name is the one item that may give way: the
  * stylesheet lets it shrink and ellipsise (`.kk-project-switcher`), with the
  * whole name in the `title`, so a long project name never pushes the row past
@@ -62,15 +69,29 @@ export function ProjectSwitcher({ variant, menu = true, onNavigate }: ProjectSwi
   const ctx = useContext(ProjectContext)
   const { pathname } = useLocation()
 
-  const current = ctx?.project ?? null
-  if (ctx === null || current === null) {
+  if (ctx === null) {
+    return null
+  }
+  if (!ctx.inAddress) {
+    return (
+      <NeutralSwitcher
+        variant={variant}
+        menu={menu}
+        onNavigate={onNavigate}
+        projects={ctx.projects.filter(isEnterable)}
+        pathname={pathname}
+      />
+    )
+  }
+  const current = ctx.project
+  if (current === null) {
     return null
   }
   const multiple = ctx.projects.length > 1
   const others = ctx.projects.filter((m) => m.slug !== current.slug && isEnterable(m))
-  // The page's own project when the address names one; from an instance page
-  // (`/account`) every destination is its home.
-  const fromSlug = ctx.inAddress ? current.slug : ''
+  // The page's own project: the address names it (an instance page took the
+  // neutral branch above).
+  const fromSlug = current.slug
 
   /** The address `membership`'s project opens at from where the reader stands. */
   function targetOf(membership: ProjectMembership): string {
@@ -161,6 +182,117 @@ export function ProjectSwitcher({ variant, menu = true, onNavigate }: ProjectSwi
             </Dropdown.Item>
           ))}
           {others.length > 0 && <Dropdown.Divider />}
+          <Dropdown.Item
+            as={Link}
+            to={PROJECTS_PATH}
+            title={t(PROJECTS_ITEM.titleKey)}
+            className="kukatko-tap-target d-flex align-items-center gap-2"
+          >
+            <Icon name={PROJECTS_ITEM.icon} />
+            {t(PROJECTS_ITEM.labelKey)}
+          </Dropdown.Item>
+        </Dropdown.Menu>
+      </Dropdown>
+    </Nav>
+  )
+}
+
+/** Props of {@link NeutralSwitcher}: the switcher's own, plus what it lists. */
+interface NeutralSwitcherProps extends ProjectSwitcherProps {
+  /** The projects the account may enter. */
+  projects: ProjectMembership[]
+  /** Where the reader stands (every destination is a project's home from here). */
+  pathname: string
+}
+
+/**
+ * The switcher of the neutral shell: no project's name, just the way into one.
+ * See {@link ProjectSwitcher}.
+ */
+function NeutralSwitcher({
+  variant,
+  menu = true,
+  onNavigate,
+  projects,
+  pathname,
+}: NeutralSwitcherProps) {
+  const { t } = useTranslation()
+
+  /** The home of `membership`'s project. */
+  function targetOf(membership: ProjectMembership): string {
+    return routeAfterSwitch(pathname, '', membership.slug)
+  }
+
+  if (variant === 'drawer') {
+    return (
+      <section className="kk-navdrawer__section" aria-labelledby="kk-navdrawer-project">
+        <h2 id="kk-navdrawer-project" className="kk-navdrawer__heading">
+          {t('projectSwitcher.choose')}
+        </h2>
+        {projects.map((membership) => (
+          <Link
+            key={membership.uid}
+            to={targetOf(membership)}
+            title={t('projectSwitcher.switchTo', { name: membership.name })}
+            className="kk-navdrawer__link"
+            onClick={onNavigate}
+          >
+            <Icon name="folder2-open" className="kk-navdrawer__icon" />
+            <span className="kk-navdrawer__label">{membership.name}</span>
+          </Link>
+        ))}
+        <Link
+          to={PROJECTS_PATH}
+          title={t(PROJECTS_ITEM.titleKey)}
+          className="kk-navdrawer__link"
+          onClick={onNavigate}
+        >
+          <Icon name={PROJECTS_ITEM.icon} className="kk-navdrawer__icon" />
+          <span className="kk-navdrawer__label">{t(PROJECTS_ITEM.labelKey)}</span>
+        </Link>
+      </section>
+    )
+  }
+
+  if (!menu || projects.length === 0) {
+    return (
+      <Nav className="kk-project-switcher" data-testid="project-switcher">
+        <Nav.Link
+          as={Link}
+          to={PROJECTS_PATH}
+          title={t(PROJECTS_ITEM.titleKey)}
+          className="kukatko-tap-target kk-project-switcher__toggle"
+        >
+          <span className="kk-project-switcher__name">{t('projectSwitcher.choose')}</span>
+        </Nav.Link>
+      </Nav>
+    )
+  }
+
+  return (
+    <Nav className="kk-project-switcher" data-testid="project-switcher">
+      <Dropdown as={NavItem} className="kk-project-switcher__item">
+        <Dropdown.Toggle
+          as={BsNavLink}
+          id={PROJECT_SWITCHER_ID}
+          title={t('projectSwitcher.chooseTitle')}
+          className="kukatko-tap-target kk-project-switcher__toggle"
+        >
+          <span className="kk-project-switcher__name">{t('projectSwitcher.choose')}</span>
+        </Dropdown.Toggle>
+        <Dropdown.Menu>
+          {projects.map((membership) => (
+            <Dropdown.Item
+              key={membership.uid}
+              as={Link}
+              to={targetOf(membership)}
+              title={t('projectSwitcher.switchTo', { name: membership.name })}
+              className="kukatko-tap-target d-flex align-items-center gap-2"
+            >
+              {membership.name}
+            </Dropdown.Item>
+          ))}
+          <Dropdown.Divider />
           <Dropdown.Item
             as={Link}
             to={PROJECTS_PATH}

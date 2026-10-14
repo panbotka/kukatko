@@ -7,17 +7,22 @@ import { projectPathFor } from './paths'
 
 /**
  * Whether the project named in the address is one the account may work in:
- * `loading` until the session is known, `not-member` when the address names a
- * project the account has no approved membership of (or that does not exist —
- * the two are indistinguishable on purpose), `ready` otherwise.
+ * `loading` until the session is known (and, for a maintainer, until the
+ * project it is no member of has been looked up); `pending` when the account's
+ * membership of that active project still waits for its admin's approval — the
+ * one refusal worth explaining, since the account already knows the project
+ * exists; `not-member` when the address names a project the account may not
+ * enter at all (no membership, a deactivated project, or no such project — the
+ * three are indistinguishable on purpose); `ready` otherwise.
  */
-export type ProjectStatus = 'loading' | 'ready' | 'not-member'
+export type ProjectStatus = 'loading' | 'ready' | 'pending' | 'not-member'
 
 /** Value exposed by {@link ProjectProvider} through {@link useProject}. */
 export interface ProjectContextValue {
   /**
    * The project the app works in: the one named by `/p/:slug` when the account
-   * belongs to it, else — on an instance-level page such as `/account`, or a
+   * may enter it (an approved member of an active project, or the maintainer,
+   * who enters every project — a deactivated one keeps `active: false`), else — on an instance-level page such as `/account`, or a
    * `not-member` address — the project the entry rule picks, so the shell's
    * links and counts still point somewhere real. `null` only for an account
    * with no project to enter.
@@ -52,6 +57,19 @@ export function useProject(): ProjectContextValue {
     throw new Error('useProject must be used within a ProjectProvider')
   }
   return ctx
+}
+
+/**
+ * True when the shell must not wear any project's colours: on an instance page
+ * (`/account`, `/system…`), and on a `/p/:slug` the account may not enter (an
+ * unknown or foreign slug, a membership still waiting for approval). There the
+ * project in the context is only the entry rule's fallback, and its name, its
+ * navigation, its banner or its welcome would claim the page for a library it
+ * does not belong to. Outside a provider (a component test) it is false.
+ */
+export function useNeutralChrome(): boolean {
+  const ctx = useContext(ProjectContext)
+  return ctx !== null && !ctx.inAddress
 }
 
 /**

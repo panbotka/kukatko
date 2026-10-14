@@ -1,6 +1,7 @@
 import { type RouteObject, matchRoutes } from 'react-router-dom'
 
 import type { InstanceRole, ProjectMembership, Role } from '../services/auth'
+import type { EntityKind } from '../services/resolve'
 
 /**
  * Where a project's pages live in the address bar: `/p/<slug>` + the page's
@@ -219,4 +220,50 @@ export function isProjectPage(routes: RouteObject[], pathname: string): boolean 
     return false
   }
   return matches[matches.length - 1].route.path !== '*'
+}
+
+/**
+ * The first path segment of each project page that is about one entity, and
+ * the kind the resolver knows that entity by (`/albums/:uid/faces` and
+ * `/people/:uid/tree` are about their album and person too).
+ */
+const ENTITY_SEGMENTS: Readonly<Record<string, EntityKind>> = {
+  photos: 'photo',
+  albums: 'album',
+  labels: 'label',
+  tasks: 'task',
+  people: 'subject',
+  n: 'notification',
+}
+
+/**
+ * Segments under an entity's prefix that are pages of their own, not a uid:
+ * `/people/clusters` is the cluster review, not the person "clusters".
+ */
+const NOT_A_UID: ReadonlySet<string> = new Set(['people/clusters'])
+
+/**
+ * The entity an unprefixed address names — `/photos/abc` is the photo `abc` —
+ * or `null` for a page about no single entity (`/albums`, `/map`). It is what
+ * the legacy redirect asks the resolver about, because an old link to an entity
+ * belongs to the entity's project, not to whichever project the reader used
+ * last. `pathname` must be one of the project's own pages (see
+ * {@link isProjectPage}); it carries no `/p/<slug>`.
+ */
+export function legacyEntityOf(pathname: string): { kind: EntityKind; uid: string } | null {
+  const [, segment = '', uid = ''] = pathPart(pathname).split('/')
+  if (
+    !Object.hasOwn(ENTITY_SEGMENTS, segment) ||
+    uid === '' ||
+    NOT_A_UID.has(`${segment}/${uid}`)
+  ) {
+    return null
+  }
+  let decoded = uid
+  try {
+    decoded = decodeURIComponent(uid)
+  } catch {
+    // A malformed escape is passed on as it stands; the resolver will not know it.
+  }
+  return { kind: ENTITY_SEGMENTS[segment], uid: decoded }
 }

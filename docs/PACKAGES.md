@@ -7443,6 +7443,20 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `auth.ErrRegistrationInvite`.
   - `respond.go` — the error codes; `ErrInvalid` and `ErrNotFound` share the one `404 not_found`, anything
     unknown is a logged bare `500 internal`.
+- **Old-link resolver (`internal/resolveapi`):** `GET /resolve/{kind}/{uid}` (see `docs/API.md`,
+  *Old-link resolver*), wired by `cmd/kukatko/resolve.go` (`buildResolveAPI` in `readAPIOptions`,
+  `RequireSignedIn`, throttled per caller from the `ratelimit.comment` settings in a bucket of its own).
+  - `store.go` — `Store.ProjectSlug(ctx, kind, uid, Caller)`: one statement per kind (photos, albums,
+    labels, photo_tasks, subjects, notifications), each joining the entity to `projects` and keeping it
+    only when the caller may enter the project — the project guard's rules (`auth.enterProject`)
+    restated in SQL: `$2` maintainer, or an approved `project_members` row of an active project; a
+    notification also needs `user_uid = caller`. The statements span every project on purpose and are
+    allow-listed in `internal/tenancyguard/allow.txt`. Every miss — unknown kind, empty uid, no row,
+    no access — is the one `ErrNotFound`.
+  - `resolveapi.go` — the handler: `ErrNotFound` → the one `404 {"error":"not found"}`, any other error a
+    logged 500. `Resolver` is an interface so the handler unit-tests without a database; the access rules
+    are covered by `resolveapi_integration_test.go` over `projecttest.Seed` (foreign = missing via
+    `AssertSameShape`, pending/approved/deactivated memberships, maintainer, addressee, 401, 429).
 - **Tenant-isolation harness (`internal/projecttest`):** test support, **compiled only under the
   `integration` build tag** (so `make check` neither builds nor lints it — run
   `golangci-lint run --build-tags=integration ./internal/projecttest/...` after changing it). It exists

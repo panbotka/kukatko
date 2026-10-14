@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { ProjectMembership } from '../services/auth'
 
 import {
+  legacyEntityOf,
   projectRegisterPath,
   entryProjectSlug,
   isInstancePath,
@@ -200,5 +201,27 @@ describe('projectRegisterPath', () => {
   it("is the project's public registration page, slug encoded", () => {
     expect(projectRegisterPath('rodina')).toBe('/p/rodina/register')
     expect(projectRegisterPath('a b')).toBe('/p/a%20b/register')
+  })
+})
+
+describe('legacyEntityOf', () => {
+  it('names the entity of every page about one', () => {
+    expect(legacyEntityOf('/photos/ph1')).toEqual({ kind: 'photo', uid: 'ph1' })
+    expect(legacyEntityOf('/albums/al1')).toEqual({ kind: 'album', uid: 'al1' })
+    expect(legacyEntityOf('/albums/al1/faces')).toEqual({ kind: 'album', uid: 'al1' })
+    expect(legacyEntityOf('/labels/lb1')).toEqual({ kind: 'label', uid: 'lb1' })
+    expect(legacyEntityOf('/tasks/tk1')).toEqual({ kind: 'task', uid: 'tk1' })
+    expect(legacyEntityOf('/people/su1/tree')).toEqual({ kind: 'subject', uid: 'su1' })
+    expect(legacyEntityOf('/n/nt1')).toEqual({ kind: 'notification', uid: 'nt1' })
+  })
+
+  it('decodes the uid', () => {
+    expect(legacyEntityOf('/photos/a%20b')).toEqual({ kind: 'photo', uid: 'a b' })
+  })
+
+  it('is null for a page about no single entity', () => {
+    for (const path of ['/', '/albums', '/people', '/people/clusters', '/map', '/search']) {
+      expect(legacyEntityOf(path)).toBeNull()
+    }
   })
 })
