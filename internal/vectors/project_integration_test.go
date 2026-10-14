@@ -3,6 +3,7 @@
 package vectors_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/database"
@@ -90,7 +91,7 @@ func TestFacesCarryTheirPhotosProject(t *testing.T) {
 		t.Fatalf("SaveFaces: %v", err)
 	}
 	if err := store.RecordFaceDetection(ctx, detected,
-		vectors.Detection{Faces: []vectors.Face{face(0)}, Model: "buffalo_l"}); err != nil {
+		vectors.Detection{Faces: []vectors.Face{face(0)}, Model: "buffalo_l", ProjectUID: otherProjectUID}); err != nil {
 		t.Fatalf("RecordFaceDetection: %v", err)
 	}
 	if err := store.SaveFaces(ctx, bootstrap, []vectors.Face{face(0)}); err != nil {
@@ -104,5 +105,47 @@ func TestFacesCarryTheirPhotosProject(t *testing.T) {
 	}
 	if got := projectsOf(t, db, "faces", bootstrap); !equalStrings(got, []string{project.BootstrapUID}) {
 		t.Errorf("faces of the bootstrap photo carry projects %v, want [%s]", got, project.BootstrapUID)
+	}
+}
+
+// TestRecordFaceDetection_refusesAPhotoOutsideTheProject: the detection writes
+// faces only for a photo of the project it names — another project's photo is
+// ErrPhotoNotInProject and leaves nothing behind, no project at all is
+// ErrNoProject — so a worker handed a stale or foreign uid cannot plant faces
+// in a project the photo is not in.
+func TestRecordFaceDetection_refusesAPhotoOutsideTheProject(t *testing.T) {
+	store, photoStore, db := newStore(t)
+	ctx := t.Context()
+	uid := makePhoto(t, photoStore, "proj_faces_foreign")
+	photoInOtherProject(t, db, uid)
+	face := vectors.Face{
+		FaceIndex: 0, Vector: faceVec(map[int]float32{0: 1}),
+		BBox: [4]float64{0.1, 0.2, 0.3, 0.4}, DetScore: 0.9, Model: "buffalo_l",
+	}
+
+	err := store.RecordFaceDetection(ctx, uid, vectors.Detection{
+		Faces: []vectors.Face{face}, Model: "buffalo_l", ProjectUID: project.BootstrapUID,
+	})
+	if !errors.Is(err, vectors.ErrPhotoNotInProject) {
+		t.Fatalf("RecordFaceDetection(foreign photo) = %v, want ErrPhotoNotInProject", err)
+	}
+	if got := projectsOf(t, db, "faces", uid); len(got) != 0 {
+		t.Errorf("a refused detection left faces in %v", got)
+	}
+	err = store.RecordFaceDetection(ctx, uid, vectors.Detection{Faces: []vectors.Face{face}, Model: "buffalo_l"})
+	if !errors.Is(err, vectors.ErrNoProject) {
+		t.Errorf("RecordFaceDetection(no project) = %v, want ErrNoProject", err)
+	}
+}
+
+// TestSaveFaces_unknownPhoto: SaveFaces stamps the photo's own project, so a
+// uid that names no photo is ErrPhotoNotInProject rather than a row without one.
+func TestSaveFaces_unknownPhoto(t *testing.T) {
+	store, _, _ := newStore(t)
+	err := store.SaveFaces(t.Context(), "ph_missing", []vectors.Face{{
+		FaceIndex: 0, Vector: faceVec(map[int]float32{0: 1}), Model: "buffalo_l",
+	}})
+	if !errors.Is(err, vectors.ErrPhotoNotInProject) {
+		t.Errorf("SaveFaces(missing photo) = %v, want ErrPhotoNotInProject", err)
 	}
 }

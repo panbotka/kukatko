@@ -141,7 +141,7 @@ func (s *Store) getEmbedding(ctx context.Context, query, photoUID string, args .
 const listMissingEmbeddingSQL = `
 SELECT p.uid
 FROM photos p
-LEFT JOIN embeddings e ON e.photo_uid = p.uid
+LEFT JOIN embeddings e ON e.photo_uid = p.uid AND e.project_id = p.project_id
 WHERE p.project_id = $1
   AND e.photo_uid IS NULL AND p.archived_at IS NULL
 ORDER BY p.created_at DESC, p.uid DESC%s`

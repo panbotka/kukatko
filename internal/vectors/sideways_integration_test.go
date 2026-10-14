@@ -64,7 +64,7 @@ func TestSidewaysDetections_fingerprint(t *testing.T) {
 	want := make(map[string]bool, len(cases))
 	for _, tc := range cases {
 		uid := makePhotoWithGeometry(t, photoStore, tc.hash, rawW, rawH, tc.orientation)
-		det := vectors.Detection{Model: "buffalo_l", FrameWidth: tc.frameW, FrameHeight: tc.frameH}
+		det := vectors.Detection{ProjectUID: project.BootstrapUID, Model: "buffalo_l", FrameWidth: tc.frameW, FrameHeight: tc.frameH}
 		if err := store.RecordFaceDetection(ctx, uid, det); err != nil {
 			t.Fatalf("RecordFaceDetection %s: %v", tc.hash, err)
 		}
@@ -109,7 +109,7 @@ func TestSidewaysDetections_redetectionRetiresTheRow(t *testing.T) {
 		PhotoWidth: rawW, PhotoHeight: rawH, Orientation: 6,
 	}
 	if err := store.RecordFaceDetection(ctx, uid,
-		vectors.Detection{Faces: []vectors.Face{face}, Model: "buffalo_l"}); err != nil {
+		vectors.Detection{ProjectUID: project.BootstrapUID, Faces: []vectors.Face{face}, Model: "buffalo_l"}); err != nil {
 		t.Fatalf("RecordFaceDetection: %v", err)
 	}
 	if listed, _ := store.ListSidewaysDetections(ctx); len(listed) != 1 {
@@ -131,7 +131,7 @@ func TestSidewaysDetections_redetectionRetiresTheRow(t *testing.T) {
 	}
 
 	// Re-detection the way the fixed job records it: the display frame.
-	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{
+	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{ProjectUID: project.BootstrapUID,
 		Faces: []vectors.Face{face}, Model: "buffalo_l", FrameWidth: rawH, FrameHeight: rawW,
 	}); err != nil {
 		t.Fatalf("re-RecordFaceDetection: %v", err)

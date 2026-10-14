@@ -304,7 +304,7 @@ func TestBackfillFaces_enqueuesOnlyUnprocessed(t *testing.T) {
 	missing1 := h.storeJPEG(t, "missing-1")
 	missing2 := h.storeJPEG(t, "missing-2")
 	clip := h.storeClip(t, "clip")
-	if err := h.vectors.RecordFaceDetection(ctx, processed.UID, vectors.Detection{Model: "buffalo_l"}); err != nil {
+	if err := h.vectors.RecordFaceDetection(ctx, processed.UID, vectors.Detection{ProjectUID: project.BootstrapUID, Model: "buffalo_l"}); err != nil {
 		t.Fatalf("seed detection: %v", err)
 	}
 

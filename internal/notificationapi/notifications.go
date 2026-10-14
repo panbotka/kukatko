@@ -236,7 +236,7 @@ func writeNotificationError(w http.ResponseWriter, err error, fallback string) {
 }
 
 // orderByUIDs returns the photos reordered to match uids, dropping any uid that
-// resolved to no photo (deleted in between). ListByUIDs promises no order; the
+// resolved to no photo (deleted in between). ListByUIDsInProject promises no order; the
 // frozen set's order is the point of it.
 func orderByUIDs(uids []string, list []photos.Photo) []photos.Photo {
 	byUID := make(map[string]photos.Photo, len(list))

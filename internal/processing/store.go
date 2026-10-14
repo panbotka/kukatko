@@ -42,7 +42,7 @@ const evidenceColumns = `p.media_type,
 // side table its evidence lives in.
 const evidenceFrom = `FROM photos p
 LEFT JOIN photo_phashes   ph ON ph.photo_uid = p.uid
-LEFT JOIN embeddings      e  ON e.photo_uid  = p.uid
+LEFT JOIN embeddings      e  ON e.photo_uid  = p.uid AND e.project_id = p.project_id
 LEFT JOIN face_detections fd ON fd.photo_uid = p.uid
 LEFT JOIN photo_places    pl ON pl.photo_uid = p.uid
 LEFT JOIN LATERAL (

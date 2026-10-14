@@ -522,9 +522,11 @@ to `## Package map` in `CLAUDE.md`.
   …) stay unscoped for the same reason. **Still unscoped:** **`GetAcrossProjects`** (was `GetByUID`,
   renamed so the name says it reads past the boundary; its one caller is `internal/userpic`, whose picked
   photo may live in any project the viewer is an approved member of and which checks that membership on every
-  read — an API package may not call it, see the guard above), `GetByFileHash`
-  (ingest), `ListByUIDs` (review/candidates/expand/notifications), `Delete` (ingest's rollback of
-  its own fresh row) and the maintenance scans. The pure builders are tested through
+  read — an API package may not call it, see the guard above), `Delete` (ingest's rollback of
+  its own fresh row) and the maintenance scans. The unscoped helpers nothing in production called any more
+  (`GetByFileHash`, `ListByUIDs`, `SetPhotoprismRef`, `SetPhotoprismFileHash`, `SetPhotosorterRef`,
+  `ListPhotoprismAliases`, `ApplyImportMetadata`) were deleted on 2026-10-14 with their tenancy-guard
+  allow-list entries; the scoped `GetByFileHashInProject`/`ListByUIDsInProject` are the lookups. The pure builders are tested through
   `stripProject` (store_project_test.go), which removes the scope and renumbers, so the filter tests keep
   reading as the filter they test while the scope itself is asserted on the real output.
   Typed models `Photo`/`PhotoFile`/`Phash`/`Edit`/`MetadataUpdate`
@@ -573,24 +575,22 @@ to `## Package map` in `CLAUDE.md`.
   of its own; the one definition `internal/duplicates` and `internal/dupmerge` both read),
   `FileRole` original/sidecar/edited, UID generator prefix `ph`,
   `Store` over pgx with
-  `Create`/`GetAcrossProjects`/`GetByFileHash`/`GetByPhotoprismUID`/`GetByPhotoprismFileHash`
+  `Create`/`GetAcrossProjects`/`GetByFileHashInProject`/`GetByPhotoprismUID`/`GetByPhotoprismFileHash`
   (the identity of a single SOURCE FILE, not of a source photo: a source photo made of several
   files — a RAW next to its JPEG — becomes one row per file grouped in one stack, and only the
   displayable one carries the `photoprism_uid`, so a sibling is found again by its own SHA1 alone;
-  partial index from `0045`)/`GetByPhotosorterUID`/`SetPhotoprismRef`
-  (backfill `photoprism_uid`+`photoprism_file_hash` onto a photo deduplicated by SHA256, so the row
-  still answers to the source uid it came from)/
-  `SetPhotoprismFileHash` (the same backfill for a NON-primary source file, **leaving `photoprism_uid`
-  alone** — a sibling never claims the source photo's key)/
-  **`AddPhotoprismAlias(ctx,ppUID,photoUID,ppFileHash)`**/**`GetByPhotoprismAlias(ctx,ppUID)`**/
-  `ListPhotoprismAliases` (the `photoprism_aliases` table from `0046`, `PhotoprismAlias`: `photoprism_uid`
+  partial index from `0045`)/`GetByPhotosorterUID`/
+  **`AddPhotoprismAlias(ctx,projectUID,ppUID,photoUID,ppFileHash)`**/**`GetByPhotoprismAlias(ctx,projectUID,ppUID)`**
+  (the `photoprism_aliases` table from `0046`: `photoprism_uid` (per project)
   PRIMARY KEY → `photo_uid` many-to-one `ON DELETE CASCADE`. `photoprism_uid` is a 1:1 column and cannot
   express the source keeping the SAME BYTES as two photos — the second one has no row of its own, because
   `file_hash` is UNIQUE, and the row holding its content already wears the first one's uid. The alias records
   that collapse, so the second source uid still resolves to a row; the write is an idempotent upsert (a re-run
-  re-records it, a moved winner re-points it) and the read is the second half of resolving a source uid, after
-  `GetByPhotoprismUID`)/`ListByUIDs`
-  (batch lookup by uid, ignores unknown ones — for the similar API)/`FilterUIDs`
+  re-records it, a moved winner re-points it), an `INSERT … SELECT` that writes only for a photo of the named
+  project (`ErrPhotoNotFound` otherwise) — nothing in production records aliases since the PhotoPrism import
+  was removed, the tests seed them through it — and the read is the second half of resolving a source uid,
+  after `GetByPhotoprismUID`)/`ListByUIDsInProject`
+  (batch lookup by uid inside the project, ignores unknown ones)/`FilterUIDs`
   (from a given set of uids returns those that pass the structural List filters — ignores sorting,
   pagination and `FullText`; companion to semantic search: the caller holds candidates from
   the embeddings index and filters them through the list filters, ordering by similarity itself)/
@@ -630,19 +630,6 @@ to `## Package map` in `CLAUDE.md`.
   first, `limit <= 0` = all. `fps` and audio are deliberately **not** in the predicate: a container can
   legitimately carry neither, and a clip that could never satisfy it would be re-scheduled by every run
   for ever)/
-  **`ApplyImportMetadata(ctx,uid,ImportMetadata) (changed,error)`**
-  (the write side of an **import from a foreign catalog** (it carried the source system's `Details` block and
-  the file-technical fields of a photo detail) onto a photo already in the catalog. Differs from
-  `FillFileMetadata` in **precedence**: the source **owns** its fields, so a non-empty value overrides what
-  is in the photo (just like camera/exposure from the first import) — `subject`/`keywords`/`artist`/
-  `copyright`/`license`/`software`/`camera_serial`/`color_profile`/`image_codec`/`projection`/
-  `original_name`. What it must **never** do is **destroy**: an empty value from the source leaves a non-empty
-  column alone, `scan` can be **set, not unset**, and `notes` — Kukátko's own field — is
-  **only filled into emptiness**, so the source won't overwrite a user's note. The SQL is built once from
-  `importOwnedColumns` (`buildApplyImportMetadataSQL`) with the same **self-join `o` subquery** trick
-  as fill; every guard is also the assignment condition → applying the same metadata twice writes
-  **nothing** (not even `updated_at`), so a re-import is a true no-op. It does not touch captions, `taken_at`,
-  GPS, ratings, favorites, or `ai_note`. `ErrPhotoNotFound`)/
   `Archive`/`Unarchive`/`Delete`/`List`+`Count` (filters archived/
   uploader (`UploadedBy` a user uid, or **`NoUploader`** = `uploaded_by IS NULL`, the imported photos;
   `NoUploader` wins over `UploadedBy` the way `OnlyArchived` wins over `IncludeArchived`)/has-GPS/**bounding box** (`BBox *BBox` — `bboxClauses`: `lat BETWEEN` + `lng BETWEEN`, or the
@@ -2257,6 +2244,10 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   normalized SigLIP/ArcFace vectors (important on the Pi); both tables carry a **denormalised
   `project_id`** (migration 0102) that the two writers (the embedding upsert and the face insert behind
   `SaveFaces`/`RecordFaceDetection`) copy from the photo's row, so a project-filtered kNN needs no join.
+  The face insert reads that copy only **inside the project its caller names** (`Detection.ProjectUID`, the
+  project the face job loaded the photo in; `SaveFaces` — no production caller, the tests' face fixture —
+  reads the photo's own): a photo of another project yields NULL, the NOT NULL column refuses it, and the
+  write is `ErrPhotoNotInProject` (an empty `Detection.ProjectUID` is `ErrNoProject`).
   **Project scope of the kNN (`project.go`):** every similarity search — `FindSimilar`, `FindSimilarFaces`,
   `FindSimilarFaceCandidates`, `FindSimilarUnassignedFaceCandidates` — takes `projectUID` after `ctx`, never
   defaulted (empty = `ErrNoProject`), and filters `project_id = $n` **inside** the statement the HNSW index
@@ -2278,8 +2269,9 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   `ErrEmbeddingNotFound`), an empty project is `ErrNoProject`, so their correctness no longer depends on the
   caller having proved the photo first. The one unscoped loader left is **`GetEmbeddingForJob`**, the
   embedding job's read (no request, the row names its project); the `*ForJob` guard keeps it out of every API
-  package. The writes keyed by a photo uid (`SaveFaces`, `UpdateFaceMarker`, …) stay unscoped — child rows
-  of a photo the caller has already loaded inside its project. `FindDuplicatePairs` (the duplicates scan) filters
+  package. The writes keyed by a photo uid (`UpdateFaceMarker`, …) stay unscoped — child rows
+  of a photo the caller has already loaded inside its project; the face replace of `SaveFaces`/
+  `RecordFaceDetection` deletes and inserts within the named project. `FindDuplicatePairs` (the duplicates scan) filters
   `project_id` on both sides of its lateral join — the outer row and, inside the HNSW scan, the neighbour —
   under the same iterative-scan transaction, so a pair never names two projects.
   `Store` = `NewStore(pool)` over the shared pgx pool:
@@ -2295,7 +2287,7 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   sample can no longer be counted from; `limit ≤ 0` = all. It backs the candidate search, whose cost is one
   kNN per exemplar: without it a person tagged on thousands of photos transfers and decodes a 512-dim
   embedding per row, which is how one request reached 10.9 GB — see `docs/PERF.md` §3)/
-  `DeleteFaces`/`FindSimilarFaces`/`FindSimilarFaceCandidates` (like `FindSimilarFaces`, but
+  `FindSimilarFaces`/`FindSimilarFaceCandidates` (like `FindSimilarFaces`, but
   also returns the cache `subject_uid`/`subject_name`/`marker_uid` + `bbox` — the basis of identity suggestions)/
   `FindSimilarUnassignedFaceCandidates(projectUID,vec,limit,maxDistance,exclude)` (like the previous one, but only
   **unassigned** faces `subject_uid IS NULL` and with an **exclusion set** `[]FaceKey` filtered out
@@ -2348,7 +2340,7 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   `0009_face_detections.sql`: `photo_uid PK` FK `ON DELETE CASCADE`, `face_count`, `model`,
   `detected_at`, + `detect_width`/`detect_height` from `0061_face_detection_frame.sql`) — because `faces`
   can have zero rows, it is the only way to distinguish a photo
-  with no faces from an unprocessed one; `RecordFaceDetection(uid, Detection{Faces,Model,FrameWidth,FrameHeight})`
+  with no faces from an unprocessed one; `RecordFaceDetection(uid, Detection{Faces,Model,FrameWidth,FrameHeight,ProjectUID})`
   (atomically replaces the photo's
   faces **and** upserts the `face_detections` row — even for zero faces; shares the `replaceFaces` tx
   helper with `SaveFaces`).
@@ -2448,8 +2440,9 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   each subject it names inside the project (the scoped `requireSubjects`) before it touches a row — so a
   relation never ties two projects together and a refused write leaves no audit row — an inline `NewPerson`
   is created in the project, and `insertFamilySQL` takes the new family's `project_id` **from the subject it is
-  created for** (the first partner, or a sibling group's first child), so a family always lives in its
-  members' project. A walk that starts from a subject of the project therefore stays in it by construction;
+  created for** (the first partner, or a sibling group's first child) — read only inside the request's project
+  (`s.project_id = $6`, the project threaded down every write helper), so a family always lives in its
+  members' project even if a caller forgot to prove the subject. A walk that starts from a subject of the project therefore stays in it by construction;
   the read statements (`getRelativeSQL`, the four relation lists, `networkFamiliesSQL`/`networkMembersSQL`,
   the three export reads) still filter on the project, so a broken row could not leak either.
   **Reads:** `Relations(projectUID,subjectUID)` → `{Parents,Siblings,Partners,Children}`, the
@@ -2936,7 +2929,8 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   `StorageSource.OpenUpright` (= `storage.Materialize` + `imgconvert.EnsureDecodable` behind the interface
   `Materializer`, HEIC/RAW/video are converted, `Close` frees the temp and the materialized original),
   sends `FaceEmbeddings` to the sidecar (512-dim + pixel bbox + det_score) and
-  stores it via `vectors.RecordFaceDetection(uid, vectors.Detection{Faces,Model,FrameWidth,FrameHeight})`;
+  stores it via `vectors.RecordFaceDetection(uid, vectors.Detection{Faces,Model,FrameWidth,FrameHeight,ProjectUID})`
+  (the project the photo was loaded in, so the faces land only while the photo is still that project's);
   the original (not the thumbnail) so the detector sees every pixel there is.
   **The sidecar does NOT apply EXIF** — measured against the running service: one production iPhone original
   with `orientation=6` returned 2 misshapen boxes as it lay and 6 face-shaped ones pre-rotated, a second
@@ -3220,7 +3214,7 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   only), orders nearest-first and **cuts to `MaxCandidates` before hydration** (`capped` in the response), which
   is the memory bound: past that cut every candidate costs a whole `photos.Photo`, EXIF blob included, and the
   request's `Limit` truncating afterwards bounds the answer but not the work; the survivors are
-  hydrated (`photos.ListByUIDs` + `mediaurl.Decorate`), an **absolute pixel floor** is applied
+  hydrated (`photos.ListByUIDsInProject` + `mediaurl.Decorate`), an **absolute pixel floor** is applied
   (`MinFacePx`) and the **negative-exemplar rule** (`vectors.IsNegativeExemplar` over embeddings from
   `FacesByKeys` — **a no-op without rejections**, the embeddings are then not loaded at all); finally the **action
   classification** (`create_marker` without a marker / `assign_person` a marker without (another) subject / `already_done`
@@ -3416,7 +3410,7 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   did** (`extras.go`): `place` via `PlaceReviewer` (`*geoestimate.Reviewer`), `duplicate` via `DuplicateFinder`
   (`*duplicates.Service`; `FindGroups(ctx, projectUID, …)` — the groups are detected inside the session's
   project) and `outlier` via `OutlierRanker`+`SubjectLister` (`*outliers.Service` +
-  `*people.Store`), all hydrating their photos through `PhotoStore.ListByUIDs`+`Media`. **Each of the three is
+  `*people.Store`), all hydrating their photos through `PhotoStore.ListByUIDsInProject`+`Media`. **Each of the three is
   optional** — a nil dependency simply switches that question type off, so a half-wired server still serves the
   other kinds. Writes via `Assigner` (`*facematch.Service`),
   `OrganizeStore.AttachLabelAudited`, the `PlaceReviewer`'s own accept/reject and
@@ -3755,7 +3749,7 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   takes an `audit.Entry`
   built in `auditEntry` (`subject.create`/`update`/`delete`/`merge`, actor from the auth context, details
   name/type; `DELETE` first loads the subject for the details and a clean 404)) and `PhotoStore`
-  (`photos.Store.ListByUIDs`)
+  (`photos.Store.ListByUIDsInProject`)
   → unit-testable with fakes without a DB; `NewAPI(Config{Subjects,Photos,FamilyExport,RequireAuth,
   RequireCurator})`+
   `RegisterRoutes` mounts **flat** paths (not a mounted subrouter, so they coexist with
@@ -3770,7 +3764,7 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   before the store, so the answer is the same 400 whether or not the uid exists),
   `GET /subjects/{uid}/photos` (RequireAuth, a paginated gallery of the subject's photos
   `{photos,total,limit,offset,next_offset}` — `ListPhotoUIDsBySubject` (distinct non-invalid
-  markers, non-archived, newest-first) → page → `ListByUIDs` → reorder by the uid order); body
+  markers, non-archived, newest-first) → page → `ListByUIDsInProject` → reorder by the uid order); body
   decode `DisallowUnknownFields` + 1 MiB limit + empty name (or empty `keeper_uid`) → 400; sentinels mapped
   `ErrSubjectNotFound`→404/`ErrInvalidType`+`ErrMergeIntoSelf`→400; mounted by the eighth `server.WithAPI`
   (`buildPeopleAPI` in `cmd/kukatko/people.go`). The **edit, the delete and the merge** additionally schedule
@@ -6950,7 +6944,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     is a 404 and can never be touched.
   - **Visibility now:** the detail reads the frozen set with the **zero `notification.Visibility`**
     (archived, hidden and private all drop out, whoever the caller is), restores the frozen order after
-    `ListByUIDs`, and reports `dropped_count = PhotoCount − visible` (clamped at 0, the two reads being
+    `ListByUIDsInProject`, and reports `dropped_count = PhotoCount − visible` (clamped at 0, the two reads being
     separate statements).
   - `/push/*` sits behind `Config.RequireSignedIn` (a device is the account's, so no project is entered;
     nil falls back to `RequireAuth` for a test router), the inbox behind `RequireAuth` in the request's
@@ -7505,8 +7499,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `face_detections`, `markers`, `photo_labels`, `album_photos`), each with the keys that tie a row to a
     parent the caller resolves inside a project (`photo_uid`; `markers` also `subject_uid`/`uid`, the two
     membership tables their album/label). A **read** of one (`FROM`/`JOIN`, never a `DELETE`'s own `FROM`)
-    must name, in a predicate position, a project column (the join to its parent filtered on the project)
-    or one of those keys. What it catches is the **whole-table scan** — the upload's near-duplicate lookup
+    must be constrained by a top-level conjunct naming one of those keys (qualified by its alias, or bare) — a
+    `NULL` test keys nothing. What it catches is the **whole-table scan** — the upload's near-duplicate lookup
     (`SELECT … FROM photo_phashes ORDER BY dist LIMIT 1`) searched every project's pHashes and named the
     match to the uploader until 2026-10-14. Limits: a key is trusted however the caller built it
     (`photo_uid = ANY($1)`), a `JOIN` to the parent on the key counts as keyed (the parent root table is then
@@ -7520,38 +7514,57 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     included) and `strings.Join` over a literal slice. A piece it cannot read is unknown — unless its
     expression names the project (an identifier containing `project`: `projectClause("$1")`,
     `buildWhere(projectUID, …)`, `env.project`) or carries a literal with a project column, which stands in
-    for the project. The text is split on `;`; a statement naming a root table after upper-case `FROM`,
-    `JOIN`, `UPDATE` or `INTO` (`DELETE FROM`/`INSERT INTO` included; lower-case is error-message prose)
-    must name that table's column **in a predicate position**; a read-scoped or keyed child table is
-    checked the same way, but only where it is read (`FROM`/`JOIN`). **One finding per statement**, at the line
-    of its first unscoped table name (a raw string's own line, not the literal's first).
-  - **The predicate rule** (`clause.go`, `predicateColumns`): a token-position heuristic, not a parser. It
-    walks the statement keeping one clause per parenthesis level — a nested level starts in its parent's
-    clause (a bracketed condition stays a condition), and a subquery's or CTE's own keywords take over
-    until its `)` — and counts the project column only where it constrains or writes the row: after
-    `WHERE`, in a `JOIN … ON` condition, in an `INSERT INTO t (…)` column list, in an `UPDATE … SET` list
-    or in an `ON CONFLICT (…)` target, at any depth (so a CTE's or subquery's inner predicate scopes the
-    statement). In a select list, `FROM` list, `VALUES`, `GROUP BY`/`ORDER BY`, `HAVING` or `RETURNING` it
-    scopes nothing — `SELECT uid, project_id FROM photos WHERE uid = $1` is a finding. Keywords match
-    case-insensitively, quoted `'…'` text is skipped, `DISTINCT ON` is a select list and
-    `IS DISTINCT FROM` a comparison. A project-named stand-in counts in a predicate position **or** a
-    `FROM`/`JOIN` list (an opaque helper there may be the whole `JOIN … ON`, e.g. the comments store's
-    `parentInProjectJoin`), never in a select list.
+    for the project (`projectMark`). SQL comments (`-- …`, `/* … */`) are blanked first (same length, so
+    offsets still locate the source), then the text is split on `;` and each statement is judged by
+    `unscopedRefs` (below). **One finding per statement**, anchored at its **use site**: the line of its
+    first unscoped table name when the SQL is written in the expression itself (a raw string's own line,
+    not the literal's first), or the line **naming the package-level constant** that holds it (the
+    outermost name when one constant folds another). `Finding.Origin` keeps the table name's own
+    `path:line`, and the failure message names it. So a constant shared by several statements is judged —
+    and allow-listed — once per unscoped use: an entry never silently covers the next statement somebody
+    builds from the same constant (the comments store's `commentProjectSQL` is listed at each of its seven
+    uses, each with its own reason).
+  - **The predicate rule** (`clause.go`, `sqlwalk.go`, `sqltoken.go`; `unscopedRefs`): a small pragmatic
+    parser, not a SQL grammar. It tokenizes the statement (words, `$n`, `'…'`, operator runs — so `<=` is
+    never an `=` —, parenthesised groups, `projectMark`), splits each query on `UNION`/`INTERSECT`/`EXCEPT`
+    into **levels** (a subquery, a CTE body and each set-operation arm is a level of its own, whose
+    correlated aliases resolve outward), and records per level every item named after **upper-case**
+    `FROM`, `JOIN` (comma joins included), a `DELETE`'s `USING`, `UPDATE` or `INSERT INTO`, with its alias
+    (lower-case is error-message prose), plus the condition segments: the `WHERE` and every `JOIN … ON`/
+    `USING (…)`. Each segment is split into **top-level `AND` terms** (a bracketed condition is split in
+    turn, `BETWEEN`'s own `AND` is not a split); a term containing a top-level `OR`, or starting with `NOT`,
+    scopes nothing. An item is **scoped** by a term `<alias>.<project column> = <value>` (either side; the
+    column bare binds to the items of its own level that carry it) where the value is a parameter, a
+    literal, a cast, a function call, a subquery or `projectMark` — never `NULL`, never `ANY/ALL/SOME`, never
+    a plain column —, or by `<alias>.<project column> = <other alias>.<project column>` once the other item
+    is scoped (equalities spread to a fixpoint; `projects.uid` counts as the project column of `projects`, an
+    unknown table such as `project_members` or a CTE carries any project column name but is scoped only by
+    its own predicate). `projectMark` in a level's `FROM` list or as a top-level term scopes that level. An
+    `INSERT`'s target is scoped by its project column in its **own** column list or `ON CONFLICT` target;
+    an `INSERT … SELECT` (or a `VALUES` subquery) is judged on the tables it reads like any read.
+    Nothing else scopes: a project column in a select list, `SET` list, `FILTER (WHERE …)`, `GROUP BY`/
+    `ORDER BY`, `RETURNING`, a comment or `IS [NOT] NULL` test; a predicate on one alias (the "wrong
+    alias"), a join to a scoped row by a foreign key (`s.uid = m.subject_uid` — say `AND s.project_id =
+    p.project_id`) or a project filter inside a subquery says nothing about an outer table.
+    `TestUnscopedRefs_unscoped` pins every bypass the earlier per-statement rule let through (`OR
+    project_id = $2`, `project_id IS NOT NULL`, the wrong alias, `project_id` in a comment, an `INSERT …
+    SELECT … FROM photos p WHERE p.uid = $2`), `TestUnscopedRefs_scoped` the forms it accepts.
   - `allow.txt` + `ParseAllowList`/`Judge`: `path:line reason` per line (`#` comments; a missing reason, a
-    malformed key or a repeated one is `ErrAllowList`). `TestRepository_rootStatementsNameTheirProject`
-    fails on every finding without an entry and on every **stale allow-list entry** — one whose line no
-    longer holds an unscoped statement — so the list cannot outlive what it excuses. The entries fall in a
-    few kinds: worker handlers keyed by a photo uid from the job payload (`GetForJob` and the write-backs
-    after it), instance-wide maintenance scan/repair, reset, inventory, storage migration and the rekey
-    service, and writes by a uid the same transaction already proved inside the project
-    (`requireSubjectInProject`, a project-scoped `FOR UPDATE`, …).
+    malformed key or a repeated one is `ErrAllowList`), keyed by the finding's use site.
+    `TestRepository_rootStatementsNameTheirProject` fails on every finding without an entry and on every
+    **stale allow-list entry** — one whose line no longer holds an unscoped statement — so the list cannot
+    outlive what it excuses. The entries fall in a few kinds: worker handlers keyed by a photo uid from the
+    job payload (`GetForJob` and the write-backs after it), instance-wide maintenance scan/repair, reset,
+    inventory, the maintainer's dashboards and listings, storage migration and the rekey service, lookups by
+    an instance-unique code hash (invites, upload links), and writes by a uid the same transaction already
+    proved inside the project (`requireSubjectInProject`, a project-scoped `FOR UPDATE`, …). The 2026-10-14
+    tightening deleted the unscoped helpers nothing in production called (with their entries) and scoped
+    the two `INSERT … SELECT` writers it had trusted callers for (`insertFamilySQL`, `insertFaceSQL`).
   - Deliberately textual, so it has blind spots: a table name built at run time (`FROM %s` with a variable),
-    comma joins (`FROM a, photos`), a project-named piece that is not actually a predicate, and — since the
-    rule is per statement — a predicate on one table that is taken to scope another table of the same
-    statement, or a `FILTER (WHERE project_id …)` inside a select list. A statement that only *selects*
-    the column is no longer a blind spot: the worker loaders (`GetForJob`, `GetEmbeddingForJob`, …) and
-    the uid-to-project lookups carry allow-list entries. It is a tripwire for the common mistake, not a
-    proof; the isolation tests stay the proof.
+    a project-named piece that is not actually a predicate (it scopes its whole level), a value that is a
+    project but not *the* project (a subquery returning another project's id is a value like any other),
+    and a key of a keyed child table trusted however it was built. It is a tripwire for the common mistake,
+    not a proof; the isolation tests stay the proof.
   - `BootstrapReferences(root, patterns...)` (`bootstrap.go`) is the request-path half of "there is no
     default project": it parses the non-test `.go` files directly inside every directory matching a
     pattern and reports each `project.BootstrapUID` / `project.BootstrapSlug` (under the package's import

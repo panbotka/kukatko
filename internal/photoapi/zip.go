@@ -141,7 +141,7 @@ func appendUnique(out []photos.Photo, seen map[string]struct{}, add []photos.Pho
 }
 
 // orderByUIDs returns list reordered to match the sequence of uids (the client's
-// selection order); a UID with no matching photo is dropped. ListByUIDs returns
+// selection order); a UID with no matching photo is dropped. ListByUIDsInProject returns
 // rows in an unspecified order, so this restores the requested order for the
 // archive.
 func orderByUIDs(uids []string, list []photos.Photo) []photos.Photo {

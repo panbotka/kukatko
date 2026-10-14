@@ -8,44 +8,41 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// PhotoprismAlias records that a PhotoPrism source photo collapsed onto a
-// catalogue row holding byte-identical content under a DIFFERENT source uid. It
-// is the row shape of the photoprism_aliases table (migration 0046).
-type PhotoprismAlias struct {
-	// PhotoprismUID is the source photo that has no row of its own.
-	PhotoprismUID string `json:"photoprism_uid"`
-	// PhotoUID is the catalogue photo holding its content.
-	PhotoUID string `json:"photo_uid"`
-	// PhotoprismFileHash is the SHA1 of the source FILE the alias was recorded
-	// from, kept as provenance; it may be empty.
-	PhotoprismFileHash string `json:"photoprism_file_hash"`
-}
-
 // addPhotoprismAliasSQL records (or re-points) one alias. It is idempotent by
-// primary key so a re-run of the import writes the same alias again without
-// erroring, and re-points one whose content moved to another row. The alias
-// belongs to the project of the photo holding its content; that photo's uid is
-// bound twice ($2 and $4) because one placeholder used for the VARCHAR photo_uid
-// column and the TEXT photos.uid fails type deduction (42P08).
+// primary key so recording the same alias again writes it without erroring,
+// and re-points one whose content moved to another row. The alias belongs to
+// the project $5, and is written only when the photo $4 holding its content is
+// one of that project's; otherwise nothing is inserted. That photo's uid is
+// bound twice ($2 and $4) because one placeholder used for the VARCHAR
+// photo_uid column and the TEXT photos.uid fails type deduction (42P08).
 const addPhotoprismAliasSQL = `
 INSERT INTO photoprism_aliases (project_id, photoprism_uid, photo_uid, photoprism_file_hash)
-VALUES ((SELECT project_id FROM photos WHERE uid = $4), $1, $2, nullif($3, ''))
+SELECT p.project_id, $1, $2, nullif($3, '') FROM photos p WHERE p.uid = $4 AND p.project_id = $5
 ON CONFLICT (project_id, photoprism_uid) DO UPDATE
 SET photo_uid = excluded.photo_uid, photoprism_file_hash = excluded.photoprism_file_hash`
 
 // AddPhotoprismAlias records that the PhotoPrism photo ppUID is held by the
-// catalogue photo photoUID, whose content is byte-identical to it but which
-// already answers to another source uid (see migration 0046). ppFileHash is the
-// source file's SHA1 provenance and may be empty.
+// project's catalogue photo photoUID, whose content is byte-identical to it but
+// which already answers to another source uid (see migration 0046). ppFileHash
+// is the source file's SHA1 provenance and may be empty.
 //
 // It is idempotent: recording the same alias twice is a no-op, and an alias whose
 // content ended up on a different row is re-pointed rather than rejected. It
-// returns a wrapped error when the alias cannot be written — the caller must treat
-// that as a failed photo, because an unrecorded alias is a source photo dropped in
-// silence, which is exactly what this table exists to prevent.
-func (s *Store) AddPhotoprismAlias(ctx context.Context, ppUID, photoUID, ppFileHash string) error {
-	if _, err := s.pool.Exec(ctx, addPhotoprismAliasSQL, ppUID, photoUID, ppFileHash, photoUID); err != nil {
+// returns ErrPhotoNotFound when photoUID is not a photo of the project,
+// ErrNoProject for an empty projectUID and a wrapped error when the alias cannot
+// be written. Nothing in production records aliases any more (the PhotoPrism
+// import that did was removed); the recorded ones stay live data behind uid
+// search, and the tests seed them through this.
+func (s *Store) AddPhotoprismAlias(ctx context.Context, projectUID, ppUID, photoUID, ppFileHash string) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
+	tag, err := s.pool.Exec(ctx, addPhotoprismAliasSQL, ppUID, photoUID, ppFileHash, photoUID, projectUID)
+	if err != nil {
 		return fmt.Errorf("photos: recording photoprism alias %s -> %s: %w", ppUID, photoUID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%w: %s", ErrPhotoNotFound, photoUID)
 	}
 	return nil
 }
@@ -82,35 +79,4 @@ func (s *Store) GetByPhotoprismAlias(ctx context.Context, projectUID, ppUID stri
 		return Photo{}, err
 	}
 	return photo, nil
-}
-
-// listPhotoprismAliasesSQL lists every recorded alias, ordered for a stable read.
-const listPhotoprismAliasesSQL = `
-SELECT photoprism_uid, photo_uid, coalesce(photoprism_file_hash, '')
-FROM photoprism_aliases
-ORDER BY photoprism_uid`
-
-// ListPhotoprismAliases returns every recorded alias. The set is small by nature
-// (one row per duplicated source photo — 450 on the production library) and it is
-// read whole by the import reconciliation, which has to account for every source
-// uid at once.
-func (s *Store) ListPhotoprismAliases(ctx context.Context) ([]PhotoprismAlias, error) {
-	rows, err := s.pool.Query(ctx, listPhotoprismAliasesSQL)
-	if err != nil {
-		return nil, fmt.Errorf("photos: listing photoprism aliases: %w", err)
-	}
-	defer rows.Close()
-
-	out := make([]PhotoprismAlias, 0)
-	for rows.Next() {
-		var a PhotoprismAlias
-		if err := rows.Scan(&a.PhotoprismUID, &a.PhotoUID, &a.PhotoprismFileHash); err != nil {
-			return nil, fmt.Errorf("photos: scanning photoprism alias: %w", err)
-		}
-		out = append(out, a)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("photos: iterating photoprism aliases: %w", err)
-	}
-	return out, nil
 }

@@ -47,7 +47,7 @@ const subjectCoversSQL = `
 WITH derived AS (
     SELECT DISTINCT ON (m.subject_uid) m.subject_uid, p.uid AS photo_uid, p.file_hash, p.file_path
     FROM markers m
-    JOIN photos p ON p.uid = m.photo_uid
+    JOIN photos p ON p.uid = m.photo_uid AND p.project_id = $2
     WHERE m.subject_uid = ANY($1) AND m.invalid = FALSE
       AND p.archived_at IS NULL AND NOT p.hidden_from_library
       AND (p.stack_uid IS NULL OR p.stack_primary)

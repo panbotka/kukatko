@@ -24,15 +24,15 @@ const pairIndexName = "idx_subject_families_pair"
 const childIndexName = "idx_subject_family_children_child"
 
 // insertFamilySQL creates a family from an already normalised pair, in the
-// project of the subject $5 — the person the family is created for: its first
-// partner, or for a parentless sibling group one of its children. A family
-// therefore always lives in its members' project; the write paths have already
-// proved that subject inside the request's project (requireSubjects), so the
-// family lands there too. A $5 that names no subject inserts nothing and the
-// scan reports pgx.ErrNoRows.
+// project $6 of the subject $5 — the person the family is created for: its
+// first partner, or for a parentless sibling group one of its children. A
+// family therefore always lives in its members' project. The write paths have
+// already proved that subject inside the request's project (requireSubjects);
+// the SELECT checks it again rather than trusting them, so a $5 that names no
+// subject of the project inserts nothing and the scan reports pgx.ErrNoRows.
 const insertFamilySQL = `
 INSERT INTO subject_families (uid, partner_a_uid, partner_b_uid, kind, project_id)
-SELECT $1, $2, $3, $4, s.project_id FROM subjects s WHERE s.uid = $5
+SELECT $1, $2, $3, $4, s.project_id FROM subjects s WHERE s.uid = $5 AND s.project_id = $6
 RETURNING ` + familyColumns
 
 // setFamilyPartnersSQL rewrites a family's pair, which the store only ever does
@@ -145,7 +145,7 @@ func (s *Store) addChildRelation(
 		if err := requireSubjects(ctx, tx, projectUID, childUID, parentUID); err != nil {
 			return Family{}, err
 		}
-		return attachChild(ctx, tx, childUID, parentUID, childKind)
+		return attachChild(ctx, tx, projectUID, childUID, parentUID, childKind)
 	})
 }
 
@@ -176,7 +176,7 @@ func (s *Store) AddPartnerAudited(
 			return Family{}, err
 		}
 		first, second := normalisePair(subjectUID, partnerUID)
-		return findOrCreateFamily(ctx, tx, first, second)
+		return findOrCreateFamily(ctx, tx, projectUID, first, second)
 	})
 }
 
@@ -238,7 +238,7 @@ func (s *Store) RemoveRelationAudited(
 			}
 			return struct{}{}, err
 		}
-		return struct{}{}, removeRelation(ctx, tx, subjectUID, otherUID)
+		return struct{}{}, removeRelation(ctx, tx, projectUID, subjectUID, otherUID)
 	})
 	return err
 }
@@ -265,13 +265,15 @@ func (s *Store) RemoveRelationAudited(
 // It refuses with ErrCycle when the child is already an ancestor of the
 // prospective parent. The caller has already proved both subjects inside the
 // request's project.
-func attachChild(ctx context.Context, tx pgx.Tx, childUID, parentUID string, kind ChildKind) (Family, error) {
+func attachChild(
+	ctx context.Context, tx pgx.Tx, projectUID, childUID, parentUID string, kind ChildKind,
+) (Family, error) {
 	if err := checkNoCycle(ctx, tx, childUID, parentUID); err != nil {
 		return Family{}, err
 	}
 	current, currentKind, err := childFamily(ctx, tx, childUID)
 	if errors.Is(err, ErrFamilyNotFound) {
-		return attachToNewFamily(ctx, tx, childUID, parentUID, childKindOrDefault(kind))
+		return attachToNewFamily(ctx, tx, projectUID, childUID, parentUID, childKindOrDefault(kind))
 	}
 	if err != nil {
 		return Family{}, err
@@ -287,7 +289,7 @@ func attachChild(ctx context.Context, tx pgx.Tx, childUID, parentUID string, kin
 	case 0:
 		return adoptGroup(ctx, tx, current, childUID, parentUID, kind)
 	case 1:
-		return completeParentage(ctx, tx, current, childUID, parentUID, kind)
+		return completeParentage(ctx, tx, projectUID, current, childUID, parentUID, kind)
 	default:
 		return Family{}, fmt.Errorf("%w: %s is a child of family %s", ErrAlreadyChild, childUID, current.UID)
 	}
@@ -387,7 +389,7 @@ func adoptInPlace(
 // is idempotent and only rewrites that kind. The caller has already proved both
 // subjects inside the request's project.
 func attachSibling(
-	ctx context.Context, tx pgx.Tx, subjectUID, otherUID string, kind ChildKind,
+	ctx context.Context, tx pgx.Tx, projectUID, subjectUID, otherUID string, kind ChildKind,
 ) (Family, error) {
 	subjectFam, subjectErr := optionalChildFamily(ctx, tx, subjectUID)
 	if subjectErr != nil {
@@ -405,7 +407,7 @@ func attachSibling(
 	case otherFam != nil:
 		return joinAsChild(ctx, tx, *otherFam, subjectUID, childKindOrDefault(kind))
 	default:
-		return newSiblingGroup(ctx, tx, subjectUID, otherUID, childKindOrDefault(kind))
+		return newSiblingGroup(ctx, tx, projectUID, subjectUID, otherUID, childKindOrDefault(kind))
 	}
 }
 
@@ -447,14 +449,15 @@ func joinAsChild(ctx context.Context, tx pgx.Tx, fam Family, childUID string, ki
 // claiming a partnership between nobody and nobody would be the one thing the
 // record says that is not true.
 func newSiblingGroup(
-	ctx context.Context, tx pgx.Tx, subjectUID, otherUID string, kind ChildKind,
+	ctx context.Context, tx pgx.Tx, projectUID, subjectUID, otherUID string, kind ChildKind,
 ) (Family, error) {
 	uid, err := newFamilyUID()
 	if err != nil {
 		return Family{}, err
 	}
 	first, second := normalisePair("", "")
-	fam, err := scanFamily(tx.QueryRow(ctx, insertFamilySQL, uid, first, second, KindUnknown, subjectUID))
+	fam, err := scanFamily(tx.QueryRow(ctx, insertFamilySQL, uid, first, second, KindUnknown, subjectUID,
+		projectUID))
 	if err != nil {
 		return Family{}, translateWriteError(err)
 	}
@@ -467,10 +470,10 @@ func newSiblingGroup(
 // attachToNewFamily joins a child with no recorded parentage to the parent's
 // lone-parent family, creating that family when the parent has none.
 func attachToNewFamily(
-	ctx context.Context, tx pgx.Tx, childUID, parentUID string, kind ChildKind,
+	ctx context.Context, tx pgx.Tx, projectUID, childUID, parentUID string, kind ChildKind,
 ) (Family, error) {
 	first, second := normalisePair(parentUID, "")
-	fam, err := findOrCreateFamily(ctx, tx, first, second)
+	fam, err := findOrCreateFamily(ctx, tx, projectUID, first, second)
 	if err != nil {
 		return Family{}, err
 	}
@@ -490,7 +493,7 @@ func attachToNewFamily(
 // the one they already have, or a fresh one — and the lone-parent family is left
 // behind for its remaining children, or pruned when it has none.
 func completeParentage(
-	ctx context.Context, tx pgx.Tx, current Family, childUID, parentUID string, kind ChildKind,
+	ctx context.Context, tx pgx.Tx, projectUID string, current Family, childUID, parentUID string, kind ChildKind,
 ) (Family, error) {
 	first, second := normalisePair(current.partnerUIDs()[0], parentUID)
 	couple, err := findFamilyByPair(ctx, tx, first, second)
@@ -505,7 +508,7 @@ func completeParentage(
 		if alone {
 			return completeInPlace(ctx, tx, current, childUID, first, second, kind)
 		}
-		if couple, err = findOrCreateFamily(ctx, tx, first, second); err != nil {
+		if couple, err = findOrCreateFamily(ctx, tx, projectUID, first, second); err != nil {
 			return Family{}, err
 		}
 	}
@@ -599,7 +602,7 @@ func ancestorUIDs(ctx context.Context, q querier, uids ...string) ([]string, err
 // row for them is not a new fact, it is the same one written twice. A created
 // family lands in the project of its first partner (insertFamilySQL), who is
 // never nil here: every caller names at least one partner.
-func findOrCreateFamily(ctx context.Context, tx pgx.Tx, first, second *string) (Family, error) {
+func findOrCreateFamily(ctx context.Context, tx pgx.Tx, projectUID string, first, second *string) (Family, error) {
 	fam, err := findFamilyByPair(ctx, tx, first, second)
 	if err == nil {
 		return fam, nil
@@ -614,7 +617,8 @@ func findOrCreateFamily(ctx context.Context, tx pgx.Tx, first, second *string) (
 	if err != nil {
 		return Family{}, err
 	}
-	fam, err = scanFamily(tx.QueryRow(ctx, insertFamilySQL, uid, first, second, KindPartnership, *first))
+	fam, err = scanFamily(tx.QueryRow(ctx, insertFamilySQL, uid, first, second, KindPartnership, *first,
+		projectUID))
 	if err != nil {
 		return Family{}, translateWriteError(err)
 	}
@@ -624,12 +628,12 @@ func findOrCreateFamily(ctx context.Context, tx pgx.Tx, first, second *string) (
 // removeRelation deletes whatever ties the two subjects together, looking for it
 // in the order a page offers it: the other is the subject's child, the other is
 // the subject's parent, the two are partners, the two are siblings.
-func removeRelation(ctx context.Context, tx pgx.Tx, subjectUID, otherUID string) error {
-	done, err := detachParentage(ctx, tx, otherUID, subjectUID)
+func removeRelation(ctx context.Context, tx pgx.Tx, projectUID, subjectUID, otherUID string) error {
+	done, err := detachParentage(ctx, tx, projectUID, otherUID, subjectUID)
 	if err != nil || done {
 		return err
 	}
-	done, err = detachParentage(ctx, tx, subjectUID, otherUID)
+	done, err = detachParentage(ctx, tx, projectUID, subjectUID, otherUID)
 	if err != nil || done {
 		return err
 	}
@@ -682,7 +686,7 @@ func detachSibling(ctx context.Context, tx pgx.Tx, subjectUID, otherUID string) 
 // indeed how the two are related, reporting whether it found anything to do. It
 // is called once for each direction, because "remove the relation between these
 // two" does not say which of them is the parent.
-func detachParentage(ctx context.Context, tx pgx.Tx, childUID, parentUID string) (bool, error) {
+func detachParentage(ctx context.Context, tx pgx.Tx, projectUID, childUID, parentUID string) (bool, error) {
 	fam, kind, err := childFamily(ctx, tx, childUID)
 	if errors.Is(err, ErrFamilyNotFound) {
 		return false, nil
@@ -693,7 +697,7 @@ func detachParentage(ctx context.Context, tx pgx.Tx, childUID, parentUID string)
 	if !slices.Contains(fam.partnerUIDs(), parentUID) {
 		return false, nil
 	}
-	return true, detachChild(ctx, tx, fam, childUID, parentUID, kind)
+	return true, detachChild(ctx, tx, projectUID, fam, childUID, parentUID, kind)
 }
 
 // detachChild removes one parent from a child's parentage. When the family has a
@@ -702,7 +706,7 @@ func detachParentage(ctx context.Context, tx pgx.Tx, childUID, parentUID string)
 // Y's mother away too. When there was no second parent the membership is simply
 // deleted, and the emptied family is pruned.
 func detachChild(
-	ctx context.Context, tx pgx.Tx, fam Family, childUID, parentUID string, kind ChildKind,
+	ctx context.Context, tx pgx.Tx, projectUID string, fam Family, childUID, parentUID string, kind ChildKind,
 ) error {
 	remaining := fam.other(parentUID)
 	if remaining == nil {
@@ -712,7 +716,7 @@ func detachChild(
 		return pruneFamily(ctx, tx, fam)
 	}
 	first, second := normalisePair(*remaining, "")
-	target, err := findOrCreateFamily(ctx, tx, first, second)
+	target, err := findOrCreateFamily(ctx, tx, projectUID, first, second)
 	if err != nil {
 		return err
 	}

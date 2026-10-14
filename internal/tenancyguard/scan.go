@@ -21,9 +21,14 @@ import (
 type Finding struct {
 	// Path is the slash-separated file path, relative to the scanned root.
 	Path string
-	// Line is the line of the table name inside the string literal.
+	// Line is the statement's use site: the line of the first unscoped table
+	// name when it is written in the expression itself, or the line naming
+	// the package-level constant (or variable) that holds it.
 	Line int
-	// Tables are the root tables the statement reads or writes unscoped.
+	// Origin is the `path:line` of that table name in its string literal; it
+	// differs from Key when the name sits in a constant used here.
+	Origin string
+	// Tables are the tables the statement reads or writes unscoped.
 	Tables []string
 	// Statement is a whitespace-collapsed excerpt of the folded statement.
 	Statement string
@@ -36,7 +41,12 @@ func (f Finding) Key() string {
 
 // String renders the finding for a test failure.
 func (f Finding) String() string {
-	return fmt.Sprintf("%s: statement over %s names no project: %s", f.Key(), strings.Join(f.Tables, ", "), f.Statement)
+	via := ""
+	if f.Origin != "" && f.Origin != f.Key() {
+		via = " (table named at " + f.Origin + ")"
+	}
+	return fmt.Sprintf("%s: statement over %s names no project%s: %s",
+		f.Key(), strings.Join(f.Tables, ", "), via, f.Statement)
 }
 
 // Scan parses every non-test .go file below the given directories of root and
@@ -138,74 +148,6 @@ func ScanFiles(fset *token.FileSet, root string, files []*ast.File) []Finding {
 	return p.findings(root)
 }
 
-// rootRef matches a root table named after the SQL keywords that read or write
-// it. The keywords are upper case on purpose: lower-case "update photos" is the
-// prose of an error message, not a statement.
-var rootRef = func() *regexp.Regexp {
-	tables := make([]string, 0, len(RootTables))
-	for t := range RootTables {
-		tables = append(tables, t)
-	}
-	sort.Strings(tables)
-	return regexp.MustCompile(`\b(?:FROM|JOIN|UPDATE|INTO)\s+(` + strings.Join(tables, "|") + `)\b`)
-}()
-
-// readRef matches a read-scoped table or a keyed child table named after the
-// SQL keywords that read it. A DELETE's own FROM is matched too, as the first
-// alternative, so that the leftmost match consumes it and judge can skip it:
-// deleting is a write.
-var readRef = func() *regexp.Regexp {
-	tables := make([]string, 0, len(ReadScopedTables)+len(KeyedChildTables))
-	for t := range ReadScopedTables {
-		tables = append(tables, t)
-	}
-	for t := range KeyedChildTables {
-		tables = append(tables, t)
-	}
-	sort.Strings(tables)
-	return regexp.MustCompile(`\b(DELETE\s+FROM|FROM|JOIN)\s+(` + strings.Join(tables, "|") + `)\b`)
-}()
-
-// scopedRef is one reference a statement makes to a table the guard checks:
-// where the table name sits in the statement, the column that scopes it and —
-// for a keyed child table — the parent keys that scope it just as well.
-type scopedRef struct {
-	start, end int
-	column     string
-	keys       []string
-}
-
-// scopedBy reports whether the columns a statement names in predicate
-// positions scope this reference: its project column or one of its keys.
-func (r scopedRef) scopedBy(scoped map[string]bool) bool {
-	if scoped[r.column] {
-		return true
-	}
-	return slices.ContainsFunc(r.keys, func(key string) bool { return scoped[key] })
-}
-
-// scopedRefs returns the references of stmt the guard checks, in order: every
-// root-table reference and every read of a read-scoped or keyed child table.
-func scopedRefs(stmt string) []scopedRef {
-	var refs []scopedRef
-	for _, m := range rootRef.FindAllStringSubmatchIndex(stmt, -1) {
-		refs = append(refs, scopedRef{start: m[2], end: m[3], column: RootTables[stmt[m[2]:m[3]]]})
-	}
-	for _, m := range readRef.FindAllStringSubmatchIndex(stmt, -1) {
-		if strings.HasPrefix(stmt[m[2]:m[3]], "DELETE") {
-			continue
-		}
-		table := stmt[m[4]:m[5]]
-		if keys, child := KeyedChildTables[table]; child {
-			refs = append(refs, scopedRef{start: m[4], end: m[5], column: childProjectColumn, keys: keys})
-			continue
-		}
-		refs = append(refs, scopedRef{start: m[4], end: m[5], column: ReadScopedTables[table]})
-	}
-	sort.Slice(refs, func(i, j int) bool { return refs[i].start < refs[j].start })
-	return refs
-}
-
 // whitespace collapses runs of whitespace in a statement excerpt.
 var whitespace = regexp.MustCompile(`\s+`)
 
@@ -213,11 +155,12 @@ var whitespace = regexp.MustCompile(`\s+`)
 const excerptLen = 160
 
 // unscopedStmt is one statement an appearance leaves without its project
-// column, located at its first unscoped root-table reference.
+// column, anchored at the use site of its first unscoped table reference
+// (pos) and located at that name in its literal (origin).
 type unscopedStmt struct {
-	pos    token.Position
-	tables []string
-	stmt   string
+	pos, origin token.Position
+	tables      []string
+	stmt        string
 }
 
 // findings evaluates every appearance and returns the statements that some
@@ -236,15 +179,23 @@ func (p *pkgScan) findings(root string) []Finding {
 				out[i].Tables = mergeTables(out[i].Tables, u.tables)
 				continue
 			}
-			rel, err := filepath.Rel(root, u.pos.Filename)
-			if err != nil {
-				rel = u.pos.Filename
-			}
 			byLine[u.pos] = len(out)
-			out = append(out, Finding{Path: filepath.ToSlash(rel), Line: u.pos.Line, Tables: u.tables, Statement: u.stmt})
+			out = append(out, Finding{Path: relPath(root, u.pos.Filename), Line: u.pos.Line,
+				Origin:    fmt.Sprintf("%s:%d", relPath(root, u.origin.Filename), u.origin.Line),
+				Tables:    u.tables,
+				Statement: u.stmt})
 		}
 	}
 	return out
+}
+
+// relPath returns file relative to root, slash-separated.
+func relPath(root, file string) string {
+	rel, err := filepath.Rel(root, file)
+	if err != nil {
+		rel = file
+	}
+	return filepath.ToSlash(rel)
 }
 
 // mergeTables returns the sorted union of two table lists.
@@ -259,12 +210,9 @@ func mergeTables(a, b []string) []string {
 	return out
 }
 
-// evaluate splits one folded expression into statements and returns those
-// whose root-table references are not all scoped: a reference is scoped when
-// its statement names the table's project column, or a project-named piece, in
-// a position that constrains or writes the row (predicateColumns) — a project
-// column only in a select list scopes nothing.
-// Each statement is located at its first unscoped reference.
+// evaluate blanks the SQL comments of one folded expression, splits it into
+// statements and returns those with an item no predicate ties to one project
+// (unscopedRefs), each anchored at its first unscoped item.
 func (p *pkgScan) evaluate(pieces []piece) []unscopedStmt {
 	var text strings.Builder
 	starts := make([]int, len(pieces))
@@ -274,7 +222,7 @@ func (p *pkgScan) evaluate(pieces []piece) []unscopedStmt {
 	}
 	var out []unscopedStmt
 	offset := 0
-	for stmt := range strings.SplitSeq(text.String(), ";") {
+	for stmt := range strings.SplitSeq(blankComments(text.String()), ";") {
 		if u, ok := p.judge(stmt, offset, pieces, starts); ok {
 			out = append(out, u)
 		}
@@ -284,45 +232,45 @@ func (p *pkgScan) evaluate(pieces []piece) []unscopedStmt {
 }
 
 // judge checks one statement starting at offset in the folded text and
-// returns it when some root reference in it is unscoped.
+// returns it when some item in it is unscoped (unscopedRefs), located at the
+// first such item.
 func (p *pkgScan) judge(stmt string, offset int, pieces []piece, starts []int) (unscopedStmt, bool) {
 	var u unscopedStmt
-	scoped := predicateColumns(stmt)
-	if scoped[projectMark] {
-		return u, false
-	}
-	for _, ref := range scopedRefs(stmt) {
-		table := stmt[ref.start:ref.end]
-		if ref.scopedBy(scoped) {
-			continue
-		}
+	for _, ref := range unscopedRefs(stmt) {
 		if u.tables == nil {
-			pos, ok := p.position(pieces, starts, offset+ref.start)
+			pos, origin, ok := p.position(pieces, starts, offset+ref.start)
 			if !ok {
 				continue
 			}
-			u.pos, u.stmt = pos, excerpt(stmt)
+			u.pos, u.origin, u.stmt = pos, origin, excerpt(stmt)
 		}
-		u.tables = mergeTables(u.tables, []string{table})
+		u.tables = mergeTables(u.tables, []string{ref.table})
 	}
 	return u, u.tables != nil
 }
 
-// position maps an offset in the folded text back to the source line of the
-// literal that holds it. A raw string literal spans lines, so the newlines in
-// front of the offset are counted; an interpreted one sits on one line.
-func (p *pkgScan) position(pieces []piece, starts []int, at int) (token.Position, bool) {
+// position maps an offset in the folded text back to the source: the anchor
+// (the use of the package-level name the literal was folded in through, or
+// the literal itself) and the origin (the line of the offset in the literal).
+// A raw string literal spans lines, so the newlines in front of the offset
+// are counted; an interpreted one sits on one line.
+func (p *pkgScan) position(pieces []piece, starts []int, at int) (anchor, origin token.Position, ok bool) {
 	i := sort.Search(len(starts), func(i int) bool { return starts[i] > at }) - 1
 	if i < 0 || pieces[i].lit == nil {
-		return token.Position{}, false
+		return token.Position{}, token.Position{}, false
 	}
 	pc := pieces[i]
-	pos := p.fset.Position(pc.lit.Pos())
+	origin = p.fset.Position(pc.lit.Pos())
 	if strings.HasPrefix(pc.lit.Value, "`") {
-		pos.Line += strings.Count(pc.raw[:pc.off+at-starts[i]], "\n")
+		origin.Line += strings.Count(pc.raw[:pc.off+at-starts[i]], "\n")
 	}
-	pos.Column = 0
-	return pos, true
+	origin.Column = 0
+	anchor = origin
+	if pc.use.IsValid() {
+		anchor = p.fset.Position(pc.use)
+		anchor.Column = 0
+	}
+	return anchor, origin, true
 }
 
 // excerpt collapses a statement's whitespace and caps its length.

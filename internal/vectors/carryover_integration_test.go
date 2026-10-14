@@ -36,7 +36,7 @@ func TestRecordFaceDetection_carriesAssignmentsOverARedetection(t *testing.T) {
 	marker, subject := "mk_alice", "sub_alice"
 	first := detectedFace(0, [4]float64{0.10, 0.10, 0.20, 0.20}, faceVec(map[int]float32{0: 1}))
 	first.MarkerUID, first.SubjectUID, first.SubjectName = &marker, &subject, "Alice"
-	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{
+	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{ProjectUID: project.BootstrapUID,
 		Faces: []vectors.Face{first}, Model: "buffalo_l",
 	}); err != nil {
 		t.Fatalf("RecordFaceDetection (first run): %v", err)
@@ -47,7 +47,7 @@ func TestRecordFaceDetection_carriesAssignmentsOverARedetection(t *testing.T) {
 		detectedFace(0, [4]float64{0.11, 0.11, 0.20, 0.20}, faceVec(map[int]float32{2: 1})),
 		detectedFace(1, [4]float64{0.60, 0.60, 0.15, 0.15}, faceVec(map[int]float32{3: 1})),
 	}
-	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{
+	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{ProjectUID: project.BootstrapUID,
 		Faces: redetected, Model: "buffalo_l",
 	}); err != nil {
 		t.Fatalf("RecordFaceDetection (rebuild): %v", err)
@@ -82,14 +82,14 @@ func TestRecordFaceDetection_dropsAnAssignmentWithNowhereToGo(t *testing.T) {
 	subject := "sub_alice"
 	first := detectedFace(0, [4]float64{0.10, 0.10, 0.20, 0.20}, faceVec(map[int]float32{0: 1}))
 	first.SubjectUID, first.SubjectName = &subject, "Alice"
-	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{
+	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{ProjectUID: project.BootstrapUID,
 		Faces: []vectors.Face{first}, Model: "buffalo_l",
 	}); err != nil {
 		t.Fatalf("RecordFaceDetection (first run): %v", err)
 	}
 
 	elsewhere := detectedFace(0, [4]float64{0.70, 0.70, 0.15, 0.15}, faceVec(map[int]float32{1: 1}))
-	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{
+	if err := store.RecordFaceDetection(ctx, uid, vectors.Detection{ProjectUID: project.BootstrapUID,
 		Faces: []vectors.Face{elsewhere}, Model: "buffalo_l",
 	}); err != nil {
 		t.Fatalf("RecordFaceDetection (rebuild): %v", err)

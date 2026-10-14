@@ -283,7 +283,7 @@ func (a *API) handlePhotos(w http.ResponseWriter, r *http.Request) {
 }
 
 // resolvePhotos loads the photos for the given page of UIDs, restores the
-// newest-first UID order (ListByUIDs returns rows in unspecified order) and
+// newest-first UID order (ListByUIDsInProject returns rows in unspecified order) and
 // stamps on the media URLs the client fetches.
 func (a *API) resolvePhotos(r *http.Request, page []string) ([]photos.Photo, error) {
 	list, err := a.photos.ListByUIDsInProject(r.Context(), auth.ProjectUIDFromContext(r.Context()), page)
@@ -383,7 +383,7 @@ func pageUIDs(uids []string, limit, offset int) []string {
 
 // orderByUIDs returns the photos reordered to match the order of uids, dropping
 // any uid that resolved to no photo. It restores the deterministic order that
-// ListByUIDs does not guarantee.
+// ListByUIDsInProject does not guarantee.
 func orderByUIDs(uids []string, list []photos.Photo) []photos.Photo {
 	byUID := make(map[string]photos.Photo, len(list))
 	for _, p := range list {

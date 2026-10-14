@@ -29,7 +29,7 @@ func sampleFace(index int, vec []float32) vectors.Face {
 	}
 }
 
-// TestFacesLifecycle exercises save, list (ordered), round-trip and delete.
+// TestFacesLifecycle exercises save, list (ordered) and round-trip.
 func TestFacesLifecycle(t *testing.T) {
 	store, photoStore, _ := newStore(t)
 	ctx := t.Context()
@@ -62,13 +62,6 @@ func TestFacesLifecycle(t *testing.T) {
 		t.Errorf("face bbox/score not round-tripped: %+v", first)
 	}
 
-	deleted, err := store.DeleteFaces(ctx, uid)
-	if err != nil || deleted != 2 {
-		t.Fatalf("DeleteFaces = %d, %v; want 2, nil", deleted, err)
-	}
-	if remaining, _ := store.ListFaces(ctx, project.BootstrapUID, uid); len(remaining) != 0 {
-		t.Errorf("faces survived delete: %d", len(remaining))
-	}
 }
 
 // TestSaveFaces_replaceIdempotent checks that re-saving replaces a photo's faces.

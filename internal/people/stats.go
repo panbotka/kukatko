@@ -57,7 +57,7 @@ SELECT s.uid,
        COALESCE(EXTRACT(YEAR FROM MAX(p.taken_at))::int, 0) AS newest_year
 FROM subjects s
 LEFT JOIN markers m ON m.subject_uid = s.uid AND m.invalid = FALSE
-LEFT JOIN photos p ON p.uid = m.photo_uid AND p.archived_at IS NULL
+LEFT JOIN photos p ON p.uid = m.photo_uid AND p.project_id = s.project_id AND p.archived_at IS NULL
     AND (p.stack_uid IS NULL OR p.stack_primary)
 WHERE s.uid = $1 AND s.project_id = $2
 GROUP BY s.uid, s.name`

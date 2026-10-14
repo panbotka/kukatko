@@ -287,7 +287,7 @@ SELECT s.uid, s.slug, s.name, s.nickname, s.type, s.favorite, s.private, s.notes
        bf.file_width, bf.file_height, bf.file_orientation
 FROM subjects s
 LEFT JOIN markers m ON m.subject_uid = s.uid AND m.invalid = FALSE
-LEFT JOIN photos p ON p.uid = m.photo_uid AND p.archived_at IS NULL
+LEFT JOIN photos p ON p.uid = m.photo_uid AND p.project_id = s.project_id AND p.archived_at IS NULL
     AND (p.stack_uid IS NULL OR p.stack_primary)
 LEFT JOIN best_face bf ON bf.subject_uid = s.uid
 WHERE s.project_id = $1

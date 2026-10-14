@@ -173,7 +173,7 @@ func addRelation(
 	if err := checkPair(subjectUID, otherUID); err != nil {
 		return AddResult{}, err
 	}
-	fam, err := attachInRole(ctx, tx, subjectUID, otherUID, rel.Role, kind)
+	fam, err := attachInRole(ctx, tx, projectUID, subjectUID, otherUID, rel.Role, kind)
 	if err != nil {
 		return AddResult{}, err
 	}
@@ -220,18 +220,18 @@ func resolveOther(ctx context.Context, tx pgx.Tx, projectUID string, rel AddRela
 // family is the node, so which of the pair the page was opened from is
 // presentation, not data — and the sibling role is symmetric for the same reason.
 func attachInRole(
-	ctx context.Context, tx pgx.Tx, subjectUID, otherUID string, role Role, kind ChildKind,
+	ctx context.Context, tx pgx.Tx, projectUID, subjectUID, otherUID string, role Role, kind ChildKind,
 ) (Family, error) {
 	switch role {
 	case RoleParent:
-		return attachChild(ctx, tx, subjectUID, otherUID, kind)
+		return attachChild(ctx, tx, projectUID, subjectUID, otherUID, kind)
 	case RoleChild:
-		return attachChild(ctx, tx, otherUID, subjectUID, kind)
+		return attachChild(ctx, tx, projectUID, otherUID, subjectUID, kind)
 	case RolePartner:
 		first, second := normalisePair(subjectUID, otherUID)
-		return findOrCreateFamily(ctx, tx, first, second)
+		return findOrCreateFamily(ctx, tx, projectUID, first, second)
 	case RoleSibling:
-		return attachSibling(ctx, tx, subjectUID, otherUID, kind)
+		return attachSibling(ctx, tx, projectUID, subjectUID, otherUID, kind)
 	default:
 		return Family{}, fmt.Errorf("%w: %q", ErrInvalidRole, role)
 	}

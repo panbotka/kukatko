@@ -160,12 +160,12 @@ func TestScopedLookups_answerOnlyForTheirProject(t *testing.T) {
 		twinUID, f.B.ProjectUID, f.A.PhotoFileHash, "2026/10/"+twinUID+".jpg"); err != nil {
 		t.Fatalf("cataloguing A's bytes in B: %v", err)
 	}
-	for _, uid := range []string{f.A.PhotoUID, twinUID} {
+	for uid, projectUID := range map[string]string{f.A.PhotoUID: f.A.ProjectUID, twinUID: f.B.ProjectUID} {
 		if _, err := db.Pool().Exec(ctx, `UPDATE photos SET photoprism_uid = 'pt-shared',
 			photoprism_file_hash = 'sha1-shared', photosorter_uid = 'ps-shared' WHERE uid = $1`, uid); err != nil {
 			t.Fatalf("stamping the shared source ids on %s: %v", uid, err)
 		}
-		if err := store.AddPhotoprismAlias(ctx, "pt-alias", uid, ""); err != nil {
+		if err := store.AddPhotoprismAlias(ctx, projectUID, "pt-alias", uid, ""); err != nil {
 			t.Fatalf("AddPhotoprismAlias(%s): %v", uid, err)
 		}
 	}

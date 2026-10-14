@@ -15,16 +15,25 @@ const uniqueViolation = "23505"
 
 // insertFaceSQL inserts a single face row and returns its assigned id and
 // created_at. The row carries a denormalised copy of its photo's project
-// (migration 0102), so a project-filtered kNN never joins photos. The photo
-// uid is bound twice ($1 and $14): one placeholder used for the VARCHAR
-// photo_uid column and the TEXT photos.uid fails type deduction (42P08).
+// (migration 0102), so a project-filtered kNN never joins photos. The copy is
+// read from the photo only inside the project $15 the caller names: a photo
+// of another project yields NULL, which the NOT NULL column refuses (see
+// isProjectViolation), so a face can never land in a project its photo is not
+// in. The photo uid is bound twice ($1 and $14): one placeholder used for the
+// VARCHAR photo_uid column and the TEXT photos.uid fails type deduction (42P08).
 const insertFaceSQL = `
 INSERT INTO faces (
     photo_uid, face_index, embedding, bbox, det_score, model, dim,
     marker_uid, subject_uid, subject_name, photo_width, photo_height, orientation, project_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-        (SELECT project_id FROM photos WHERE uid = $14))
+        (SELECT project_id FROM photos WHERE uid = $14 AND project_id = $15))
 RETURNING id, created_at`
+
+// notNullViolation is the SQLSTATE of a NULL written into a NOT NULL column.
+const notNullViolation = "23502"
+
+// photoProjectSQL reads the project of one photo by uid, for SaveFaces.
+const photoProjectSQL = `SELECT project_id FROM photos WHERE uid = $1`
 
 // faceColumns is the column list every face read selects, in scanFace order.
 const faceColumns = `id, photo_uid, face_index, embedding, bbox, det_score, model, dim, created_at,
@@ -103,6 +112,10 @@ WHERE f.project_id = $3`
 // re-running face detection for a photo is idempotent. Each vector is validated
 // against FaceDim (ErrDimMismatch otherwise). Two faces sharing a face_index
 // violate the UNIQUE(photo_uid, face_index) constraint and yield ErrFaceIndexTaken.
+// The faces land in the photo's own project, read in the same transaction; a
+// uid that names no photo is ErrPhotoNotInProject. The face detection worker
+// writes through RecordFaceDetection instead, naming the project it loaded the
+// photo in.
 func (s *Store) SaveFaces(ctx context.Context, photoUID string, faces []Face) error {
 	if err := validateFaceDims(faces); err != nil {
 		return err
@@ -113,7 +126,14 @@ func (s *Store) SaveFaces(ctx context.Context, photoUID string, faces []Face) er
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := replaceFaces(ctx, tx, photoUID, faces); err != nil {
+	var projectUID string
+	if err := tx.QueryRow(ctx, photoProjectSQL, photoUID).Scan(&projectUID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: %s", ErrPhotoNotInProject, photoUID)
+		}
+		return fmt.Errorf("reading the project of %s: %w", photoUID, err)
+	}
+	if err := replaceFaces(ctx, tx, projectUID, photoUID, faces); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -142,7 +162,9 @@ ON CONFLICT (photo_uid) DO UPDATE SET
 // detector saw. Recording the detection even when det.Faces is empty is what lets a
 // photo with no faces be told apart from one that was never processed, so the job
 // stays idempotent and the backfill skips it. Vectors are validated against FaceDim
-// (ErrDimMismatch) and a duplicate face_index yields ErrFaceIndexTaken.
+// (ErrDimMismatch) and a duplicate face_index yields ErrFaceIndexTaken. The faces
+// are written only while the photo is one of det.ProjectUID's: an empty project
+// is ErrNoProject, a photo of another one ErrPhotoNotInProject.
 //
 // Replacing is not forgetting: a re-detection first reads the assignments cached
 // on the rows it is about to delete and hands each one to the new face that lands
@@ -150,6 +172,9 @@ ON CONFLICT (photo_uid) DO UPDATE SET
 // does not un-name the people on it. Whatever the caller already set on a face is
 // left alone — an explicit assignment is never overwritten by an inherited one.
 func (s *Store) RecordFaceDetection(ctx context.Context, photoUID string, det Detection) error {
+	if err := requireProject(det.ProjectUID); err != nil {
+		return err
+	}
 	if err := validateFaceDims(det.Faces); err != nil {
 		return err
 	}
@@ -165,7 +190,7 @@ func (s *Store) RecordFaceDetection(ctx context.Context, photoUID string, det De
 	}
 	carryAssignments(det.Faces, assigned)
 
-	if err := replaceFaces(ctx, tx, photoUID, det.Faces); err != nil {
+	if err := replaceFaces(ctx, tx, det.ProjectUID, photoUID, det.Faces); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, upsertFaceDetectionSQL, photoUID, len(det.Faces), det.Model,
@@ -271,27 +296,33 @@ func validateFaceDims(faces []Face) error {
 }
 
 // replaceFaces deletes every existing face of photoUID and inserts the supplied
-// set within tx. Callers wrap it in a transaction they commit.
-func replaceFaces(ctx context.Context, tx pgx.Tx, photoUID string, faces []Face) error {
-	if _, err := tx.Exec(ctx, "DELETE FROM faces WHERE photo_uid = $1", photoUID); err != nil {
+// set, in the project projectUID, within tx. Callers wrap it in a transaction
+// they commit.
+func replaceFaces(ctx context.Context, tx pgx.Tx, projectUID, photoUID string, faces []Face) error {
+	const clearSQL = "DELETE FROM faces WHERE photo_uid = $1 AND project_id = $2"
+	if _, err := tx.Exec(ctx, clearSQL, photoUID, projectUID); err != nil {
 		return fmt.Errorf("clearing faces for %s: %w", photoUID, err)
 	}
-	return insertFaces(ctx, tx, photoUID, faces)
+	return insertFaces(ctx, tx, projectUID, photoUID, faces)
 }
 
-// insertFaces inserts each face row within tx, mapping a unique-constraint
-// violation on (photo_uid, face_index) to ErrFaceIndexTaken.
-func insertFaces(ctx context.Context, tx pgx.Tx, photoUID string, faces []Face) error {
+// insertFaces inserts each face row within tx, in the project projectUID,
+// mapping a unique-constraint violation on (photo_uid, face_index) to
+// ErrFaceIndexTaken and a photo outside the project to ErrPhotoNotInProject.
+func insertFaces(ctx context.Context, tx pgx.Tx, projectUID, photoUID string, faces []Face) error {
 	for i := range faces {
 		face := faces[i]
 		bbox := face.BBox
 		err := tx.QueryRow(ctx, insertFaceSQL,
 			photoUID, face.FaceIndex, ToHalfVec(face.Vector), bbox[:], face.DetScore,
 			face.Model, len(face.Vector), face.MarkerUID, face.SubjectUID,
-			face.SubjectName, face.PhotoWidth, face.PhotoHeight, face.Orientation, photoUID,
+			face.SubjectName, face.PhotoWidth, face.PhotoHeight, face.Orientation, photoUID, projectUID,
 		).Scan(&faces[i].ID, &faces[i].CreatedAt)
 		if isUniqueViolation(err) {
 			return fmt.Errorf("%w: photo %s face %d", ErrFaceIndexTaken, photoUID, face.FaceIndex)
+		}
+		if isProjectViolation(err) {
+			return fmt.Errorf("%w: photo %s, project %s", ErrPhotoNotInProject, photoUID, projectUID)
 		}
 		if err != nil {
 			return fmt.Errorf("inserting face %d for %s: %w", face.FaceIndex, photoUID, err)
@@ -514,19 +545,16 @@ func scanFace(rows pgx.Rows) (Face, error) {
 	return face, nil
 }
 
-// DeleteFaces removes every face of photoUID and returns how many rows were
-// deleted (zero when the photo had no faces).
-func (s *Store) DeleteFaces(ctx context.Context, photoUID string) (int64, error) {
-	tag, err := s.pool.Exec(ctx, "DELETE FROM faces WHERE photo_uid = $1", photoUID)
-	if err != nil {
-		return 0, fmt.Errorf("deleting faces for %s: %w", photoUID, err)
-	}
-	return tag.RowsAffected(), nil
-}
-
 // isUniqueViolation reports whether err is a PostgreSQL unique-constraint
 // violation.
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == uniqueViolation
+}
+
+// isProjectViolation reports whether err is insertFaceSQL's refusal: the
+// project copy came out NULL because the photo is not in the named project.
+func isProjectViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == notNullViolation && pgErr.ColumnName == "project_id"
 }

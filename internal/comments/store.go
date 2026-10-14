@@ -94,7 +94,7 @@ const mutationColumns = `uid, photo_uid, task_uid, album_uid, author_uid, body, 
 // so one statement still yields everything a thread needs to render.
 const authorJoin = ` LEFT JOIN users u ON u.uid = c.author_uid` +
 	` LEFT JOIN project_members um ON um.user_uid = c.author_uid AND um.project_uid = ` + commentProjectSQL +
-	` LEFT JOIN subjects s ON s.uid = um.subject_uid`
+	` LEFT JOIN subjects s ON s.uid = um.subject_uid AND s.project_id = um.project_uid`
 
 // parentTables maps each subject column to the root table its uid names. A
 // comment carries no project of its own: it belongs to the project of the

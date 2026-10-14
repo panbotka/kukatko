@@ -56,7 +56,7 @@ type SubjectSnapshot struct {
 const listSubjectCountsSQL = `
 SELECT ` + subjectColumns + `,
        (SELECT COUNT(*) FROM markers m WHERE m.subject_uid = s.uid),
-       (SELECT COUNT(*) FROM faces f WHERE f.subject_uid = s.uid)
+       (SELECT COUNT(*) FROM faces f WHERE f.subject_uid = s.uid AND f.project_id = s.project_id)
 FROM subjects s
 WHERE s.project_id = $1
 ORDER BY s.created_at, s.uid`

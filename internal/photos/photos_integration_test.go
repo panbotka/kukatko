@@ -83,9 +83,9 @@ func TestPhotoLifecycle(t *testing.T) {
 		t.Errorf("exif not round-tripped: %q", got.Exif)
 	}
 
-	byHash, err := store.GetByFileHash(ctx, "aaa1")
+	byHash, err := store.GetByFileHashInProject(ctx, project.BootstrapUID, "aaa1")
 	if err != nil || byHash.UID != created.UID {
-		t.Fatalf("GetByFileHash = %+v, %v", byHash, err)
+		t.Fatalf("GetByFileHashInProject = %+v, %v", byHash, err)
 	}
 
 	newTaken := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
@@ -251,71 +251,6 @@ func TestExternalIDLookups(t *testing.T) {
 	}
 	if _, err := store.GetByPhotoprismFileHash(ctx, project.BootstrapUID, "nope"); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("GetByPhotoprismFileHash(nope) = %v, want ErrPhotoNotFound", err)
-	}
-}
-
-// TestSetPhotoprismFileHash verifies the source file hash of a non-primary file (a
-// RAW sibling) can be backfilled onto a photo whose bytes were already catalogued,
-// without inventing a photoprism_uid for it: that column stays the 1:1 key of the
-// source photo's displayable file.
-func TestSetPhotoprismFileHash(t *testing.T) {
-	store, _ := newStore(t)
-	ctx := t.Context()
-
-	created, err := store.Create(ctx, samplePhoto("sibling"))
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	updated, err := store.SetPhotoprismFileHash(ctx, created.UID, "sha1raw")
-	if err != nil {
-		t.Fatalf("SetPhotoprismFileHash: %v", err)
-	}
-	if updated.PhotoprismFileHash == nil || *updated.PhotoprismFileHash != "sha1raw" {
-		t.Errorf("photoprism_file_hash = %v, want sha1raw", updated.PhotoprismFileHash)
-	}
-	if updated.PhotoprismUID != nil {
-		t.Errorf("photoprism_uid = %v, want nil (a sibling never claims the source photo)", updated.PhotoprismUID)
-	}
-	found, err := store.GetByPhotoprismFileHash(ctx, project.BootstrapUID, "sha1raw")
-	if err != nil || found.UID != created.UID {
-		t.Errorf("GetByPhotoprismFileHash after backfill = %+v, %v", found, err)
-	}
-
-	if _, err := store.SetPhotoprismFileHash(ctx, "ph_missing", "x"); !errors.Is(err, photos.ErrPhotoNotFound) {
-		t.Errorf("SetPhotoprismFileHash(missing) = %v, want ErrPhotoNotFound", err)
-	}
-}
-
-// TestSetPhotoprismRef verifies the PhotoPrism external IDs can be backfilled onto
-// a photo that was catalogued without them (the SHA256-dedup path of the import).
-func TestSetPhotoprismRef(t *testing.T) {
-	store, _ := newStore(t)
-	ctx := t.Context()
-
-	created, err := store.Create(ctx, samplePhoto("ref"))
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	if created.PhotoprismUID != nil {
-		t.Fatalf("seed photo already has a photoprism_uid: %v", created.PhotoprismUID)
-	}
-
-	updated, err := store.SetPhotoprismRef(ctx, created.UID, "ppNEWuid", "sha1hash")
-	if err != nil {
-		t.Fatalf("SetPhotoprismRef: %v", err)
-	}
-	if updated.PhotoprismUID == nil || *updated.PhotoprismUID != "ppNEWuid" ||
-		updated.PhotoprismFileHash == nil || *updated.PhotoprismFileHash != "sha1hash" {
-		t.Errorf("refs = %v / %v, want ppNEWuid / sha1hash", updated.PhotoprismUID, updated.PhotoprismFileHash)
-	}
-	byPP, err := store.GetByPhotoprismUID(ctx, project.BootstrapUID, "ppNEWuid")
-	if err != nil || byPP.UID != created.UID {
-		t.Errorf("GetByPhotoprismUID after backfill = %+v, %v", byPP, err)
-	}
-
-	if _, err := store.SetPhotoprismRef(ctx, "ph_missing", "x", "y"); !errors.Is(err, photos.ErrPhotoNotFound) {
-		t.Errorf("SetPhotoprismRef(missing) = %v, want ErrPhotoNotFound", err)
 	}
 }
 
@@ -557,9 +492,9 @@ func TestCascadeDelete(t *testing.T) {
 	}
 }
 
-// TestListByUIDs verifies the batch lookup returns the requested photos
+// TestListByUIDsInProject verifies the batch lookup returns the requested photos
 // (ignoring unknown uids) and that an empty input is a no-op.
-func TestListByUIDs(t *testing.T) {
+func TestListByUIDsInProject(t *testing.T) {
 	store, _ := newStore(t)
 	ctx := t.Context()
 
@@ -572,23 +507,23 @@ func TestListByUIDs(t *testing.T) {
 		t.Fatalf("create b: %v", err)
 	}
 
-	got, err := store.ListByUIDs(ctx, []string{a.UID, b.UID, "ph_missing"})
+	got, err := store.ListByUIDsInProject(ctx, project.BootstrapUID, []string{a.UID, b.UID, "ph_missing"})
 	if err != nil {
-		t.Fatalf("ListByUIDs: %v", err)
+		t.Fatalf("ListByUIDsInProject: %v", err)
 	}
 	if len(got) != 2 {
-		t.Fatalf("ListByUIDs returned %d photos, want 2", len(got))
+		t.Fatalf("ListByUIDsInProject returned %d photos, want 2", len(got))
 	}
 	found := map[string]bool{}
 	for _, p := range got {
 		found[p.UID] = true
 	}
 	if !found[a.UID] || !found[b.UID] {
-		t.Errorf("ListByUIDs = %v, want %s and %s", found, a.UID, b.UID)
+		t.Errorf("ListByUIDsInProject = %v, want %s and %s", found, a.UID, b.UID)
 	}
 
-	empty, err := store.ListByUIDs(ctx, nil)
+	empty, err := store.ListByUIDsInProject(ctx, project.BootstrapUID, nil)
 	if err != nil || len(empty) != 0 {
-		t.Errorf("ListByUIDs(nil) = %v, %v; want empty, nil", empty, err)
+		t.Errorf("ListByUIDsInProject(nil) = %v, %v; want empty, nil", empty, err)
 	}
 }

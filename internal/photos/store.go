@@ -246,15 +246,6 @@ func (s *Store) GetByUIDInProject(ctx context.Context, projectUID, uid string) (
 	return s.getPhotoInProject(ctx, projectUID, "uid", uid)
 }
 
-// GetByFileHash returns the photo with the given SHA256 file hash in whichever
-// project holds it, or ErrPhotoNotFound. It is the unscoped dedup lookup of the
-// upload pipeline, which is scoped together with the write side; since the
-// hash is unique per project only, it answers for one arbitrary holder when
-// several projects catalogued the same bytes.
-func (s *Store) GetByFileHash(ctx context.Context, hash string) (Photo, error) {
-	return s.getPhoto(ctx, "file_hash", hash)
-}
-
 // GetByFileHashInProject returns the project's photo with the given SHA256 file
 // hash, or ErrPhotoNotFound — also when only another project holds those bytes.
 // An empty projectUID is ErrNoProject.
@@ -285,67 +276,6 @@ func (s *Store) GetByPhotoprismFileHash(ctx context.Context, projectUID, ppFileH
 // photo-sorter UID, or ErrPhotoNotFound. An empty projectUID is ErrNoProject.
 func (s *Store) GetByPhotosorterUID(ctx context.Context, projectUID, psUID string) (Photo, error) {
 	return s.getPhotoInProject(ctx, projectUID, "photosorter_uid", psUID)
-}
-
-// SetPhotoprismRef stamps the PhotoPrism external identifiers (the photo's
-// PhotoPrism UID and its SHA1 file hash) onto the photo identified by uid and
-// returns the refreshed photo. It backfills the provenance of a photo whose
-// content was deduplicated by SHA256 against an already-catalogued file, so the
-// row still answers to the source uid it came from. It returns ErrPhotoNotFound
-// if no such photo exists.
-func (s *Store) SetPhotoprismRef(ctx context.Context, uid, ppUID, ppFileHash string) (Photo, error) {
-	q := `UPDATE photos SET photoprism_uid = $2, photoprism_file_hash = $3, updated_at = now()
-		WHERE uid = $1 RETURNING ` + photoColumns
-	photo, err := scanPhoto(s.pool.QueryRow(ctx, q, uid, ppUID, ppFileHash))
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Photo{}, ErrPhotoNotFound
-		}
-		return Photo{}, err
-	}
-	return photo, nil
-}
-
-// SetPhotoprismFileHash stamps the PhotoPrism SHA1 file hash onto the photo
-// identified by uid and returns the refreshed photo, leaving photoprism_uid
-// alone. The PhotoPrism import uses it for a NON-PRIMARY source file (a RAW
-// sibling) whose bytes were already catalogued under another photo: without the
-// reference, every later run would re-download that file only to deduplicate it
-// again on its SHA256. It deliberately does not touch photoprism_uid, which
-// stays the 1:1 key of the source photo's displayable file (see
-// GetByPhotoprismFileHash). It returns ErrPhotoNotFound if no such photo exists.
-func (s *Store) SetPhotoprismFileHash(ctx context.Context, uid, ppFileHash string) (Photo, error) {
-	q := `UPDATE photos SET photoprism_file_hash = $2, updated_at = now()
-		WHERE uid = $1 RETURNING ` + photoColumns
-	photo, err := scanPhoto(s.pool.QueryRow(ctx, q, uid, ppFileHash))
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Photo{}, ErrPhotoNotFound
-		}
-		return Photo{}, err
-	}
-	return photo, nil
-}
-
-// SetPhotosorterRef stamps the photo-sorter external identifier onto the photo
-// identified by uid and returns the refreshed photo. The photo-sorter migration
-// uses it to backfill the reference onto a photo whose content was deduplicated
-// by SHA256 against an already-catalogued file (for example one uploaded directly
-// or imported from PhotoPrism), so subsequent migration runs short-circuit on the
-// photosorter_uid lookup instead of re-copying the original and so the migrated
-// embeddings and faces attach to the existing photo. It returns ErrPhotoNotFound
-// if no such photo exists.
-func (s *Store) SetPhotosorterRef(ctx context.Context, uid, psUID string) (Photo, error) {
-	q := `UPDATE photos SET photosorter_uid = $2, updated_at = now()
-		WHERE uid = $1 RETURNING ` + photoColumns
-	photo, err := scanPhoto(s.pool.QueryRow(ctx, q, uid, psUID))
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Photo{}, ErrPhotoNotFound
-		}
-		return Photo{}, err
-	}
-	return photo, nil
 }
 
 // getPhoto fetches a single photo filtered by an equality on the trusted column
@@ -382,10 +312,10 @@ func (s *Store) getPhotoInProject(ctx context.Context, projectUID, col, val stri
 }
 
 // ListByUIDsInProject returns the photos of the project whose uid is in uids,
-// in unspecified order: ListByUIDs with every foreign uid dropped as if it were
-// missing. It is what a reader-facing handler resolves a set of candidate uids
-// with (the similar photos, say), so a candidate from another project's vectors
-// can never surface. An empty input returns an empty slice without querying; an
+// in unspecified order, every foreign uid dropped as if it were missing. It is
+// what a reader-facing handler resolves a set of candidate uids with (the
+// similar photos, say), so a candidate from another project's vectors can
+// never surface. An empty input returns an empty slice without querying; an
 // empty projectUID is ErrNoProject.
 func (s *Store) ListByUIDsInProject(ctx context.Context, projectUID string, uids []string) ([]Photo, error) {
 	if err := requireProject(projectUID); err != nil {
@@ -419,21 +349,6 @@ func (s *Store) queryPhotos(ctx context.Context, what, q string, args ...any) ([
 		return nil, fmt.Errorf("photos: iterating (%s): %w", what, err)
 	}
 	return out, nil
-}
-
-// ListByUIDs returns the photos whose uid is in uids, in unspecified order. It
-// is a batch lookup for callers that already hold a set of uids (for example the
-// similar-photos endpoint, which resolves vector matches to photo records) and
-// want to avoid issuing one query per uid. Missing uids are simply absent from
-// the result; an empty input returns an empty slice without querying. It is
-// unscoped — kept for the callers that are scoped in later steps; a reader-
-// facing handler uses ListByUIDsInProject.
-func (s *Store) ListByUIDs(ctx context.Context, uids []string) ([]Photo, error) {
-	if len(uids) == 0 {
-		return []Photo{}, nil
-	}
-	q := "SELECT " + photoColumns + " FROM photos WHERE uid = ANY($1)"
-	return s.queryPhotos(ctx, "listing by uids", q, uids)
 }
 
 // UpdateMetadata applies the user-editable metadata in m to the project's photo

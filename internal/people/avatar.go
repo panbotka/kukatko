@@ -57,7 +57,7 @@ const subjectAvatarSelect = `
 WITH best_face AS (
     SELECT m.photo_uid, m.x, m.y, m.w, m.h
     FROM markers m
-    JOIN photos p ON p.uid = m.photo_uid
+    JOIN photos p ON p.uid = m.photo_uid AND p.project_id = $2
     WHERE m.subject_uid = $1
       AND m.type = 'face'
       AND m.invalid = FALSE

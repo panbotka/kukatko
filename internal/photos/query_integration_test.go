@@ -434,7 +434,7 @@ func TestQueryLanguage_uid(t *testing.T) {
 	// winter carries a PhotoPrism source uid from the fixture; a second source
 	// photo of the same bytes is recorded as an alias onto it.
 	const ppAlias = "pt9suk5b57jgshdz"
-	if err := lib.store.AddPhotoprismAlias(ctx, ppAlias, lib.uids["winter"], ""); err != nil {
+	if err := lib.store.AddPhotoprismAlias(ctx, project.BootstrapUID, ppAlias, lib.uids["winter"], ""); err != nil {
 		t.Fatalf("AddPhotoprismAlias: %v", err)
 	}
 

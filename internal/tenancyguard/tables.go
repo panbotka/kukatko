@@ -1,18 +1,22 @@
 // Package tenancyguard is the static half of tenant isolation: it finds the SQL
 // statements in the Go sources that touch a catalogue root table — or read a
-// read-scoped table such as audit_log — without naming the project they belong
-// to. Its test runs inside `make check`, so a future
-// query that forgets its `project_id` predicate fails the gate instead of
-// leaking one project's rows into another.
+// read-scoped or keyed child table such as audit_log or photo_phashes —
+// without tying it to the project it belongs to. Its test runs inside `make
+// check`, so a future query that forgets its `project_id` predicate fails the
+// gate instead of leaking one project's rows into another.
 //
 // The scan is deliberately textual. It folds every string expression it can
 // see — literals, `+` concatenations, package-level constants, `fmt.Sprintf`
-// and `strings.Join` — into one statement text, finds the root tables named
-// after FROM/JOIN/UPDATE/INTO, and asks whether the same statement names the
-// table's project column in a position that constrains or writes the row: after
-// WHERE, in a JOIN … ON condition, an INSERT column list, an UPDATE … SET list
-// or an ON CONFLICT target, at any subquery depth. A project column only in a
-// select list (or ORDER BY, RETURNING…) scopes nothing. Legitimate
+// and `strings.Join` — into one statement text, blanks its SQL comments, and
+// walks it with a small parser (unscopedRefs): every root table named after
+// FROM/JOIN/USING/UPDATE/INTO, with its alias, must be tied to one project by
+// its own predicate — a top-level AND term `<alias>.project_id = <value or
+// another scoped alias's project_id>` of a WHERE or JOIN … ON (never under OR
+// or NOT, never a NULL test), or its project column in an INSERT's own column
+// list. A project column in a select list, SET list, ORDER BY or comment
+// scopes nothing, and a predicate on one alias scopes no other. A finding is
+// anchored at the statement's use site: the line naming a shared constant,
+// so one allow-list entry never covers a second use of it. Legitimate
 // instance-wide statements (worker loaders, maintenance, metrics, reset,
 // backup) are listed in allow.txt with a reason.
 package tenancyguard
@@ -96,7 +100,3 @@ var ExemptTables = map[string]string{
 
 // projectColumns are the column names that tie a row to a project.
 var projectColumns = []string{"project_id", "project_uid"}
-
-// childProjectColumn is the project column a keyed child table's read is
-// scoped by: the one its parent root table carries.
-const childProjectColumn = "project_id"

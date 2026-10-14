@@ -365,9 +365,9 @@ func assertAssigned(t *testing.T, e *env, hashUID string) {
 // photoUID resolves a seeded photo's uid from its file hash.
 func (e *env) photoUID(t *testing.T, hash string) string {
 	t.Helper()
-	photo, err := e.photos.GetByFileHash(t.Context(), hash)
+	photo, err := e.photos.GetByFileHashInProject(t.Context(), project.BootstrapUID, hash)
 	if err != nil {
-		t.Fatalf("GetByFileHash %s: %v", hash, err)
+		t.Fatalf("GetByFileHashInProject %s: %v", hash, err)
 	}
 	return photo.UID
 }

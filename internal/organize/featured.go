@@ -273,7 +273,7 @@ FROM albums a
 JOIN featured f ON f.uid = a.uid
 LEFT JOIN members m ON m.album_uid = a.uid
 LEFT JOIN photos picked ON picked.uid = a.cover_photo_uid AND picked.project_id = a.project_id
-LEFT JOIN photos derived ON derived.uid = m.cover_uids[1]
+LEFT JOIN photos derived ON derived.uid = m.cover_uids[1] AND derived.project_id = a.project_id
 ORDER BY a.featured_at DESC NULLS LAST, a.uid`
 
 // ListFeaturedAlbums returns the albums of the project featured on its homepage

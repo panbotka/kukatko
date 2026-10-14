@@ -59,9 +59,11 @@ SELECT
         WHERE project_id = $1 AND archived_at IS NULL AND NOT hidden_from_library
           AND stack_uid IS NOT NULL AND NOT stack_primary),
     (SELECT count(*) FROM photos p
-        WHERE p.project_id = $1 AND EXISTS (SELECT 1 FROM embeddings e WHERE e.photo_uid = p.uid)),
+        WHERE p.project_id = $1
+          AND EXISTS (SELECT 1 FROM embeddings e WHERE e.photo_uid = p.uid AND e.project_id = $1)),
     (SELECT count(*) FROM photos p
-        WHERE p.project_id = $1 AND EXISTS (SELECT 1 FROM faces f WHERE f.photo_uid = p.uid)),
+        WHERE p.project_id = $1
+          AND EXISTS (SELECT 1 FROM faces f WHERE f.photo_uid = p.uid AND f.project_id = $1)),
     (SELECT count(*) FROM photos WHERE project_id = $1 AND lat IS NOT NULL AND lng IS NOT NULL),
     (SELECT count(*) FROM photo_places pp JOIN photos p ON p.uid = pp.photo_uid
         WHERE p.project_id = $1 AND pp.lat IS NOT NULL AND pp.lng IS NOT NULL),

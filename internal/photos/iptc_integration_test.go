@@ -89,12 +89,12 @@ func TestIPTCColumns_roundTrip(t *testing.T) {
 	}
 	assertIPTC(t, got)
 
-	listed, err := store.ListByUIDs(ctx, []string{created.UID})
+	listed, err := store.ListByUIDsInProject(ctx, project.BootstrapUID, []string{created.UID})
 	if err != nil {
-		t.Fatalf("ListByUIDs: %v", err)
+		t.Fatalf("ListByUIDsInProject: %v", err)
 	}
 	if len(listed) != 1 {
-		t.Fatalf("ListByUIDs returned %d photos, want 1", len(listed))
+		t.Fatalf("ListByUIDsInProject returned %d photos, want 1", len(listed))
 	}
 	assertIPTC(t, listed[0])
 }

@@ -21,6 +21,7 @@ const relativeColumns = `s.uid, s.slug, s.name, s.type, s.birth_year, s.death_ye
           FROM markers m
           JOIN photos p ON p.uid = m.photo_uid
          WHERE m.subject_uid = s.uid
+           AND p.project_id = s.project_id
            AND m.invalid = FALSE
            AND p.archived_at IS NULL
            AND (p.stack_uid IS NULL OR p.stack_primary))`
@@ -100,7 +101,7 @@ func getRelative(ctx context.Context, q querier, projectUID, uid string) (Relati
 const parentsSQL = "SELECT " + relativeColumns + `, f.uid, c.kind
 FROM subject_family_children c
 JOIN subject_families f ON f.uid = c.family_uid
-JOIN subjects s ON s.uid IN (f.partner_a_uid, f.partner_b_uid)
+JOIN subjects s ON s.uid IN (f.partner_a_uid, f.partner_b_uid) AND s.project_id = f.project_id
 WHERE c.child_uid = $1 AND f.project_id = $2` + relativeOrder
 
 // siblingsSQL reads the other children of the family the subject is a child in.
@@ -110,7 +111,7 @@ const siblingsSQL = "SELECT " + relativeColumns + `, f.uid, c2.kind
 FROM subject_family_children c
 JOIN subject_families f ON f.uid = c.family_uid
 JOIN subject_family_children c2 ON c2.family_uid = f.uid AND c2.child_uid <> c.child_uid
-JOIN subjects s ON s.uid = c2.child_uid
+JOIN subjects s ON s.uid = c2.child_uid AND s.project_id = f.project_id
 WHERE c.child_uid = $1 AND f.project_id = $2` + relativeOrder
 
 // childrenSQL reads the children of every family the subject is a partner in, so
@@ -119,7 +120,7 @@ WHERE c.child_uid = $1 AND f.project_id = $2` + relativeOrder
 const childrenSQL = "SELECT " + relativeColumns + `, f.uid, c.kind
 FROM subject_families f
 JOIN subject_family_children c ON c.family_uid = f.uid
-JOIN subjects s ON s.uid = c.child_uid
+JOIN subjects s ON s.uid = c.child_uid AND s.project_id = f.project_id
 WHERE (f.partner_a_uid = $1 OR f.partner_b_uid = $1) AND f.project_id = $2` + relativeOrder
 
 // partnersSQL reads every family the subject is a partner in together with the
@@ -132,6 +133,7 @@ SELECT f.uid, f.partner_a_uid, f.partner_b_uid, f.kind, f.from_year, f.to_year,
 FROM subject_families f
 LEFT JOIN subjects s ON s.uid = CASE WHEN f.partner_a_uid = $1 THEN f.partner_b_uid
                                      ELSE f.partner_a_uid END
+                     AND s.project_id = f.project_id
 WHERE (f.partner_a_uid = $1 OR f.partner_b_uid = $1) AND f.project_id = $2
 ORDER BY f.from_year NULLS LAST, f.created_at, f.uid`
 

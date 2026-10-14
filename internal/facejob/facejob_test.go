@@ -178,7 +178,7 @@ func TestDetect_success(t *testing.T) {
 	t.Parallel()
 
 	ps := &fakePhotoStore{photos: map[string]photos.Photo{
-		"ph1": {UID: "ph1", FileWidth: 1000, FileHeight: 500, FileOrientation: 1},
+		"ph1": {UID: "ph1", FileWidth: 1000, FileHeight: 500, FileOrientation: 1, ProjectID: "pj1"},
 	}}
 	vs := &fakeVectorStore{}
 	client := &fakeClient{model: "buffalo_l", faces: []embedding.Face{
@@ -196,6 +196,9 @@ func TestDetect_success(t *testing.T) {
 	rec := vs.recorded[0]
 	if rec.photoUID != "ph1" || rec.det.Model != "buffalo_l" || len(rec.det.Faces) != 1 {
 		t.Fatalf("recorded = %+v, want ph1/buffalo_l/1 face", rec)
+	}
+	if rec.det.ProjectUID != "pj1" {
+		t.Errorf("recorded project = %q, want the photo's own (pj1)", rec.det.ProjectUID)
 	}
 	if rec.det.FrameWidth != 1000 || rec.det.FrameHeight != 500 {
 		t.Errorf("recorded frame = %dx%d, want the frame that was sent (1000x500)",

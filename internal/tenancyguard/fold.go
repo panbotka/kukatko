@@ -27,6 +27,20 @@ type piece struct {
 	// raw is the literal's whole unquoted value and off the text's offset in it.
 	raw string
 	off int
+	// use is where the package-level constant or variable holding the literal
+	// is named by the expression being folded (the outermost such name), or
+	// token.NoPos for a literal written in the expression itself. A finding
+	// is anchored there: a shared constant is judged, and allow-listed, at
+	// each statement that uses it, never once for all of them.
+	use token.Pos
+}
+
+// usedAt anchors pieces folded from a package-level name at its use.
+func usedAt(pieces []piece, use token.Pos) []piece {
+	for i := range pieces {
+		pieces[i].use = use
+	}
+	return pieces
 }
 
 // isStringExpr reports whether e is an expression the scan folds: a string
@@ -109,7 +123,7 @@ func (p *pkgScan) foldIdent(id *ast.Ident, seen []string) []piece {
 	}
 	if v, ok := p.decls[id.Name]; ok && p.isStringExpr(v) {
 		p.used[id.Name] = true
-		return p.fold(v, append(seen, id.Name))
+		return usedAt(p.fold(v, append(seen, id.Name)), id.Pos())
 	}
 	return []piece{p.unknown(id)}
 }
@@ -205,7 +219,7 @@ func (f *sprintfFold) literal(pc piece) {
 
 // sub cuts text[from:to] out of a literal piece, keeping its location.
 func sub(pc piece, from, to int) piece {
-	return piece{text: pc.text[from:to], lit: pc.lit, raw: pc.raw, off: pc.off + from}
+	return piece{text: pc.text[from:to], lit: pc.lit, raw: pc.raw, off: pc.off + from, use: pc.use}
 }
 
 // foldJoin folds strings.Join(elems, sep) when elems is a composite literal
@@ -228,7 +242,11 @@ func (p *pkgScan) foldJoin(call *ast.CallExpr, seen []string) []piece {
 		if i > 0 {
 			out = append(out, sep...)
 		}
-		out = append(out, p.fold(el, seen)...)
+		pieces := p.fold(el, seen)
+		if lit != call.Args[0] {
+			pieces = usedAt(pieces, call.Args[0].Pos())
+		}
+		out = append(out, pieces...)
 	}
 	return out
 }

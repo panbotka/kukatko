@@ -281,6 +281,7 @@ func (s *Service) detect(ctx context.Context, photoUID string, force bool) (int,
 		Model:       detection.model,
 		FrameWidth:  detection.frameWidth,
 		FrameHeight: detection.frameHeight,
+		ProjectUID:  photo.ProjectID,
 	}); err != nil {
 		return 0, fmt.Errorf("facejob: recording faces for %s: %w", photoUID, err)
 	}

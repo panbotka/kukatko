@@ -94,8 +94,30 @@ func TestScanFiles(t *testing.T) {
 			body: "const base = `SELECT uid FROM photos p`\nfunc f() { q(base + ` WHERE p.project_id = $1`) }",
 		},
 		{
-			name: "package constant used directly is judged by itself",
+			name: "package constant used directly is judged at its use",
 			body: "const base = `SELECT uid FROM photos p`\nfunc f() { q(base) }",
+			want: []string{"4:photos"},
+		},
+		{
+			name: "a shared constant is judged at every use",
+			body: "const base = `SELECT uid FROM photos p`\nfunc f() {\nq(base)\nr(base)\n}",
+			want: []string{"5:photos", "6:photos"},
+		},
+		{
+			name: "a shared constant is reported only where it is left unscoped",
+			body: "const base = `SELECT uid FROM photos p`\nfunc f() {\nq(base + ` WHERE p.project_id = $1`)\n" +
+				"q(base + ` WHERE p.uid = $1`)\n}",
+			want: []string{"6:photos"},
+		},
+		{
+			name: "a constant folded into a constant is anchored at the outer use",
+			body: "const inner = `SELECT uid FROM photos p`\nconst outer = inner + ` WHERE p.uid = $1`\n" +
+				"func f() { q(outer) }",
+			want: []string{"5:photos"},
+		},
+		{
+			name: "a comment names no project",
+			body: "func f() { q(\"SELECT uid FROM photos WHERE uid = $1 -- AND project_id = $2\") }",
 			want: []string{"3:photos"},
 		},
 		{
@@ -155,8 +177,13 @@ func TestScanFiles(t *testing.T) {
 		},
 		{
 			name: "a raw literal reports the line of its table",
+			body: "func f() {\nq(`SELECT uid\n  , taken_at\nFROM photos\nWHERE uid = $1`)\n}",
+			want: []string{"6:photos"},
+		},
+		{
+			name: "a raw constant reports the line of its use",
 			body: "const listSQL = `SELECT uid\n  , taken_at\nFROM photos\nWHERE uid = $1`\nfunc f() { q(listSQL) }",
-			want: []string{"5:photos"},
+			want: []string{"7:photos"},
 		},
 		{
 			name: "one finding per statement, every unscoped table listed",
@@ -219,6 +246,25 @@ func TestScanFiles(t *testing.T) {
 				t.Errorf("findings = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestScanFiles_origin checks a finding anchored at a constant's use still
+// names where the table sits: the constant's own line.
+func TestScanFiles_origin(t *testing.T) {
+	t.Parallel()
+	fset := token.NewFileSet()
+	src := "package p\n\nconst listSQL = `SELECT uid\nFROM photos`\n\nfunc f() { q(listSQL) }\n"
+	file, err := parser.ParseFile(fset, "/root/p/x.go", src, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	findings := ScanFiles(fset, "/root", []*ast.File{file})
+	if len(findings) != 1 || findings[0].Key() != "p/x.go:6" || findings[0].Origin != "p/x.go:4" {
+		t.Fatalf("findings = %+v, want one at p/x.go:6 from p/x.go:4", findings)
+	}
+	if !strings.Contains(findings[0].String(), "(table named at p/x.go:4)") {
+		t.Errorf("String() = %q, want the origin named", findings[0].String())
 	}
 }
 

@@ -53,10 +53,10 @@ SELECT l.uid, l.title, l.note, l.created_by,
        l.created_at, l.expires_at, COALESCE(l.code, ''), l.revoked_at, l.upload_count, l.last_used_at,
        COALESCE((SELECT json_agg(json_build_object('uid', a.uid, 'name', a.title) ORDER BY a.title, a.uid)
                  FROM upload_link_albums la JOIN albums a ON a.uid = la.album_uid
-                 WHERE la.link_uid = l.uid), '[]'::json),
+                 WHERE la.link_uid = l.uid AND a.project_id = l.project_id), '[]'::json),
        COALESCE((SELECT json_agg(json_build_object('uid', b.uid, 'name', b.name) ORDER BY b.name, b.uid)
                  FROM upload_link_labels lb JOIN labels b ON b.uid = lb.label_uid
-                 WHERE lb.link_uid = l.uid), '[]'::json),
+                 WHERE lb.link_uid = l.uid AND b.project_id = l.project_id), '[]'::json),
        l.project_id
 FROM upload_links l
 LEFT JOIN users u ON u.uid = l.created_by`

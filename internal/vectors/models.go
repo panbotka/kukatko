@@ -62,6 +62,9 @@ var (
 	// without a project — a programming error, never "search the whole
 	// instance".
 	ErrNoProject = errors.New("vectors: no project given")
+	// ErrPhotoNotInProject indicates faces were written for a photo that is not
+	// one of the named project's (or no photo at all).
+	ErrPhotoNotInProject = errors.New("vectors: photo is not in the project")
 )
 
 // Embedding is a single image embedding row: one SigLIP 2 vector per photo plus
@@ -141,6 +144,9 @@ type Detection struct {
 	// saw.
 	FrameWidth  int
 	FrameHeight int
+	// ProjectUID is the project of the photo, as the caller loaded it; the
+	// faces are written only while the photo is still one of its. Required.
+	ProjectUID string
 }
 
 // Match is one image-embedding similarity hit: the photo and its cosine distance

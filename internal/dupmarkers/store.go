@@ -37,8 +37,8 @@ FROM (
            p.title, p.taken_at, p.file_width, p.file_height, p.file_orientation,
            COUNT(*) OVER (PARTITION BY m.photo_uid, m.subject_uid) AS group_size
     FROM markers m
-    JOIN subjects s ON s.uid = m.subject_uid
     JOIN photos p ON p.uid = m.photo_uid
+    JOIN subjects s ON s.uid = m.subject_uid AND s.project_id = p.project_id
     WHERE p.project_id = $1
       AND m.invalid = FALSE
       AND m.type = 'face'
