@@ -1,5 +1,5 @@
 import { ApiError } from './auth'
-import { apiPath, instancePath } from './api'
+import { instancePath, projectApiPath } from './api'
 
 /**
  * Admin library-maintenance client, mirroring the backend JSON shapes from
@@ -198,9 +198,16 @@ export interface NamelessReport {
   face_total: number
 }
 
-/** Runs the read-only nameless-subject report. Safe: it never writes. */
-export async function fetchNamelessSubjects(signal?: AbortSignal): Promise<NamelessReport> {
-  const res = await fetch(apiPath('/maintenance/nameless-subjects'), {
+/**
+ * Runs the read-only nameless-subject report in `project` (a slug the caller
+ * picked — the instance-level page never relies on the current project). Safe:
+ * it never writes.
+ */
+export async function fetchNamelessSubjects(
+  project: string,
+  signal?: AbortSignal,
+): Promise<NamelessReport> {
+  const res = await fetch(projectApiPath(project, '/maintenance/nameless-subjects'), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -232,7 +239,7 @@ function attachmentName(res: Response, fallback: string): string {
 }
 
 /**
- * Applies the nameless-subject repair: the response body *is* the undo file, so
+ * Applies the nameless-subject repair in `project`: the response body *is* the undo file, so
  * it is saved to the user's downloads before this resolves. The backend writes
  * the file first and schedules the detach only once it has gone out — the HTTP
  * form of the CLI refusing `--apply` without `--undo-file` — and the stream ends
@@ -244,8 +251,11 @@ function attachmentName(res: Response, fallback: string): string {
  * @throws ApiError with `status` 409 (nothing to detach), 503 (repair not wired)
  *   or 5xx so the caller can render the matching message.
  */
-export async function detachNamelessSubjects(signal?: AbortSignal): Promise<NamelessUndoFile> {
-  const res = await fetch(apiPath('/maintenance/nameless-subjects/detach'), {
+export async function detachNamelessSubjects(
+  project: string,
+  signal?: AbortSignal,
+): Promise<NamelessUndoFile> {
+  const res = await fetch(projectApiPath(project, '/maintenance/nameless-subjects/detach'), {
     method: 'POST',
     credentials: 'same-origin',
     signal,
@@ -269,7 +279,7 @@ export interface NamelessRestoreResult {
 }
 
 /**
- * Replays an undo file: every subject it records is re-created under its original
+ * Replays an undo file into `project`: every subject it records is re-created under its original
  * uid and the markers and faces it owned are re-assigned. The work runs in the
  * background job queue, so the result reports what was scheduled, not what is
  * already done.
@@ -277,10 +287,11 @@ export interface NamelessRestoreResult {
  * @throws ApiError with `status` 400 (not a usable undo file), 503 or 5xx.
  */
 export async function restoreNamelessSubjects(
+  project: string,
   file: File,
   signal?: AbortSignal,
 ): Promise<NamelessRestoreResult> {
-  const res = await fetch(apiPath('/maintenance/nameless-subjects/restore'), {
+  const res = await fetch(projectApiPath(project, '/maintenance/nameless-subjects/restore'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },

@@ -3566,7 +3566,15 @@
       "restoreError": "Vrácení zpět se nezdařilo.",
       "restoreResult": "Naplánováno obnovení {{queued}} osob; běží na pozadí.",
       "uidLabel": "Vnitřní identifikátor",
-      "slugLabel": "Jméno v adrese"
+      "slugLabel": "Jméno v adrese",
+      "projectLabel": "Projekt",
+      "projectPlaceholder": "Vyberte projekt…",
+      "projectInactive": "{{name}} (vypnutý)",
+      "projectsLoading": "Načítám projekty…",
+      "projectsError": "Seznam projektů se nepodařilo načíst.",
+      "projectsEmpty": "Na téhle instanci zatím není žádný projekt.",
+      "pickProject": "Nejdřív vyberte projekt, ve kterém se má kontrolovat.",
+      "confirmProject": "Projekt: {{name}}"
     }
   },
   "duplicates": {

@@ -54,3 +54,13 @@ export function apiPath(path: string): string {
   }
   return `${API_ROOT}/p/${encodeURIComponent(currentProjectSlug)}${path}`
 }
+
+/**
+ * The URL of a project-scoped route in the named project:
+ * `/api/v1/p/<project>` + `path`. For an instance-level page that acts on a
+ * project the maintainer picked (the nameless-subject repair on `/maintenance`)
+ * — the request must say which project, never fall back on the current one.
+ */
+export function projectApiPath(project: string, path: string): string {
+  return `${API_ROOT}/p/${encodeURIComponent(project)}${path}`
+}

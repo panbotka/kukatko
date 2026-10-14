@@ -21,6 +21,11 @@ vi.mock('../services/maintenance', () => ({
   restoreNamelessSubjects: vi.fn(),
 }))
 
+// The card's project picker lists every project of the instance.
+vi.mock('../services/projects', () => ({
+  fetchAdminProjects: vi.fn(),
+}))
+
 vi.mock('../services/import', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/import')>()
   return { ...actual, fetchJobStats: vi.fn() }
@@ -29,6 +34,7 @@ vi.mock('../services/import', async (importOriginal) => {
 const { fetchMaintenanceScan, runMaintenanceRepair, purgeAuditLog } =
   await import('../services/maintenance')
 const { fetchJobStats } = await import('../services/import')
+const { fetchAdminProjects } = await import('../services/projects')
 const scanMock = vi.mocked(fetchMaintenanceScan)
 const repairMock = vi.mocked(runMaintenanceRepair)
 const purgeMock = vi.mocked(purgeAuditLog)
@@ -130,6 +136,7 @@ function renderPage(value: AuthContextValue = auth({ isMaintainer: true })) {
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+  vi.mocked(fetchAdminProjects).mockResolvedValue([])
   scanMock.mockReset()
   repairMock.mockReset()
   purgeMock.mockReset()

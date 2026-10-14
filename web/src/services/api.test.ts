@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { apiPath, getCurrentProjectSlug, instancePath, setCurrentProjectSlug } from './api'
+import {
+  apiPath,
+  getCurrentProjectSlug,
+  instancePath,
+  projectApiPath,
+  setCurrentProjectSlug,
+} from './api'
 
 beforeEach(() => {
   setCurrentProjectSlug(null)
@@ -43,6 +49,19 @@ describe('apiPath', () => {
     setCurrentProjectSlug('v')
     setCurrentProjectSlug(null)
     expect(() => apiPath('/photos')).toThrow(Error)
+  })
+})
+
+describe('projectApiPath', () => {
+  it('prefixes a route with the named project, whatever is current', () => {
+    setCurrentProjectSlug('v')
+    expect(projectApiPath('rodina', '/maintenance/nameless-subjects')).toBe(
+      '/api/v1/p/rodina/maintenance/nameless-subjects',
+    )
+  })
+
+  it('needs no current project and escapes the slug', () => {
+    expect(projectApiPath('a/b', '/photos')).toBe('/api/v1/p/a%2Fb/photos')
   })
 })
 

@@ -3406,7 +3406,15 @@
       "restoreError": "The undo failed.",
       "restoreResult": "The restore of {{queued}} people is scheduled; it runs in the background.",
       "uidLabel": "Internal identifier",
-      "slugLabel": "Name in the address"
+      "slugLabel": "Name in the address",
+      "projectLabel": "Project",
+      "projectPlaceholder": "Choose a project…",
+      "projectInactive": "{{name}} (deactivated)",
+      "projectsLoading": "Loading the projects…",
+      "projectsError": "The list of projects could not be loaded.",
+      "projectsEmpty": "This instance has no project yet.",
+      "pickProject": "Choose the project to check first.",
+      "confirmProject": "Project: {{name}}"
     }
   },
   "duplicates": {

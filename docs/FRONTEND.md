@@ -3004,11 +3004,16 @@ here.
   `POST /maintenance/audit/purge`), and the card **`NamelessSubjectsCard`**
   (`components/maintenance/NamelessSubjectsCard.tsx`, **Osoba bez jména**) — the importer-minted catch-all
   subject that sits first in `/people` owning 96 % of the library's faces, whose repair used to be reachable
-  only over SSH: **Zkontrolovat** (`fetchNamelessSubjects` → `GET /api/v1/p/<slug>/maintenance/nameless-subjects` in the
-  current project, read-only)
+  only over SSH. The page belongs to no project, so the card first asks **which project**: a **Projekt** picker
+  over every project of the instance (`fetchAdminProjects` → `GET /api/v1/projects`, a deactivated one marked
+  „(vypnutý)"), never the maintainer's memberships and never `useProject()`'s entry rule — a maintainer with no
+  membership can use it; a single-project instance has its one project picked, otherwise nothing is picked and
+  the check and the undo picker stay disabled; switching the project clears the report and both results.
+  **Zkontrolovat** (`fetchNamelessSubjects(slug)` → `GET /api/v1/p/<slug>/maintenance/nameless-subjects` in the
+  picked project, read-only)
   renders the found subjects through the shared `RecordTable` („Osoba bez jména" with the uid + slug behind a
   `TechnicalDetail`, markers, faces, created),
-  **Odpojit a smazat subjekt** goes through a confirmation that names both the loss and the undo file, and the
+  **Odpojit a smazat subjekt** goes through a confirmation that names the project, the loss and the undo file, and the
   apply (`detachNamelessSubjects` → `POST …/detach`) **saves the undo file to the user's downloads** —
   the response body *is* the file, and the backend schedules the detach only once it has gone out, so a refusal
   (409 „nothing to detach", 503 „not wired", any 5xx) renders as its own message and nothing was changed. The
@@ -7735,11 +7740,12 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `GET /api/v1/maintenance/scan` → `ScanReport`, `runMaintenanceRepair(options,signal)` over
   `POST /api/v1/maintenance/repair` → `RepairResult`, `purgeAuditLog(olderThanDays,signal)` over
   `POST /api/v1/maintenance/audit/purge` → `AuditPurgeResult` (`{deleted,older_than_days,cutoff}`),
-  plus the nameless-subject repair, in the **current project** (`apiPath`): `fetchNamelessSubjects(signal)` over
-  `GET /api/v1/p/<slug>/maintenance/nameless-subjects` → `NamelessReport`, `detachNamelessSubjects(signal)` over
+  plus the nameless-subject repair, in the **project the caller names** (`projectApiPath(project, …)`, never the
+  current project — the card lives on the instance page): `fetchNamelessSubjects(project,signal)` over
+  `GET /api/v1/p/<project>/maintenance/nameless-subjects` → `NamelessReport`, `detachNamelessSubjects(project,signal)` over
   `POST …/detach` — the response body *is* the undo file, so it `saveBlob`s it to the user's downloads under the
   server-chosen `Content-Disposition` name and returns `NamelessUndoFile` (`{filename,subjects,markers,faces}`
-  read from the `X-Kukatko-Nameless-*` headers) — and `restoreNamelessSubjects(file,signal)` over `POST …/restore`
+  read from the `X-Kukatko-Nameless-*` headers) — and `restoreNamelessSubjects(project,file,signal)` over `POST …/restore`
   (the `File` as the raw body) → `{queued}`;
   the types `Finding`/`ScanReport`/`RepairOptions`/`RepairResult`/`AuditPurgeResult`/`NamelessSubject`/
   `NamelessReport`/`NamelessUndoFile`/`NamelessRestoreResult`; it shares `ApiError`
@@ -8511,7 +8517,7 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
 
 ## API paths
 
-Every URL a service fetches or hands to an `<img>`/`<video>` is built by one of two helpers in
+Every URL a service fetches or hands to an `<img>`/`<video>` is built by one of three helpers in
 `web/src/services/api.ts`. **A new service never hardcodes `/api/v1`** — not as a literal, not
 as a module-local `API_BASE` constant (there are none left).
 
@@ -8527,6 +8533,10 @@ as a module-local `API_BASE` constant (there are none left).
   `/admin/users`, `/users/{uid}/avatar`, `/push/*`, `/jobs`, `/system`, `/backup`, `/maintenance`,
   `/restore`, `/audit`, the public upload-link page `/u/{code}` and the anonymous
   `/settings/public` read (instance-level until the per-project settings step).
+- **`projectApiPath(project, path)`** → `/api/v1/p/<project>` + `path`, for a project route an
+  **instance-level page** calls in a project the maintainer **picked** — it never reads the current
+  project, so it works for a maintainer with no membership. Today only the nameless-subject repair on
+  `/maintenance` (`maintenance.ts`).
 
 The split follows the backend's (`cmd/kukatko/projectapi.go`), so a module that has both halves
 splits **by call, not by module**: `notifications.ts` reads the inbox with `apiPath` and the push

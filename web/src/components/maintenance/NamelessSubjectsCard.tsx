@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
@@ -15,6 +15,7 @@ import {
   type NamelessSubject,
   type NamelessUndoFile,
 } from '../../services/maintenance'
+import { fetchAdminProjects, type AdminProject } from '../../services/projects'
 import { RecordTable, type RecordColumn } from '../RecordTable'
 import { TechnicalDetail } from '../TechnicalDetail'
 
@@ -39,6 +40,90 @@ type RestoreState =
   | { status: 'running' }
   | { status: 'error'; message: string }
   | { status: 'done'; queued: number }
+
+/** Lifecycle of the list of projects the picker offers. */
+type ProjectsState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'ready'; projects: AdminProject[] }
+
+/**
+ * Loads every project of the instance (`GET /projects`, maintainer-only) for the
+ * picker — the instance list, not the caller's memberships, so a maintainer who
+ * belongs to no project can still repair one.
+ */
+function useAllProjects(): ProjectsState {
+  const [state, setState] = useState<ProjectsState>({ status: 'loading' })
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchAdminProjects(controller.signal).then(
+      (projects) => {
+        setState({ status: 'ready', projects })
+      },
+      () => {
+        if (!controller.signal.aborted) {
+          setState({ status: 'error' })
+        }
+      },
+    )
+    return () => {
+      controller.abort()
+    }
+  }, [])
+  return state
+}
+
+/** The picker of the project the repair acts on. */
+function ProjectPicker({
+  projects,
+  value,
+  disabled,
+  onChange,
+}: {
+  projects: ProjectsState
+  value: string
+  disabled: boolean
+  onChange: (slug: string) => void
+}) {
+  const { t } = useTranslation()
+  if (projects.status === 'loading') {
+    return (
+      <p className="text-secondary small">
+        <Spinner animation="border" size="sm" role="status" className="me-2" />
+        {t('maintenance.nameless.projectsLoading')}
+      </p>
+    )
+  }
+  if (projects.status === 'error') {
+    return <Alert variant="danger">{t('maintenance.nameless.projectsError')}</Alert>
+  }
+  if (projects.projects.length === 0) {
+    return <p className="text-secondary small">{t('maintenance.nameless.projectsEmpty')}</p>
+  }
+  return (
+    <Form.Group controlId="nameless-project" className="mb-3">
+      <Form.Label>{t('maintenance.nameless.projectLabel')}</Form.Label>
+      <Form.Select
+        value={value}
+        disabled={disabled}
+        onChange={(e) => {
+          onChange(e.target.value)
+        }}
+      >
+        <option value="" disabled>
+          {t('maintenance.nameless.projectPlaceholder')}
+        </option>
+        {projects.projects.map((project) => (
+          <option key={project.uid} value={project.slug}>
+            {project.active
+              ? project.name
+              : t('maintenance.nameless.projectInactive', { name: project.name })}
+          </option>
+        ))}
+      </Form.Select>
+    </Form.Group>
+  )
+}
 
 /** Renders a subject's creation timestamp as a plain date, or an em dash. */
 function createdOn(value: string): string {
@@ -116,9 +201,25 @@ function detachErrorKey(err: unknown): 'clean' | 'unavailable' | 'detachError' {
  * anything is scheduled, and takes that file back for the undo. Both destructive
  * directions run in the background job queue, so the counts they report are what
  * was scheduled.
+ *
+ * The card sits on the instance-level `/maintenance` page, which belongs to no
+ * project, so it asks which one: a picker over every project of the instance
+ * (not the maintainer's memberships), and every request names the picked slug.
  */
 export function NamelessSubjectsCard() {
   const { t } = useTranslation()
+  const projects = useAllProjects()
+  // The picked project's slug, or "" while none is picked. With a single
+  // project there is nothing to choose, so it is picked for the maintainer;
+  // with more the choice is always explicit.
+  const [picked, setPicked] = useState('')
+  const only =
+    projects.status === 'ready' && projects.projects.length === 1 ? projects.projects[0] : null
+  const project = picked !== '' ? picked : (only?.slug ?? '')
+  const projectName =
+    projects.status === 'ready'
+      ? (projects.projects.find((p) => p.slug === project)?.name ?? project)
+      : project
   const [report, setReport] = useState<ReportState>({ status: 'idle' })
   const [detach, setDetach] = useState<DetachState>({ status: 'idle' })
   const [restore, setRestore] = useState<RestoreState>({ status: 'idle' })
@@ -127,28 +228,36 @@ export function NamelessSubjectsCard() {
   const runReport = useCallback(async () => {
     setReport({ status: 'loading' })
     try {
-      setReport({ status: 'ready', report: await fetchNamelessSubjects() })
+      setReport({ status: 'ready', report: await fetchNamelessSubjects(project) })
     } catch {
       setReport({ status: 'error' })
     }
+  }, [project])
+
+  const pickProject = useCallback((slug: string) => {
+    // What was found, detached or restored belongs to the previous project.
+    setPicked(slug)
+    setReport({ status: 'idle' })
+    setDetach({ status: 'idle' })
+    setRestore({ status: 'idle' })
   }, [])
 
   const runDetach = useCallback(async () => {
     setDetach({ status: 'running' })
     try {
-      const undo = await detachNamelessSubjects()
+      const undo = await detachNamelessSubjects(project)
       setDetach({ status: 'done', undo })
       await runReport()
     } catch (err) {
       setDetach({ status: 'error', message: t(`maintenance.nameless.${detachErrorKey(err)}`) })
     }
-  }, [runReport, t])
+  }, [project, runReport, t])
 
   const runRestore = useCallback(
     async (file: File) => {
       setRestore({ status: 'running' })
       try {
-        const result = await restoreNamelessSubjects(file)
+        const result = await restoreNamelessSubjects(project, file)
         setRestore({ status: 'done', queued: result.queued })
         await runReport()
       } catch (err) {
@@ -167,11 +276,12 @@ export function NamelessSubjectsCard() {
         }
       }
     },
-    [runReport, t],
+    [project, runReport, t],
   )
 
   const found = report.status === 'ready' ? report.report.subjects.length > 0 : false
   const busy = detach.status === 'running' || restore.status === 'running'
+  const noProject = project === ''
 
   return (
     <Card className="mb-4">
@@ -179,9 +289,16 @@ export function NamelessSubjectsCard() {
         <h2 className="kk-section-title mb-1">{t('maintenance.nameless.title')}</h2>
         <p className="text-secondary small">{t('maintenance.nameless.hint')}</p>
 
+        <ProjectPicker
+          projects={projects}
+          value={project}
+          disabled={busy || report.status === 'loading'}
+          onChange={pickProject}
+        />
+
         <Button
           variant="outline-primary"
-          disabled={report.status === 'loading'}
+          disabled={noProject || report.status === 'loading'}
           onClick={() => {
             void runReport()
           }}
@@ -195,7 +312,9 @@ export function NamelessSubjectsCard() {
         </Button>
 
         {report.status === 'idle' && (
-          <p className="text-secondary small mt-3 mb-0">{t('maintenance.nameless.empty')}</p>
+          <p className="text-secondary small mt-3 mb-0">
+            {noProject ? t('maintenance.nameless.pickProject') : t('maintenance.nameless.empty')}
+          </p>
         )}
         {report.status === 'error' && (
           <Alert variant="danger" className="mt-3 mb-0">
@@ -235,6 +354,9 @@ export function NamelessSubjectsCard() {
             )}
             {detach.status === 'confirm' && (
               <Alert variant="warning" className="mb-0">
+                <p className="mb-2 fw-bold">
+                  {t('maintenance.nameless.confirmProject', { name: projectName })}
+                </p>
                 <p className="mb-2">
                   {t('maintenance.nameless.confirm', {
                     markers: report.report.marker_total,
@@ -293,7 +415,7 @@ export function NamelessSubjectsCard() {
             ref={fileInput}
             type="file"
             accept="application/json,.json"
-            disabled={busy}
+            disabled={busy || noProject}
             onChange={(e) => {
               const file = (e.target as HTMLInputElement).files?.[0]
               if (file) {
