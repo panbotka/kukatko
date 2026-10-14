@@ -3848,6 +3848,11 @@
     "roleFailed": "Could not change the role.",
     "approveFailed": "Could not approve the member.",
     "removeFailed": "Could not remove the member.",
+    "withheld": {
+      "name": "Added account",
+      "hint": "Its name appears once the account opens this project.",
+      "unknown": "—"
+    },
     "add": {
       "open": "Add member",
       "title": "Add member",

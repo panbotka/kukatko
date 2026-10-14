@@ -1065,6 +1065,19 @@ Everything else below is open as written.
   follow it into every project it joins. `/invite/{code}` and `/u/{code}` naming the project or album to a
   code holder is by design.
 - **Fixed:** 2026-10-14.
+- **Follow-up (multi-tenancy review II, 2026-10-14):** three residues closed. (a) The admin's
+  `GET /p/{project}/audit?user=` resolved the name instance-wide (400 for nobody, 200 for an account of
+  another tenant); it now resolves among the project's people only and answers anything else with the
+  byte-identical empty 200 (`TestProjectListing_noUsernameOracle`). (b) The exact-match member add wrote
+  its outcome and the typed identifier into the project's own trail and showed a hit's name and last
+  sign-in at once; the project entry is now uniform (`project.member.add_request`), the outcome goes to an
+  actor-less instance entry, and the added membership withholds the account's identity until it enters
+  the project (`TestMembers_addAnswersIdenticallyAndAuditsTheOutcome`,
+  `TestMembers_addWithholdsTheIdentityUntilTheAccountEnters`). Accepted residue: a hit still adds a row,
+  so an admin learns that *some* account answers to what it typed, one audited guess at a time. (c)
+  `/auth/me` kept naming a project the account could no longer enter (`last_project_slug`); it now
+  answers `""` (`TestProject_meForgetsAProjectItCannotEnter`). A withheld member's uid is visible to the
+  admin, so the avatar residue above applies to it too.
 
 ---
 

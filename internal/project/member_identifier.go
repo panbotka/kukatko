@@ -13,12 +13,16 @@ import (
 
 // AddOutcome is what AddByIdentifier really did. The caller never tells the
 // person who asked — the answer to them is the same whatever happened, so the
-// add cannot be used to learn which accounts exist — but the audit entry
+// add cannot be used to learn which accounts exist — and neither does the
+// project's own audit trail, which that person reads: only the instance entry
+// (audit.ActionProjectMemberAddResolve) the system administrator alone sees
 // records it.
 type AddOutcome string
 
 const (
-	// OutcomeAdded means the account was found and is now an approved member.
+	// OutcomeAdded means the account was found and is now an approved member
+	// whose identity the project does not see until it enters (see
+	// Member.IdentityWithheld).
 	OutcomeAdded AddOutcome = "added"
 	// OutcomeAlreadyMember means the account was found and already was a
 	// member; its membership was left exactly as it was.
@@ -30,6 +34,15 @@ const (
 	// adding nobody.
 	OutcomeAmbiguous AddOutcome = "ambiguous"
 )
+
+// addWithheldMemberSQL inserts an approved membership whose identity the project
+// does not see until the account enters it, unless a membership exists;
+// RETURNING yields no row for an existing one, which leaves it untouched.
+const addWithheldMemberSQL = `
+INSERT INTO project_members (project_uid, user_uid, role, approved_at, identity_withheld)
+VALUES ($1, $2, $3, now(), true)
+ON CONFLICT (project_uid, user_uid) DO NOTHING
+RETURNING user_uid`
 
 // ErrEmptyIdentifier is returned by AddByIdentifier for an identifier that is
 // empty once trimmed.
@@ -45,10 +58,19 @@ const emailMatchSQL = `SELECT uid FROM users WHERE lower(email) = lower($1) ORDE
 
 // AddByIdentifier makes the account named by identifier — its exact username or
 // its e-mail address (case-insensitive) — an approved member of the project
-// projectUID with role, and records ActionProjectMemberAdd with the real outcome
-// (details "outcome", see AddOutcome) in the same transaction, whatever it is.
-// Nothing is ever matched partially: a typo finds nobody. A username wins over
-// an e-mail address, and an address several accounts share adds nobody.
+// projectUID with role, its identity withheld from the project until it enters
+// it (Member.IdentityWithheld). Nothing is ever matched partially: a typo finds
+// nobody. A username wins over an e-mail address, and an address several
+// accounts share adds nobody.
+//
+// Two audit entries are written in the same transaction, whatever happened:
+// ActionProjectMemberAddRequest under the project, identical for a hit and a
+// miss (project_uid and the role, no target), and the instance entry
+// ActionProjectMemberAddResolve with the real outcome, without an actor so it
+// reaches neither the project's listing nor the admin's own activity. The
+// project admin who asked therefore learns nothing about which accounts exist
+// from the answer or from the trail; what remains is the withheld member row a
+// hit adds to the members list (see the package's member docs).
 //
 // The outcome is returned for the caller's tests and logs, never for the
 // person who asked. It returns ErrInvalidRole for a bad role,
@@ -77,17 +99,10 @@ func (s *Store) AddByIdentifier(
 	if err != nil {
 		return "", fmt.Errorf("project: adding %q to %s: %w", identifier, projectUID, err)
 	}
-	details := map[string]any{
-		"project_uid": projectUID, "role": string(role), "approved": true, "outcome": string(outcome),
-	}
-	if userUID == "" {
-		// Nobody to point the entry at, so it keeps what was typed: the trail
-		// should still answer "whom did the admin try to add".
-		details["identifier"] = identifier
-	}
-	entry := projectEntry(meta, projectUID, audit.ActionProjectMemberAdd, MemberTargetType, userUID, details)
-	if err := audit.Write(ctx, tx, entry); err != nil {
-		return "", fmt.Errorf("project: writing audit entry: %w", err)
+	for _, entry := range addEntries(meta, projectUID, identifier, role, outcome, userUID) {
+		if err := audit.Write(ctx, tx, entry); err != nil {
+			return "", fmt.Errorf("project: writing audit entry: %w", err)
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return "", fmt.Errorf("project: commit transaction: %w", err)
@@ -95,8 +110,32 @@ func (s *Store) AddByIdentifier(
 	return outcome, nil
 }
 
+// addEntries returns the two audit entries of one exact-match add: the
+// project's, which says only that an add of role was asked for, and the
+// instance's, which says what it found. The instance entry has no actor (the
+// requesting admin is its requested_by detail), so the admin's own activity
+// listing never shows it; it keeps the typed identifier only when no single
+// account was found, as there is then nobody to point it at.
+func addEntries(
+	meta audit.Meta, projectUID, identifier string, role Role, outcome AddOutcome, userUID string,
+) []audit.Entry {
+	request := projectEntry(meta, projectUID, audit.ActionProjectMemberAddRequest, MemberTargetType, "",
+		map[string]any{"project_uid": projectUID, "role": string(role)})
+	details := map[string]any{
+		"project_uid": projectUID, "requested_by": meta.ActorUID, "role": string(role),
+		"outcome": string(outcome),
+	}
+	if userUID == "" {
+		details["identifier"] = identifier
+	}
+	resolve := meta.Entry(audit.ActionProjectMemberAddResolve, MemberTargetType, userUID, details)
+	resolve.ActorUID = ""
+	resolve.ProjectUID = ""
+	return []audit.Entry{request, resolve}
+}
+
 // addIdentified resolves identifier to one account inside tx and, when it finds
-// exactly one, inserts its approved membership. It returns the outcome and the
+// exactly one, inserts its approved membership with the identity withheld. It returns the outcome and the
 // account's uid ("" when none was resolved).
 func addIdentified(
 	ctx context.Context, tx pgx.Tx, projectUID, identifier string, role Role,
@@ -114,7 +153,7 @@ func addIdentified(
 	}
 	userUID := uids[0]
 	var inserted string
-	err = tx.QueryRow(ctx, addMemberSQL, projectUID, userUID, string(role), true).Scan(&inserted)
+	err = tx.QueryRow(ctx, addWithheldMemberSQL, projectUID, userUID, string(role)).Scan(&inserted)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return OutcomeAlreadyMember, userUID, nil
 	}

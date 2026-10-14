@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next'
 import { useCallback, useEffect, useId, useState } from 'react'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
@@ -45,8 +46,15 @@ interface PendingRemoval {
 /** The catalogue key of each refusal the page words itself. */
 type Failure = 'roleFailed' | 'approveFailed' | 'removeFailed'
 
-/** The name a member is called by: the display name, else the username. */
-function nameOf(member: ProjectMemberRow): string {
+/**
+ * The name a member is called by: the display name, else the username — or,
+ * for an account added by an exact match that has not opened the project yet,
+ * a neutral label, as the server withholds who it is until then.
+ */
+function nameOf(member: ProjectMemberRow, t: TFunction): string {
+  if (member.identity_withheld) {
+    return t('members.withheld.name')
+  }
   return member.display_name.trim() === '' ? member.username : member.display_name
 }
 
@@ -74,7 +82,7 @@ function RoleSelect({ member, disabledReason, busy, onChange }: RoleSelectProps)
       <Form.Select
         size="sm"
         className="w-auto"
-        aria-label={t('members.roleLabel', { name: nameOf(member) })}
+        aria-label={t('members.roleLabel', { name: nameOf(member, t) })}
         aria-describedby={off ? reasonId : undefined}
         value={member.role}
         disabled={off || busy}
@@ -183,7 +191,7 @@ export function MembersPage() {
       const next = await setMemberRole(member.user_uid, role)
       adopt(next)
       toast.show({
-        message: t('members.roleChanged', { name: nameOf(next), role: t(`roles.${next.role}`) }),
+        message: t('members.roleChanged', { name: nameOf(next, t), role: t(`roles.${next.role}`) }),
         variant: 'success',
       })
     } catch (error: unknown) {
@@ -202,7 +210,7 @@ export function MembersPage() {
       const next = await approveMember(member.user_uid)
       adopt(next)
       toast.show({
-        message: t('members.approvedToast', { name: nameOf(next) }),
+        message: t('members.approvedToast', { name: nameOf(next, t) }),
         variant: 'success',
       })
     } catch (error: unknown) {
@@ -229,7 +237,7 @@ export function MembersPage() {
           : prev,
       )
       toast.show({
-        message: t('members.removedToast', { name: nameOf(member) }),
+        message: t('members.removedToast', { name: nameOf(member, t) }),
         variant: 'success',
       })
     } catch (error: unknown) {
@@ -265,15 +273,27 @@ export function MembersPage() {
       header: t('members.columns.name'),
       cell: (m) => (
         <span className="d-inline-flex align-items-center gap-2">
-          <PersonAvatar name={nameOf(m)} userUid={m.has_picture ? m.user_uid : undefined} />
-          <span>{nameOf(m)}</span>
+          <PersonAvatar name={nameOf(m, t)} userUid={m.has_picture ? m.user_uid : undefined} />
+          {m.identity_withheld ? (
+            <span className="d-inline-flex flex-column">
+              <span className="fst-italic">{nameOf(m, t)}</span>
+              <small className="text-secondary">{t('members.withheld.hint')}</small>
+            </span>
+          ) : (
+            <span>{nameOf(m, t)}</span>
+          )}
         </span>
       ),
     },
     {
       key: 'username',
       header: t('members.columns.username'),
-      cell: (m) => <span className="font-monospace">{m.username}</span>,
+      cell: (m) =>
+        m.identity_withheld ? (
+          <span className="text-secondary">{t('members.withheld.unknown')}</span>
+        ) : (
+          <span className="font-monospace">{m.username}</span>
+        ),
     },
     {
       key: 'role',
@@ -316,7 +336,9 @@ export function MembersPage() {
       key: 'lastLogin',
       header: t('members.columns.lastLogin'),
       cell: (m) =>
-        m.last_login_at === null ? (
+        m.identity_withheld ? (
+          <span className="text-secondary">{t('members.withheld.unknown')}</span>
+        ) : m.last_login_at === null ? (
           <span className="text-secondary">{t('members.never')}</span>
         ) : (
           formatDateTime(m.last_login_at, i18n.language)
@@ -395,7 +417,7 @@ export function MembersPage() {
 
       <ConfirmModal
         show={removal.show}
-        title={target === null ? '' : t('members.removeTitle', { name: nameOf(target) })}
+        title={target === null ? '' : t('members.removeTitle', { name: nameOf(target, t) })}
         confirmLabel={t('members.remove')}
         busy={target !== null && busyUid === target.user_uid}
         onConfirm={() => {

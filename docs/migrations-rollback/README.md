@@ -51,6 +51,11 @@ keys a storage move's final sweep found for a photo, which the retry moves or dr
 an older release neither reads nor writes the column, and its sweep finds the objects again from a bucket
 listing. Run it first when going back to a release older than 0116.
 
+**`0117_down.sql`** drops `project_members.identity_withheld` (an exact-match add whose account has not
+entered the project yet). Safe at any time: an older release neither reads nor writes the column, and the
+memberships stay approved — that release simply shows those members' names again. Run it first when going
+back to a release older than 0117.
+
 **Every file of the chain has a down script** since the final safety gate (2026-10-13). To go back to
 0.31.0 (schema 0099) — **after stopping the new server**, which would otherwise re-apply the migrations on its
 next (re)start (production: [`OPERATIONS.md`](../OPERATIONS.md), "Upgrade runbook — multi-tenancy" →

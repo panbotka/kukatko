@@ -157,6 +157,7 @@ func projectRoleOf(
 		if member == nil {
 			return project.RoleAdmin, nil, nil
 		}
+		revealIdentity(r.Context(), req.store, member)
 		return project.RoleAdmin, member.SubjectUID, nil
 	}
 	switch {
@@ -167,7 +168,24 @@ func projectRoleOf(
 		writeError(w, http.StatusForbidden, ErrorPendingApproval)
 		return "", nil, errProjectDenied
 	}
+	revealIdentity(r.Context(), req.store, member)
 	return member.Role, member.SubjectUID, nil
+}
+
+// revealIdentity ends the withholding of member's identity (see
+// project.Member.IdentityWithheld) the first time its account enters the
+// project: coming in is the account's own act, after which the project may see
+// who it is. A membership that withholds nothing costs no write. A failure is
+// logged and otherwise ignored — it is bookkeeping, never a reason to refuse,
+// and the next request tries again.
+func revealIdentity(ctx context.Context, store *project.Store, member *project.Member) {
+	if !member.IdentityWithheld {
+		return
+	}
+	if err := store.RevealIdentity(ctx, member.ProjectUID, member.UserUID); err != nil {
+		slog.WarnContext(ctx, "auth: revealing a member's identity",
+			"project_uid", member.ProjectUID, "user_uid", member.UserUID, "error", err)
+	}
 }
 
 // touchLastProject remembers projectUID as userUID's last project unless that

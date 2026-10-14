@@ -22,12 +22,14 @@ type DirectoryEntry struct {
 // directoryQuery lists the accounts a signed-in person of the project $1 may
 // name: its members. Disabled accounts and memberships still waiting for a
 // project admin are left out: neither can be asked a question, and both would
-// be a stranger in a picker. An account of another project is never listed —
-// a tenant must not learn who else uses the instance.
+// be a stranger in a picker. So is a member whose identity is withheld (an
+// exact-match add that has not entered the project yet): the add must not
+// tell the project who the account is. An account of another project is never
+// listed — a tenant must not learn who else uses the instance.
 const directoryQuery = `
 SELECT u.uid, COALESCE(NULLIF(u.display_name, ''), u.username)
 FROM project_members m JOIN users u ON u.uid = m.user_uid
-WHERE m.project_uid = $1 AND m.approved_at IS NOT NULL AND NOT u.disabled
+WHERE m.project_uid = $1 AND m.approved_at IS NOT NULL AND NOT m.identity_withheld AND NOT u.disabled
 ORDER BY COALESCE(NULLIF(u.display_name, ''), u.username), u.uid`
 
 // Directory returns the people of the project projectUID — its approved members

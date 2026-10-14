@@ -55,13 +55,14 @@ func newEnv(t *testing.T) *env {
 	store := audit.NewStore(db.Pool())
 	projects := project.NewStore(db.Pool())
 	api := auditapi.NewAPI(auditapi.Config{
-		Store:             store,
-		ResolveUser:       resolveUser(authStore),
-		ResolveProject:    resolveProject(projects),
-		RequireMaintainer: authAPI.RequireMaintainer,
-		RequireAdmin:      authAPI.RequireAdmin,
-		RequireAuth:       authAPI.RequireAuth,
-		RequireSignedIn:   authAPI.RequireSignedIn,
+		Store:              store,
+		ResolveUser:        resolveUser(authStore),
+		ResolveProjectUser: resolveProjectUser(store),
+		ResolveProject:     resolveProject(projects),
+		RequireMaintainer:  authAPI.RequireMaintainer,
+		RequireAdmin:       authAPI.RequireAdmin,
+		RequireAuth:        authAPI.RequireAuth,
+		RequireSignedIn:    authAPI.RequireSignedIn,
 	})
 
 	r := chi.NewRouter()
@@ -111,6 +112,19 @@ func resolveUser(store *auth.Store) auditapi.ResolveUser {
 			return "", err
 		}
 		return user.UID, nil
+	}
+}
+
+// resolveProjectUser mirrors the server's own wiring (resolveProjectAuditUser
+// in cmd/kukatko): a project admin's user filter is resolved among the
+// project's people only, anything else is the one ErrUnknownUser.
+func resolveProjectUser(store *audit.Store) auditapi.ResolveProjectUser {
+	return func(ctx context.Context, projectUID, value string) (string, error) {
+		uid, err := store.ProjectPerson(ctx, projectUID, value)
+		if errors.Is(err, audit.ErrNoProjectPerson) {
+			return "", auditapi.ErrUnknownUser
+		}
+		return uid, err
 	}
 }
 

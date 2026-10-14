@@ -16,11 +16,19 @@ import (
 const foreignKeyViolation = "23503"
 
 // memberColumns is the column list every membership read scans, in scanMember's
-// order; it reads project_members as m joined with users as u.
+// order; it reads project_members as m joined with users as u. A membership
+// whose identity is withheld (an exact-match add the account has not entered
+// yet, see AddByIdentifier) reads with an empty username and display name, no
+// last sign-in and no picture: the project learns who the account is only
+// once it comes in.
 const memberColumns = `m.project_uid, m.user_uid, m.role, m.approved_at, m.subject_uid,
 	m.last_seen_at, m.visit_reference_at, m.task_digest_at, m.created_at,
-	u.username, u.display_name, u.last_login_at,
-	(m.subject_uid IS NOT NULL OR EXISTS (SELECT 1 FROM user_pictures up WHERE up.user_uid = u.uid))`
+	CASE WHEN m.identity_withheld THEN '' ELSE u.username END,
+	CASE WHEN m.identity_withheld THEN '' ELSE u.display_name END,
+	CASE WHEN m.identity_withheld THEN NULL ELSE u.last_login_at END,
+	(NOT m.identity_withheld AND (m.subject_uid IS NOT NULL
+		OR EXISTS (SELECT 1 FROM user_pictures up WHERE up.user_uid = u.uid))),
+	m.identity_withheld`
 
 // memberFrom joins a membership with its account.
 const memberFrom = ` FROM project_members m JOIN users u ON u.uid = m.user_uid`
@@ -30,7 +38,7 @@ func scanMember(row pgx.Row) (*Member, error) {
 	var m Member
 	if err := row.Scan(&m.ProjectUID, &m.UserUID, &m.Role, &m.ApprovedAt, &m.SubjectUID,
 		&m.LastSeenAt, &m.VisitReferenceAt, &m.TaskDigestAt, &m.CreatedAt,
-		&m.Username, &m.DisplayName, &m.LastLoginAt, &m.HasPicture); err != nil {
+		&m.Username, &m.DisplayName, &m.LastLoginAt, &m.HasPicture, &m.IdentityWithheld); err != nil {
 		return nil, fmt.Errorf("scanning project member: %w", err)
 	}
 	return &m, nil
@@ -38,9 +46,14 @@ func scanMember(row pgx.Row) (*Member, error) {
 
 // membersSQL lists one project's members by display name; an account without
 // one sorts by its username, and the uid keeps equal names in a stable order.
+// The memberships whose identity is withheld come last, by when they were made:
+// sorting them by the name nobody may see would place them by it.
 const membersSQL = `SELECT ` + memberColumns + memberFrom + `
 WHERE m.project_uid = $1
-ORDER BY COALESCE(NULLIF(u.display_name, ''), u.username), u.username, m.user_uid`
+ORDER BY m.identity_withheld,
+	CASE WHEN m.identity_withheld THEN '' ELSE COALESCE(NULLIF(u.display_name, ''), u.username) END,
+	CASE WHEN m.identity_withheld THEN '' ELSE u.username END,
+	m.created_at, m.user_uid`
 
 // Members returns every member of the project projectUID ordered by display
 // name (the username standing in for an empty one). It returns ErrNotFound for
@@ -119,6 +132,25 @@ func (s *Store) MembershipsOf(ctx context.Context, userUID string) ([]Membership
 		return nil, fmt.Errorf("project: iterating memberships of %s: %w", userUID, err)
 	}
 	return out, nil
+}
+
+// revealIdentitySQL clears the withheld identity of one membership; it touches
+// no row unless the flag is set, so the common case writes nothing.
+const revealIdentitySQL = `UPDATE project_members SET identity_withheld = false
+WHERE project_uid = $1 AND user_uid = $2 AND identity_withheld`
+
+// RevealIdentity records that the account userUID has entered the project
+// projectUID, which ends the withholding of its identity there (see
+// Member.IdentityWithheld): from now on the members list shows its name, last
+// sign-in and picture and it may be named in the project. It is bookkeeping of
+// the account's own act, so it is not audited; a membership that withholds
+// nothing — or none at all — is left alone. It returns a wrapped error on
+// failure.
+func (s *Store) RevealIdentity(ctx context.Context, projectUID, userUID string) error {
+	if _, err := s.pool.Exec(ctx, revealIdentitySQL, projectUID, userUID); err != nil {
+		return fmt.Errorf("project: revealing %s in %s: %w", userUID, projectUID, err)
+	}
+	return nil
 }
 
 // addMemberSQL inserts a membership unless one exists; RETURNING yields no row

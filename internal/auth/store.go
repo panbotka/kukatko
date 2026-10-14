@@ -445,12 +445,20 @@ func (s *Store) CountUsers(ctx context.Context) (int, error) {
 }
 
 // lastProjectSlugQuery reads the slug of the project the account last worked
-// in; an account with none remembered (or whose project is gone) yields no row.
+// in, as long as the account can still enter it — the rule enterProject
+// applies: a maintainer enters every project, anybody else only an active one
+// it holds an approved membership of. An account with none remembered, whose
+// project is gone, or that has since been removed, left waiting or locked out
+// by a deactivation yields no row, so it is never pointed at a project that
+// would answer 404 (and keeps no record of a project it no longer belongs to).
 const lastProjectSlugQuery = `SELECT p.slug FROM users u JOIN projects p ON p.uid = u.last_project_uid
-	WHERE u.uid = $1`
+	WHERE u.uid = $1 AND (u.role = '` + string(RoleMaintainer) + `' OR (p.active AND EXISTS (
+		SELECT 1 FROM project_members m
+		WHERE m.project_uid = p.uid AND m.user_uid = u.uid AND m.approved_at IS NOT NULL)))`
 
 // LastProjectSlug returns the slug of the project the account uid last worked
-// in, or "" when none is remembered. It returns a wrapped error on failure.
+// in, or "" when none is remembered or the account can no longer enter it (see
+// lastProjectSlugQuery). It returns a wrapped error on failure.
 func (s *Store) LastProjectSlug(ctx context.Context, uid string) (string, error) {
 	var slug string
 	err := s.pool.QueryRow(ctx, lastProjectSlugQuery, uid).Scan(&slug)

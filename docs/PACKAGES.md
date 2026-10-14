@@ -84,7 +84,9 @@ to `## Package map` in `CLAUDE.md`.
   project (chi param `{project}`; a request without it names no project — there is no default), the
   guards' `enterProject` decides access after authentication (a project-scoped guard on a request that
   names no project → 500 with the route logged, a wiring bug) (unknown/foreign/deactivated → identical 404, unapproved → 403
-  `pending_approval`, maintainer → `admin` + `obs.SetActorRole("maintainer")`), throttles
+  `pending_approval`, maintainer → `admin` + `obs.SetActorRole("maintainer")`), clears a withheld
+  membership's `identity_withheld` on its first entry (`revealIdentity` → `project.Store.RevealIdentity`;
+  a failure is logged, never a refusal), throttles
   `TouchLastProject` to once a minute per account, and the principal carries `project` + `projectRole` +
   `projectSubject` (the membership's `subject_uid`, read for a maintainer too when it has a membership;
   **`LinkedSubjectFromContext(ctx)`** is what `person:me`/`family:me` resolve to).
@@ -116,7 +118,8 @@ to `## Package map` in `CLAUDE.md`.
   `RegisterRoutes`; sessions and users in migration `0002_auth.sql`.
   **`directory.go`** is the one all-authenticated view of accounts: `DirectoryEntry{UID,Name}`,
   `Store.Directory(ctx, projectUID)`/`Service.Directory` and `GET /p/{project}/users`, listing the
-  project's **approved members** whose account is not disabled (a `project_members` join; an empty uid is
+  project's **approved members** whose account is not disabled and whose identity is not withheld (an
+  exact-match add that has not entered yet; a `project_members` join; an empty uid is
   `ErrNoProject`) by the name each is shown under — never an account of another project. It exists because naming a person is now something an ordinary user does —
   putting somebody on a task is how a question reaches the relative who would know — and it is a type and
   a query of its own rather than a trimmed `User`: the address, the role, the approval state and the hash
@@ -4731,11 +4734,16 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   landing in the set; `Store` = `NewStore(pool)` with `Record(ctx,Entry)`
   (its own connection) and **filtered reads** `List(ctx,Filter)`/`Count(ctx,Filter)` (`Filter{ProjectUID,
   ActorUID,TargetType,TargetUID,Action,Since,Until,Limit,Offset}`, newest-first, limit cap 500/default 100;
+  `person.go`: `ProjectPerson(ctx, projectUID, ref)` resolves a uid or username among the project's people —
+  its members and the accounts that appear as actors in its trail — else `ErrNoProjectPerson`, the project
+  admin's `?user=` filter;
   `List` joins `projects` so a `Record` carries `ProjectUID` and `Project` = the slug, both nil for an
   instance entry) for the admin listing; **projects**: `Entry.ProjectUID` files an entry under a project
   (`audit_log.project_id`); `ProjectScoped(action)` is every known action but the hand-kept
   `instanceActions` (accounts and credentials, notification preferences, a project's
-  create/update/purge/storage prefix/rekey, `audit.purge`, `library.reset`); `FromRequest` reads the
+  create/update/purge/storage prefix/rekey, `audit.purge`, `library.reset`, and
+  `project.member.add_resolve` — the outcome of an exact-match add, kept from the project's own trail on
+  purpose, see `internal/project` `AddByIdentifier`); `FromRequest` reads the
   request's project (`obs.ProjectUID`, stamped by `auth` when it admits the caller) into
   `Meta.ProjectUID`, and `Meta.Entry` files only a project-scoped action under it — an instance action is
   never attributed to whatever project its request resolved;
@@ -4753,8 +4761,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   and **user management** `auth.Store.{CreateUser,UpdateUserProfile,SetUserDisabled,SetPasswordHash}Audited`
   (`user.*`) — every mutation + audit in one tx via the shared `rowQuerier`/`mutateAudited` (photos) and
   `inAuditedTx` (auth); further domains (albums/labels/people) follow the same convention), `internal/auditapi/`
-  (HTTP API over the audit trail: `NewAPI(Config{Store,ResolveUser,ResolveProject,RequireMaintainer,
-  RequireAdmin,RequireAuth,RequireSignedIn})`; `RegisterRoutes` (instance, mounted once) mounts `GET /audit`
+  (HTTP API over the audit trail: `NewAPI(Config{Store,ResolveUser,ResolveProjectUser,ResolveProject,
+  RequireMaintainer,RequireAdmin,RequireAuth,RequireSignedIn})`; `RegisterRoutes` (instance, mounted once) mounts `GET /audit`
   behind `RequireMaintainer` (with `project=<slug>` → `Filter.ProjectUID` through `ResolveProject`, unknown →
   400) and `GET /audit/mine` behind `RequireSignedIn`; `RegisterProjectRoutes` (the `projectAPI.audit` group,
   under `/p/{project}` only) mounts the same two behind `RequireAdmin`/`RequireAuth`,
@@ -4768,7 +4776,15 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   naming it, and `user` → `resolveActor` through the **`ResolveUser` function in `Config`** — a narrow
   `func(ctx, value) (uid, error)` rather than the whole user service, wired in `cmd/kukatko/audit.go` to
   `auth.Store.GetUserByUIDOrUsername`, so a **UID or a username** both work and a value naming neither → 400,
-  while an existing account with no rows keeps answering 200 + an empty list. A failure of the lookup itself is
+  while an existing account with no rows keeps answering 200 + an empty list. **That is the instance
+  listing.** Inside a project (`parseRequest` sees `inProject`'s scope) `user` resolves through
+  **`projectPeople(projectUID)`** instead, i.e. the **`ResolveProjectUser`** function in `Config`
+  (`func(ctx, projectUID, value)`, wired to `audit.Store.ProjectPerson`: the account by uid or username among
+  the project's current members **and** every account that acted in it): `ErrUnknownUser` there — a foreign
+  account and a non-existent one alike — becomes the actor filter `noActor` (`"-"`, no uid's shape), so the
+  request runs the very same queries as for a member who did nothing and answers the same empty page byte
+  for byte; the instance 400 was an instance-wide username oracle for every project admin. An empty page
+  is `"entries": []` (`buildResponse`), never `null`. A failure of the lookup itself is
   wrapped in `errLookup` (the project lookup's too) and answered **500** by `writeFilterError`, the one filter error that is not the
   caller's fault. `entity_uid`/`entity_type` are **deliberately left unchecked**: the trail outlives what it
   describes (an entry about a purged photo is the point of keeping one) and the entity type is a free string;
@@ -7199,8 +7215,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `MemberTargetType = "project_member"`. Sentinels `ErrNotMember`, `ErrAlreadyMember`, `ErrLastAdmin`,
     `ErrUserNotFound`, `ErrSubjectNotFound`. `Member.HasPicture` (`json:"has_picture"`) is computed in
     `memberColumns`: a `user_pictures` row or the membership's own `subject_uid` — "worth asking for the avatar".
+    `Member.IdentityWithheld` (`project_members.identity_withheld`, migration 0117) marks an exact-match add
+    the account has not entered yet: `memberColumns` then reads `Username`/`DisplayName` as `""`,
+    `LastLoginAt` nil and `HasPicture` false, for every reader of a membership.
   - `member_store.go` — reads: `Members(projectUID)` (by display name, the username standing in for an empty
-    one; unknown project = `ErrNotFound`, no members = empty slice), `Membership(projectUID, userUID)`
+    one, the withheld rows last by `created_at` — never ordered by the name nobody may see; unknown project =
+    `ErrNotFound`, no members = empty slice), `Membership(projectUID, userUID)`
     (`ErrNotMember`), `MembershipsOf(userUID)` (by project name, inactive projects included, each with the membership's
     `SubjectUID` — what `GET /auth/me` lists per project). Writes, each
     **audited in its transaction** with the caller's `audit.Meta` (target type `project_member`, target uid =
@@ -7223,16 +7243,34 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     (who may remove whom — themselves included — is the HTTP layer's rule, later). Disabling an account
     is `internal/auth`'s write and is not refused here; it notes the projects it strands instead.
     `TouchLastProject(userUID, projectUID)` writes `users.last_project_uid` (not audited, no membership
-    check; unknown account = `ErrUserNotFound`, unknown project = `ErrNotFound`).
+    check; unknown account = `ErrUserNotFound`, unknown project = `ErrNotFound`). The read side,
+    `auth.Store.LastProjectSlug` (`GET /auth/me`'s `last_project_slug`), checks instead: it answers the
+    slug only while the account can still enter the project (a maintainer, or an approved membership of
+    an active project) — a removed, pending or deactivated-out account gets `""`.
+    `RevealIdentity(projectUID, userUID)` clears `identity_withheld` (a no-op on a row without it, or no
+    row; not audited — it records the account's own act). `internal/auth`'s `enterProject` calls it the
+    first time a withheld member enters the project.
   - `member_identifier.go` — `AddByIdentifier(meta, projectUID, identifier, role) (AddOutcome, error)`, the
     project admin's exact-match add: one transaction locks the project, resolves the identifier as an
     exact username (trimmed + lower-cased, as sign-in normalises it) or else a case-insensitive e-mail
     address (`LIMIT 2`: two hits = `OutcomeAmbiguous`, nobody added), inserts the **approved** membership
-    and **always** writes `project.member.add` with `details.outcome` (`added`/`already_member`/
-    `no_such_account`/`ambiguous`; the typed `identifier` when nobody was resolved). The outcome is for
-    the trail and the tests, never for the person who asked. `ErrEmptyIdentifier` for a blank one.
+    **with `identity_withheld`** (`addWithheldMemberSQL`) and **always** writes two entries (`addEntries`):
+    `project.member.add_request` under the project, identical for every outcome (`{project_uid, role}`, no
+    target — the project's admin reads that trail), and the **instance** entry `project.member.add_resolve`
+    **without an actor** (so it is not in the admin's `/audit/mine` either; `requested_by` names the admin)
+    with `details.outcome` (`added`/`already_member`/`no_such_account`/`ambiguous`; the typed `identifier`
+    when nobody was resolved, the account as target when one was). The outcome is for the maintainer's
+    trail and the tests, never for the person who asked. `ErrEmptyIdentifier` for a blank one.
+    **Why approved-but-withheld rather than a pending invitation the account accepts:** the design (§4.1)
+    says an exact-match add makes the account a member ("if that account exists, it has been added"),
+    and a consent step would be a second invitation flow beside `internal/invite`. Withholding the
+    identity removes what the add leaked — the name, the last sign-in anywhere on the instance, the
+    picture, the trail's outcome — while the admin keeps a row to change or remove. The residue is that a
+    hit still adds a row, so the admin learns *that* some account answers to what it typed (one guess at a
+    time, audited); an admin who wants nothing learnt uses an invitation link instead.
   - `member_check.go` — **the one rule for naming an account in a project**: `ApprovedMemberSQL(projectExpr,
-    userExpr)` is the SQL predicate (an `EXISTS` over `project_members … approved_at IS NOT NULL`; both
+    userExpr)` is the SQL predicate (an `EXISTS` over `project_members … approved_at IS NOT NULL AND NOT
+    identity_withheld` — a withheld member cannot be named until it enters; both
     arguments are SQL expressions pasted verbatim, never user input) and `RequireApprovedMembers(ctx, q,
     projectUID, uids...)` its Go check on a pool or a transaction (`RowQuerier`) — `ErrNotMember` unless every
     distinct uid is an approved member, a uid with no account included, so a caller answering both alike is no

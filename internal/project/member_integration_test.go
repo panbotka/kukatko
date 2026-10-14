@@ -155,6 +155,63 @@ func TestMembers(t *testing.T) {
 	}
 }
 
+// TestAddByIdentifier_withholdsUntilRevealed verifies an exact-match add makes
+// an approved membership that reads without the account's name, last sign-in
+// or picture and sorts after the named members, that a repeated add leaves it
+// as it is, and that RevealIdentity — the account entering the project — turns
+// it into an ordinary membership (and is a no-op on one).
+func TestAddByIdentifier_withholdsUntilRevealed(t *testing.T) {
+	store, db, meta := newStore(t)
+	ctx := context.Background()
+	seedUser(t, db, "us_a", "adam", "Adam")
+	seedUser(t, db, "us_z", "zdena", "Zdena")
+	mustAdd(t, store, meta, project.BootstrapUID, "us_z", project.RoleViewer)
+	if _, err := db.Pool().Exec(ctx, `UPDATE users SET last_login_at = now() WHERE uid = 'us_a'`); err != nil {
+		t.Fatalf("stamping a sign-in: %v", err)
+	}
+
+	for want, identifier := range map[project.AddOutcome]string{
+		project.OutcomeAdded: "adam", project.OutcomeNoSuchAccount: "nobody",
+	} {
+		got, err := store.AddByIdentifier(ctx, meta, project.BootstrapUID, identifier, project.RoleEditor)
+		if err != nil || got != want {
+			t.Fatalf("AddByIdentifier(%q) = %q, %v; want %q", identifier, got, err, want)
+		}
+	}
+	if got, err := store.AddByIdentifier(ctx, meta, project.BootstrapUID, "ADAM@example.test",
+		project.RoleViewer); err != nil || got != project.OutcomeAlreadyMember {
+		t.Fatalf("repeated AddByIdentifier = %q, %v; want already_member", got, err)
+	}
+
+	members, err := store.Members(ctx, project.BootstrapUID)
+	if err != nil {
+		t.Fatalf("Members: %v", err)
+	}
+	// Adam would sort first by name; withheld, it comes last.
+	if n := len(members); n < 2 || members[n-1].UserUID != "us_a" {
+		t.Fatalf("Members = %+v, want the withheld us_a last", members)
+	}
+	adam := members[len(members)-1]
+	if !adam.IdentityWithheld || adam.Username != "" || adam.DisplayName != "" || adam.LastLoginAt != nil ||
+		adam.HasPicture || adam.Role != project.RoleEditor || adam.ApprovedAt == nil {
+		t.Errorf("withheld member = %+v, want an approved editor with no name, sign-in or picture", adam)
+	}
+
+	for range 2 {
+		if err := store.RevealIdentity(ctx, project.BootstrapUID, "us_a"); err != nil {
+			t.Fatalf("RevealIdentity: %v", err)
+		}
+	}
+	revealed, err := store.Membership(ctx, project.BootstrapUID, "us_a")
+	if err != nil || revealed.IdentityWithheld || revealed.Username != "adam" || revealed.DisplayName != "Adam" ||
+		revealed.LastLoginAt == nil {
+		t.Errorf("revealed member = %+v, %v; want adam with its name and sign-in", revealed, err)
+	}
+	if err := store.RevealIdentity(ctx, project.BootstrapUID, "us_nobody"); err != nil {
+		t.Errorf("RevealIdentity(non-member) = %v, want nil", err)
+	}
+}
+
 // TestMembership_notMember verifies ErrNotMember for a non-member, an unknown
 // account and an unknown project.
 func TestMembership_notMember(t *testing.T) {

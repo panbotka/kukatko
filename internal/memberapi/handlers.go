@@ -30,6 +30,10 @@ type memberResponse struct {
 	ApprovedAt  *time.Time   `json:"approved_at"`
 	LastLoginAt *time.Time   `json:"last_login_at"`
 	HasPicture  bool         `json:"has_picture"`
+	// IdentityWithheld marks an exact-match add whose account has not entered
+	// the project yet: its username and display name are empty, last_login_at
+	// is null and has_picture false until it does (project.Member).
+	IdentityWithheld bool `json:"identity_withheld"`
 }
 
 // addRequest is the body of POST /members.
@@ -53,6 +57,7 @@ func toMemberResponse(m project.Member) memberResponse {
 	return memberResponse{
 		UserUID: m.UserUID, Username: m.Username, DisplayName: m.DisplayName, Role: m.Role,
 		ApprovedAt: m.ApprovedAt, LastLoginAt: m.LastLoginAt, HasPicture: m.HasPicture,
+		IdentityWithheld: m.IdentityWithheld,
 	}
 }
 
@@ -71,7 +76,9 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleAdd adds the account the body's identifier names — its exact username
-// or e-mail address — as an approved member with the body's role. It answers
+// or e-mail address — as an approved member with the body's role, its identity
+// withheld from the project until it enters it (project.AddByIdentifier, which
+// also keeps the outcome out of the project's audit trail). It answers
 // 202 {"status":"accepted"} whether the account was added, already was a
 // member or does not exist, so the answer reveals nothing about which accounts
 // exist; only a malformed request is refused: 400 invalid_body, 422

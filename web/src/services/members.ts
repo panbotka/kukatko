@@ -28,6 +28,13 @@ export interface ProjectMemberRow {
   last_login_at: string | null
   /** True when `GET /users/{uid}/avatar` has a picture to answer with. */
   has_picture: boolean
+  /**
+   * True for an account added by its exact username or e-mail that has not
+   * opened the project yet: until it does, the server sends no username,
+   * display name, last sign-in or picture, so the add tells the admin nothing
+   * about the account.
+   */
+  identity_withheld: boolean
 }
 
 /** A refusal of the members API; `message` (inherited) is the `code`. */

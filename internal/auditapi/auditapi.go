@@ -53,6 +53,17 @@
 // such filter), and a maintainer who wants them filters the whole trail on GET
 // /audit, which keeps every check.
 //
+// # A project's user filter knows only the project's people
+//
+// A project admin's listing (GET /p/{project}/audit) keeps the user filter —
+// "what did this member do here" is the point of the page — but resolves it
+// among the project's people only: its current members and every account that
+// has acted in it (ResolveProjectUser). Anything else, an account of another
+// tenant as much as a name nobody has, filters on an actor no entry has and
+// gets the same empty 200 a member who did nothing gets. The instance
+// listing's strict 400 for an unknown name stays where only the system
+// administrator reads: there the whole instance is the reader's business.
+//
 // The narrowed listing returns the full record, ip and user_agent included.
 // Those are the caller's own request metadata — the address and browser they
 // themselves acted from — and seeing them is how a user recognises (or disowns)
@@ -83,6 +94,7 @@ import (
 type API struct {
 	store             *audit.Store
 	resolveUser       ResolveUser
+	resolveProjUser   ResolveProjectUser
 	resolveProject    ResolveProject
 	requireMaintainer func(http.Handler) http.Handler
 	requireAdmin      func(http.Handler) http.Handler
@@ -98,6 +110,11 @@ type Config struct {
 	// into an account UID, so the trail can be filtered by the name a human
 	// knows. Without it a user filter is answered 500 rather than guessed at.
 	ResolveUser ResolveUser
+	// ResolveProjectUser is ResolveUser for a project admin's listing: it
+	// resolves the user filter only among that project's people, so the
+	// listing is no oracle for the instance's other accounts. Without it a
+	// user filter there is answered 500.
+	ResolveProjectUser ResolveProjectUser
 	// ResolveProject turns the instance listing's project filter — a slug —
 	// into the project's uid. Without it a project filter is answered 500.
 	ResolveProject ResolveProject
@@ -118,6 +135,7 @@ func NewAPI(cfg Config) *API {
 	return &API{
 		store:             cfg.Store,
 		resolveUser:       cfg.ResolveUser,
+		resolveProjUser:   cfg.ResolveProjectUser,
 		resolveProject:    cfg.ResolveProject,
 		requireMaintainer: cfg.RequireMaintainer,
 		requireAdmin:      cfg.RequireAdmin,
@@ -175,6 +193,31 @@ func ownOnly(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// noActor is the actor filter of a project listing whose user value names none
+// of the project's people. It is no account uid (those are letters and digits
+// only), so the listing runs the very same queries as for a member who did
+// nothing and answers the very same empty page — an account elsewhere on the
+// instance and one that does not exist are indistinguishable from it.
+const noActor = "-"
+
+// projectPeople returns the user resolver of the listing of the project
+// projectUID: the account among the project's people (ResolveProjectUser), or
+// noActor for anything else, instead of the instance listing's 400 for a value
+// that names no account — that refusal, next to an empty 200 for an account
+// that exists, told a tenant's admin which accounts exist on the instance.
+func (a *API) projectPeople(projectUID string) ResolveUser {
+	return func(ctx context.Context, value string) (string, error) {
+		if a.resolveProjUser == nil {
+			return "", fmt.Errorf("%w: no project user lookup is configured", errLookup)
+		}
+		uid, err := a.resolveProjUser(ctx, projectUID, value)
+		if errors.Is(err, ErrUnknownUser) {
+			return noActor, nil
+		}
+		return uid, err
+	}
+}
+
 // listResponse is the JSON body returned by the list endpoint. NextOffset is the
 // offset to request for the following page, or null on the last page.
 type listResponse struct {
@@ -226,12 +269,20 @@ func (a *API) inProject(next http.HandlerFunc) http.HandlerFunc {
 // parseRequest builds the request's filter: the query's filters, then the
 // project — the route's (inProject) when it has one, which nothing in the query
 // can widen, or else the query's project=<slug>.
+//
+// In a project the user filter is resolved among that project's people only
+// (projectPeople), so it answers a foreign or a missing account alike.
 func (a *API) parseRequest(r *http.Request) (audit.Filter, error) {
-	filter, err := parseFilter(r.Context(), r.URL.Query(), a.resolveUser)
+	scoped, inProject := r.Context().Value(projectScopeKey{}).(string)
+	resolve := a.resolveUser
+	if inProject {
+		resolve = a.projectPeople(scoped)
+	}
+	filter, err := parseFilter(r.Context(), r.URL.Query(), resolve)
 	if err != nil {
 		return audit.Filter{}, err
 	}
-	if scoped, ok := r.Context().Value(projectScopeKey{}).(string); ok {
+	if inProject {
 		filter.ProjectUID = scoped
 		return filter, nil
 	}
@@ -287,6 +338,10 @@ func buildResponse(filter audit.Filter, entries []audit.Record, total int) listR
 	if limit <= 0 || limit > maxLimit {
 		limit = defaultLimit
 	}
+	if entries == nil {
+		// An empty page is an empty array, never null: a client iterates it.
+		entries = []audit.Record{}
+	}
 	resp := listResponse{
 		Entries: entries,
 		Total:   total,
@@ -341,6 +396,14 @@ const projectParam = "project"
 
 // userParam is the listings' actor filter: an account UID or a username.
 const userParam = "user"
+
+// ResolveProjectUser maps the user filter of the project projectUID's listing
+// onto an account UID like ResolveUser, but only among that project's people:
+// its current members and the accounts that have acted in it. It returns
+// ErrUnknownUser for every other value — an account elsewhere on the instance
+// as much as one that does not exist — and any other error when the lookup
+// itself failed.
+type ResolveProjectUser func(ctx context.Context, projectUID, value string) (string, error)
 
 // ResolveProject maps the project filter's value — a project's slug, the name
 // in its URL — onto that project's uid. It returns ErrUnknownProject when the

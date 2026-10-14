@@ -478,6 +478,21 @@ const (
 	// target is the account (target type "project_member"); the details carry
 	// project_uid, the role and whether the membership starts approved.
 	ActionProjectMemberAdd = "project.member.add"
+	// ActionProjectMemberAddRequest records a project admin asking to add an
+	// account by its exact username or e-mail address. It is deliberately the
+	// same entry whatever the add found — no target, no identifier, no outcome;
+	// the details carry project_uid and the role asked for — because the
+	// project's admin reads the project's trail, and an entry that told a hit
+	// from a miss would make the add an account-existence oracle.
+	ActionProjectMemberAddRequest = "project.member.add_request"
+	// ActionProjectMemberAddResolve records what such an add really did. It is
+	// an instance entry written without an actor, so only the system
+	// administrator's GET /audit shows it: not the project's trail, and not the
+	// requesting admin's own /audit/mine. The target is the account when one was
+	// found (target type "project_member"); the details carry project_uid,
+	// requested_by (the admin's uid), the role, the outcome and, when no single
+	// account was found, the identifier as typed.
+	ActionProjectMemberAddResolve = "project.member.add_resolve"
 	// ActionProjectMemberRole records a member's project role being changed. The
 	// details carry project_uid, the new role and the previous one.
 	ActionProjectMemberRole = "project.member.role"
@@ -563,6 +578,7 @@ var knownActions = map[string]struct{}{
 	ActionAnnouncementClear: {}, ActionSettingsUpdate: {}, ActionAuditPurge: {},
 	ActionLibraryReset: {}, ActionNotificationPrefsUpdate: {}, ActionProjectCreate: {},
 	ActionProjectUpdate: {}, ActionProjectStoragePrefix: {}, ActionProjectPurge: {}, ActionProjectMemberAdd: {},
+	ActionProjectMemberAddRequest: {}, ActionProjectMemberAddResolve: {},
 	ActionProjectRekeyStart: {}, ActionProjectRekeyPause: {}, ActionProjectRekeyResume: {},
 	ActionProjectRekeyRetry: {},
 	ActionProjectMemberRole: {}, ActionProjectMemberApprove: {}, ActionProjectMemberRemove: {},
@@ -573,7 +589,9 @@ var knownActions = map[string]struct{}{
 // instanceActions are the actions about the instance rather than one project's
 // library: accounts and their credentials, the lifecycle of a project as the
 // system administrator runs it (create, edit, purge, the storage move), the
-// retention purge and the library wipe. Such an entry may carry no project —
+// retention purge and the library wipe — and the hidden half of an exact-match
+// member add (ActionProjectMemberAddResolve), which is kept from the project's
+// trail on purpose. Such an entry may carry no project —
 // and Meta.Entry never stamps the request's project onto one, so an account
 // renamed is never filed under whatever project its request happened to
 // resolve. Every other known action is about one project's
@@ -587,7 +605,7 @@ var instanceActions = map[string]struct{}{
 	ActionNotificationPrefsUpdate: {}, ActionAuditPurge: {}, ActionLibraryReset: {},
 	ActionProjectCreate: {}, ActionProjectUpdate: {}, ActionProjectStoragePrefix: {},
 	ActionProjectPurge: {}, ActionProjectRekeyStart: {}, ActionProjectRekeyPause: {},
-	ActionProjectRekeyResume: {}, ActionProjectRekeyRetry: {},
+	ActionProjectRekeyResume: {}, ActionProjectRekeyRetry: {}, ActionProjectMemberAddResolve: {},
 }
 
 // ProjectScoped reports whether action is about one project's library or

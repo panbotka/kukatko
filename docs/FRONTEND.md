@@ -3062,7 +3062,11 @@ here.
   membership (`approved_at === null`) shows the `warning` badge „Čeká na schválení" and a **Schválit** button
   (`approveMember`, one press, no dialog; the backend mails the person the project's link) — the **last
   sign-in** („nikdy" when there is none) and **Odebrat** behind a `ConfirmModal` („Uživatel ztratí přístup k
-  projektu; jeho účet zůstane."). **Your own row** keeps the role select natively `disabled` with the reason
+  projektu; jeho účet zůstane."). **An exact-match add the account has not opened yet**
+  (`identity_withheld`; the server sends no username, display name, last sign-in or picture) is named
+  „Přidaný účet" (italic, with the hint „Jméno se ukáže, až účet tento projekt poprvé otevře."), its username
+  and last-sign-in cells read „—" (not „nikdy", which would be a claim), and it sorts last; role change and
+  removal work as on any row, and the toasts name it „Přidaný účet" too (`nameOf(member, t)`). **Your own row** keeps the role select natively `disabled` with the reason
   („Vlastní roli změnit nemůžete…") as a `title` on a wrapper (a disabled control gets no pointer events) and as
   the select's `aria-describedby`, and its Odebrat is a `ReasonedButton` off with its own reason — another admin
   has to do either. Refusals arrive as **toasts** (`useToast`, mapped by `MemberApiError.code`): `last_admin` →
@@ -7790,7 +7794,7 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   directory); the account actions wait for a home on the system side,
   `members.ts` = the project admin's client of `/api/v1/p/<slug>/members` (`apiPath`): `fetchMembers(signal)` →
   `ProjectMemberRow[]` (`user_uid`, `username`, `display_name`, `role`, `approved_at`, `last_login_at`,
-  `has_picture`), `setMemberRole(uid,role)` (`PATCH`), `approveMember(uid)` (`POST …/approve`), `removeMember(uid)`
+  `has_picture`, `identity_withheld`), `setMemberRole(uid,role)` (`PATCH`), `approveMember(uid)` (`POST …/approve`), `removeMember(uid)`
   (`DELETE`), each throwing **`MemberApiError`** with the backend's `code` (`last_admin`, `self`, `not_member`,
   `invalid_role`), and **`addMember(identifier,role)`** (`POST`), which **resolves for any HTTP answer and returns
   nothing** — the backend's 202 is identical for a hit and a miss, and the client keeps it that way; only a

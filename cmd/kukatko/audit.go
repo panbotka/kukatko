@@ -18,21 +18,41 @@ import (
 // listing narrowed to the caller's own actions for any signed-in account (its
 // user and project parameters ignored, so it is no username or slug oracle); under
 // a project, the same two routes list only that project's entries, for its
-// admin and for a member. Entries themselves are written within mutation
+// admin (its user filter resolved among the project's people only) and for a
+// member. Entries themselves are written within mutation
 // transactions elsewhere, so this API is read-only. The guards are supplied via
 // authAPI so auditapi stays decoupled from auth's wiring, and the user and
 // project filters are resolved through lookup functions for the same reason —
 // auditapi reads accounts and projects, it does not own them.
 func buildAuditAPI(db *database.DB, authAPI *auth.API) *auditapi.API {
+	store := audit.NewStore(db.Pool())
 	return auditapi.NewAPI(auditapi.Config{
-		Store:             audit.NewStore(db.Pool()),
-		ResolveUser:       resolveAuditUser(auth.NewStore(db.Pool())),
-		ResolveProject:    resolveAuditProject(project.NewStore(db.Pool())),
-		RequireMaintainer: authAPI.RequireMaintainer,
-		RequireAdmin:      authAPI.RequireAdmin,
-		RequireAuth:       authAPI.RequireAuth,
-		RequireSignedIn:   authAPI.RequireSignedIn,
+		Store:              store,
+		ResolveUser:        resolveAuditUser(auth.NewStore(db.Pool())),
+		ResolveProjectUser: resolveProjectAuditUser(store),
+		ResolveProject:     resolveAuditProject(project.NewStore(db.Pool())),
+		RequireMaintainer:  authAPI.RequireMaintainer,
+		RequireAdmin:       authAPI.RequireAdmin,
+		RequireAuth:        authAPI.RequireAuth,
+		RequireSignedIn:    authAPI.RequireSignedIn,
 	})
+}
+
+// resolveProjectAuditUser resolves a project admin's user filter among that
+// project's people only (audit.Store.ProjectPerson), so an account of another
+// tenant and one that does not exist are the same ErrUnknownUser — and the
+// listing answers both with the same empty page.
+func resolveProjectAuditUser(store *audit.Store) auditapi.ResolveProjectUser {
+	return func(ctx context.Context, projectUID, value string) (string, error) {
+		uid, err := store.ProjectPerson(ctx, projectUID, value)
+		if errors.Is(err, audit.ErrNoProjectPerson) {
+			return "", auditapi.ErrUnknownUser
+		}
+		if err != nil {
+			return "", fmt.Errorf("resolving project audit user %q: %w", value, err)
+		}
+		return uid, nil
+	}
 }
 
 // resolveAuditProject resolves the instance audit listing's project filter — a

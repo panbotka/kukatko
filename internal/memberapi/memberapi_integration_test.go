@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"slices"
 	"strings"
@@ -13,8 +14,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/panbotka/kukatko/internal/apitest"
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/audit/audittest"
 	"github.com/panbotka/kukatko/internal/auth"
@@ -184,24 +187,51 @@ func TestMembers_listIsTheProjectsOwn(t *testing.T) {
 	}
 }
 
-// addOutcomes reads the outcomes of the project.member.add entries of the
-// project projectUID, oldest first.
+// addOutcomes reads the outcomes the instance entries of the exact-match adds
+// into the project projectUID record, oldest first. It fails the test if one
+// carries an actor or a project: either would put it in front of the admin
+// who asked (their own activity, the project's trail).
 func addOutcomes(t *testing.T, pool *pgxpool.Pool, projectUID string) []string {
 	t.Helper()
-	rows, err := pool.Query(t.Context(), `SELECT details->>'outcome' FROM audit_log
-		WHERE action = $1 AND project_id = $2 AND details ? 'outcome' ORDER BY id`,
-		audit.ActionProjectMemberAdd, projectUID)
+	rows, err := pool.Query(t.Context(), `SELECT details->>'outcome', actor_uid IS NULL FROM audit_log
+		WHERE action = $1 AND project_id IS NULL AND details->>'project_uid' = $2 ORDER BY id`,
+		audit.ActionProjectMemberAddResolve, projectUID)
 	if err != nil {
 		t.Fatalf("reading the audit trail: %v", err)
 	}
 	defer rows.Close()
 	var out []string
 	for rows.Next() {
-		var outcome string
-		if err := rows.Scan(&outcome); err != nil {
+		var (
+			outcome string
+			noActor bool
+		)
+		if err := rows.Scan(&outcome, &noActor); err != nil {
 			t.Fatalf("scanning an outcome: %v", err)
 		}
+		if !noActor {
+			t.Errorf("the %s entry carries an actor; the requesting admin would see it", outcome)
+		}
 		out = append(out, outcome)
+	}
+	return out
+}
+
+// projectAddEntries reads what the project projectUID's own trail says about
+// the exact-match adds into it — every column a project admin's listing shows
+// except the id and the time — one string per entry, oldest first.
+func projectAddEntries(t *testing.T, pool *pgxpool.Pool, projectUID string) []string {
+	t.Helper()
+	rows, err := pool.Query(t.Context(), `SELECT concat_ws('|', actor_uid, action, target_type,
+			COALESCE(target_uid, '<none>'), details::text, ip, user_agent)
+		FROM audit_log WHERE project_id = $1 AND action = $2 ORDER BY id`,
+		projectUID, audit.ActionProjectMemberAddRequest)
+	if err != nil {
+		t.Fatalf("reading the project's trail: %v", err)
+	}
+	out, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatalf("collecting the project's trail: %v", err)
 	}
 	return out
 }
@@ -209,7 +239,9 @@ func addOutcomes(t *testing.T, pool *pgxpool.Pool, projectUID string) []string {
 // TestMembers_addAnswersIdenticallyAndAuditsTheOutcome proves the add answers
 // byte for byte the same for an account it adds, one already a member and one
 // that does not exist (a partial name included), that the e-mail address
-// matches regardless of case, and that the trail records what really happened.
+// matches regardless of case, that the project's own trail records every one
+// of them identically — no outcome, no identifier, no target — and that only
+// the actor-less instance entries record what really happened.
 func TestMembers_addAnswersIdenticallyAndAuditsTheOutcome(t *testing.T) {
 	e := newEnv(t)
 	client := e.f.ClientFor(t, e.server, projecttest.SideA)
@@ -233,8 +265,8 @@ func TestMembers_addAnswersIdenticallyAndAuditsTheOutcome(t *testing.T) {
 	}
 
 	member, err := project.NewStore(e.pool).Membership(t.Context(), e.f.A.ProjectUID, jan)
-	if err != nil || member.Role != project.RoleEditor || member.ApprovedAt == nil {
-		t.Fatalf("jan's membership = %+v, %v; want an approved editor", member, err)
+	if err != nil || member.Role != project.RoleEditor || member.ApprovedAt == nil || !member.IdentityWithheld {
+		t.Fatalf("jan's membership = %+v, %v; want an approved editor with the identity withheld", member, err)
 	}
 	account, err := auth.NewStore(e.pool).GetUserByUID(t.Context(), jan)
 	if err != nil || account.ApprovedAt == nil {
@@ -243,6 +275,27 @@ func TestMembers_addAnswersIdenticallyAndAuditsTheOutcome(t *testing.T) {
 	want := []string{"added", "already_member", "no_such_account", "no_such_account", "no_such_account"}
 	if got := addOutcomes(t, e.pool, e.f.A.ProjectUID); !slices.Equal(got, want) {
 		t.Errorf("audited outcomes = %v, want %v", got, want)
+	}
+	entries := projectAddEntries(t, e.pool, e.f.A.ProjectUID)
+	if len(entries) != len(identifiers) {
+		t.Fatalf("the project's trail holds %d add entries, want %d: %v", len(entries), len(identifiers), entries)
+	}
+	for i, entry := range entries {
+		if entry != entries[0] {
+			t.Errorf("project entry %d = %q, entry 0 = %q: the project's trail tells a hit from a miss",
+				i, entry, entries[0])
+		}
+	}
+	for _, leak := range []string{jan, "nobody", "no_such_account", "outcome", "identifier"} {
+		if strings.Contains(entries[0], leak) {
+			t.Errorf("the project's add entry %q names %q", entries[0], leak)
+		}
+	}
+	var naming int
+	if err := e.pool.QueryRow(t.Context(), `SELECT count(*) FROM audit_log
+		WHERE project_id = $1 AND (target_uid = $2 OR details::text LIKE '%' || $2 || '%')`,
+		e.f.A.ProjectUID, jan).Scan(&naming); err != nil || naming != 0 {
+		t.Errorf("project entries naming jan = %d (%v), want 0", naming, err)
 	}
 }
 
@@ -264,6 +317,107 @@ func TestMembers_addRefusesAnAmbiguousAddress(t *testing.T) {
 	}
 	if got := addOutcomes(t, e.pool, e.f.A.ProjectUID); !slices.Equal(got, []string{"ambiguous"}) {
 		t.Errorf("audited outcomes = %v, want [ambiguous]", got)
+	}
+}
+
+// signIn returns a client signed in on the server as username with the
+// fixture's password.
+func (e *env) signIn(t *testing.T, username string) *http.Client {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar: %v", err)
+	}
+	client := *apitest.Client()
+	client.Jar = jar
+	body := strings.NewReader(`{"username":"` + username + `","password":"` + projecttest.Password + `"}`)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
+		e.server.URL+auth.APIBasePath+"/auth/login", body)
+	if err != nil {
+		t.Fatalf("building the login: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("signing %s in: %v", username, err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("signing %s in = %d, want 200", username, resp.StatusCode)
+	}
+	return &client
+}
+
+// memberRow finds userUID in the project's members list as client sees it.
+func (e *env) memberRow(t *testing.T, client *http.Client, which projecttest.Side, userUID string) map[string]any {
+	t.Helper()
+	status, _, raw := e.call(t, client, http.MethodGet, e.f.PathFor(which, "members"), nil)
+	if status != http.StatusOK {
+		t.Fatalf("GET members = %d %s", status, raw)
+	}
+	var rows []map[string]any
+	if err := json.Unmarshal([]byte(raw), &rows); err != nil {
+		t.Fatalf("decoding %s: %v", raw, err)
+	}
+	for _, row := range rows {
+		if row["user_uid"] == userUID {
+			return row
+		}
+	}
+	t.Fatalf("members %s lack %s", raw, userUID)
+	return nil
+}
+
+// TestMembers_addWithholdsTheIdentityUntilTheAccountEnters proves an account
+// added by an exact match is listed without its name, last sign-in or picture
+// and is absent from the project's name directory — the admin learns nothing
+// about it from the add — until it enters the project itself, after which the
+// project sees it like any other member.
+func TestMembers_addWithholdsTheIdentityUntilTheAccountEnters(t *testing.T) {
+	e := newEnv(t)
+	admin := e.f.ClientFor(t, e.server, projecttest.SideA)
+	jan := e.seedAccount(t, "jan", "jan@example.test", true)
+	if _, err := e.pool.Exec(t.Context(),
+		`UPDATE users SET display_name = 'Jan Novák', last_login_at = now() WHERE uid = $1`, jan); err != nil {
+		t.Fatalf("naming jan: %v", err)
+	}
+	status, _, _ := e.call(t, admin, http.MethodPost, e.f.PathFor(projecttest.SideA, "members"),
+		map[string]string{"identifier": "jan", "role": "viewer"})
+	if status != http.StatusAccepted {
+		t.Fatalf("add = %d, want 202", status)
+	}
+
+	row := e.memberRow(t, admin, projecttest.SideA, jan)
+	if row["username"] != "" || row["display_name"] != "" || row["last_login_at"] != nil ||
+		row["has_picture"] != false || row["identity_withheld"] != true || row["role"] != "viewer" {
+		t.Errorf("withheld member row = %v, want the role only, no name, sign-in or picture", row)
+	}
+	if uids := e.directoryUIDs(t, admin, projecttest.SideA); slices.Contains(uids, jan) {
+		t.Errorf("directory %v names the withheld member", uids)
+	}
+
+	// jan opens the project: that is its own act, after which it is a member
+	// the project may see.
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+		e.server.URL+e.f.PathFor(projecttest.SideA, "users"), nil)
+	if err != nil {
+		t.Fatalf("building jan's request: %v", err)
+	}
+	resp, err := e.signIn(t, "jan").Do(req)
+	if err != nil {
+		t.Fatalf("jan entering A: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("jan entering A = %d, want 200", resp.StatusCode)
+	}
+	row = e.memberRow(t, admin, projecttest.SideA, jan)
+	if row["username"] != "jan" || row["display_name"] != "Jan Novák" || row["last_login_at"] == nil ||
+		row["identity_withheld"] != false {
+		t.Errorf("member row after jan entered = %v, want its name and last sign-in", row)
+	}
+	if uids := e.directoryUIDs(t, admin, projecttest.SideA); !slices.Contains(uids, jan) {
+		t.Errorf("directory %v after jan entered lacks it", uids)
 	}
 }
 

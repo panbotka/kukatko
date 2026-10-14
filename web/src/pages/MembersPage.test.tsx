@@ -51,6 +51,7 @@ function member(overrides: Partial<ProjectMemberRow> = {}): ProjectMemberRow {
     approved_at: '2026-10-01T10:00:00Z',
     last_login_at: '2026-10-12T08:30:00Z',
     has_picture: false,
+    identity_withheld: false,
     ...overrides,
   }
 }
@@ -130,6 +131,37 @@ describe('MembersPage', () => {
     expect(novak.getByText('Čeká na schválení')).toBeInTheDocument()
     expect(novak.getByRole('button', { name: 'Schválit' })).toBeInTheDocument()
     expect(novak.getByText('nikdy')).toBeInTheDocument()
+  })
+
+  it('shows an exact-match add without its name until the account opens the project', async () => {
+    fetchMock.mockResolvedValue([
+      ME,
+      member({
+        user_uid: 'u4',
+        username: '',
+        display_name: '',
+        role: 'viewer',
+        last_login_at: null,
+        identity_withheld: true,
+      }),
+    ])
+    renderPage()
+
+    const select = await screen.findByRole('combobox', { name: 'Role uživatele Přidaný účet' })
+    expect(select).toHaveValue('viewer')
+    expect(select).toBeEnabled()
+    const row = select.closest('tr')
+    if (row === null) {
+      throw new Error('no row for the added account')
+    }
+    const added = within(row)
+    expect(added.getByText('Přidaný účet')).toBeInTheDocument()
+    expect(
+      added.getByText('Jméno se ukáže, až účet tento projekt poprvé otevře.'),
+    ).toBeInTheDocument()
+    // Neither a username nor a sign-in: not even "never", which would be a claim.
+    expect(added.getAllByText('—')).toHaveLength(2)
+    expect(added.queryByText('nikdy')).not.toBeInTheDocument()
   })
 
   it('keeps one’s own role and removal off, saying why', async () => {

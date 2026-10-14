@@ -618,13 +618,13 @@ only change is viewer/curator/editor/admin → `user`). It needs no database.
 **The release-day expect list — production's real path, schema 0099 (0.31.0) → the newest migration.** This
 is the **one** authoritative list; every entry is a difference the design makes, nothing else. Proven on a
 fresh production dump (round 2, 2026-10-14, to 0115: 44 differences, 0 unexpected —
-[`MIGRATION_SAFETY.md`](MIGRATION_SAFETY.md)); 0116 only adds a column to a table this path creates, so it
-adds no difference. The marker names the range it was proven for: **adding a migration fails `make check`**
+[`MIGRATION_SAFETY.md`](MIGRATION_SAFETY.md)); 0116 and 0117 only add a column to a table this path
+creates, so they add no difference. The marker names the range it was proven for: **adding a migration fails `make check`**
 (`TestReleaseExpectList_coversTheNewestMigration`) until the new file is classified here (a table, a column,
 nothing), the marker is moved and the integration test `TestReleaseExpectList_provenOnTheRealPath` — which
 replays 0099 → newest on a seeded schema and judges it with exactly this block — passes again.
 
-<!-- release-expect: 0099..0116 -->
+<!-- release-expect: 0099..0117 -->
 ```sh
 docker run --rm --entrypoint /app/kukatko -v /root/inventory:/inv ghcr.io/panbotka/kukatko:<new> \
   maintenance inventory-diff /inv/A /inv/B \
@@ -656,7 +656,7 @@ change but the role collapse, and every catalogue difference (`digest:photos`, `
 `photo:…`) must match an `audit_log` entry written in the window (`created_at` after A). An unexplained
 catalogue difference stops the rollout.
 
-**Never migrate under a running 0.31.0.** The chain 0100–0116 is not backward compatible: 0.31.0 served
+**Never migrate under a running 0.31.0.** The chain 0100–0117 is not backward compatible: 0.31.0 served
 against a migrated schema fails every sign-in with 500 (`column "subject_uid" does not exist` — proven on a
 production copy, 2026-10-13) while its `/healthz` stays 200. Which new-binary commands may run against the
 production database **while the 0.31.0 container is still running**:
@@ -790,7 +790,7 @@ the vps PR is merged.**
      URL, its share target and mail links all forward to `/p/v/…`.
 5. **Deploy = merge the vps PR** (`ghcr.io/panbotka/kukatko:0.31.0` → the new tag; its body carries the link to
    this runbook — see the `/release` override below). Watch on the VPS: `docker logs -f vps-kukatko-1` must
-   show the new version starting and **17 `migration applied` lines** (0100 … 0116; rehearsed: 0.65 s on the
+   show the new version starting and **18 `migration applied` lines** (0100 … 0117; rehearsed: 0.65 s on the
    box, ~2–3 s expected on the VPS, 0102 the longest at ~1 s) and no `other database client` line — one means
    something still holds a session on the database (the old container?): find it. The outage is the container
    restart plus that. No `kukatko migrate` beforehand (see above).

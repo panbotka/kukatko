@@ -199,6 +199,61 @@ func TestBuildResponse(t *testing.T) {
 	}
 }
 
+// TestBuildResponse_emptyPageIsAnArray verifies an empty page encodes as an
+// empty array, never null — the store returns nil for no rows, and a client
+// iterating "entries" must not crash on it.
+func TestBuildResponse_emptyPageIsAnArray(t *testing.T) {
+	t.Parallel()
+	resp := buildResponse(audit.Filter{}, nil, 0)
+	if resp.Entries == nil || len(resp.Entries) != 0 {
+		t.Errorf("Entries = %#v, want an empty, non-nil slice", resp.Entries)
+	}
+}
+
+// TestProjectPeople verifies a project listing's user resolver: a project
+// person resolves to its uid, anything the project lookup does not know — a
+// foreign account or none at all, one ErrUnknownUser — becomes noActor (the
+// empty page, never a 400), a failing lookup stays an error, and a missing
+// lookup is a server error rather than an unfiltered listing.
+func TestProjectPeople(t *testing.T) {
+	t.Parallel()
+	boom := errors.New("boom")
+	lookup := func(_ context.Context, projectUID, value string) (string, error) {
+		switch {
+		case projectUID != "pj-b":
+			return "", fmt.Errorf("asked about project %q", projectUID)
+		case value == "ola":
+			return "us-ola", nil
+		case value == "broken":
+			return "", boom
+		}
+		return "", ErrUnknownUser
+	}
+	resolve := NewAPI(Config{ResolveProjectUser: lookup}).projectPeople("pj-b")
+
+	tests := []struct {
+		value   string
+		want    string
+		wantErr error
+	}{
+		{value: "ola", want: "us-ola"},
+		{value: "vera", want: noActor},
+		{value: "nobody", want: noActor},
+		{value: "broken", wantErr: boom},
+	}
+	for _, tt := range tests {
+		got, err := resolve(t.Context(), tt.value)
+		if got != tt.want || !errors.Is(err, tt.wantErr) {
+			t.Errorf("projectPeople(%q) = %q, %v; want %q, %v", tt.value, got, err, tt.want, tt.wantErr)
+		}
+	}
+
+	_, err := NewAPI(Config{}).projectPeople("pj-b")(t.Context(), "ola")
+	if !errors.Is(err, errLookup) {
+		t.Errorf("projectPeople without a lookup = %v, want errLookup", err)
+	}
+}
+
 // TestParseFilterRejectsNonsense verifies the three values that used to be taken
 // verbatim are now refused, and that each refusal names what was wrong — the
 // whole point of the change, since an accepted typo answers with an empty list

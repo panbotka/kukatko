@@ -102,7 +102,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   project-scoped (see *Which person the account is*).
   **`GET /api/v1/p/{project}/users`** (project-scoped, RequireAuth) → `{users:[{uid,name}]}`, the
   **project's approved members** ordered by the name each is known under — disabled accounts, memberships
-  still waiting for approval and every account of another project left out, so a tenant never learns who
+  still waiting for approval, exact-match adds that have not entered the project yet
+  (`identity_withheld`, see the Members API) and every account of another project left out, so a tenant never learns who
   else uses the instance. It is the directory a *name* is
   picked from — putting somebody on a task is how a question reaches the one relative who would know — and
   it is deliberately **not** the administrative view below: no addresses, no roles, no approval state, no
@@ -113,7 +114,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   **`GET /auth/me`** → the login payload (`user` + `download_token`) plus `instance_role`
   (`user`|`maintainer`), `projects: [{uid, slug, name, active, role, approved, subject_uid}]` (every
   membership, inactive projects included, by name; `subject_uid` is the account's "this is me" in that
-  project) and `last_project_slug` (the project the account last entered, `""` when none). The
+  project) and `last_project_slug` (the project the account last entered, `""` when none — **and `""`
+  once it can no longer enter it**: removed, waiting for approval or locked out by a deactivation; a
+  maintainer keeps a deactivated one, which it still enters). The
   per-project facts live in `projects`: the frontend reads the role and the linked person of the
   current project from there (`AuthContext` overlays the current project's `subject_uid` onto `user`).
   **`user` is the account record and carries nothing project-shaped**: no `role` and no `subject_uid`
@@ -472,17 +475,29 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   (+ a human `message` where the client should show the rule); every mutation is audited by
   `internal/project` in the change's transaction, with the project.
   - `GET /members` → a bare array by display name: `[{user_uid, username, display_name, role,
-    approved_at, last_login_at, has_picture}]` — `approved_at: null` is a membership waiting for
-    approval; `has_picture` says `GET /users/{uid}/avatar` is worth asking (an uploaded/picked picture
-    or a linked person; a 404 there still means none). **No e-mail address.**
+    approved_at, last_login_at, has_picture, identity_withheld}]` — `approved_at: null` is a membership
+    waiting for approval; `has_picture` says `GET /users/{uid}/avatar` is worth asking (an uploaded/picked
+    picture or a linked person; a 404 there still means none). **No e-mail address.**
+    `identity_withheld: true` is an exact-match add (below) whose account has **not entered the project
+    yet**: `username`/`display_name` are `""`, `last_login_at` is `null` and `has_picture` `false`, and
+    those rows come last, by when they were added (never sorted by the hidden name). The first request
+    the account makes inside the project clears it.
   - `POST /members` `{identifier, role}` — add an **existing** account by its **exact** username (as
     sign-in normalises it: trimmed, lower-cased) or its e-mail address (**case-insensitive**); nothing is
     matched partially and a username wins over an address. The answer is **always `202
     {"status":"accepted"}`**, byte for byte, whether the account was added, already was a member, or does
-    not exist — no enumeration. The membership starts **approved**. The
-    `project.member.add` audit entry records the real `outcome`: `added`, `already_member` (the
-    membership is left untouched), `no_such_account` (with the typed `identifier`), or `ambiguous` (an
-    address several accounts share — nobody is added). Only a malformed request is refused: 400
+    not exist — no enumeration. The membership starts **approved, its identity withheld** from the
+    project until the account enters it (`identity_withheld` above; meanwhile it is also out of the
+    name directory `GET /users`, and cannot be mentioned or put on a task). **The project's own trail is
+    uniform too:** every add writes one `project.member.add_request` entry with only `{project_uid,
+    role}` — no target, no identifier, no outcome — so the admin's `GET /p/{project}/audit` cannot tell a
+    hit from a miss. What really happened goes to an **instance** entry `project.member.add_resolve`
+    (no project, **no actor** — so neither the project's listing nor the admin's own `/audit/mine` shows
+    it; only the maintainer's `GET /audit`) with `requested_by`, the role and the `outcome`: `added`,
+    `already_member` (the membership is left untouched), `no_such_account` (with the typed
+    `identifier`), or `ambiguous` (an address several accounts share — nobody is added). What remains
+    visible to the admin is the withheld row a hit adds (it knows an account answers to what it typed,
+    nothing more — no name, activity or picture). Only a malformed request is refused: 400
     `invalid_body`, 422 `invalid_role` (`viewer|curator|editor|admin`; `maintainer` is not a project role),
     422 `invalid_identifier` (blank).
   - `PATCH /members/{user_uid}` `{role}` → 200 + the member. **The caller's own membership → 409 `self`**
@@ -2816,7 +2831,14 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   review ones below, so `?actor=`/`?from=` is refused rather than ignored. `?user=` takes an account **UID or a
   username** (resolved through the `ResolveUser` lookup handed to `auditapi.Config`, so the package keeps no
   dependency on the user service); a value naming **neither → 400**, while a real account with nothing to its
-  name still answers **200 + an empty list** — that one is a true answer. `?action=` is checked against
+  name still answers **200 + an empty list** — that one is a true answer. **That 400 is the instance
+  listing's alone.** On a project admin's `GET /p/{project}/audit`, `?user=` resolves **only among the
+  project's people** — its current members and every account that has acted in it (a former member, a
+  maintainer who worked there; `audit.Store.ProjectPerson` via `auditapi.Config.ResolveProjectUser`) —
+  and anything else, an account of another tenant as much as a name or uid nobody has, gets **the same
+  200 + empty page, byte for byte,** as a member who did nothing (it filters on an actor no entry has):
+  the 400-vs-200 split there was an instance-wide username oracle for every tenant's admin. An empty page
+  is `"entries": []`, never `null`. `?action=` is checked against
   `audit.KnownAction`, the closed set of `Action*` constants (a test parses them out of the source, so a new
   constant cannot be forgotten here): an unknown action → 400 naming it. `?entity_uid=` and `?entity_type=`
   stay **deliberately unchecked** — the trail outlives what it describes (an entry about a purged photo is the

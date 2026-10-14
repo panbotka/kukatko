@@ -5,6 +5,7 @@ package auditapi_test
 import (
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/audit"
@@ -186,4 +187,43 @@ func TestMine_noSlugOrUsernameOracle(t *testing.T) {
 			t.Errorf("%s?project=b targets = %v, want only the caller's own [al-vera]", mount, seen)
 		}
 	}
+}
+
+// TestProjectListing_noUsernameOracle proves a project admin's user filter
+// resolves only among the project's people: an account of another project and
+// an account that does not exist — by username or by uid — get exactly the
+// answer a member who did nothing gets (the same 200 and the same body, an
+// empty page), while a former member who acted in the project and a current
+// member are still found. The maintainer's instance listing keeps its 400.
+func TestProjectListing_noUsernameOracle(t *testing.T) {
+	f := newProjectFixture(t)
+	// vera is an account of v only; ola acted in b once and has since left it.
+	_, veraUID := f.env.loginUser(t, "vera", auth.AccountViewer)
+	_, olaUID := f.env.loginUser(t, "ola", auth.AccountViewer)
+	f.env.seed(t,
+		audit.Entry{ActorUID: veraUID, Action: audit.ActionAlbumCreate, TargetType: "albums", TargetUID: "al-vera",
+			ProjectUID: project.BootstrapUID},
+		audit.Entry{ActorUID: olaUID, Action: audit.ActionAlbumCreate, TargetType: "albums", TargetUID: "al-ola",
+			ProjectUID: f.b.UID},
+	)
+	base := f.env.baseURL + "/api/v1/p/b/audit"
+
+	// admin-b is a member of b with no entries of its own: the reference answer.
+	wantStatus, wantBody := rawGet(t, f.adminB, base+"?user=admin-b")
+	if wantStatus != http.StatusOK || !strings.Contains(wantBody, `"entries":[]`) {
+		t.Fatalf("?user=admin-b = %d %s, want 200 with an empty page", wantStatus, wantBody)
+	}
+	for _, probe := range []string{"vera", veraUID, "nobody-by-that-name", "usnonexistent000000000000"} {
+		status, body := rawGet(t, f.adminB, base+"?user="+probe)
+		if status != wantStatus || body != wantBody {
+			t.Errorf("?user=%s = %d %s, want the non-acting member's answer %d %s",
+				probe, status, body, wantStatus, wantBody)
+		}
+	}
+	for _, ref := range []string{"ola", olaUID} {
+		if seen := targets(list(t, f.adminB, base+"?user="+ref)); len(seen) != 1 || seen[0] != "al-ola" {
+			t.Errorf("?user=%s targets = %v, want the former member's [al-ola]", ref, seen)
+		}
+	}
+	badRequest(t, f.maintainer, f.env.baseURL+"/api/v1/audit?user=nobody-by-that-name", "nobody-by-that-name")
 }

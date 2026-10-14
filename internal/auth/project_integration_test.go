@@ -300,6 +300,68 @@ func TestProject_lastProjectRemembered(t *testing.T) {
 	}
 }
 
+// lastProjectOf reads last_project_slug from GET /auth/me as client.
+func (e *projectEnv) lastProjectOf(t *testing.T, client *http.Client) string {
+	t.Helper()
+	status, body := e.get(t, client, "/api/v1/auth/me")
+	if status != http.StatusOK {
+		t.Fatalf("/auth/me = %d (body %s)", status, body)
+	}
+	var me meBody
+	if err := json.Unmarshal(body, &me); err != nil {
+		t.Fatalf("decoding %s: %v", body, err)
+	}
+	return me.LastProjectSlug
+}
+
+// TestProject_meForgetsAProjectItCannotEnter proves GET /auth/me names the
+// last project only while the account can still enter it: removed from it,
+// waiting for approval in it, or locked out by its deactivation, the account is
+// told nothing — while a maintainer, who enters even a deactivated project,
+// keeps being pointed at it.
+func TestProject_meForgetsAProjectItCannotEnter(t *testing.T) {
+	env := newProjectEnv(t)
+	alfa := env.createProject(t, "alfa")
+	client, user := env.signIn(t, "eva", auth.AccountViewer)
+	env.addMember(t, alfa, user, project.RoleViewer, true)
+	if status, _ := env.get(t, client, "/api/v1/p/alfa/probe/auth"); status != http.StatusOK {
+		t.Fatalf("entering alfa = %d", status)
+	}
+	if got := env.lastProjectOf(t, client); got != "alfa" {
+		t.Fatalf("last project while a member = %q, want alfa", got)
+	}
+	pool := env.db.Pool()
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := pool.Exec(t.Context(), sql, args...); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+
+	exec(`DELETE FROM project_members WHERE project_uid = $1 AND user_uid = $2`, alfa.UID, user.UID)
+	if got := env.lastProjectOf(t, client); got != "" {
+		t.Errorf("last project after the removal = %q, want none", got)
+	}
+	env.addMember(t, alfa, user, project.RoleViewer, false)
+	if got := env.lastProjectOf(t, client); got != "" {
+		t.Errorf("last project while waiting for approval = %q, want none", got)
+	}
+	exec(`UPDATE project_members SET approved_at = now() WHERE project_uid = $1 AND user_uid = $2`,
+		alfa.UID, user.UID)
+	exec(`UPDATE projects SET active = false WHERE uid = $1`, alfa.UID)
+	if got := env.lastProjectOf(t, client); got != "" {
+		t.Errorf("last project after the deactivation = %q, want none", got)
+	}
+
+	maint, _ := env.signIn(t, "ops", auth.AccountMaintainer)
+	if status, _ := env.get(t, maint, "/api/v1/p/alfa/probe/auth"); status != http.StatusOK {
+		t.Fatalf("maintainer entering the deactivated alfa = %d", status)
+	}
+	if got := env.lastProjectOf(t, maint); got != "alfa" {
+		t.Errorf("maintainer's last project = %q, want the deactivated alfa it enters", got)
+	}
+}
+
 // meBody is the part of GET /auth/me these tests read.
 type meBody struct {
 	// User is decoded as a map so a test can assert a key is absent: the

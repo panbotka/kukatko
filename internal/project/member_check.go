@@ -15,7 +15,9 @@ type RowQuerier interface {
 }
 
 // ApprovedMemberSQL returns the SQL predicate that holds when the account
-// userExpr is an approved member of the project projectExpr. Both arguments are
+// userExpr is an approved member of the project projectExpr whose identity the
+// project may see — not an exact-match add the account has not entered yet
+// (Member.IdentityWithheld). Both arguments are
 // SQL expressions (a placeholder like "$2" or a column like "u.uid"); they are
 // pasted verbatim, so they must never carry user input.
 //
@@ -24,10 +26,12 @@ type RowQuerier interface {
 // participant, a mention, an import's uploader) admits only such an account.
 // Pending members and accounts outside the project — the system administrator
 // included, who enters every project but belongs to none by that — are not
-// admitted, so the project never learns the name of somebody outside it.
+// admitted, so the project never learns the name of somebody outside it; nor is
+// a member whose identity is withheld, whose uid only the project's admin has
+// seen and whose name a mention would otherwise resolve.
 func ApprovedMemberSQL(projectExpr, userExpr string) string {
 	return "EXISTS (SELECT 1 FROM project_members apm WHERE apm.project_uid = " + projectExpr +
-		" AND apm.user_uid = " + userExpr + " AND apm.approved_at IS NOT NULL)"
+		" AND apm.user_uid = " + userExpr + " AND apm.approved_at IS NOT NULL AND NOT apm.identity_withheld)"
 }
 
 // approvedMembersFrom is the head of the statement RequireApprovedMembers

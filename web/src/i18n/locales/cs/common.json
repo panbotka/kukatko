@@ -4032,6 +4032,11 @@
     "roleFailed": "Roli se nepodařilo změnit.",
     "approveFailed": "Člena se nepodařilo schválit.",
     "removeFailed": "Člena se nepodařilo odebrat.",
+    "withheld": {
+      "name": "Přidaný účet",
+      "hint": "Jméno se ukáže, až účet tento projekt poprvé otevře.",
+      "unknown": "—"
+    },
     "add": {
       "open": "Přidat člena",
       "title": "Přidat člena",

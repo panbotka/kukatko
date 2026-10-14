@@ -133,6 +133,12 @@ type Member struct {
 	// face still answers 404 there, so a client keeps its initial as the
 	// fallback.
 	HasPicture bool `json:"has_picture"`
+	// IdentityWithheld reports a membership made by an exact-match add
+	// (AddByIdentifier) whose account has not entered the project yet. Until it
+	// does, Username and DisplayName are empty, LastLoginAt is nil and
+	// HasPicture false, and the account cannot be named in the project
+	// (ApprovedMemberSQL): an add must not tell the admin who the account is.
+	IdentityWithheld bool `json:"identity_withheld"`
 }
 
 // MembershipSummary is one project an account belongs to, as the project

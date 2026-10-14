@@ -472,7 +472,7 @@ longer records.
 
 **Verdict: the code and the migration chain are GO; the operator runbook as it stood was NO-GO** — three
 blockers, all documentation/process (B1–B3 below), fixed in the runbook the same day. Rehearsed on `main`
-**672357f6** (migrations 0100–0115; 0116 came later and only adds a column to a table this path creates)
+**672357f6** (migrations 0100–0115; 0116 and 0117 came later and only add a column to a table this path creates)
 against a **fresh production dump**; production was **0.31.0 / 253fd0b, schema 0099**. The only actions on
 production were one `pg_dump -Fc`, `/healthz`, `docker ps/inspect/logs`, env *names* and file listings; all
 work ran on the box. Full report: `/mnt/nas-botka/kukatko/multitenancy-review-2/migration-review.md`.
