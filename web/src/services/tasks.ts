@@ -125,12 +125,19 @@ export interface Task {
  */
 export interface Participant {
   user_uid: string
-  /** The display name, falling back to the username. */
+  /** The display name, falling back to the username; empty for a former member. */
   name: string
   joined_at: string
   /** Absent for somebody who joined by acting on the task. */
   added_by?: string
   added_by_name?: string
+  /**
+   * True for a participant who has left the project: the server sends no name,
+   * and the page says „Bývalý člen projektu" without a picture.
+   */
+  former?: boolean
+  /** `former` for whoever asked them; `added_by_name` is empty then. */
+  added_by_former?: boolean
 }
 
 /** Response body of the participant endpoints. */

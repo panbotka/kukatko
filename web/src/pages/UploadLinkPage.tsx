@@ -305,6 +305,12 @@ export function UploadLinkPage() {
               {load.status === 'ready' && phase === 'pick' && (
                 <>
                   <h1 className="kk-page-title mb-2">{title}</h1>
+                  {load.link.project !== '' && (
+                    <p className="text-secondary mb-2" data-testid="upload-link-project">
+                      <Icon name="folder2-open" className="me-1" />
+                      {t('uploadLink.project', { name: load.link.project })}
+                    </p>
+                  )}
                   {load.link.note !== '' && (
                     <p className="mb-3" style={{ whiteSpace: 'pre-line' }}>
                       {load.link.note}

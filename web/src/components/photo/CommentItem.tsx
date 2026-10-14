@@ -67,9 +67,15 @@ export function CommentItem({
 
   // An account deleted since leaves its comments authorless (the backend keeps the
   // row and clears the author), so the thread still reads — with the fact stated,
-  // rather than an empty name where a person used to be.
-  const authorName =
-    comment.author_name === '' ? t('photo.comments.unknownAuthor') : comment.author_name
+  // rather than an empty name where a person used to be. An author who has left
+  // the project is a former member: no name and no picture, so the project stops
+  // seeing the account's live name.
+  const former = comment.author_former === true
+  const authorName = former
+    ? t('formerMember')
+    : comment.author_name === ''
+      ? t('photo.comments.unknownAuthor')
+      : comment.author_name
 
   const save = async (event: SyntheticEvent): Promise<void> => {
     event.preventDefault()
@@ -88,7 +94,7 @@ export function CommentItem({
       {/* Whatever the author's account resolves to; the coloured initial — the
           common case — when it resolves to nothing. An authorless comment (its
           account was deleted) names no user and goes straight to the letter. */}
-      <PersonAvatar name={authorName} userUid={comment.author_uid} />
+      <PersonAvatar name={authorName} userUid={former ? undefined : comment.author_uid} />
       <div className="kk-comment__main">
         <p className="kk-comment__meta">
           <span className="kk-comment__author">{authorName}</span>

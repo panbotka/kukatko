@@ -369,3 +369,43 @@ func TestCreate_askedUnknownWritesNothing(t *testing.T) {
 		t.Errorf("audit rows after the refusal = %d, want none", n)
 	}
 }
+
+// TestParticipants_formerMembers verifies a participant, and whoever asked
+// them, read as former members once they have left the task's project — no
+// name, the flag set — in the participants listing and in the task alike.
+func TestParticipants_formerMembers(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	task := f.mustCreate(t, "Kdo je to?")
+	asked := f.makeMember(t, "us-asked", "teta", "Teta")
+	if err := f.tasks.Assign(ctx, project.BootstrapUID, task.UID, asked, entry(audit.ActionTaskAssign)); err != nil {
+		t.Fatalf("Assign: %v", err)
+	}
+	if _, err := f.db.Pool().Exec(ctx, `DELETE FROM project_members WHERE project_uid = $1`,
+		project.BootstrapUID); err != nil {
+		t.Fatalf("emptying the project: %v", err)
+	}
+
+	people, err := f.tasks.Participants(ctx, project.BootstrapUID, task.UID)
+	if err != nil {
+		t.Fatalf("Participants: %v", err)
+	}
+	one, err := f.tasks.Get(ctx, project.BootstrapUID, task.UID, actor)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	for source, list := range map[string][]phototask.Participant{"Participants": people, "Get": one.Participants} {
+		if len(list) != 2 {
+			t.Fatalf("%s = %v, want the author and the asked person", source, names(list))
+		}
+		for _, p := range list {
+			if !p.Former || p.Name != "" {
+				t.Errorf("%s: %s reads %q former=%v, want a nameless former member", source, p.UserUID, p.Name, p.Former)
+			}
+			if p.UserUID == asked && (!p.AddedByFormer || p.AddedByName != "" || p.AddedByUID != actor) {
+				t.Errorf("%s: asker = %q %q former=%v, want a nameless former member", source, p.AddedByUID,
+					p.AddedByName, p.AddedByFormer)
+			}
+		}
+	}
+}

@@ -410,6 +410,7 @@
     "en": "English",
     "switch": "Přepnout jazyk"
   },
+  "formerMember": "Bývalý člen projektu",
   "roles": {
     "viewer": "Prohlížeč",
     "curator": "Kurátor",
@@ -3237,6 +3238,58 @@
   },
   "notification": {
     "title": "Oznámení",
+    "text": {
+      "untitled": "(bez názvu)",
+      "somebody": "Někdo",
+      "tagged": {
+        "title_one": "Označili vás na fotce",
+        "title_few": "Označili vás na fotkách",
+        "title_many": "Označili vás na fotkách",
+        "title_other": "Označili vás na fotkách",
+        "body_one": "Přibyla {{count}} fotka, na které vás označili.",
+        "body_few": "Přibyly {{count}} fotky, na kterých vás označili.",
+        "body_many": "Přibylo {{count}} fotky, na kterých vás označili.",
+        "body_other": "Přibylo {{count}} fotek, na kterých vás označili."
+      },
+      "taggedAlbum": {
+        "title_one": "Označili vás na fotce v albu {{album}}",
+        "title_few": "Označili vás na fotkách v albu {{album}}",
+        "title_many": "Označili vás na fotkách v albu {{album}}",
+        "title_other": "Označili vás na fotkách v albu {{album}}",
+        "body_one": "Přibyla {{count}} fotka v albu {{album}}, na které vás označili.",
+        "body_few": "Přibyly {{count}} fotky v albu {{album}}, na kterých vás označili.",
+        "body_many": "Přibylo {{count}} fotky v albu {{album}}, na kterých vás označili.",
+        "body_other": "Přibylo {{count}} fotek v albu {{album}}, na kterých vás označili."
+      },
+      "taggedOther": {
+        "title_one": "Označili vás na další fotce",
+        "title_few": "Označili vás na dalších fotkách",
+        "title_many": "Označili vás na dalších fotkách",
+        "title_other": "Označili vás na dalších fotkách",
+        "body_one": "Přibyla {{count}} další fotka, na které vás označili.",
+        "body_few": "Přibyly {{count}} další fotky, na kterých vás označili.",
+        "body_many": "Přibylo {{count}} další fotky, na kterých vás označili.",
+        "body_other": "Přibylo {{count}} dalších fotek, na kterých vás označili."
+      },
+      "registrationPending": {
+        "title": "Nová registrace čeká na schválení",
+        "body": "Do Kukátka se právě zaregistroval uživatel {{name}}."
+      },
+      "albumFeatured": {
+        "title": "Nové doporučené album: {{album}}",
+        "body": "Na úvodní stránce Kukátka je nově doporučené album {{album}}."
+      },
+      "taskAssigned": {
+        "title": "{{name}} tě přidal(a) k úkolu: {{title}}",
+        "body": "Otevři úkol a odpověz."
+      },
+      "commentMention": {
+        "photo": "{{name}} tě zmínil(a) v komentáři u fotky",
+        "photoTitled": "{{name}} tě zmínil(a) v komentáři u fotky {{title}}",
+        "task": "{{name}} tě zmínil(a) v komentáři u úkolu {{title}}",
+        "album": "{{name}} tě zmínil(a) v komentáři u alba {{title}}"
+      }
+    },
     "back": "Zpět do knihovny",
     "error": "Oznámení se nepodařilo načíst.",
     "missing": {
@@ -3577,6 +3630,8 @@
       "restoreHint": "Nahrajte soubor, který se stáhl při odpojení (nebo ten, který vypsal stejný příkaz na serveru). Osoby se obnoví přesně takové, jaké byly, a jejich značky i obličeje se jim vrátí.",
       "restoreLabel": "Soubor pro vrácení zpět",
       "restoring": "Nahrávám…",
+      "restoreWrongProject": "Tento soubor pro vrácení zpět patří k jinému projektu. Vyberte nahoře projekt, ve kterém vznikl, a nahrajte ho znovu.",
+      "restoreEmpty": "Soubor nezaznamenává žádnou odpojenou osobu, není co vracet.",
       "restoreInvalid": "Tohle není použitelný soubor pro vrácení zpět.",
       "restoreError": "Vrácení zpět se nezdařilo.",
       "restoreResult": "Naplánováno obnovení {{queued}} osob; běží na pozadí.",
@@ -3814,7 +3869,10 @@
         "nameless_detach": "Odpojení osoby bez jména",
         "nameless_restore": "Obnovení osoby bez jména",
         "family_export": "Zápis rodokmenu do úložiště",
-        "face_cluster": "Skupiny obličejů"
+        "face_cluster": "Skupiny obličejů",
+        "task_digest": "Denní přehled úkolů e-mailem",
+        "album_featured_notify": "Oznámení o doporučeném albu",
+        "storage_rekey": "Přesun souborů projektu v úložišti"
       }
     },
     "video": {
@@ -4036,6 +4094,7 @@
       "actions": "Akce"
     },
     "roleLabel": "Role uživatele {{name}}",
+    "maintainerRoleReason": "Správce systému spravuje všechny projekty, ať má v projektu jakoukoli roli — tu proto měnit nelze.",
     "selfRoleReason": "Vlastní roli změnit nemůžete — musí to udělat jiný správce projektu.",
     "pending": "Čeká na schválení",
     "approved": "Schválený",
@@ -4528,6 +4587,7 @@
   "uploadLink": {
     "title": "Nahrajte fotky",
     "loading": "Načítám odkaz…",
+    "project": "Nahráváte do projektu {{name}}",
     "targets": "Fotky půjdou do:",
     "validUntil": "Odkaz platí do {{date}}.",
     "signedInAs": "Nahráváte jako {{name}}.",

@@ -133,7 +133,8 @@ func (r fakeRow) Scan(dest ...any) error {
 // message is the notification every fan-out case delivers.
 func message() Message {
 	return Message{
-		ProjectUID: "pj1", Kind: notification.KindTagged, Text: notification.Text{Title: "Title", Body: "Body"},
+		ProjectUID: "pj1", Kind: notification.KindTagged,
+		Text:     notification.Text{Title: "Title", Body: "Body", Params: notification.Params{Count: 2}},
 		SelfLink: true, PhotoUIDs: []string{"p1", "p2"},
 	}
 }
@@ -266,7 +267,7 @@ func boolToInt(b bool) int {
 
 // TestDeliver_payloads checks what the push and the generic mail carry: the
 // stored text, the notification's own link (absolute in the mail), and its uid
-// as the push tag.
+// as the push tag — and that the record keeps the text's params.
 func TestDeliver_payloads(t *testing.T) {
 	t.Parallel()
 
@@ -296,8 +297,8 @@ func TestDeliver_payloads(t *testing.T) {
 		t.Errorf("mail = %+v, want %+v", mail.sent, wantMail)
 	}
 	if got := notes.created[0]; !slices.Equal(got.PhotoUIDs, []string{"p1", "p2"}) || !got.SelfLink ||
-		got.ProjectUID != "pj1" || got.ProjectSlug != "rodina" {
-		t.Errorf("recorded %+v, want the photo set, the self link and the project", got)
+		got.ProjectUID != "pj1" || got.ProjectSlug != "rodina" || got.Params != (notification.Params{Count: 2}) {
+		t.Errorf("recorded %+v, want the photo set, the self link, the project and the text's params", got)
 	}
 }
 

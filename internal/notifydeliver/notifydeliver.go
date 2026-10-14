@@ -361,7 +361,7 @@ func (d *Deliverer) record(
 	}
 	record, err := d.notes.CreateTx(ctx, tx, notification.New{
 		ProjectUID: p.UID, ProjectSlug: p.Slug,
-		UserUID: userUID, Kind: msg.Kind, Title: msg.Text.Title, Body: msg.Text.Body,
+		UserUID: userUID, Kind: msg.Kind, Title: msg.Text.Title, Body: msg.Text.Body, Params: msg.Text.Params,
 		Link: projectLink(p.Slug, msg.Link), SelfLink: msg.SelfLink, PhotoUIDs: msg.PhotoUIDs, InApp: inApp,
 	})
 	if err != nil {

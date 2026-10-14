@@ -21,13 +21,17 @@ const errNotificationNotFound = "notification not found"
 // notificationView is a notification as its owner reads it. The owner is
 // omitted — it is always the caller.
 type notificationView struct {
-	UID       string            `json:"uid"`
-	Kind      notification.Kind `json:"kind"`
-	Title     string            `json:"title"`
-	Body      string            `json:"body"`
-	Link      string            `json:"link"`
-	CreatedAt time.Time         `json:"created_at"`
-	ReadAt    *time.Time        `json:"read_at"`
+	UID   string            `json:"uid"`
+	Kind  notification.Kind `json:"kind"`
+	Title string            `json:"title"`
+	Body  string            `json:"body"`
+	// Params are the facts title and body were rendered from, so the client
+	// renders them in its own language; null for a row stored without them,
+	// whose title and body are all there is.
+	Params    *notification.Params `json:"params"`
+	Link      string               `json:"link"`
+	CreatedAt time.Time            `json:"created_at"`
+	ReadAt    *time.Time           `json:"read_at"`
 }
 
 // toNotificationView projects a stored notification onto its client-facing view.
@@ -37,6 +41,7 @@ func toNotificationView(n notification.Notification) notificationView {
 		Kind:      n.Kind,
 		Title:     n.Title,
 		Body:      n.Body,
+		Params:    n.Params,
 		Link:      n.Link,
 		CreatedAt: n.CreatedAt,
 		ReadAt:    n.ReadAt,

@@ -377,11 +377,13 @@ type meBody struct {
 		Role       string  `json:"role"`
 		Approved   bool    `json:"approved"`
 		SubjectUID *string `json:"subject_uid"`
+		// Description is a pointer so an absent key reads nil, not "".
+		Description *string `json:"description"`
 	} `json:"projects"`
 }
 
 // TestProject_meShape pins GET /auth/me: the instance role, every membership
-// with its role, approval and "this is me" person, the remembered last
+// with its description, role, approval and "this is me" person, the remembered last
 // project, and a user object that is the bare account record — its instance
 // role, but no "role" and no "subject_uid", which exist only per membership.
 func TestProject_meShape(t *testing.T) {
@@ -389,6 +391,10 @@ func TestProject_meShape(t *testing.T) {
 	alfa := env.createProject(t, "alfa")
 	client, user := env.signIn(t, "eva", auth.AccountCurator)
 	env.addMember(t, alfa, user, project.RoleAdmin, false)
+	if _, err := env.db.Pool().Exec(t.Context(), `UPDATE projects SET description = 'Spolkové fotky'
+		WHERE uid = $1`, alfa.UID); err != nil {
+		t.Fatalf("describing alfa: %v", err)
+	}
 	// /auth/me enters no project; visiting one is what remembers it.
 	if status, body := env.get(t, client, "/api/v1/p/v/probe/auth"); status != http.StatusOK {
 		t.Fatalf("visiting v = %d %s", status, body)
@@ -425,6 +431,12 @@ func TestProject_meShape(t *testing.T) {
 	if p := me.Projects[byslug["alfa"]]; p.UID != alfa.UID || p.Role != "admin" || p.Approved || !p.Active ||
 		p.SubjectUID != nil {
 		t.Errorf("alfa membership = %+v, want an unapproved admin of an active project, nobody linked", p)
+	}
+	if p := me.Projects[byslug["alfa"]]; p.Description == nil || *p.Description != "Spolkové fotky" {
+		t.Errorf("alfa description = %v, want the project's own text", p.Description)
+	}
+	if p := me.Projects[byslug["v"]]; p.Description == nil {
+		t.Error("bootstrap membership has no description key, want it present (empty or not)")
 	}
 	if p := me.Projects[byslug["v"]]; p.UID != project.BootstrapUID || p.Role != "curator" || !p.Approved ||
 		p.SubjectUID == nil || *p.SubjectUID != "sub_eva" {

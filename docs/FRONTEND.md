@@ -516,8 +516,10 @@ here.
   whole-dead-letter button sits below with the shared `JobStateLegend`. The lifetime numbers are captioned as
   history — this replaced a badge row where `image_embed: 41 594` against 20 930 photos read as a backlog when
   it was a one-off re-embedding. An empty queue renders a sentence, not an empty table. **Every row is named
-  in words** — `system.jobs.types.*`, „Hledání obličejů" rather than `face_detect`, falling back to the raw id
-  for a type shipped before its translation — and the ids those names stand for are listed once, under the
+  in words** — `system.jobs.types.*`, „Hledání obličejů" rather than `face_detect`, through
+  `components/system/jobTypeLabels.ts` `JOB_TYPE_LABELS`; `jobTypeLabels.test.ts` reads every `Type*`
+  constant of `internal/jobs/models.go` and fails until the type has a key there and a text in both
+  locales (the raw id is only the runtime fallback) — and the ids those names stand for are listed once, under the
   table, behind a `TechnicalDetail`, for whoever has to match a row to a log line. Each cell is a `StateCell`
   taking its colour from the column it sits in, so `failed` and `dead` are both danger + glyph where `dead`
   alone used to be amber, and the lifetime column takes the `done` tone the column beside it does),
@@ -616,7 +618,9 @@ here.
   the top/left/right `env(safe-area-inset-*)`**, so the close button clears the iOS status bar and a
   landscape notch — no `p-*` utility on the container, its `!important` would flatten the insets;
   pinned by `ToastProvider.test` + `styles/safeArea.test`) with auto-dismiss (5 s) + manual close
-  (`toast.close`).
+  (`toast.close`). The top padding also adds **`--kukatko-navbar-height`**, so a toast comes to rest under
+  the sticky navbar instead of covering its links (a refusal on the members page hid the way off it); where
+  no bar is drawn the toast just sits that much lower.
   `useToast().show({message, variant?})` (`success`/`danger`/`info`, an `Icon` glyph by tone);
   **one place for placement, duration, and style** — instead of Bootstrap `bg-*` (solid green/red)
   each toast carries **its own surface from tokens**: `.kk-toast` = `--kk-surface-overlay` + a subtle
@@ -2025,8 +2029,9 @@ here.
   an account; outside `RequireAuth` and `Layout`): reads `fetchPublicUploadLink`; a link whose project
   has used up its quota (`storage_full`, or a file refused `quota_exceeded` mid-batch) shows
   `StorageFullNotice` — "Tento projekt má plné úložiště, nahrávání není možné.", no sizes — **in place of
-  the pickers** on the pick screen and under the outcome on the done screen; it shows the title, the
-  note, **where the photos go** (album/label names as non-clickable chips styled from `ENTITY_STYLE` —
+  the pickers** on the pick screen and under the outcome on the done screen; it shows the title, **the
+  project the photos go into** („Nahráváte do projektu {{name}}", the server's `project` — its name only),
+  the note, **where the photos go** (album/label names as non-clickable chips styled from `ENTITY_STYLE` —
   an uploader may not open them) and the expiry, and nothing else; an expired/revoked/unknown link gets a
   clear message instead. An anonymous visitor may type "Od koho?" (remembered per device under
   `kukatko.uploadLink.uploaderName`, see **Browser storage**); a signed-in one is greeted by name and
@@ -2574,7 +2579,12 @@ here.
   (`?unread=1`, so Back and a reload keep it); „Označit vše jako přečtené" (shown while something listed is
   unread) posts `read-all`, then reloads the list and refreshes the bell; a link to the account settings
   sits by the `h1`. Each row is a link to `notificationTarget(n)` (its `link`, or `/n/<uid>`) wrapping a
-  `NotificationRow`; choosing an unread one marks it read (idempotent) and refreshes the bell. Empty →
+  `NotificationRow` — which, like `NotificationPage`'s heading, says the notification through
+  **`lib/notificationText`** `notificationText(n, t)`: the stored title/body are rendered once in the
+  instance's language (Czech), so it re-renders them from `kind` + `params` (`notification.text.*`, Czech
+  with all three plural forms) in the reader's language, and falls back to the stored text for a row
+  without params (older than migration 0119), an unknown kind/variant or a missing fact; a mention's body is
+  the comment's own words and always the stored one (`lib/notificationText.test.ts`); choosing an unread one marks it read (idempotent) and refreshes the bell. Empty →
   `EmptyState` („Zatím tu nejsou žádná oznámení." + where to switch the channel on; for the unread filter
   „Všechno máš přečtené."); a failed first load → `ErrorState` with retry. Texts `inbox.*`. Tests
   `pages/NotificationsPage.test.tsx` (virtuoso stubbed locally with `endReached` exposed: paging and its
@@ -3042,8 +3052,10 @@ here.
   apply (`detachNamelessSubjects` → `POST …/detach`) **saves the undo file to the user's downloads** —
   the response body *is* the file, and the backend schedules the detach only once it has gone out, so a refusal
   (409 „nothing to detach", 503 „not wired", any 5xx) renders as its own message and nothing was changed. The
-  undo direction is a file picker (`restoreNamelessSubjects(file)` → `POST …/restore`, 400 → „not a usable undo
-  file"); both destructive halves run in the job queue, so their `Alert`s report what was **scheduled** and
+  undo direction is a file picker (`restoreNamelessSubjects(file)` → `POST …/restore`; a refusal is a
+  `NamelessRestoreError` carrying the server's code, so `undo_wrong_project` says the file **belongs to another
+  project** — pick that one and upload it again — `undo_empty` that it records nobody, and anything else
+  „not a usable undo file": a valid file picked in the wrong project no longer looks lost); both destructive halves run in the job queue, so their `Alert`s report what was **scheduled** and
   point at the queue card below; self-gated on `isMaintainer`,
   `SystemStatusPage` = `/system` (maintainer only) the **admin dashboard**: auto-refresh (polling 5 s)
   `GET /system/status`, read top to bottom in the order the questions are asked — **Knihovna**
@@ -3094,7 +3106,11 @@ here.
   removal work as on any row, and the toasts name it „Přidaný účet" too (`nameOf(member, t)`). **Your own row** keeps the role select natively `disabled` with the reason
   („Vlastní roli změnit nemůžete…") as a `title` on a wrapper (a disabled control gets no pointer events) and as
   the select's `aria-describedby`, and its Odebrat is a `ReasonedButton` off with its own reason — another admin
-  has to do either. Refusals arrive as **toasts** (`useToast`, mapped by `MemberApiError.code`): `last_admin` →
+  has to do either. **A system administrator's row** (`maintainer: true`) shows „Správce systému"
+  (`roles.maintainer`, a badge with the reason as its `title` and description) instead of a role select: a
+  maintainer administers every project whatever its membership says, so a role there would only lie — the
+  server refuses a change with `409 maintainer`, worded with the same reason. Refusals arrive as **toasts**
+  (`useToast`, mapped by `MemberApiError.code`): `last_admin` →
   „Projekt musí mít alespoň jednoho administrátora.", `self` → „Tohle nemůžete udělat sami sobě…", `not_member` →
   a toast plus a refetch (somebody else removed the member meanwhile), anything else → the action's own failure.
   **„Přidat člena"** opens **`AddMemberModal`** (`components/members/`): one text input „Uživatelské jméno nebo
@@ -3835,7 +3851,9 @@ here.
   prev/next and Back stay in the task. Under the body a **strip of `tile_100` thumbnails**
   (`.kk-comment__strip`, a `<ul>` named `photo.comments.referenced`) draws the referenced photos — bare
   uids **and** uids of own-site `/photos/<uid>` links (`lib/markdownLinks` `markdownPhotoUids`, which
-  parses with the renderer's own syntax so a uid in code does not count) — each once and in order of first mention, capped
+  parses with the renderer's own syntax so a uid in code does not count; given the reading project's slug
+  it leaves out a `/p/<other>/photos/<uid>` link, which still navigates into that project but is never
+  previewed through this one's API — an unprefixed link is the current project's) — each once and in order of first mention, capped
   at `COMMENT_STRIP_MAX` = 12 then „+N", each a link to the same place; a thumbnail whose image fails to
   load **drops out** (`CommentThumb` remembers its own error) rather than showing a broken image — a uid of
   the right shape need not exist, and one outside the task's group still links, because the reference is
@@ -3847,7 +3865,12 @@ here.
   through **one** `ConfirmModal` owned by the panel, not one per row. An admin therefore removes but never
   rewrites — the backend answers 403 to an admin's PATCH, and the UI says the same thing by only offering
   „Smazat". A comment whose author's account is gone reads as „Smazaný uživatel" (the row survives
-  authorless) and nobody may touch it. The row's two actions are **a quiet pair of icon buttons** (pencil,
+  authorless) and nobody may touch it. An author who has **left the project** (`author_former`; the server
+  sends no name) reads as **„Bývalý člen projektu"** (`formerMember`) with no picture asked for — so does a
+  mention of such an account (`CommentMention.former`: the `MentionChip` is muted, unlinked, and never the
+  token's name), the task ledger's last-comment author and a former task participant in
+  `TaskParticipants` (`Participant.former` / `added_by_former`): a project stops seeing a live name that may
+  since have been renamed in another project (`CommentsPanel.test`, `TaskDetailPage.test`). The row's two actions are **a quiet pair of icon buttons** (pencil,
   bin — `aria-label` + `title` „Upravit"/„Smazat") in a column of their own at the comment's top right
   (`.kk-comment__actions`), not a caption link and a red outline box under every remark: same `sm` link
   variant, same muted ink (`.kk-comment__action`), delete turning `--kk-danger-text` only on hover/focus
@@ -4269,7 +4292,9 @@ here.
   for `photoDisplayTitle`'s heading) and `placeLabel` (narrowest→widest as one line, a level repeating the
   one below it dropped — a village is often its own named place — and the **region left out**: an address
   is not a caption), `lib/format`
-  `formatBytes(bytes, locale?)` (locale = decimal comma) and `formatByteCount` (the exact byte count
+  `formatBytes(bytes, locale)` (the locale is **required** — the decimal comma in Czech; it is the one size
+  formatter, after the upload list printed „3.6 MB" beside the error's „3,0 MB" and `/system` „141.9 GB"
+  — `UploadItem`, `DuplicateGroupCard` and the server-disk card all pass `i18n.language`) and `formatByteCount` (the exact byte count
   for the tooltip), `formatDateTimeMinutes` (a capture label to the minute) and `formatCaptureParts`
   = the same label **cut at the seam** between the calendar day and the clock, `{ date, separator,
   time }`, found through `Intl.formatToParts` because the order and the punctuation are the locale's
@@ -7328,8 +7353,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `trashCountdown.ts` = the pure `purgeCountdown(archivedAt,retentionDays,now?)` (the days remaining until the
   auto-purge from `archived_at` + the retention → `{daysLeft,due}` or `null` when the countdown doesn't apply
   (not archived / retention ≤ 0 / unparseable), the countdown on the trash cards);
-  `format.ts` = the pure `formatBytes(bytes)` (a byte count → human-readable binary units, e.g.
-  `1536`→`"1.5 KB"`, invalid→`"0 B"`) for the file size on the duplicate-group cards +
+  `format.ts` = the pure `formatBytes(bytes, locale)` (a byte count → human-readable binary units in the
+  active language, e.g. `1536`→ en `"1.5 KB"` / cs `"1,5 KB"`, invalid→`"0 B"`) for the file size on the duplicate-group cards +
   `formatCount(value,locale)` (a whole number → **thousands separated in the active language**, `20310` → cs
   `"20 310"` / en `"20,310"`; a fraction is rounded, non-finite → `"0"`) for the counts on `LibraryStatsCards` +
   `formatPercent(ratio,locale)` (a `[0,1]` share → a locale-aware percentage with **at most one decimal**,
@@ -8760,8 +8785,8 @@ role at all (no project) with `ForbiddenPage` instead of bouncing to `/login`.
 
 **`/projects` — the chooser** (`pages/ProjectsPage.tsx`, signed in, no project `Layout`): a grid
 (`Row xs=1 md=2 xl=3`) of one `Card` per membership — the name, the description clamped to three
-lines (`.kk-project-card__description`, `line-clamp: 3`; `ProjectMembership.description` is optional
-because `GET /auth/me` does not send it yet, and an empty one draws nothing) and the role as a badge
+lines (`.kk-project-card__description`, `line-clamp: 3`; `GET /auth/me` sends each membership's
+`description`, and an empty one draws nothing) and the role as a badge
 (`roles.*`). An enterable card (approved, active) is one big target: the name is a `stretched-link`
 to `/p/<slug>`, hover/focus-within lights the border. A deactivated project is greyed
 (`.kk-project-card--inactive`: muted text, no surface, dashed edge — not `opacity`, which would drag

@@ -73,11 +73,15 @@ const recordTimeout = time.Minute
 const linkGoneMessage = "upload link is no longer valid"
 
 // publicLink is what anybody holding a link learns: the curator's title and
-// note, the names of the albums and labels the photos go to, the expiry, and
-// whether registering through the link could succeed. Nothing else — no UIDs,
-// no counts, no creator, no photos.
+// note, the name of the project and the names of the albums and labels the
+// photos go to, the expiry, and whether registering through the link could
+// succeed. Nothing else — no UIDs, no counts, no creator, no photos.
 type publicLink struct {
-	Title     string    `json:"title"`
+	Title string `json:"title"`
+	// Project is the name of the project the photos go into, so the holder
+	// knows whose library they are adding to before they pick a file; "" only
+	// without a ProjectResolver wired (tests).
+	Project   string    `json:"project"`
 	Note      string    `json:"note"`
 	Albums    []string  `json:"albums"`
 	Labels    []string  `json:"labels"`
@@ -133,7 +137,8 @@ func (a *API) handlePublic(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, publicLink{
-		Title: link.Title, Note: link.Note, Albums: names(link.Albums), Labels: names(link.Labels),
+		Title: link.Title, Project: link.project.Name, Note: link.Note,
+		Albums: names(link.Albums), Labels: names(link.Labels),
 		ExpiresAt: link.ExpiresAt, RegistrationEnabled: a.registrationOpen(r, link.ProjectUID),
 		StorageFull: a.storageFull(r, link),
 	})

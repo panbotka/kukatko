@@ -124,6 +124,30 @@ describe('CommentsPanel', () => {
     expect(within(items[1]).getByText('P')).toBeInTheDocument()
   })
 
+  it('shows an author and a mention who left the project as former members', async () => {
+    fetchCommentsMock.mockResolvedValue([
+      comment({
+        author_uid: 'usr_gone',
+        author_name: '',
+        author_former: true,
+        body: 'Ask @[Petr](user:usr_petr) about it.',
+        mentions: [{ user_uid: 'usr_petr', name: '', former: true, subject_uid: null }],
+      }),
+    ])
+    renderPanel({ currentUserUid: 'usr_other' })
+
+    const [item] = await screen.findAllByRole('listitem')
+    // The author: the label instead of a name, and no picture asked for.
+    expect(within(item).getAllByText('Former project member')).toHaveLength(2)
+    expect(within(item).queryByRole('presentation', { hidden: true })).not.toBeInTheDocument()
+    // The mention: the label, muted, linking nowhere — not the token's name.
+    const chip = item.querySelector('[data-mention-uid="usr_petr"]')
+    expect(chip).toHaveTextContent('Former project member')
+    expect(chip).toHaveClass('kk-mention--gone')
+    expect(chip?.tagName).toBe('SPAN')
+    expect(within(item).queryByText('Petr')).not.toBeInTheDocument()
+  })
+
   it('marks an edited comment as edited', async () => {
     fetchCommentsMock.mockResolvedValue([comment({ edited_at: new Date().toISOString() })])
     renderPanel()

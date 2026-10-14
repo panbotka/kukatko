@@ -55,7 +55,7 @@ export function canRetryUpload(item: FailedUpload): boolean {
 export function uploadErrorMessage(
   item: FailedUpload,
   t: TFunction,
-  locale?: string,
+  locale: string,
 ): string | undefined {
   if (item.errorCode === 'file_too_large') {
     return item.errorLimitBytes !== undefined

@@ -19,6 +19,8 @@ export interface LastComment {
   body: string
   author_uid: string
   author_name: string
+  /** True for an author who has left the project; `author_name` is empty then. */
+  author_former?: boolean
   created_at: string
 }
 

@@ -29,25 +29,27 @@ describe('uploadErrorMessage', () => {
   it('translates a coded refusal instead of showing the server string', async () => {
     await i18n.changeLanguage('cs')
     const item = { errorCode: 'not_media', error: 'ingest: not a photo or video: broken.jpg' }
-    expect(uploadErrorMessage(item, i18n.t)).toBe('Tohle není fotka ani video')
+    expect(uploadErrorMessage(item, i18n.t, i18n.language)).toBe('Tohle není fotka ani video')
     await i18n.changeLanguage('en')
-    expect(uploadErrorMessage(item, i18n.t)).toBe('This is not a photo or a video')
+    expect(uploadErrorMessage(item, i18n.t, i18n.language)).toBe('This is not a photo or a video')
   })
 
   it('translates a damaged image in both languages', async () => {
     const item = { errorCode: 'damaged', error: 'ingest: damaged or incomplete image: cut.jpg' }
     await i18n.changeLanguage('cs')
-    expect(uploadErrorMessage(item, i18n.t)).toBe('Soubor je poškozený nebo neúplný')
+    expect(uploadErrorMessage(item, i18n.t, i18n.language)).toBe('Soubor je poškozený nebo neúplný')
     await i18n.changeLanguage('en')
-    expect(uploadErrorMessage(item, i18n.t)).toBe('This file is damaged or incomplete')
+    expect(uploadErrorMessage(item, i18n.t, i18n.language)).toBe(
+      'This file is damaged or incomplete',
+    )
   })
 
   it('says a dropped connection in words instead of the transport error', async () => {
     const item = { status: 'error', error: 'network error', interrupted: true }
     await i18n.changeLanguage('cs')
-    expect(uploadErrorMessage(item, i18n.t)).toBe('Spojení se přerušilo')
+    expect(uploadErrorMessage(item, i18n.t, i18n.language)).toBe('Spojení se přerušilo')
     await i18n.changeLanguage('en')
-    expect(uploadErrorMessage(item, i18n.t)).toBe('The connection dropped')
+    expect(uploadErrorMessage(item, i18n.t, i18n.language)).toBe('The connection dropped')
     // Still a failure a retry can fix.
     expect(canRetryUpload(item)).toBe(true)
   })
@@ -64,7 +66,7 @@ describe('uploadErrorMessage', () => {
     expect(uploadErrorMessage(item, i18n.t, 'en')).toBe(
       'The file is larger than the allowed 1.5 MB',
     )
-    expect(uploadErrorMessage({ errorCode: 'file_too_large' }, i18n.t)).toBe(
+    expect(uploadErrorMessage({ errorCode: 'file_too_large' }, i18n.t, i18n.language)).toBe(
       'The file is larger than the project allows',
     )
   })
@@ -98,14 +100,16 @@ describe('uploadErrorMessage', () => {
         'en',
       ),
     ).toBe("This upload would exceed the project's storage limit of 2.0 GB")
-    expect(uploadErrorMessage({ errorCode: 'quota_exceeded' }, i18n.t)).toBe(
+    expect(uploadErrorMessage({ errorCode: 'quota_exceeded' }, i18n.t, i18n.language)).toBe(
       "This upload would exceed the project's storage limit",
     )
   })
 
   it('falls back to the server message, and to nothing for an empty one', () => {
-    expect(uploadErrorMessage({ error: 'network error' }, i18n.t)).toBe('network error')
-    expect(uploadErrorMessage({ error: '' }, i18n.t)).toBeUndefined()
-    expect(uploadErrorMessage({}, i18n.t)).toBeUndefined()
+    expect(uploadErrorMessage({ error: 'network error' }, i18n.t, i18n.language)).toBe(
+      'network error',
+    )
+    expect(uploadErrorMessage({ error: '' }, i18n.t, i18n.language)).toBeUndefined()
+    expect(uploadErrorMessage({}, i18n.t, i18n.language)).toBeUndefined()
   })
 })

@@ -9,11 +9,60 @@ import (
 // it. A render function produces it the way internal/mailer renders its mails —
 // a pure function of a data struct, written in Czech, the instance's language —
 // so a notification and the mail sent for the same event read alike.
+//
+// Params are the facts the text was rendered from. They are stored beside the
+// text (notifications.params), so the in-app inbox can say the same thing in
+// the reader's own language instead of the instance's; the stored Title and
+// Body stay the fallback, and what a push or an e-mail carries.
 type Text struct {
 	// Title is the headline, never empty.
 	Title string
 	// Body is the line under the title.
 	Body string
+	// Params are the facts Title and Body were rendered from.
+	Params Params
+}
+
+// Variants of the tagged kind's text, Params.Variant.
+const (
+	// TaggedVariantAlbum is RenderTaggedInAlbum: the photos of one album.
+	TaggedVariantAlbum = "album"
+	// TaggedVariantOther is RenderTaggedOther: the photos no album names.
+	TaggedVariantOther = "other"
+)
+
+// Params are the facts a notification's text was rendered from, per kind:
+//
+//   - tagged: Count, and Variant "" (RenderTagged), "album" (with Album) or
+//     "other";
+//   - registration_pending: Name, the registering person;
+//   - album_featured: Album;
+//   - task_assigned: Name (who asked) and Title (the task);
+//   - comment_mention: Name (the writer), Place and Title (the thread's
+//     subject); the body is the comment's own words, in no language.
+//
+// Names and titles are stored trimmed and already cut the way the text cuts
+// them; a blank one stays "" and the reader writes its own "untitled" or
+// "somebody". The zero Params (an unknown kind, or a caller with no facts) is
+// stored as NULL, which a reader takes as "show the stored text".
+type Params struct {
+	// Variant picks one of a kind's texts; "" is the kind's plain one.
+	Variant string `json:"variant,omitempty"`
+	// Count is how many photos the text counts.
+	Count int `json:"count,omitempty"`
+	// Name is the person the text names.
+	Name string `json:"name,omitempty"`
+	// Album is the album the text names.
+	Album string `json:"album,omitempty"`
+	// Title is the task's, album's or photo's title the text names.
+	Title string `json:"title,omitempty"`
+	// Place is where a mentioning comment sits.
+	Place MentionPlace `json:"place,omitempty"`
+}
+
+// IsZero reports whether p holds no fact at all.
+func (p Params) IsZero() bool {
+	return p == Params{}
 }
 
 // RegistrationPendingData is what the "a registration is waiting" notification
@@ -28,9 +77,11 @@ type RegistrationPendingData struct {
 // follows the mail sent for the same event (mailer.RenderNewRegistrationPending).
 // It is a pure function of d.
 func RenderRegistrationPending(d RegistrationPendingData) Text {
+	name := registrantName(d)
 	return Text{
-		Title: "Nová registrace čeká na schválení",
-		Body:  "Do Kukátka se právě zaregistroval uživatel " + registrantName(d) + ".",
+		Title:  "Nová registrace čeká na schválení",
+		Body:   "Do Kukátka se právě zaregistroval uživatel " + name + ".",
+		Params: Params{Name: name},
 	}
 }
 
@@ -65,6 +116,13 @@ const (
 // "přibyly", "přibylo"). The caller never asks for zero: an empty window sends
 // nothing. It is a pure function of its arguments.
 func RenderTagged(lang Language, count int) Text {
+	text := renderTagged(lang, count)
+	text.Params = Params{Count: count}
+	return text
+}
+
+// renderTagged is RenderTagged's wording, without the params.
+func renderTagged(lang Language, count int) Text {
 	if lang == LanguageEnglish {
 		if count == 1 {
 			return Text{Title: "You were tagged in a photo", Body: "You were tagged in 1 photo."}
@@ -110,6 +168,13 @@ const MaxAlbumNameLen = 60
 // names nobody and is never asked for zero. It is a pure function of its
 // arguments.
 func RenderTaggedInAlbum(lang Language, count int, album string) Text {
+	text := renderTaggedInAlbum(lang, count, album)
+	text.Params = Params{Variant: TaggedVariantAlbum, Count: count, Album: paramName(album, MaxAlbumNameLen)}
+	return text
+}
+
+// renderTaggedInAlbum is RenderTaggedInAlbum's wording, without the params.
+func renderTaggedInAlbum(lang Language, count int, album string) Text {
 	name := albumName(lang, album)
 	if lang == LanguageEnglish {
 		if count == 1 {
@@ -142,6 +207,13 @@ func RenderTaggedInAlbum(lang Language, count int, album string) Text {
 // be other than); a window without albums uses RenderTagged. It is a pure
 // function of its arguments.
 func RenderTaggedOther(lang Language, count int) Text {
+	text := renderTaggedOther(lang, count)
+	text.Params = Params{Variant: TaggedVariantOther, Count: count}
+	return text
+}
+
+// renderTaggedOther is RenderTaggedOther's wording, without the params.
+func renderTaggedOther(lang Language, count int) Text {
 	if lang == LanguageEnglish {
 		if count == 1 {
 			return Text{Title: "You were tagged in another photo", Body: "You were tagged in 1 other photo."}
@@ -173,6 +245,12 @@ func albumName(lang Language, title string) string {
 	return shorten(name, MaxAlbumNameLen)
 }
 
+// paramName is how Params keeps a name or a title: trimmed and cut at limit
+// like the text cuts it, "" when blank (the reader says "untitled" itself).
+func paramName(name string, limit int) string {
+	return shorten(strings.TrimSpace(name), limit)
+}
+
 // shorten cuts name to at most limit characters, ending a cut name with an
 // ellipsis (which counts towards the limit); a name within the limit is
 // returned as it is.
@@ -193,15 +271,18 @@ func shorten(name string, limit int) string {
 // its arguments.
 func RenderAlbumFeatured(lang Language, title string) Text {
 	name := albumName(lang, title)
+	params := Params{Album: paramName(title, MaxAlbumNameLen)}
 	if lang == LanguageEnglish {
 		return Text{
-			Title: "New featured album: " + name,
-			Body:  "The album " + name + " is now featured on the home page.",
+			Title:  "New featured album: " + name,
+			Body:   "The album " + name + " is now featured on the home page.",
+			Params: params,
 		}
 	}
 	return Text{
-		Title: "Nové doporučené album: " + name,
-		Body:  "Na úvodní stránce Kukátka je nově doporučené album " + name + ".",
+		Title:  "Nové doporučené album: " + name,
+		Body:   "Na úvodní stránce Kukátka je nově doporučené album " + name + ".",
+		Params: params,
 	}
 }
 
@@ -222,21 +303,24 @@ const MaxTaskTitleLen = 100
 func RenderTaskAssigned(lang Language, who, title string) Text {
 	name := taskTitle(lang, title)
 	asker := strings.TrimSpace(who)
+	params := Params{Name: asker, Title: paramName(title, MaxTaskTitleLen)}
 	if lang == LanguageEnglish {
 		if asker == "" {
 			asker = "Somebody"
 		}
 		return Text{
-			Title: asker + " added you to the task: " + name,
-			Body:  "Open the task and answer.",
+			Title:  asker + " added you to the task: " + name,
+			Body:   "Open the task and answer.",
+			Params: params,
 		}
 	}
 	if asker == "" {
 		asker = "Někdo"
 	}
 	return Text{
-		Title: asker + " tě přidal(a) k úkolu: " + name,
-		Body:  "Otevři úkol a odpověz.",
+		Title:  asker + " tě přidal(a) k úkolu: " + name,
+		Body:   "Otevři úkol a odpověz.",
+		Params: params,
 	}
 }
 
@@ -280,18 +364,19 @@ const (
 // empty excerpt leaves the body empty. It is a pure function of its arguments.
 func RenderCommentMention(lang Language, who string, place MentionPlace, title, excerpt string) Text {
 	writer := strings.TrimSpace(who)
+	params := Params{Name: writer, Place: place, Title: paramName(title, MaxTaskTitleLen)}
 	if lang == LanguageEnglish {
 		if writer == "" {
 			writer = "Somebody"
 		}
 		return Text{Title: writer + " mentioned you in a comment on " + mentionPlace(lang, place, title),
-			Body: strings.TrimSpace(excerpt)}
+			Body: strings.TrimSpace(excerpt), Params: params}
 	}
 	if writer == "" {
 		writer = "Někdo"
 	}
 	return Text{Title: writer + " tě zmínil(a) v komentáři u " + mentionPlace(lang, place, title),
-		Body: strings.TrimSpace(excerpt)}
+		Body: strings.TrimSpace(excerpt), Params: params}
 }
 
 // mentionPlace is how the mention notification names the thread's subject: the

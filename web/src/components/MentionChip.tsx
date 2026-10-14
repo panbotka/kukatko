@@ -36,22 +36,27 @@ function personPath(subjectUid: string): string {
  * with the name as its tooltip. The reader's own mention is emphasised, so
  * "where am I named" jumps out of a long thread. A mention of an account that
  * no longer exists keeps the name the token was written with, muted, and
- * links nowhere. It never links to user administration.
+ * links nowhere; so does one of an account that has left the project, which
+ * reads „Bývalý člen projektu" instead of a name. It never links to user
+ * administration.
  */
 export function MentionChip({ uid, fallbackName, mention, isMe }: MentionChipProps) {
   const { t } = useTranslation()
   const inRouter = useInRouterContext()
   const projectPath = useProjectPath()
-  const name = mention?.name ?? fallbackName
+  // An account that has left the project is a former member: the server sends
+  // no name, and the pill says so, muted and linking nowhere.
+  const former = mention?.former === true
+  const name = former ? t('formerMember') : (mention?.name ?? fallbackName)
   const classes = [
     'kk-mention',
     isMe ? 'kk-mention--me' : undefined,
-    mention === undefined ? 'kk-mention--gone' : undefined,
+    mention === undefined || former ? 'kk-mention--gone' : undefined,
   ]
     .filter(Boolean)
     .join(' ')
   const title =
-    mention === undefined
+    mention === undefined || former
       ? t('photo.comments.mention.gone', { name })
       : isMe
         ? t('photo.comments.mention.you', { name })

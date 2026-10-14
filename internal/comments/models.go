@@ -137,6 +137,11 @@ type Comment struct {
 	// AuthorName is the author's display name, falling back to the username, as
 	// resolved by the store — so a client renders a name without a second lookup.
 	AuthorName string `json:"author_name"`
+	// AuthorFormer reports an author whose account still exists but is no
+	// member of the comment's project any more (and no maintainer). Its
+	// AuthorName is then empty: the client says "former member", draws no
+	// picture and links nowhere, so the project stops seeing a live name.
+	AuthorFormer bool `json:"author_former"`
 	// AuthorPhotoUID is the cover photo of the person the author's account says
 	// it is. It is nil in every case but the fully-set one: no account, no linked
 	// person, or a linked person nobody has chosen a cover photo for — which is
@@ -168,8 +173,13 @@ type Comment struct {
 type Mention struct {
 	// UserUID is the mentioned account.
 	UserUID string `json:"user_uid"`
-	// Name is the account's current display name, falling back to the username.
+	// Name is the account's current display name, falling back to the
+	// username; empty for a former member.
 	Name string `json:"name"`
+	// Former reports an account that is no member of the comment's project any
+	// more (and no maintainer): no name, no person, and the client shows
+	// "former member" without a link.
+	Former bool `json:"former"`
 	// SubjectUID is the person of the library the account says it is, or nil —
 	// the common case — when nobody has said. It is where a mention links.
 	SubjectUID *string `json:"subject_uid"`

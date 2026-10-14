@@ -231,14 +231,15 @@ func TestMembership_notMember(t *testing.T) {
 }
 
 // TestMembershipsOf verifies an account's projects come ordered by name with
-// their role, approval and active flag.
+// their description, role, approval and active flag.
 func TestMembershipsOf(t *testing.T) {
 	store, db, meta := newStore(t)
 	ctx := context.Background()
 	seedUser(t, db, "us_member_a", "anna", "Anna")
 	alpha := mustCreate(t, store, meta, "alfa", "Alfa")
-	inactive := false
-	if _, err := store.Update(ctx, meta, alpha.UID, project.UpdatePatch{Active: &inactive}); err != nil {
+	inactive, description := false, "Spolkové fotky"
+	if _, err := store.Update(ctx, meta, alpha.UID, project.UpdatePatch{Active: &inactive,
+		Description: &description}); err != nil {
 		t.Fatalf("deactivating: %v", err)
 	}
 	mustAdd(t, store, meta, project.BootstrapUID, "us_member_a", project.RoleEditor)
@@ -251,7 +252,10 @@ func TestMembershipsOf(t *testing.T) {
 		t.Fatalf("MembershipsOf: %v", err)
 	}
 	want := []project.MembershipSummary{
-		{ProjectUID: alpha.UID, Slug: "alfa", Name: "Alfa", Active: false, Role: project.RoleViewer},
+		{
+			ProjectUID: alpha.UID, Slug: "alfa", Name: "Alfa", Description: "Spolkové fotky", Active: false,
+			Role: project.RoleViewer,
+		},
 		{
 			ProjectUID: project.BootstrapUID, Slug: project.BootstrapSlug, Name: "Veselice", Active: true,
 			Role: project.RoleEditor, Approved: true,

@@ -279,12 +279,54 @@ export interface NamelessRestoreResult {
 }
 
 /**
+ * Why the server refused an uploaded undo file: `undo_invalid` (not an undo
+ * file at all), `undo_empty` (it records no subject) or `undo_wrong_project` (a
+ * valid file of another project — it is not lost, only picked in the wrong
+ * place). `''` for a refusal without a code.
+ */
+export type UndoRefusal = 'undo_invalid' | 'undo_empty' | 'undo_wrong_project' | ''
+
+/** A refused restore: an {@link ApiError} that also says which refusal it was. */
+export class NamelessRestoreError extends ApiError {
+  readonly code: UndoRefusal
+
+  constructor(status: number, message: string, code: UndoRefusal) {
+    super(status, message)
+    this.name = 'NamelessRestoreError'
+    this.code = code
+  }
+}
+
+/** Reads the coded refusal of a failed restore, falling back to the status text. */
+async function readRestoreError(res: Response): Promise<NamelessRestoreError> {
+  let message = res.statusText || `request failed: ${res.status}`
+  let code: UndoRefusal = ''
+  try {
+    const body = (await res.json()) as ErrorBody & { code?: unknown }
+    if (typeof body.error === 'string' && body.error !== '') {
+      message = body.error
+    }
+    if (
+      body.code === 'undo_invalid' ||
+      body.code === 'undo_empty' ||
+      body.code === 'undo_wrong_project'
+    ) {
+      code = body.code
+    }
+  } catch {
+    // Body was empty or not JSON; keep the status text and no code.
+  }
+  return new NamelessRestoreError(res.status, message, code)
+}
+
+/**
  * Replays an undo file into `project`: every subject it records is re-created under its original
  * uid and the markers and faces it owned are re-assigned. The work runs in the
  * background job queue, so the result reports what was scheduled, not what is
  * already done.
  *
- * @throws ApiError with `status` 400 (not a usable undo file), 503 or 5xx.
+ * @throws NamelessRestoreError (an ApiError) with `status` 400 and its
+ *   {@link UndoRefusal} code for a refused file, or 503 / 5xx.
  */
 export async function restoreNamelessSubjects(
   project: string,
@@ -299,7 +341,7 @@ export async function restoreNamelessSubjects(
     signal,
   })
   if (!res.ok) {
-    throw new ApiError(res.status, await readErrorMessage(res))
+    throw await readRestoreError(res)
   }
   return (await res.json()) as NamelessRestoreResult
 }

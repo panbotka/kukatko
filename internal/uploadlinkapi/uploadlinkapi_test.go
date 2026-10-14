@@ -497,7 +497,7 @@ func TestPublic(t *testing.T) {
 	body := decode(t, rec)
 	for key := range body {
 		switch key {
-		case "title", "note", "albums", "labels", "expires_at", "registration_enabled", "storage_full":
+		case "title", "project", "note", "albums", "labels", "expires_at", "registration_enabled", "storage_full":
 		default:
 			t.Errorf("public description leaks %q", key)
 		}
@@ -977,3 +977,25 @@ func TestNewCode(t *testing.T) {
 		t.Errorf("revoked: status = %d, want 409", rec.Code)
 	}
 }
+
+// TestPublic_namesTheProject verifies the page learns the name of the project
+// the photos go into — and nothing else about it.
+func TestPublic_namesTheProject(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, func(c *uploadlinkapi.Config) {
+		c.Projects = fakeProjectResolver{p: &project.Project{UID: "pj1", Name: "Spolek", Slug: "spolek", Active: true}}
+	})
+	rec := h.do(t, http.MethodGet, "/u/"+testCode, "", "")
+	if body := decode(t, rec); rec.Code != http.StatusOK || body["project"] != "Spolek" {
+		t.Fatalf("page = %d %v, want the project named Spolek", rec.Code, body)
+	}
+	if strings.Contains(rec.Body.String(), "pj1") || strings.Contains(rec.Body.String(), "spolek") {
+		t.Errorf("page leaks the project's uid or slug: %s", rec.Body)
+	}
+}
+
+// fakeProjectResolver resolves every link to one project.
+type fakeProjectResolver struct{ p *project.Project }
+
+// Get returns the canned project.
+func (f fakeProjectResolver) Get(context.Context, string) (*project.Project, error) { return f.p, nil }

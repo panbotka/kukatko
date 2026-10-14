@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next'
 import { useCallback, useState } from 'react'
 import { Button } from 'react-bootstrap'
 import { useTranslation } from 'react-i18next'
@@ -20,6 +21,14 @@ export interface TaskParticipantsProps {
   canEdit: boolean
   /** Reports the list back up after a change, so the page redraws from it. */
   onChange: (participants: Participant[]) => void
+}
+
+/**
+ * The name a participant is shown under: „Bývalý člen projektu" for one who has
+ * left the project (the server sends no name then), the name otherwise.
+ */
+function shownName(person: Participant, t: TFunction): string {
+  return person.former === true ? t('formerMember') : person.name
 }
 
 /**
@@ -100,23 +109,29 @@ export function TaskParticipants({
           className="kk-task-person"
           title={
             person.added_by === undefined || person.added_by === ''
-              ? t('taskDetail.people.acted', { name: person.name })
+              ? t('taskDetail.people.acted', { name: shownName(person, t) })
               : t('taskDetail.people.askedBy', {
-                  name: person.name,
-                  by: person.added_by_name ?? '',
+                  name: shownName(person, t),
+                  by:
+                    person.added_by_former === true
+                      ? t('formerMember')
+                      : (person.added_by_name ?? ''),
                 })
           }
         >
-          <PersonAvatar name={person.name} userUid={person.user_uid} />
-          <span className="kk-min-w-0 text-truncate">{person.name}</span>
+          <PersonAvatar
+            name={shownName(person, t)}
+            userUid={person.former === true ? undefined : person.user_uid}
+          />
+          <span className="kk-min-w-0 text-truncate">{shownName(person, t)}</span>
           {canEdit && (
             <Button
               variant="link"
               size="sm"
               className="kk-task-person__remove kukatko-tap-target-touch"
               disabled={busy}
-              aria-label={t('taskDetail.people.remove', { name: person.name })}
-              title={t('taskDetail.people.remove', { name: person.name })}
+              aria-label={t('taskDetail.people.remove', { name: shownName(person, t) })}
+              title={t('taskDetail.people.remove', { name: shownName(person, t) })}
               onClick={() => {
                 setFailed(false)
                 setRemoving(person)
@@ -146,7 +161,9 @@ export function TaskParticipants({
 
       <ConfirmModal
         show={removing !== null}
-        title={t('taskDetail.people.removeConfirm.title', { name: removing?.name ?? '' })}
+        title={t('taskDetail.people.removeConfirm.title', {
+          name: removing === null ? '' : shownName(removing, t),
+        })}
         confirmLabel={t('taskDetail.people.removeConfirm.confirm')}
         busy={busy}
         onConfirm={() => {
@@ -158,7 +175,9 @@ export function TaskParticipants({
           setRemoving(null)
         }}
       >
-        {t('taskDetail.people.removeConfirm.body', { name: removing?.name ?? '' })}
+        {t('taskDetail.people.removeConfirm.body', {
+          name: removing === null ? '' : shownName(removing, t),
+        })}
       </ConfirmModal>
 
       <PersonPicker

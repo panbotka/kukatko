@@ -112,8 +112,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   administrative record never leave the database, because the query selects two of them. It sits beside
   `GET /users/{uid}/avatar` (`internal/userpicapi`), which is the picture for the same uid.
   **`GET /auth/me`** → the login payload (`user` + `download_token`) plus `instance_role`
-  (`user`|`maintainer`), `projects: [{uid, slug, name, active, role, approved, subject_uid}]` (every
-  membership, inactive projects included, by name; `subject_uid` is the account's "this is me" in that
+  (`user`|`maintainer`), `projects: [{uid, slug, name, description, active, role, approved, subject_uid}]` (every
+  membership, inactive projects included, by name; `description` is the project's text for the chooser,
+  `""` when none; `subject_uid` is the account's "this is me" in that
   project) and `last_project_slug` (the project the account last entered, `""` when none — **and `""`
   once it can no longer enter it**: removed, waiting for approval or locked out by a deactivation; a
   maintainer keeps a deactivated one, which it still enters). The
@@ -485,13 +486,15 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   (+ a human `message` where the client should show the rule); every mutation is audited by
   `internal/project` in the change's transaction, with the project.
   - `GET /members` → a bare array by display name: `[{user_uid, username, display_name, role,
-    approved_at, last_login_at, has_picture, identity_withheld}]` — `approved_at: null` is a membership
+    approved_at, last_login_at, has_picture, identity_withheld, maintainer}]` — `approved_at: null` is a membership
     waiting for approval; `has_picture` says `GET /users/{uid}/avatar` is worth asking (an uploaded/picked
     picture or a linked person; a 404 there still means none). **No e-mail address.**
     `identity_withheld: true` is an exact-match add (below) whose account has **not entered the project
     yet**: `username`/`display_name` are `""`, `last_login_at` is `null` and `has_picture` `false`, and
     those rows come last, by when they were added (never sorted by the hidden name). The first request
-    the account makes inside the project clears it.
+    the account makes inside the project clears it. `maintainer: true` marks the instance's **system
+    administrator** (false while its identity is withheld): it administers every project whatever its
+    membership's `role` says, so the page shows „Správce systému" instead of the role.
   - `POST /members` `{identifier, role}` — add an **existing** account by its **exact** username (as
     sign-in normalises it: trimmed, lower-cased) or its e-mail address (**case-insensitive**); nothing is
     matched partially and a username wins over an address. The answer is **always `202
@@ -511,7 +514,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     `invalid_body`, 422 `invalid_role` (`viewer|curator|editor|admin`; `maintainer` is not a project role),
     422 `invalid_identifier` (blank).
   - `PATCH /members/{user_uid}` `{role}` → 200 + the member. **The caller's own membership → 409 `self`**
-    (another admin must change it); **409 `last_admin`** when it would demote the project's last
+    (another admin must change it); **a system administrator's membership (`maintainer: true`) → 409
+    `maintainer`** — its project role has no effect, and a change would only make the list lie (removing
+    the membership stays possible, and `POST /projects/{uid}/members` re-adds it with another role); **409 `last_admin`** when it would demote the project's last
     **working** admin — an approved membership whose account is not disabled; a pending or disabled
     "admin" row does not count, and demoting such a row is never refused;
     404 `not_member`; 422 `invalid_role`; 400 `invalid_body`. Setting the role it has records nothing.
@@ -2382,8 +2387,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   deactivated is the unknown link's 404 — and every file is ingested **into that project** (the dedup looks
   for the same bytes there only; the original is stored under that project's storage prefix), filed into
   its albums and labels and audited under it.
-  `GET /u/{code}` → 200 `{title, note, albums:[names], labels:[names], expires_at, registration_enabled,
-  storage_full}` — `storage_full` is whether the link's project has used up its quota (a yes/no, no sizes) —
+  `GET /u/{code}` → 200 `{title, project, note, albums:[names], labels:[names], expires_at,
+  registration_enabled, storage_full}` — `project` is the **name** of the project the photos go into (never
+  its uid or slug), so the holder knows whose library they add to; `storage_full` is whether the link's project has used up its quota (a yes/no, no sizes) —
   names only, no UIDs, counts, creator or photos; `registration_enabled` is the link's **own project's**
   registration switch (the one a registration through the link is judged by, and the same flag that
   project's public settings publish), so the page offers registering only where it can succeed; for an anonymous visitor (`OptionalAuth`) it also **starts the upload
@@ -2572,7 +2578,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   is never listed or counted, but its own `{uid}` routes still answer — that is what the push and the mail
   open.
   - **`GET /notifications`** `?unread=true|false` `&limit=` `&offset=` → `200 {notifications:[{uid, kind,
-    title, body, link, created_at, read_at}], total, limit, offset}`: one page of the caller's inbox,
+    title, body, params, link, created_at, read_at}], total, limit, offset}`: one page of the caller's inbox,
     **newest first** (`created_at DESC`, uid as the tie-break, so pages never repeat or skip a row).
     `unread=true` keeps only unread ones; `total` is the size of the whole selection. `limit` defaults to 30
     and is clamped to 100, `offset` defaults to 0 — the photo listing's paging shape. A non-boolean
@@ -2624,8 +2630,13 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     twice, an entry without `enabled` or a body without `preferences` → `400`, nothing changes.
     **Audited** (`notification_prefs.update`, details `preferences: {"kind/channel": bool}`) in the
     replace's transaction.
-  - **`GET /notifications/{uid}`** → `200 {uid, kind, title, body, link, created_at, read_at, photos:[…],
-    total_count, dropped_count}`. `photos` is the **frozen set in its stored order**, each shaped like every
+  - **`GET /notifications/{uid}`** → `200 {uid, kind, title, body, params, link, created_at, read_at, photos:[…],
+    total_count, dropped_count}`. **`params`** (on every notification view, the inbox's too) are the facts
+    `title`/`body` were rendered from — `{variant?, count?, name?, album?, title?, place?}`, per kind as
+    `internal/notification` `Params` lists them — so the client says the same thing in the reader's language;
+    `null` for a row stored without them (everything older than migration 0119), whose `title`/`body` are
+    all there is. `title`/`body` stay in the instance's language (Czech): they are what the push and the
+    e-mail carried. `photos` is the **frozen set in its stored order**, each shaped like every
     other photo payload of the API (the `photos.Photo` JSON, `thumb_url`/`preview_url`/`download_url`
     minted by `internal/mediaurl`), so the page renders a grid straight from it. **The set is filtered by
     what the caller may see now**, not when the notification was made: a photograph **archived, hidden
@@ -2633,7 +2644,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     (a deleted photograph is gone from the set by the cascade) and `dropped_count` how many of those were
     filtered out, so the page can explain "10 of 12" honestly. A notification without photos has `photos:
     []`. Reading does **not** mark it read.
-  - **`POST /notifications/{uid}/read`** → `200 {uid, kind, title, body, link, created_at, read_at}`;
+  - **`POST /notifications/{uid}/read`** → `200 {uid, kind, title, body, params, link, created_at, read_at}`;
     idempotent — marking again keeps the first reading. Works for any of the caller's records, listed in
     the inbox or not.
   - **An unknown or foreign `{uid}` is `404`, never `403`**, for both routes (the `savedsearchapi` rule),
@@ -3053,7 +3064,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   cannot be written to → nothing scheduled, nothing to detach → 409; all three leave the catalogue untouched.
   The body carries no `Content-Length`, so a client that reads it to EOF (any browser taking it as a Blob) knows
   the jobs are queued. `POST /maintenance/nameless-subjects/restore` takes that file back (raw JSON body, ≤64 MiB;
-  unparsable or subject-less → 400, a file of another project → 400) → `202 {queued}`. All three are mounted
+  each refusal is `400 {error, code}`: unparsable `undo_invalid`, subject-less `undo_empty`, a file of another
+  project `undo_wrong_project`, so the page can say a valid file was only picked in the wrong project) →
+  `202 {queued}`. All three are mounted
   **under `/api/v1/p/{project}`** and work in that project — as does `kukatko maintenance
   nameless-subjects --project <slug>` — and the undo file records it (`project_uid`,
   `project_slug`). Both destructive directions run as the `nameless_detach` /

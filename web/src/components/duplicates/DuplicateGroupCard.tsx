@@ -216,7 +216,7 @@ function memberSummary(member: DuplicateMember, language: string): string {
   const parts = [
     photoLabel(member, language),
     `${String(member.file_width)}×${String(member.file_height)}`,
-    formatBytes(member.file_size),
+    formatBytes(member.file_size, language),
   ]
   if (member.media_type === 'video' && member.duration_ms !== undefined && member.duration_ms > 0) {
     parts.push(formatDuration(member.duration_ms))
@@ -280,7 +280,7 @@ function DuplicateMemberTile({
         {label}
       </div>
       <div className="small text-secondary">
-        {member.file_width}×{member.file_height} · {formatBytes(member.file_size)}
+        {member.file_width}×{member.file_height} · {formatBytes(member.file_size, i18n.language)}
       </div>
       {member.taken_at !== undefined && member.taken_at !== '' && (
         <div className="small text-secondary">{formatDate(member.taken_at, i18n.language)}</div>

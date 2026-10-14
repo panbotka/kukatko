@@ -48,11 +48,22 @@ func (s *Store) WithMentionObserver(observer MentionObserver) *Store {
 // The three subject columns are collapsed to the empty string as well: exactly
 // one of them is ever set, and Comment reports the unset ones as absent. The last
 // column is the comment's mentions as a JSON array (see mentionsColumn).
+//
+// An author who has left the comment's project (no membership there now, and
+// not the instance's maintainer, who belongs everywhere) reads as a former
+// member: no name — the project must not keep seeing a live name, renamed
+// perhaps in another project — and author_former set, so the client says
+// "former member" and draws no picture.
 const commentColumns = `c.uid, COALESCE(c.photo_uid, ''), COALESCE(c.task_uid, ''), COALESCE(c.album_uid, ''),
 	COALESCE(c.author_uid, ''),
-	COALESCE(NULLIF(u.display_name, ''), u.username, ''),
+	CASE WHEN ` + authorFormerSQL + ` THEN '' ELSE COALESCE(NULLIF(u.display_name, ''), u.username, '') END,
 	s.cover_photo_uid,
-	c.body, c.created_at, c.edited_at, ` + mentionsColumn
+	c.body, c.created_at, c.edited_at, ` + mentionsColumn + `, ` + authorFormerSQL
+
+// authorFormerSQL is true for a comment whose author's account still exists but
+// is no member of the comment's project any more (authorJoin's um row is
+// missing) and is not a maintainer. 'maintainer' is auth.RoleMaintainer.
+const authorFormerSQL = `(u.uid IS NOT NULL AND um.user_uid IS NULL AND u.role <> 'maintainer')`
 
 // mentionsColumn resolves the comment's stored mentions (comment_mentions) to
 // the accounts' current names and the people their memberships of the
@@ -60,15 +71,23 @@ const commentColumns = `c.uid, COALESCE(c.photo_uid, ''), COALESCE(c.task_uid, '
 // never NULL — for a comment without any. It is a correlated subquery rather
 // than a join so a comment stays one row however many people it names; an
 // account deleted since has no row (the cascade took it), so it is simply
-// absent, and the client falls back to the token's name.
+// absent, and the client falls back to the token's name. An account that has
+// left the project (no membership, not a maintainer) is a former member: no
+// name, no person, 'former' true.
 const mentionsColumn = `COALESCE((
 	SELECT jsonb_agg(jsonb_build_object(
 		'user_uid', m.user_uid,
-		'name', COALESCE(NULLIF(mu.display_name, ''), mu.username),
+		'name', CASE WHEN ` + mentionFormerSQL + ` THEN '' ELSE COALESCE(NULLIF(mu.display_name, ''), mu.username) END,
+		'former', ` + mentionFormerSQL + `,
 		'subject_uid', mm.subject_uid) ORDER BY m.position)
 	FROM comment_mentions m JOIN users mu ON mu.uid = m.user_uid
 	LEFT JOIN project_members mm ON mm.user_uid = m.user_uid AND mm.project_uid = ` + commentProjectSQL + `
 	WHERE m.comment_uid = c.uid), '[]'::jsonb)`
+
+// mentionFormerSQL is true for a mentioned account with no membership of the
+// comment's project (mentionsColumn's mm row is missing) that is not a
+// maintainer.
+const mentionFormerSQL = `(mm.user_uid IS NULL AND mu.role <> 'maintainer')`
 
 // commentProjectSQL is the project of the comment row aliased c: the project
 // of whichever photo, task or album it hangs off (a comment carries no project
@@ -547,7 +566,7 @@ type rowScanner interface {
 func scanComment(row rowScanner) (Comment, error) {
 	var c Comment
 	if err := row.Scan(&c.UID, &c.PhotoUID, &c.TaskUID, &c.AlbumUID, &c.AuthorUID, &c.AuthorName,
-		&c.AuthorPhotoUID, &c.Body, &c.CreatedAt, &c.EditedAt, &c.Mentions); err != nil {
+		&c.AuthorPhotoUID, &c.Body, &c.CreatedAt, &c.EditedAt, &c.Mentions, &c.AuthorFormer); err != nil {
 		return Comment{}, fmt.Errorf("scanning comment row: %w", err)
 	}
 	if c.Mentions == nil {

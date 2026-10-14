@@ -1942,6 +1942,11 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   `'[]'` when none, scanned into **`Comment.Mentions []Mention{UserUID, Name, SubjectUID *string}`**
   (`json:"mentions"`, never nil) — so a renamed account reads under its new name in every old comment and a
   deleted one (its rows cascaded away) is simply absent, the client falling back to the token's own name.
+  **A former member** — an account that still exists but has no membership of the comment's project any
+  more and is not a maintainer (`authorFormerSQL`/`mentionFormerSQL`, over `authorJoin`'s and the mention's
+  `project_members` LEFT JOIN) — reads with **no name** and `Comment.AuthorFormer` / `Mention.Former` set (no
+  person either), so the project stops seeing a live name renamed later elsewhere (CAT-4,
+  `TestRead_formerMembers`); `internal/photoapi`'s last-comment field carries `author_former` too.
   Table `comment_mentions` (migration `0098_comment_mentions.sql`: `(comment_uid, user_uid)` PK, both FKs
   `CASCADE`, `position`, `idx_comment_mentions_user (user_uid, created_at DESC)` for a later "mentions of
   me"; catalogue in `internal/reset`). A soft-deleted comment keeps its rows. Tests: the parser table (token
@@ -4275,7 +4280,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   digest or nil (both required); and `MarkDigested(ctx, projectUID, uid, at)` which stamps the membership
   (an unknown membership is not an error); consumed by `internal/taskdigestjob`;
   **who is on a task** (`participants.go`, table `photo_task_participants` from migration
-  `0081_photo_task_participants.sql`): `Participant{UserUID,Name,JoinedAt,AddedByUID,AddedByName}`,
+  `0081_photo_task_participants.sql`): `Participant{UserUID,Name,JoinedAt,AddedByUID,AddedByName,Former,
+  AddedByFormer}` (a participant — or whoever asked them — who has left the task's project and is no
+  maintainer reads with no name and the flag set, `participantFormerParam`/`…Task`, CAT-4),
   `Participants`/`Assign`/`Unassign`/`Join`, `Filter.ParticipantUID`, and — the part that makes the list
   true without anybody maintaining it — an idempotent `joinParticipant` inside *every* write's transaction,
   so acting on a question is what puts you on it. `added_by` is the one distinction the table carries:
@@ -4442,6 +4449,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   is an admin of the project, and the listing's `code`/`path` are set only by
   `view(user, link)` for a link `canManage` allows) and the public, **instance-level**
   `/u/{code}` pair behind the per-IP limiter (`RegisterPublicRoutes`; the page's `GET` also reports
+  `project`, the **name** of the link's project read through `Projects` (never its uid or slug),
   `registration_enabled`, the link's own project's switch read through `Registration`, and `storage_full`,
   `ingest.QuotaRefusal` over `Quota` (an `ingest.QuotaChecker`, the shared `*ingest.Service`; nil = never
   full) — the upload asks the same before reading the body and answers a full project 413
@@ -5855,7 +5863,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   the scheduling runs on `context.WithoutCancel`+`enqueueTimeout`, because a client that has the file and closes
   the body cancels the request the instant delivery succeeded) and
   `POST /maintenance/nameless-subjects/restore` (the undo file as the body, ≤`maxUndoBytes` = 64 MiB, unknown
-  fields **allowed** — an old file must still replay — unparsable/subject-less → 400) → `202 {queued}`;
+  fields **allowed** — an old file must still replay — refused with `400 {error, code}`: `undo_invalid`
+  unparsable, `undo_empty` subject-less, `undo_wrong_project` another project's file; `writeCodedError`) →
+  `202 {queued}`;
   mounted in `serve` (`buildMaintenanceAPI` in `cmd/kukatko/maintenance.go` injects `audit.NewStore`,
   the service is built by `buildMaintenanceAndThumb`, shared with the registration of the `thumbnail` handler in `buildJobs`)),
   `internal/namelessjob/`
@@ -6846,6 +6856,14 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     per account and instance-wide**: a person chooses once which kinds reach them through which channel,
     whichever project the notification comes from. The retention purge stays instance-wide too (a pure
     age rule).
+  - **Render params.** Every `Render*` function returns, beside the text it wrote in the instance's language,
+    the facts it wrote it from — `Text.Params` (`Params{Variant, Count, Name, Album, Title, Place}`; names
+    trimmed and cut as the text cuts them, a blank one left `""`; the tagged kind's variants
+    `TaggedVariantAlbum`/`TaggedVariantOther`). `internal/notifydeliver` copies them into `New.Params`, the
+    store keeps them in `notifications.params` (JSONB, migration `0119`; the zero `Params` is NULL) and every
+    read returns them as `Notification.Params` (nil for an older row), so the SPA says the notification in
+    the reader's language (`web/src/lib/notificationText`) and falls back to the stored title/body — which
+    stay what the push and the mail carried (`TestRender_params`, `TestCreateStoresParams`).
   - **Kinds** are `Kind` string constants — **`KindTagged`** ("you were tagged in photos", its set is those
     photos), **`KindRegistrationPending`** ("a registration is waiting for approval", no photos),
     **`KindAlbumFeatured`** ("a new album is featured on the homepage", its set is the album's cover, the
@@ -7312,8 +7330,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     strict ladder like `internal/auth`'s **without maintainer**, which stays the instance role on `users`):
     `ParseRole` (anything else, `maintainer` included = `ErrInvalidRole`), `Valid`, `CanCurate` (curator+),
     `CanWrite` (editor+), `IsAdmin` (admin only) — each predicate names its roles explicitly. `Member` (the
-    row joined with `users.username`/`display_name`/`last_login_at`), `MembershipSummary` (`ProjectUID`,
-    `Slug`, `Name`, `Active`, `Role`, `Approved` — what the project chooser will list),
+    row joined with `users.username`/`display_name`/`last_login_at`, and `Maintainer` — the account is the
+    instance's system administrator, withheld like the identity), `MembershipSummary` (`ProjectUID`,
+    `Slug`, `Name`, `Description` (filled by `MembershipsOf` only), `Active`, `Role`, `Approved` — what the
+    project chooser lists),
     `MemberTargetType = "project_member"`. Sentinels `ErrNotMember`, `ErrAlreadyMember`, `ErrLastAdmin`,
     `ErrUserNotFound`, `ErrSubjectNotFound`. `Member.HasPicture` (`json:"has_picture"`) is computed in
     `memberColumns`: a `user_pictures` row or the membership's own `subject_uid` — "worth asking for the avatar".
@@ -7416,7 +7436,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   - `memberapi.go` — `Config` (+ `ProjectURL func(slug)`, built from `mail.base_url` by `projectURL` in
     `cmd/kukatko/auth.go`), `NewAPI`, `RegisterRoutes`.
   - `handlers.go` — the five routes. The project is always `auth.ProjectUIDFromContext`; the self rules
-    are the handler's (`PATCH` of the caller's own uid → `self` before the store; `DELETE` of oneself maps
+    are the handler's (`PATCH` of the caller's own uid → `self` before the store; `PATCH` of a system
+    administrator's membership — `project.Member.Maintainer`, read through `Members.Membership` — →
+    `maintainer`, its project role having no effect; `DELETE` of oneself maps
     the store's `ErrLastAdmin` to `self`). `POST /members` answers the one `202 {"status":"accepted"}`
     whatever `AddByIdentifier` reports. `approvalMail` builds the `project.ApproveHook` that reads the
     account and enqueues `mailjob.AccountApproved` (project name + `/p/<slug>/` link) on the approval's

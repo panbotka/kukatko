@@ -61,6 +61,10 @@ Safe at any time: an older release neither reads nor writes the column and draws
 footer again; the lines admins wrote are lost, so read them first if they are to come back. Run it first
 when going back to a release older than 0118.
 
+**`0119_down.sql`** drops `notifications.params` (the facts a notification's text was rendered from).
+Safe at any time: an older release neither reads nor writes the column and shows every notification's stored
+text, as it always did. Run it first when going back to a release older than 0119.
+
 **Every file of the chain has a down script** since the final safety gate (2026-10-13). To go back to
 0.31.0 (schema 0099) — **after stopping the new server**, which would otherwise re-apply the migrations on its
 next (re)start (production: [`OPERATIONS.md`](../OPERATIONS.md), "Upgrade runbook — multi-tenancy" →

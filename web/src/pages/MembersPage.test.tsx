@@ -52,6 +52,7 @@ function member(overrides: Partial<ProjectMemberRow> = {}): ProjectMemberRow {
     last_login_at: '2026-10-12T08:30:00Z',
     has_picture: false,
     identity_withheld: false,
+    maintainer: false,
     ...overrides,
   }
 }
@@ -131,6 +132,44 @@ describe('MembersPage', () => {
     expect(novak.getByText('Čeká na schválení')).toBeInTheDocument()
     expect(novak.getByRole('button', { name: 'Schválit' })).toBeInTheDocument()
     expect(novak.getByText('nikdy')).toBeInTheDocument()
+  })
+
+  it('names a maintainer for what it is and offers no role change on its row', async () => {
+    fetchMock.mockResolvedValue([
+      ME,
+      member({
+        user_uid: 'u9',
+        username: 'ops',
+        display_name: 'Ops',
+        role: 'viewer',
+        maintainer: true,
+      }),
+    ])
+    renderPage()
+
+    await screen.findByText('ops')
+    const ops = within(rowOf('ops'))
+    expect(ops.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(ops.getByText('Správce systému')).toBeInTheDocument()
+    expect(ops.queryByText('Prohlížeč')).not.toBeInTheDocument()
+  })
+
+  it('words the server refusing a maintainer role change', async () => {
+    roleMock.mockRejectedValue(new MemberApiError(409, 'maintainer'))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('jana')
+    await user.selectOptions(
+      within(rowOf('jana')).getByRole('combobox', { name: 'Role uživatele Jana Nováková' }),
+      'viewer',
+    )
+    await waitFor(() => {
+      expect(toastShow).toHaveBeenCalledWith({
+        message: i18n.t('members.maintainerRoleReason'),
+        variant: 'danger',
+      })
+    })
   })
 
   it('shows an exact-match add without its name until the account opens the project', async () => {

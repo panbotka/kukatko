@@ -266,3 +266,41 @@ func TestMentions_taskThread(t *testing.T) {
 		t.Errorf("comment_mentions after a soft delete = %v, want [%s]", got, bob)
 	}
 }
+
+// TestRead_formerMembers verifies an author and a mentioned account that have
+// left the comment's project read as former members — no name, no person, the
+// flag set — while a maintainer, who belongs to every project, keeps its name.
+func TestRead_formerMembers(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	alice := f.makeApprovedUser(t, "us_alice", "alice", "Alice A.", false)
+	bob := f.makeApprovedUser(t, "us_bob", "bob", "Bob B.", false)
+	ops := f.makeApprovedUser(t, "us_ops", "ops", "Ops", false)
+	f.exec(t, `INSERT INTO subjects (uid, slug, name, project_id) VALUES ('su_bob', 'bob', 'Bob', $1)`, project.BootstrapUID)
+	f.exec(t, `UPDATE project_members SET subject_uid = 'su_bob' WHERE user_uid = $1`, bob)
+	photo := f.makePhoto(t, "one")
+	created, err := f.comments.Create(ctx, project.BootstrapUID, comments.PhotoSubject(photo.UID), alice,
+		"@[Bob](user:us_bob) a @[Ops](user:us_ops)", entry(audit.ActionCommentCreate, alice, photo.UID))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.AuthorFormer || created.Mentions[0].Former || created.AuthorName != "Alice A." {
+		t.Fatalf("created = %+v, want current members", created)
+	}
+
+	// All three leave the project; ops becomes the instance's maintainer.
+	f.exec(t, `DELETE FROM project_members WHERE project_uid = $1`, project.BootstrapUID)
+	f.exec(t, `UPDATE users SET role = 'maintainer' WHERE uid = $1`, ops)
+	got, err := f.comments.Get(ctx, project.BootstrapUID, created.UID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !got.AuthorFormer || got.AuthorName != "" || got.AuthorUID != alice {
+		t.Errorf("author = %q former=%v uid=%q, want a nameless former member", got.AuthorName, got.AuthorFormer,
+			got.AuthorUID)
+	}
+	want := []comments.Mention{{UserUID: bob, Former: true}, {UserUID: ops, Name: "Ops"}}
+	if !reflect.DeepEqual(got.Mentions, want) {
+		t.Errorf("mentions = %+v, want %+v", got.Mentions, want)
+	}
+}

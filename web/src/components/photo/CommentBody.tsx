@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { markdownPhotoUids } from '../../lib/markdownLinks'
 import { photoRefHref } from '../../lib/photoRefs'
 import { Markdown } from '../Markdown'
+import { useProjectSlug } from '../../project/ProjectContext'
 import { ProjectLink } from '../../project/ProjectLink'
 import { type CommentMention } from '../../services/comments'
 import { thumbUrl } from '../../services/photos'
@@ -68,7 +69,13 @@ export interface CommentBodyProps {
  */
 export function CommentBody({ body, taskUid, mentions, currentUserUid = null }: CommentBodyProps) {
   const { t } = useTranslation()
-  const uids = useMemo(() => markdownPhotoUids(body, window.location.origin), [body])
+  // The project the comment is read in: a photo link naming another project is
+  // followed there, never previewed through this one's API.
+  const project = useProjectSlug()
+  const uids = useMemo(
+    () => markdownPhotoUids(body, window.location.origin, project),
+    [body, project],
+  )
   const shown = uids.slice(0, COMMENT_STRIP_MAX)
   const rest = uids.length - shown.length
   const resolved = useMemo(() => mentions ?? [], [mentions])

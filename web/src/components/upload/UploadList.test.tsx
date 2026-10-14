@@ -72,6 +72,15 @@ describe('UploadList', () => {
     expect(screen.getByText('Uploaded')).toBeInTheDocument()
   })
 
+  it('writes a file size with the active locale, like every other size', async () => {
+    await i18n.changeLanguage('cs')
+    const big = item('u1', 'a.jpg', 'image/jpeg')
+    Object.defineProperty(big.file, 'size', { value: 3.6 * 1024 * 1024 })
+    renderList([big])
+
+    expect(screen.getByText('3,6 MB')).toBeInTheDocument()
+  })
+
   it('previews a picked photo from the browser copy, with no upload', () => {
     renderList([item('u1', 'a.jpg', 'image/jpeg')])
 

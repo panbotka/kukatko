@@ -2,6 +2,7 @@ package notification
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -34,17 +35,19 @@ type row interface {
 // selectColumns is the column list every notification read shares, qualified by
 // the n alias. The photo count reads the frozen set as it stands now, so a
 // photograph the cascade removed no longer counts.
-const selectColumns = `n.uid, n.user_uid, n.kind, n.title, n.body, n.link, n.created_at, n.read_at, n.in_app,
-	(SELECT count(*) FROM notification_photos np WHERE np.notification_uid = n.uid)`
+const selectColumns = `n.uid, n.user_uid, n.kind, n.title, n.body, n.params, n.link, n.created_at, n.read_at,
+	n.in_app, (SELECT count(*) FROM notification_photos np WHERE np.notification_uid = n.uid)`
 
 // scanNotification reads one notification row, mapping pgx.ErrNoRows to
 // ErrNotFound so callers can branch on the sentinel.
 func scanNotification(r row) (Notification, error) {
 	var (
-		n    Notification
-		kind string
+		n      Notification
+		kind   string
+		params []byte
 	)
-	err := r.Scan(&n.UID, &n.UserUID, &kind, &n.Title, &n.Body, &n.Link, &n.CreatedAt, &n.ReadAt, &n.InApp, &n.PhotoCount)
+	err := r.Scan(&n.UID, &n.UserUID, &kind, &n.Title, &n.Body, &params, &n.Link, &n.CreatedAt, &n.ReadAt,
+		&n.InApp, &n.PhotoCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Notification{}, ErrNotFound
 	}
@@ -52,13 +55,33 @@ func scanNotification(r row) (Notification, error) {
 		return Notification{}, fmt.Errorf("notification: scanning row: %w", err)
 	}
 	n.Kind = Kind(kind)
+	if params != nil {
+		var p Params
+		if err := json.Unmarshal(params, &p); err != nil {
+			return Notification{}, fmt.Errorf("notification: decoding the params of %s: %w", n.UID, err)
+		}
+		n.Params = &p
+	}
 	return n, nil
+}
+
+// encodeParams is how p is stored: NULL for the zero Params (nothing to render
+// from), its JSON otherwise.
+func encodeParams(p Params) ([]byte, error) {
+	if p.IsZero() {
+		return nil, nil
+	}
+	out, err := json.Marshal(p)
+	if err != nil {
+		return nil, fmt.Errorf("notification: encoding params: %w", err)
+	}
+	return out, nil
 }
 
 // insertSQL records one notification; its photo set follows in insertPhotosSQL.
 const insertSQL = `
-INSERT INTO notifications (uid, user_uid, kind, title, body, link, in_app, project_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+INSERT INTO notifications (uid, user_uid, kind, title, body, link, in_app, project_id, params)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 
 // insertPhotosSQL writes the frozen set in one statement. WITH ORDINALITY turns
 // the array order into the stored position (zero-based), so the set reads back
@@ -112,8 +135,12 @@ func (s *Store) CreateTx(ctx context.Context, tx pgx.Tx, n New) (Notification, e
 	if err != nil {
 		return Notification{}, err
 	}
+	params, err := encodeParams(n.Params)
+	if err != nil {
+		return Notification{}, err
+	}
 	_, err = tx.Exec(ctx, insertSQL, uid, n.UserUID, string(n.Kind), n.Title, n.Body, n.link(uid), n.InApp,
-		n.ProjectUID)
+		n.ProjectUID, params)
 	if err != nil {
 		return Notification{}, mapForeignKey(err)
 	}

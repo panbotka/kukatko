@@ -193,6 +193,31 @@ describe('TaskDetailPage', () => {
     expect(screen.getAllByText('Waiting for an answer').length).toBeGreaterThan(0)
   })
 
+  it('shows a participant who left the project as a former member, without a picture', async () => {
+    fetchTaskMock.mockResolvedValue(
+      task({
+        participants: [
+          {
+            user_uid: 'us_gone',
+            name: '',
+            joined_at: '2026-10-01T10:00:00Z',
+            added_by: 'us_asker',
+            added_by_name: '',
+            former: true,
+            added_by_former: true,
+          },
+        ],
+      }),
+    )
+    renderPage()
+    await screen.findByRole('heading', { name: /In which year/ })
+
+    const person = document.querySelector('.kk-task-person')
+    expect(person).toHaveTextContent('Former project member')
+    expect(person?.getAttribute('title')).toContain('Former project member')
+    expect(person?.querySelector('img')).toBeNull()
+  })
+
   it('reads the photos through the catalogue, scoped to the task', async () => {
     renderPage()
     await screen.findByRole('heading', { name: /In which year/ })

@@ -25,6 +25,7 @@ import (
 // what every call returns.
 type fakeMembers struct {
 	members  []project.Member
+	current  *project.Member
 	outcome  project.AddOutcome
 	err      error
 	lastRole project.Role
@@ -48,6 +49,17 @@ func (f *fakeMembers) AddByIdentifier(
 		return "", project.ErrEmptyIdentifier
 	}
 	return f.outcome, nil
+}
+
+// Membership returns f.current, an ordinary member when unset, or f.err.
+func (f *fakeMembers) Membership(_ context.Context, projectUID, userUID string) (*project.Member, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.current != nil {
+		return f.current, nil
+	}
+	return &project.Member{ProjectUID: projectUID, UserUID: userUID, Role: project.RoleViewer}, nil
 }
 
 // SetRole records the role and returns a member or f.err.
@@ -220,6 +232,27 @@ func TestHandleSetRole_mapsStoreErrors(t *testing.T) {
 	if status, body := send(t, srv, http.MethodPatch, "/members/us1", `{"role":"owner"}`); status !=
 		http.StatusUnprocessableEntity {
 		t.Errorf("role change to an unknown role = %d %s, want 422", status, body)
+	}
+}
+
+// TestHandleSetRole_refusesTheMaintainer verifies a system administrator's
+// membership keeps its role: the change is refused before the store is asked,
+// and the list names the account as a maintainer.
+func TestHandleSetRole_refusesTheMaintainer(t *testing.T) {
+	t.Parallel()
+	maintainer := project.Member{UserUID: "us1", Role: project.RoleAdmin, Maintainer: true}
+	fake := &fakeMembers{current: &maintainer, members: []project.Member{maintainer}}
+	srv := newTestServer(t, fake, nil, nil)
+	status, body := send(t, srv, http.MethodPatch, "/members/us1", `{"role":"viewer"}`)
+	if status != http.StatusConflict || !strings.Contains(body, `"error":"maintainer"`) {
+		t.Fatalf("demoting the maintainer = %d %s, want 409 maintainer", status, body)
+	}
+	if fake.lastRole != "" {
+		t.Errorf("the store was asked to set %q", fake.lastRole)
+	}
+	if status, body := send(t, srv, http.MethodGet, "/members", ""); status != http.StatusOK ||
+		!strings.Contains(body, `"maintainer":true`) {
+		t.Errorf("list = %d %s, want the maintainer flagged", status, body)
 	}
 }
 

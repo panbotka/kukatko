@@ -139,6 +139,12 @@ type Member struct {
 	// HasPicture false, and the account cannot be named in the project
 	// (ApprovedMemberSQL): an add must not tell the admin who the account is.
 	IdentityWithheld bool `json:"identity_withheld"`
+	// Maintainer reports that the account is a system administrator of the
+	// instance (joined from users; false while its identity is withheld). Its
+	// project role then has no effect — a maintainer is an implicit admin of
+	// every project — so the members page shows it as such and a project
+	// admin cannot change it (internal/memberapi).
+	Maintainer bool `json:"maintainer"`
 }
 
 // MembershipSummary is one project an account belongs to, as the project
@@ -150,6 +156,9 @@ type MembershipSummary struct {
 	Slug string `json:"slug"`
 	// Name is the project's name.
 	Name string `json:"name"`
+	// Description is the project's free text (the chooser shows it under the
+	// name). Only MembershipsOf fills it; AllMemberships leaves it empty.
+	Description string `json:"description,omitempty"`
 	// Active is false for a deactivated project.
 	Active bool `json:"active"`
 	// Role is the account's role in the project.

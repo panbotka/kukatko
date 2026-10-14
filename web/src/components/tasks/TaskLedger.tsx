@@ -165,7 +165,7 @@ function LedgerRow({ photo, href, selection, orderedUids }: LedgerRowProps) {
               {excerpt}
             </span>
             <span className="text-body-secondary small text-nowrap">
-              {comment.author_name}
+              {comment.author_former === true ? t('formerMember') : comment.author_name}
               {' · '}
               <time
                 dateTime={comment.created_at}

@@ -245,6 +245,11 @@ type Notification struct {
 	Title string `json:"title"`
 	// Body is the body text exactly as it was sent; may be empty.
 	Body string `json:"body"`
+	// Params are the facts Title and Body were rendered from, so a reader can
+	// render them again in its own language; nil (absent) for a row recorded
+	// without them — every one older than migration 0119 — whose stored text is
+	// all there is.
+	Params *Params `json:"params,omitempty"`
 	// Link is the in-app deeplink path tapping the notification opens; may be
 	// empty for a notification that opens nothing in particular.
 	Link string `json:"link"`
@@ -278,6 +283,9 @@ type New struct {
 	Title string
 	// Body is optional, at most MaxBodyLen characters.
 	Body string
+	// Params are the facts Title and Body were rendered from (Text.Params);
+	// the zero Params is stored as none.
+	Params Params
 	// Link is an in-app path ("/p/<slug>/photos?…"): empty, or starting with a
 	// single "/", at most MaxLinkLen bytes. An absolute URL or a scheme-relative
 	// "//host" is refused — a notification must never open another site.

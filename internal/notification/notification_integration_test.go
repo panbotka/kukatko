@@ -167,6 +167,42 @@ func TestCreateWithoutPhotos(t *testing.T) {
 	}
 }
 
+// TestCreateStoresParams checks the facts a text was rendered from round-trip
+// through Create, Get and List, and that a record without them reads nil (the
+// stored text alone) rather than an empty object.
+func TestCreateStoresParams(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	text := notification.RenderTaggedInAlbum(notification.LanguageCzech, 3, " Pouť ")
+	created, err := f.store.Create(ctx, notification.New{
+		ProjectUID: project.BootstrapUID, UserUID: owner, Kind: notification.KindTagged,
+		Title: text.Title, Body: text.Body, Params: text.Params, InApp: true,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	want := notification.Params{Variant: notification.TaggedVariantAlbum, Count: 3, Album: "Pouť"}
+	if created.Params == nil || *created.Params != want {
+		t.Fatalf("created params = %+v, want %+v", created.Params, want)
+	}
+	page, err := f.store.List(ctx, project.BootstrapUID, owner, notification.ListOptions{})
+	if err != nil || len(page.Notifications) != 1 {
+		t.Fatalf("List = %+v, %v; want the one notification", page, err)
+	}
+	if got := page.Notifications[0].Params; got == nil || *got != want {
+		t.Fatalf("listed params = %+v, want %+v", got, want)
+	}
+
+	bare := f.tagged(t)
+	if bare.Params != nil {
+		t.Fatalf("a record without params reads %+v, want nil", bare.Params)
+	}
+	if got := f.count(t, `SELECT count(*) FROM notifications WHERE uid = $1 AND params IS NULL`,
+		bare.UID); got != 1 {
+		t.Fatalf("the zero Params is stored as %d NULL rows, want 1", got)
+	}
+}
+
 // TestCreateIsAtomic checks a failing photo leaves no half-written
 // notification, and an unknown account is refused likewise.
 func TestCreateIsAtomic(t *testing.T) {

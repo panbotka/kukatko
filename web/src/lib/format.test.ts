@@ -17,12 +17,12 @@ import {
 
 describe('formatBytes', () => {
   it('renders bytes without decimals', () => {
-    expect(formatBytes(512)).toBe('512 B')
+    expect(formatBytes(512, 'en')).toBe('512 B')
   })
 
   it('scales to binary units with one decimal', () => {
-    expect(formatBytes(1536)).toBe('1.5 KB')
-    expect(formatBytes(5 * 1024 * 1024)).toBe('5.0 MB')
+    expect(formatBytes(1536, 'en')).toBe('1.5 KB')
+    expect(formatBytes(5 * 1024 * 1024, 'en')).toBe('5.0 MB')
   })
 
   it('localises the decimal separator when a locale is given', () => {
@@ -32,9 +32,9 @@ describe('formatBytes', () => {
   })
 
   it('clamps non-positive and non-finite input to 0 B', () => {
-    expect(formatBytes(0)).toBe('0 B')
-    expect(formatBytes(-10)).toBe('0 B')
-    expect(formatBytes(Number.NaN)).toBe('0 B')
+    expect(formatBytes(0, 'cs')).toBe('0 B')
+    expect(formatBytes(-10, 'cs')).toBe('0 B')
+    expect(formatBytes(Number.NaN, 'cs')).toBe('0 B')
   })
 })
 

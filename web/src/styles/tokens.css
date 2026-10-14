@@ -1906,8 +1906,14 @@
    * `black-translucent`). The insets are added to the spacing, never a
    * replacement for it: the status bar in portrait, the notch column in
    * landscape, and exactly the old 1rem where there is no notch.
+   *
+   * It also clears the sticky navbar: a toast at the very top covered the
+   * navbar's links (a refusal on the members page hid the way out of it). The
+   * bar's height token is an estimate, which is fine here — a few pixels of
+   * extra gap under the bar is harmless. Where no bar is drawn (the immersive
+   * viewer, the sign-in page) the toast simply sits that much lower.
    */
-  padding: calc(var(--kk-space-4) + env(safe-area-inset-top, 0px))
+  padding: calc(var(--kukatko-navbar-height) + var(--kk-space-4) + env(safe-area-inset-top, 0px))
     calc(var(--kk-space-4) + env(safe-area-inset-right, 0px)) var(--kk-space-4)
     calc(var(--kk-space-4) + env(safe-area-inset-left, 0px));
 }

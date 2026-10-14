@@ -29,8 +29,8 @@ export const PROJECT_ADMIN_PATH = SYSTEM_PROJECTS_PATH
  * two ways out an account needs whatever it belongs to: the account page and
  * sign-out (plus, for a maintainer, the project administration).
  *
- * A card shows the project's name, its description (clamped to three lines;
- * `GET /auth/me` does not send one yet, and an absent one is not drawn) and the
+ * A card shows the project's name, its description (clamped to three lines; an
+ * empty one is not drawn) and the
  * account's role in it. An enterable card — approved, in an active project — is
  * one big link to the project's home (a stretched link: the name is the link,
  * the whole card its target). A deactivated project is greyed with „Nedostupné",

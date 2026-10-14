@@ -247,13 +247,21 @@ type Task struct {
 // on this", and the only reason the column exists.
 type Participant struct {
 	UserUID string `json:"user_uid"`
-	// Name is the display name, falling back to the username.
+	// Name is the display name, falling back to the username; empty for a
+	// former member.
 	Name     string    `json:"name"`
 	JoinedAt time.Time `json:"joined_at"`
 	// AddedByUID and AddedByName name whoever put this person on the task, and
 	// are empty for somebody who joined by acting on it.
 	AddedByUID  string `json:"added_by,omitempty"`
 	AddedByName string `json:"added_by_name,omitempty"`
+	// Former reports a participant whose account is no member of the task's
+	// project any more (and no maintainer): Name is empty then, and the client
+	// says "former member" without a picture or a link.
+	Former bool `json:"former"`
+	// AddedByFormer is Former for whoever put this person on the task;
+	// AddedByName is empty then.
+	AddedByFormer bool `json:"added_by_former,omitempty"`
 }
 
 // Update is a partial change to a task: a nil field is left alone, a non-nil one

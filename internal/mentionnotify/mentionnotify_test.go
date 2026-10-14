@@ -116,6 +116,7 @@ func TestMessage(t *testing.T) {
 	}
 	wantText := notification.Text{
 		Title: "Pan Botka tě zmínil(a) v komentáři u úkolu Kdy to bylo?", Body: "Hele @Anna, víš to?",
+		Params: notification.Params{Name: "Pan Botka", Title: "Kdy to bylo?", Place: notification.MentionPlaceTask},
 	}
 	if msg.Text != wantText || msg.Link != "/tasks/pt1#comment-cm1" {
 		t.Fatalf("text %+v, link %q", msg.Text, msg.Link)
@@ -144,6 +145,7 @@ func TestMessage_album(t *testing.T) {
 	msg := New(Config{Deliver: fakeDeliver{}}).message(c, c.Subject(), p)
 	wantText := notification.Text{
 		Title: "Pan Botka tě zmínil(a) v komentáři u alba Svatba 1987", Body: "@Anna kdo tam ještě byl?",
+		Params: notification.Params{Name: "Pan Botka", Title: "Svatba 1987", Place: notification.MentionPlaceAlbum},
 	}
 	if msg.Text != wantText || msg.Link != "/albums/al1?panel=comments#comment-cm1" {
 		t.Fatalf("text %+v, link %q", msg.Text, msg.Link)

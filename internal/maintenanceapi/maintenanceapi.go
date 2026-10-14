@@ -299,6 +299,9 @@ func (a *API) recordAuditPurge(r *http.Request, days int, cutoff time.Time, dele
 // errorBody is the JSON body returned for error responses.
 type errorBody struct {
 	Error string `json:"error"`
+	// Code names the refusal for a client that words it itself; only the
+	// refusals a page tells apart carry one.
+	Code string `json:"code,omitempty"`
 }
 
 // writeJSON writes payload as a JSON response with the given status code.
@@ -313,4 +316,10 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 // writeError writes an error response with the given status code and message.
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, errorBody{Error: message})
+}
+
+// writeCodedError writes a JSON error body carrying a machine-readable code
+// beside the message.
+func writeCodedError(w http.ResponseWriter, status int, code, message string) {
+	writeJSON(w, status, errorBody{Error: message, Code: code})
 }

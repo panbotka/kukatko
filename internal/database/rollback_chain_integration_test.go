@@ -15,8 +15,8 @@ import (
 // rollbackChain is the README's order for going back to 0.31.0 (schema 0099):
 // newest first.
 var rollbackChain = []string{
-	"0118", "0117", "0116", "0115", "0114", "0113", "0112", "0111", "0110", "0109", "0108",
-	"0107", "0106", "0105", "0104", "0103", "0102", "0101", "0100",
+	"0119", "0118", "0117", "0116", "0115", "0114", "0113", "0112", "0111", "0110", "0109",
+	"0108", "0107", "0106", "0105", "0104", "0103", "0102", "0101", "0100",
 }
 
 // TestRollbackChain_queuedJobsOfAGoneProject runs the whole hand-run down chain

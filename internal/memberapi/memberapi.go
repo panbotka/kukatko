@@ -48,6 +48,8 @@ type Members interface {
 	AddByIdentifier(
 		ctx context.Context, meta audit.Meta, projectUID, identifier string, role project.Role,
 	) (project.AddOutcome, error)
+	// Membership reads one member, project.ErrNotMember when there is none.
+	Membership(ctx context.Context, projectUID, userUID string) (*project.Member, error)
 	// SetRole changes a member's role, audited; project.ErrLastAdmin guards the
 	// project's only admin.
 	SetRole(ctx context.Context, meta audit.Meta, projectUID, userUID string, role project.Role) (*project.Member, error)

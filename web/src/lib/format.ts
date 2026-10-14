@@ -6,12 +6,13 @@ const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const
  * units, e.g. `1536` → `"1.5 KB"`. Negative or non-finite inputs render as
  * `"0 B"`. Bytes show no decimals; larger units show one.
  *
- * Passing the active `locale` (e.g. the i18next language) localises the decimal
- * separator — Czech writes `"1,5 KB"`. Omitting it keeps the plain dot, which is
- * what the callers that render a size inside an otherwise unlocalised technical
- * line already show.
+ * The `locale` (the i18next language) is required and localises the decimal
+ * separator — Czech writes `"1,5 KB"`, English `"1.5 KB"` — so every size the app
+ * shows reads the same way: this is the one byte formatter, and a page that
+ * mixed a dot and a comma side by side was the reason it lost its optional
+ * locale.
  */
-export function formatBytes(bytes: number, locale?: string): string {
+export function formatBytes(bytes: number, locale: string): string {
   if (!Number.isFinite(bytes) || bytes <= 0) {
     return '0 B'
   }
@@ -22,13 +23,10 @@ export function formatBytes(bytes: number, locale?: string): string {
     unit += 1
   }
   const digits = unit === 0 ? 0 : 1
-  const formatted =
-    locale === undefined
-      ? value.toFixed(digits)
-      : new Intl.NumberFormat(locale, {
-          minimumFractionDigits: digits,
-          maximumFractionDigits: digits,
-        }).format(value)
+  const formatted = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(value)
   return `${formatted} ${BYTE_UNITS[unit]}`
 }
 

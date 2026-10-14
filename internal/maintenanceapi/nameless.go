@@ -171,11 +171,30 @@ func (a *API) handleNamelessDetach(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Codes of the undo-file refusals, so the page tells "not an undo file at all"
+// apart from "an undo file of another project" — a valid file picked in the
+// wrong project must not look lost.
+const (
+	codeUndoInvalid      = "undo_invalid"
+	codeUndoEmpty        = "undo_empty"
+	codeUndoWrongProject = "undo_wrong_project"
+)
+
+// undoError is a refusal of an uploaded undo file, with its code.
+type undoError struct {
+	code    string
+	message string
+}
+
+// Error returns the refusal's message.
+func (e undoError) Error() string { return e.message }
+
 // handleNamelessRestore takes an undo file back and schedules the replay: every
 // subject it holds is re-created under its original uid and the markers and faces
 // it owned are re-assigned. It answers 503 when the repair is not wired, 400 for
-// a body that is not a readable undo file, records no subject, or belongs to
-// another project than the request's, and 500 when the scheduling fails.
+// a body that is not a readable undo file (code undo_invalid), records no
+// subject (undo_empty), or belongs to another project than the request's
+// (undo_wrong_project), and 500 when the scheduling fails.
 func (a *API) handleNamelessRestore(w http.ResponseWriter, r *http.Request) {
 	if a.nameless == nil {
 		writeError(w, http.StatusServiceUnavailable, "nameless-subject repair not available")
@@ -183,7 +202,11 @@ func (a *API) handleNamelessRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	undo, err := decodeUndo(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		var refusal undoError
+		if !errors.As(err, &refusal) {
+			refusal = undoError{code: codeUndoInvalid, message: err.Error()}
+		}
+		writeCodedError(w, http.StatusBadRequest, refusal.code, refusal.message)
 		return
 	}
 	projectUID, _, ok := a.namelessProject(w, r)
@@ -192,7 +215,7 @@ func (a *API) handleNamelessRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	queued, err := a.nameless.EnqueueRestore(r.Context(), projectUID, undo, auditMeta(r))
 	if errors.Is(err, namelessjob.ErrProjectMismatch) {
-		writeError(w, http.StatusBadRequest, "the undo file belongs to another project")
+		writeCodedError(w, http.StatusBadRequest, codeUndoWrongProject, "the undo file belongs to another project")
 		return
 	}
 	if err != nil {
@@ -207,13 +230,15 @@ func (a *API) handleNamelessRestore(w http.ResponseWriter, r *http.Request) {
 // file is a durable artefact an operator may have been holding since an older
 // version wrote it, and refusing to replay it over a field the reader does not
 // know would strand exactly the data the file exists to protect.
+//
+// Every error it returns is an undoError.
 func decodeUndo(r *http.Request) (namelessjob.Undo, error) {
 	var undo namelessjob.Undo
 	if err := json.NewDecoder(io.LimitReader(r.Body, maxUndoBytes)).Decode(&undo); err != nil {
-		return namelessjob.Undo{}, errors.New("invalid undo file")
+		return namelessjob.Undo{}, undoError{code: codeUndoInvalid, message: "invalid undo file"}
 	}
 	if len(undo.Subjects) == 0 {
-		return namelessjob.Undo{}, errors.New("the undo file records no detached subject")
+		return namelessjob.Undo{}, undoError{code: codeUndoEmpty, message: "the undo file records no detached subject"}
 	}
 	return undo, nil
 }

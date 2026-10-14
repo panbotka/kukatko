@@ -108,14 +108,30 @@ export function resolveMarkdownLink(
  * `/p/<slug>` project prefix) points at, or null for any
  * other link — the second source (next to bare uid tokens) of the thumbnails
  * under a comment.
+ *
+ * With `project` (the slug of the project the comment is read in), a link that
+ * names **another** project is null too: its photo lives in that library, and
+ * previewing the uid through this project's API would only fail. The link
+ * itself still navigates there ({@link resolveMarkdownLink} keeps the prefix).
+ * An unprefixed link — every comment from before projects existed — is this
+ * project's.
  */
-export function photoUidFromHref(href: string, origin: string): string | null {
+export function photoUidFromHref(
+  href: string,
+  origin: string,
+  project?: string | null,
+): string | null {
   const own = ownPath(href, origin)
   if (own === null) {
     return null
   }
   const photo = PHOTO_PATH.exec(own.pathname)
   if (photo === null) {
+    return null
+  }
+  // `/p/<slug>`: the slug is what follows the three-character `/p/`.
+  const named = PROJECT_PREFIX.exec(own.pathname)?.[0].slice(3)
+  if (named !== undefined && project !== undefined && project !== null && named !== project) {
     return null
   }
   const uid = decodeURIComponent(photo[1])
@@ -181,16 +197,17 @@ const photoRefParser = unified().use(remarkParse).use(remarkGfm).use(remarkPhoto
  * bare uid tokens outside code and own-origin `/photos/<uid>` links (written
  * links, autolinked URLs and reference definitions alike). It parses the body
  * with the same syntax the renderer uses, so a uid the reader sees as code is
- * not counted and a uid the reader sees as a link is.
+ * not counted and a uid the reader sees as a link is. A link into another
+ * project than `project` is not counted ({@link photoUidFromHref}).
  */
-export function markdownPhotoUids(body: string, origin: string): string[] {
+export function markdownPhotoUids(body: string, origin: string, project?: string | null): string[] {
   const tree = photoRefParser.parse(body)
   // The plugins rewrite the tree in place; the parsed root is the result.
   photoRefParser.runSync(tree)
   const seen = new Set<string>()
   const walk = (node: Root | RootContent) => {
     if (node.type === 'link' || node.type === 'definition') {
-      const uid = photoUidFromHref(node.url, origin)
+      const uid = photoUidFromHref(node.url, origin, project)
       if (uid !== null) {
         seen.add(uid)
       }

@@ -58,6 +58,7 @@ const linkMock = vi.mocked(fetchPublicUploadLink)
 /** The link description every case starts from. */
 const LINK: PublicUploadLink = {
   title: 'Pouť 2026',
+  project: 'Veselice',
   note: 'Díky za fotky!',
   albums: ['Pouť'],
   labels: ['pouť'],
@@ -168,9 +169,19 @@ describe('UploadLinkPage', () => {
     expect(screen.getByText('Pouť')).toBeInTheDocument()
     expect(screen.getByText('pouť')).toBeInTheDocument()
     expect(screen.getByText(/valid until/i)).toBeInTheDocument()
+    expect(screen.getByTestId('upload-link-project')).toHaveTextContent(
+      'You are uploading to the project Veselice',
+    )
     // The chips name the targets; they must not lead into the library.
     expect(screen.queryByRole('link', { name: 'Pouť' })).not.toBeInTheDocument()
     expect(linkMock).toHaveBeenCalledWith('Ab3dEf7h', expect.any(AbortSignal))
+  })
+
+  it('names no project when the server sends none', async () => {
+    linkMock.mockResolvedValue({ ...LINK, project: '' })
+    renderPage()
+    expect(await screen.findByRole('heading', { name: 'Pouť 2026' })).toBeInTheDocument()
+    expect(screen.queryByTestId('upload-link-project')).not.toBeInTheDocument()
   })
 
   it('says clearly when the link expired, was revoked or does not exist', async () => {

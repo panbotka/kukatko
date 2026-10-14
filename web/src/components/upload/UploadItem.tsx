@@ -4,6 +4,7 @@ import ProgressBar from 'react-bootstrap/ProgressBar'
 import { useTranslation } from 'react-i18next'
 
 import { type QueueItemStatus, type UploadQueueItem } from '../../hooks/useUploadQueue'
+import { formatBytes } from '../../lib/format'
 import { canRetryUpload, uploadErrorMessage } from '../../lib/uploadErrors'
 import { type UploadWarning } from '../../services/upload'
 
@@ -50,21 +51,6 @@ function statusLabel(status: QueueItemStatus): StatusLabelKey {
   }
 }
 
-/** Human-readable file size with a sensible unit. */
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) {
-    return `${String(bytes)} B`
-  }
-  const units = ['KB', 'MB', 'GB']
-  let value = bytes / 1024
-  let unit = 0
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit += 1
-  }
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`
-}
-
 /** Renders one warning line, translating known codes and falling back to text. */
 function WarningLine({ warning }: { warning: UploadWarning }) {
   const { t } = useTranslation()
@@ -108,7 +94,7 @@ export function UploadItem({ item, onRemove, onRetry }: UploadItemProps) {
         <div className="d-flex align-items-start justify-content-between gap-2">
           <div className="kk-min-w-0">
             <div className="fw-semibold text-truncate">{item.file.name}</div>
-            <div className="text-secondary small">{formatBytes(item.file.size)}</div>
+            <div className="text-secondary small">{formatBytes(item.file.size, i18n.language)}</div>
           </div>
           <Badge bg={BADGE_VARIANT[item.status]} className="flex-shrink-0">
             {t(statusLabel(item.status))}

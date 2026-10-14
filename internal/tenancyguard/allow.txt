@@ -31,12 +31,12 @@ internal/bulk/apply.go:297 photo uid is one of the batch that requireBatchInProj
 internal/bulk/apply.go:483 loadCoordinate reads only batch uids that requireBatchInProject proved in the project in the same tx
 
 # internal/comments
-internal/comments/store.go:180 authorJoin/mentionsColumn's commentProjectSQL reads the project of the row's own comment c, which parentInProjectJoin confines to the project $2
-internal/comments/store.go:190 authorJoin/mentionsColumn's commentProjectSQL reads the project of the row's own comment c, which parentInProjectJoin confines to the project $2
-internal/comments/store.go:201 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment just inserted, whose subject the insert's EXISTS proved in the project $5
-internal/comments/store.go:359 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment c, which inProjectSQL(c, $2) confines to the project
-internal/comments/store.go:456 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment just updated, which inProjectSQL(c, $3) confined to the project
-internal/comments/store.go:483 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment just deleted, which inProjectSQL(c, $2) confined to the project
+internal/comments/store.go:199 authorJoin/mentionsColumn's commentProjectSQL reads the project of the row's own comment c, which parentInProjectJoin confines to the project $2
+internal/comments/store.go:209 authorJoin/mentionsColumn's commentProjectSQL reads the project of the row's own comment c, which parentInProjectJoin confines to the project $2
+internal/comments/store.go:220 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment just inserted, whose subject the insert's EXISTS proved in the project $5
+internal/comments/store.go:378 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment c, which inProjectSQL(c, $2) confines to the project
+internal/comments/store.go:475 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment just updated, which inProjectSQL(c, $3) confined to the project
+internal/comments/store.go:502 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment just deleted, which inProjectSQL(c, $2) confined to the project
 internal/comments/store_mentions.go:34 runs in the create/update tx on the comment that statement just wrote inside the project; commentProjectSQL reads that comment's project back
 
 # internal/dupmerge
@@ -80,7 +80,7 @@ internal/mentionnotify/mentionnotify.go:235 runs in the comment's tx on its pare
 internal/mentionnotify/mentionnotify.go:236 runs in the comment's tx on its parent album, which the comments store proved in the project; reads that project back
 
 # internal/notification
-internal/notification/store.go:186 Photos first checks the notification with Get(project, owner, uid); this reads its child photo rows
+internal/notification/store.go:213 Photos first checks the notification with Get(project, owner, uid); this reads its child photo rows
 
 # internal/organize
 internal/organize/featured.go:321 listFeatured serves ListFeaturedAlbums (project $4 set) and the worker-only FeaturedAlbumTx (album uid from the job payload); the project filter is optional, under OR
@@ -142,8 +142,8 @@ internal/photos/store_verify.go:63 ListCataloguedFiles feeds the instance-wide m
 internal/photos/store_videometa.go:131 metajob reprobeVideo is worker-only; the photo is loaded from the job payload via GetForJob
 
 # internal/phototask
-internal/phototask/store.go:312 the taskJoins fragment; its count and list queries take WHERE from Filter.conditions, which always adds t.project_id
-internal/phototask/store.go:318 the taskJoins fragment; its count and list queries take WHERE from Filter.conditions, which always adds t.project_id
+internal/phototask/store.go:316 the taskJoins fragment; its count and list queries take WHERE from Filter.conditions, which always adds t.project_id
+internal/phototask/store.go:322 the taskJoins fragment; its count and list queries take WHERE from Filter.conditions, which always adds t.project_id
 internal/phototask/store_write.go:194 updateIn first locks the row in the same tx with currentSQL (uid AND project_id = $2 FOR UPDATE)
 internal/phototask/store_write.go:353 touch is only called from AddPhotos/RemovePhotos, after lockTask (uid AND project_id FOR UPDATE) in the same tx
 

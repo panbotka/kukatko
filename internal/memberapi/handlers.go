@@ -34,6 +34,10 @@ type memberResponse struct {
 	// the project yet: its username and display name are empty, last_login_at
 	// is null and has_picture false until it does (project.Member).
 	IdentityWithheld bool `json:"identity_withheld"`
+	// Maintainer marks the instance's system administrator: its project role
+	// has no effect (it administers every project), so the page names it
+	// instead of a role and offers no role change (project.Member).
+	Maintainer bool `json:"maintainer"`
 }
 
 // addRequest is the body of POST /members.
@@ -57,7 +61,7 @@ func toMemberResponse(m project.Member) memberResponse {
 	return memberResponse{
 		UserUID: m.UserUID, Username: m.Username, DisplayName: m.DisplayName, Role: m.Role,
 		ApprovedAt: m.ApprovedAt, LastLoginAt: m.LastLoginAt, HasPicture: m.HasPicture,
-		IdentityWithheld: m.IdentityWithheld,
+		IdentityWithheld: m.IdentityWithheld, Maintainer: m.Maintainer,
 	}
 }
 
@@ -106,8 +110,10 @@ func (a *API) handleAdd(w http.ResponseWriter, r *http.Request) {
 
 // handleSetRole changes a member's role. It answers 200 with the member, 409
 // self for the caller's own membership (another admin must do it), 409
-// last_admin for demoting the project's only admin, 404 not_member, 422
-// invalid_role and 400 invalid_body.
+// maintainer for a system administrator's membership (its project role has no
+// effect, so a change would only make the list lie), 409 last_admin for
+// demoting the project's only admin, 404 not_member, 422 invalid_role and 400
+// invalid_body.
 func (a *API) handleSetRole(w http.ResponseWriter, r *http.Request) {
 	var req roleRequest
 	if err := decodeBody(r, &req); err != nil {
@@ -123,6 +129,16 @@ func (a *API) handleSetRole(w http.ResponseWriter, r *http.Request) {
 	userUID := chi.URLParam(r, "user_uid")
 	if userUID == actorUID(r) {
 		writeError(w, http.StatusConflict, codeSelf, "an admin cannot change their own role")
+		return
+	}
+	current, err := a.members.Membership(r.Context(), auth.ProjectUIDFromContext(r.Context()), userUID)
+	if err != nil {
+		writeStoreError(w, err, "reading a member")
+		return
+	}
+	if current.Maintainer {
+		writeError(w, http.StatusConflict, codeMaintainer,
+			"a system administrator administers every project; its project role cannot be changed")
 		return
 	}
 	member, err := a.members.SetRole(r.Context(), auditMeta(r), auth.ProjectUIDFromContext(r.Context()), userUID, role)

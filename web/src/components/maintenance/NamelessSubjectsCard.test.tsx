@@ -10,14 +10,19 @@ import type { AdminProject } from '../../services/projects'
 
 import { NamelessSubjectsCard } from './NamelessSubjectsCard'
 
-vi.mock('../../services/maintenance', () => ({
+vi.mock('../../services/maintenance', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/maintenance')>()),
   fetchNamelessSubjects: vi.fn(),
   detachNamelessSubjects: vi.fn(),
   restoreNamelessSubjects: vi.fn(),
 }))
 
-const { fetchNamelessSubjects, detachNamelessSubjects, restoreNamelessSubjects } =
-  await import('../../services/maintenance')
+const {
+  fetchNamelessSubjects,
+  detachNamelessSubjects,
+  restoreNamelessSubjects,
+  NamelessRestoreError,
+} = await import('../../services/maintenance')
 const reportMock = vi.mocked(fetchNamelessSubjects)
 const detachMock = vi.mocked(detachNamelessSubjects)
 const restoreMock = vi.mocked(restoreNamelessSubjects)
@@ -243,6 +248,28 @@ describe('NamelessSubjectsCard', () => {
     await user.upload(input as HTMLInputElement, file)
 
     expect(await screen.findByText(/není použitelný soubor pro vrácení zpět/i)).toBeInTheDocument()
+  })
+
+  it.each([
+    ['undo_wrong_project', /patří k jinému projektu/i],
+    ['undo_empty', /nezaznamenává žádnou odpojenou osobu/i],
+    ['undo_invalid', /není použitelný soubor pro vrácení zpět/i],
+  ] as const)('words the %s refusal of its own', async (code, sentence) => {
+    reportMock.mockResolvedValue(cleanReport())
+    restoreMock.mockRejectedValue(new NamelessRestoreError(400, 'refused', code))
+    const user = userEvent.setup()
+    const { container } = renderCard()
+
+    const input = container.querySelector('input[type="file"]')
+    await waitFor(() => {
+      expect(input).toBeEnabled()
+    })
+    await user.upload(
+      input as HTMLInputElement,
+      new File(['{}'], 'undo.json', { type: 'application/json' }),
+    )
+
+    expect(await screen.findByText(sentence)).toBeInTheDocument()
   })
 
   it('asks for a project on a multi-project instance and checks only the one picked', async () => {

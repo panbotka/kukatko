@@ -82,8 +82,16 @@ export interface Comment {
   /** The album this comment is on; absent on a photo or task thread. */
   album_uid?: string
   author_uid: string
-  /** The author's display name (falling back to the username), resolved server-side. */
+  /**
+   * The author's display name (falling back to the username), resolved
+   * server-side; empty for a former member.
+   */
   author_name: string
+  /**
+   * True for an author who has left the comment's project: the server sends no
+   * name, and the thread says „Bývalý člen projektu" without a picture.
+   */
+  author_former?: boolean
   /**
    * The cover photo of the person the author's account says it is. It predates
    * profile pictures and the thread no longer draws it: `PersonAvatar` asks
@@ -109,8 +117,10 @@ export interface Comment {
 /** One account a comment mentions (`comments.Mention`). */
 export interface CommentMention {
   user_uid: string
-  /** The account's current display name, falling back to the username. */
+  /** The account's current display name, falling back to the username; empty for a former member. */
   name: string
+  /** True for an account that has left the project: no name, no person, no link. */
+  former?: boolean
   /** The person of the library the account is linked to, where the mention links; null for none. */
   subject_uid: string | null
 }

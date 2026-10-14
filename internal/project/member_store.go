@@ -19,8 +19,9 @@ const foreignKeyViolation = "23503"
 // order; it reads project_members as m joined with users as u. A membership
 // whose identity is withheld (an exact-match add the account has not entered
 // yet, see AddByIdentifier) reads with an empty username and display name, no
-// last sign-in and no picture: the project learns who the account is only
-// once it comes in.
+// last sign-in, no picture and not as a maintainer: the project learns who the
+// account is only once it comes in. 'maintainer' is the instance role
+// (auth.RoleMaintainer), spelled out because this package does not import auth.
 const memberColumns = `m.project_uid, m.user_uid, m.role, m.approved_at, m.subject_uid,
 	m.last_seen_at, m.visit_reference_at, m.task_digest_at, m.created_at,
 	CASE WHEN m.identity_withheld THEN '' ELSE u.username END,
@@ -28,7 +29,8 @@ const memberColumns = `m.project_uid, m.user_uid, m.role, m.approved_at, m.subje
 	CASE WHEN m.identity_withheld THEN NULL ELSE u.last_login_at END,
 	(NOT m.identity_withheld AND (m.subject_uid IS NOT NULL
 		OR EXISTS (SELECT 1 FROM user_pictures up WHERE up.user_uid = u.uid))),
-	m.identity_withheld`
+	m.identity_withheld,
+	(NOT m.identity_withheld AND u.role = 'maintainer')`
 
 // memberFrom joins a membership with its account.
 const memberFrom = ` FROM project_members m JOIN users u ON u.uid = m.user_uid`
@@ -38,7 +40,7 @@ func scanMember(row pgx.Row) (*Member, error) {
 	var m Member
 	if err := row.Scan(&m.ProjectUID, &m.UserUID, &m.Role, &m.ApprovedAt, &m.SubjectUID,
 		&m.LastSeenAt, &m.VisitReferenceAt, &m.TaskDigestAt, &m.CreatedAt,
-		&m.Username, &m.DisplayName, &m.LastLoginAt, &m.HasPicture, &m.IdentityWithheld); err != nil {
+		&m.Username, &m.DisplayName, &m.LastLoginAt, &m.HasPicture, &m.IdentityWithheld, &m.Maintainer); err != nil {
 		return nil, fmt.Errorf("scanning project member: %w", err)
 	}
 	return &m, nil
@@ -102,13 +104,13 @@ func (s *Store) Membership(ctx context.Context, projectUID, userUID string) (*Me
 
 // membershipsOfSQL lists the projects one account belongs to, by project name.
 const membershipsOfSQL = `
-SELECT p.uid, p.slug, p.name, p.active, m.role, m.approved_at IS NOT NULL, m.subject_uid
+SELECT p.uid, p.slug, p.name, p.description, p.active, m.role, m.approved_at IS NOT NULL, m.subject_uid
 FROM project_members m JOIN projects p ON p.uid = m.project_uid
 WHERE m.user_uid = $1
 ORDER BY p.name, p.uid`
 
 // MembershipsOf returns every project the account userUID belongs to, ordered by
-// project name, with its role there and whether it is approved — inactive
+// project name, with its description, its role there and whether it is approved — inactive
 // projects included, so the caller decides how to show them — and the person it
 // says it is there. An account without
 // memberships (or an unknown one) yields an empty slice.
@@ -122,7 +124,8 @@ func (s *Store) MembershipsOf(ctx context.Context, userUID string) ([]Membership
 	out := []MembershipSummary{}
 	for rows.Next() {
 		var ms MembershipSummary
-		err := rows.Scan(&ms.ProjectUID, &ms.Slug, &ms.Name, &ms.Active, &ms.Role, &ms.Approved, &ms.SubjectUID)
+		err := rows.Scan(&ms.ProjectUID, &ms.Slug, &ms.Name, &ms.Description, &ms.Active, &ms.Role, &ms.Approved,
+			&ms.SubjectUID)
 		if err != nil {
 			return nil, fmt.Errorf("project: scanning membership of %s: %w", userUID, err)
 		}

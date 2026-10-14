@@ -373,20 +373,22 @@ function BackupCard({
  * cards, each saying which one it answers.
  */
 function ServerDiskCard({ storage }: { storage: StorageStatus }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   return (
     <Card className="h-100">
       <Card.Body>
         <h2 className="kk-section-title mb-2">{t('system.storage.title')}</h2>
         <dl className="row mb-0 small">
           <dt className="col-6 text-secondary fw-normal">{t('system.storage.originals')}</dt>
-          <dd className="col-6 text-end mb-1">{formatBytes(storage.originals_bytes)}</dd>
+          <dd className="col-6 text-end mb-1">
+            {formatBytes(storage.originals_bytes, i18n.language)}
+          </dd>
           <dt className="col-6 text-secondary fw-normal">{t('system.storage.cache')}</dt>
-          <dd className="col-6 text-end mb-1">{formatBytes(storage.cache_bytes)}</dd>
+          <dd className="col-6 text-end mb-1">{formatBytes(storage.cache_bytes, i18n.language)}</dd>
           <dt className="col-6 text-secondary fw-normal">{t('system.storage.free')}</dt>
-          <dd className="col-6 text-end mb-1">{formatBytes(storage.free_bytes)}</dd>
+          <dd className="col-6 text-end mb-1">{formatBytes(storage.free_bytes, i18n.language)}</dd>
           <dt className="col-6 text-secondary fw-normal">{t('system.storage.total')}</dt>
-          <dd className="col-6 text-end mb-0">{formatBytes(storage.total_bytes)}</dd>
+          <dd className="col-6 text-end mb-0">{formatBytes(storage.total_bytes, i18n.language)}</dd>
         </dl>
         <p className="text-secondary kk-text-caption mt-3 mb-0">{t('system.storage.note')}</p>
       </Card.Body>

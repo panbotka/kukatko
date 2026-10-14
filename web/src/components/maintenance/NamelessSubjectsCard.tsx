@@ -14,6 +14,7 @@ import {
   type NamelessReport,
   type NamelessSubject,
   type NamelessUndoFile,
+  NamelessRestoreError,
 } from '../../services/maintenance'
 import { fetchAdminProjects, type AdminProject } from '../../services/projects'
 import { RecordTable, type RecordColumn } from '../RecordTable'
@@ -190,6 +191,28 @@ function detachErrorKey(err: unknown): 'clean' | 'unavailable' | 'detachError' {
 }
 
 /**
+ * The sentence for a refused restore. A valid undo file picked while another
+ * project is chosen says so — it is not lost, it belongs elsewhere — and is
+ * told apart from a file that is no undo file at all, or one with nothing in it.
+ */
+function restoreFailureKey(err: unknown) {
+  if (err instanceof NamelessRestoreError && err.status === 400) {
+    switch (err.code) {
+      case 'undo_wrong_project':
+        return 'maintenance.nameless.restoreWrongProject' as const
+      case 'undo_empty':
+        return 'maintenance.nameless.restoreEmpty' as const
+      default:
+        return 'maintenance.nameless.restoreInvalid' as const
+    }
+  }
+  if (err instanceof ApiError && err.status === 400) {
+    return 'maintenance.nameless.restoreInvalid' as const
+  }
+  return 'maintenance.nameless.restoreError' as const
+}
+
+/**
  * The nameless catch-all subject repair, the one class of data problem that used
  * to be reachable only over SSH.
  *
@@ -261,13 +284,7 @@ export function NamelessSubjectsCard() {
         setRestore({ status: 'done', queued: result.queued })
         await runReport()
       } catch (err) {
-        const invalid = err instanceof ApiError && err.status === 400
-        setRestore({
-          status: 'error',
-          message: invalid
-            ? t('maintenance.nameless.restoreInvalid')
-            : t('maintenance.nameless.restoreError'),
-        })
+        setRestore({ status: 'error', message: t(restoreFailureKey(err)) })
       } finally {
         // Clear the picker, so re-uploading the same file after a failed attempt
         // still fires a change event.

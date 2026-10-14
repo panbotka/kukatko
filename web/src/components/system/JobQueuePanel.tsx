@@ -1,4 +1,4 @@
-import type { ParseKeys, TFunction } from 'i18next'
+import type { TFunction } from 'i18next'
 import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
 import Spinner from 'react-bootstrap/Spinner'
@@ -11,6 +11,7 @@ import type { JobsStatus } from '../../services/system'
 import { Icon } from '../Icon'
 import { JobStateLegend, type JobStateKey } from '../JobStateLegend'
 import { TechnicalDetail } from '../TechnicalDetail'
+import { JOB_TYPE_LABELS } from './jobTypeLabels'
 
 /**
  * The lifecycle states the breakdown has a column for, in the order work moves
@@ -29,35 +30,9 @@ const EXPLAINED_STATES: readonly JobStateKey[] = [
   'pending',
 ]
 
-/**
- * The job types that have a name in the family's vocabulary. A type missing here
- * — a new handler shipped before its translation, say — falls back to its own
- * id, which is wrong-looking rather than blank and says exactly what to add.
- */
-const TYPE_LABELS: Record<string, ParseKeys | undefined> = {
-  image_embed: 'system.jobs.types.image_embed',
-  face_detect: 'system.jobs.types.face_detect',
-  thumbnail: 'system.jobs.types.thumbnail',
-  places: 'system.jobs.types.places',
-  metadata: 'system.jobs.types.metadata',
-  ocr: 'system.jobs.types.ocr',
-  sidecar: 'system.jobs.types.sidecar',
-  family_export: 'system.jobs.types.family_export',
-  storyboard: 'system.jobs.types.storyboard',
-  hls_transcode: 'system.jobs.types.hls_transcode',
-  backup: 'system.jobs.types.backup',
-  mail_send: 'system.jobs.types.mail_send',
-  push_send: 'system.jobs.types.push_send',
-  tag_notify: 'system.jobs.types.tag_notify',
-  notification_purge: 'system.jobs.types.notification_purge',
-  nameless_detach: 'system.jobs.types.nameless_detach',
-  nameless_restore: 'system.jobs.types.nameless_restore',
-  face_cluster: 'system.jobs.types.face_cluster',
-}
-
 /** The job type's name in the family's vocabulary, or its raw id if it has none. */
 function typeLabel(type: string, t: TFunction): string {
-  const key = TYPE_LABELS[type]
+  const key = JOB_TYPE_LABELS[type]
   return key === undefined ? type : t(key)
 }
 

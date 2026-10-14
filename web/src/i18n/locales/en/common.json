@@ -398,6 +398,7 @@
     "en": "English",
     "switch": "Switch language"
   },
+  "formerMember": "Former project member",
   "roles": {
     "viewer": "Viewer",
     "curator": "Curator",
@@ -3087,6 +3088,46 @@
   },
   "notification": {
     "title": "Notification",
+    "text": {
+      "untitled": "(untitled)",
+      "somebody": "Somebody",
+      "tagged": {
+        "title_one": "You were tagged in a photo",
+        "title_other": "You were tagged in photos",
+        "body_one": "You were tagged in {{count}} photo.",
+        "body_other": "You were tagged in {{count}} photos."
+      },
+      "taggedAlbum": {
+        "title_one": "You were tagged in a photo in the album {{album}}",
+        "title_other": "You were tagged in photos in the album {{album}}",
+        "body_one": "You were tagged in {{count}} photo in the album {{album}}.",
+        "body_other": "You were tagged in {{count}} photos in the album {{album}}."
+      },
+      "taggedOther": {
+        "title_one": "You were tagged in another photo",
+        "title_other": "You were tagged in other photos",
+        "body_one": "You were tagged in {{count}} other photo.",
+        "body_other": "You were tagged in {{count}} other photos."
+      },
+      "registrationPending": {
+        "title": "A new registration is waiting for approval",
+        "body": "{{name}} has just registered in Kukátko."
+      },
+      "albumFeatured": {
+        "title": "New featured album: {{album}}",
+        "body": "The album {{album}} is now featured on the home page."
+      },
+      "taskAssigned": {
+        "title": "{{name}} added you to the task: {{title}}",
+        "body": "Open the task and answer."
+      },
+      "commentMention": {
+        "photo": "{{name}} mentioned you in a comment on a photo",
+        "photoTitled": "{{name}} mentioned you in a comment on the photo {{title}}",
+        "task": "{{name}} mentioned you in a comment on the task {{title}}",
+        "album": "{{name}} mentioned you in a comment on the album {{title}}"
+      }
+    },
     "back": "Back to the library",
     "error": "The notification could not be loaded.",
     "missing": {
@@ -3417,6 +3458,8 @@
       "restoreHint": "Upload the file the detach downloaded (or the one the same command on the server wrote). The people come back exactly as they were, and their markers and faces return to them.",
       "restoreLabel": "Undo file",
       "restoring": "Uploading…",
+      "restoreWrongProject": "This undo file belongs to another project. Pick the project it was taken in above and upload it again.",
+      "restoreEmpty": "The file records no detached person; there is nothing to undo.",
       "restoreInvalid": "That is not a usable undo file.",
       "restoreError": "The undo failed.",
       "restoreResult": "The restore of {{queued}} people is scheduled; it runs in the background.",
@@ -3632,7 +3675,10 @@
         "nameless_detach": "Detaching the nameless person",
         "nameless_restore": "Restoring the nameless person",
         "family_export": "Writing the family tree to storage",
-        "face_cluster": "Grouping faces"
+        "face_cluster": "Grouping faces",
+        "task_digest": "The daily e-mail of open tasks",
+        "album_featured_notify": "Announcing a featured album",
+        "storage_rekey": "Moving a project's files in storage"
       }
     },
     "video": {
@@ -3852,6 +3898,7 @@
       "actions": "Actions"
     },
     "roleLabel": "Role of {{name}}",
+    "maintainerRoleReason": "A maintainer administers every project whatever their role in it, so that role cannot be changed.",
     "selfRoleReason": "You cannot change your own role — another project admin has to.",
     "pending": "Waiting for approval",
     "approved": "Approved",
@@ -4314,6 +4361,7 @@
   "uploadLink": {
     "title": "Upload photos",
     "loading": "Loading the link…",
+    "project": "You are uploading to the project {{name}}",
     "targets": "Photos will go to:",
     "validUntil": "The link is valid until {{date}}.",
     "signedInAs": "You are uploading as {{name}}.",

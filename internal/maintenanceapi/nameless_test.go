@@ -252,18 +252,18 @@ func TestNamelessRestoreSchedules(t *testing.T) {
 }
 
 // TestNamelessRestoreRejectsUnusableFile verifies a body that is not a usable
-// undo file is refused with 400 and schedules nothing.
+// undo file is refused with 400 and its code, and schedules nothing.
 func TestNamelessRestoreRejectsUnusableFile(t *testing.T) {
 	t.Parallel()
-	for name, body := range map[string]string{
-		"not json":     "{",
-		"no subjects":  `{"subjects": []}`,
-		"empty object": `{}`,
+	for name, tc := range map[string]struct{ body, code string }{
+		"not json":     {"{", codeUndoInvalid},
+		"no subjects":  {`{"subjects": []}`, codeUndoEmpty},
+		"empty object": {`{}`, codeUndoEmpty},
 	} {
 		fake := &fakeNameless{}
-		rec := do(newNamelessRouter(fake), http.MethodPost, "/maintenance/nameless-subjects/restore", body)
-		if rec.Code != http.StatusBadRequest {
-			t.Errorf("%s: status = %d, want 400", name, rec.Code)
+		rec := do(newNamelessRouter(fake), http.MethodPost, "/maintenance/nameless-subjects/restore", tc.body)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"code":"`+tc.code+`"`) {
+			t.Errorf("%s: answer = %d %s, want 400 %s", name, rec.Code, rec.Body, tc.code)
 		}
 		if len(fake.restored) != 0 {
 			t.Errorf("%s: scheduled %d restore(s), want none", name, len(fake.restored))
@@ -311,7 +311,7 @@ func TestNamelessRunsInTheRequestsProject(t *testing.T) {
 }
 
 // TestNamelessRestoreRefusesAnotherProjectsFile answers 400 for an undo file
-// taken in another project.
+// taken in another project, coded apart from a corrupt file.
 func TestNamelessRestoreRefusesAnotherProjectsFile(t *testing.T) {
 	t.Parallel()
 	_, snap := namelessFixture()
@@ -321,8 +321,8 @@ func TestNamelessRestoreRefusesAnotherProjectsFile(t *testing.T) {
 	}
 	fake := &fakeNameless{restoreErr: namelessjob.ErrProjectMismatch}
 	rec := do(newNamelessRouter(fake), http.MethodPost, "/maintenance/nameless-subjects/restore", string(raw))
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", rec.Code)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"code":"undo_wrong_project"`) {
+		t.Errorf("answer = %d %s, want 400 undo_wrong_project", rec.Code, rec.Body)
 	}
 }
 

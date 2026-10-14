@@ -79,6 +79,8 @@ export interface CreatedUploadLink {
  */
 export interface PublicUploadLink {
   title: string
+  /** The name of the project the photos go into; the page says it under the title. */
+  project: string
   note: string
   albums: string[]
   labels: string[]

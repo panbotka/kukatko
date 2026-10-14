@@ -78,6 +78,15 @@ describe('photoUidFromHref', () => {
     expect(photoUidFromHref(`/p/v/photos/${uid(4)}?task=tk1`, ORIGIN)).toBe(uid(4))
     expect(photoUidFromHref(`/p/v/x/photos/${uid(4)}`, ORIGIN)).toBeNull()
   })
+
+  it('previews no photo of another project than the one the comment is read in', () => {
+    expect(photoUidFromHref(`/p/v/photos/${uid(1)}`, ORIGIN, 'v')).toBe(uid(1))
+    expect(photoUidFromHref(`/p/spolek/photos/${uid(1)}`, ORIGIN, 'v')).toBeNull()
+    // An unprefixed link — written before projects existed — is this project's.
+    expect(photoUidFromHref(`/photos/${uid(2)}`, ORIGIN, 'spolek')).toBe(uid(2))
+    // Without a project the prefix is not judged.
+    expect(photoUidFromHref(`/p/spolek/photos/${uid(3)}`, ORIGIN, null)).toBe(uid(3))
+  })
 })
 
 describe('markdownPhotoUids', () => {
@@ -90,6 +99,12 @@ describe('markdownPhotoUids', () => {
     ].join('\n\n')
 
     expect(markdownPhotoUids(body, ORIGIN)).toEqual([uid(2), uid(1), uid(3), uid(4)])
+  })
+
+  it('leaves out links into another project', () => {
+    const body = `/p/v/photos/${uid(1)} and ${ORIGIN}/p/spolek/photos/${uid(2)} and ${uid(3)}`
+
+    expect(markdownPhotoUids(body, ORIGIN, 'v')).toEqual([uid(1), uid(3)])
   })
 
   it('ignores uids inside code and on other sites', () => {

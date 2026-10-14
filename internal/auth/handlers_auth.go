@@ -182,6 +182,9 @@ type meProject struct {
 	Active   bool         `json:"active"`
 	Role     project.Role `json:"role"`
 	Approved bool         `json:"approved"`
+	// Description is the project's free text, "" when it has none; the project
+	// chooser draws it under the name.
+	Description string `json:"description"`
 	// SubjectUID is the person the caller says it is in this project ("this is
 	// me"), nil when it has not said: who you are is a fact about one project.
 	SubjectUID *string `json:"subject_uid"`
@@ -211,7 +214,7 @@ func (a *API) meResponseFor(ctx context.Context, p principal) (meResponse, error
 	for _, ms := range memberships {
 		projects = append(projects, meProject{
 			UID: ms.ProjectUID, Slug: ms.Slug, Name: ms.Name, Active: ms.Active, Role: ms.Role, Approved: ms.Approved,
-			SubjectUID: ms.SubjectUID,
+			Description: ms.Description, SubjectUID: ms.SubjectUID,
 		})
 	}
 	last, err := a.svc.store.LastProjectSlug(ctx, p.user.UID)

@@ -128,10 +128,14 @@ LEFT JOIN users lu ON lu.uid = la.by
 LEFT JOIN LATERAL (
     SELECT COALESCE(json_agg(json_build_object(
         'user_uid', p.user_uid,
-        'name', COALESCE(NULLIF(pu.display_name, ''), pu.username, ''),
+        'name', CASE WHEN ` + participantFormerTask + ` THEN ''
+            ELSE COALESCE(NULLIF(pu.display_name, ''), pu.username, '') END,
         'joined_at', p.joined_at,
         'added_by', COALESCE(p.added_by, ''),
-        'added_by_name', COALESCE(NULLIF(au.display_name, ''), au.username, '')
+        'added_by_name', CASE WHEN ` + askerFormerTask + ` THEN ''
+            ELSE COALESCE(NULLIF(au.display_name, ''), au.username, '') END,
+        'former', ` + participantFormerTask + `,
+        'added_by_former', COALESCE(` + askerFormerTask + `, false)
     ) ORDER BY p.joined_at, p.user_uid), '[]'::json) AS participants
     FROM photo_task_participants p
     JOIN users pu ON pu.uid = p.user_uid

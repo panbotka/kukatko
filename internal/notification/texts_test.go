@@ -263,7 +263,7 @@ func TestRenderAlbumFeatured(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := RenderAlbumFeatured(tt.lang, tt.album)
-			if got != tt.want {
+			if (Text{Title: got.Title, Body: got.Body}) != tt.want {
 				t.Errorf("RenderAlbumFeatured(%q, %q) = %+v, want %+v", tt.lang, tt.album, got, tt.want)
 			}
 			if utf8.RuneCountInString(got.Title) > MaxTitleLen {
@@ -327,7 +327,8 @@ func TestRenderTaskAssigned(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := RenderTaskAssigned(tt.lang, tt.who, tt.title); got != tt.want {
+			got := RenderTaskAssigned(tt.lang, tt.who, tt.title)
+			if (Text{Title: got.Title, Body: got.Body}) != tt.want {
 				t.Errorf("RenderTaskAssigned(%q, %q, %q) = %+v, want %+v", tt.lang, tt.who, tt.title, got, tt.want)
 			}
 		})
@@ -432,10 +433,57 @@ func TestRenderCommentMention(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := RenderCommentMention(tt.lang, tt.who, tt.place, tt.title, tt.excerpt)
-			if got != tt.want {
+			if (Text{Title: got.Title, Body: got.Body}) != tt.want {
 				t.Errorf("RenderCommentMention(%q, %q, %q, %q, %q) = %+v, want %+v",
 					tt.lang, tt.who, tt.place, tt.title, tt.excerpt, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestRender_params pins the facts every render function stores beside its
+// text, so the inbox can say it again in the reader's language: the same in
+// both languages, names trimmed and cut like the text cuts them, a blank one
+// left blank (the reader says "untitled" or "somebody" itself).
+func TestRender_params(t *testing.T) {
+	t.Parallel()
+	long := strings.Repeat("x", 150)
+	tests := []struct {
+		name string
+		got  func(lang Language) Text
+		want Params
+	}{
+		{"registration", func(Language) Text {
+			return RenderRegistrationPending(RegistrationPendingData{DisplayName: " Jan ", Username: "jan"})
+		}, Params{Name: "Jan"}},
+		{"tagged", func(l Language) Text { return RenderTagged(l, 3) }, Params{Count: 3}},
+		{"tagged in album", func(l Language) Text { return RenderTaggedInAlbum(l, 2, " Pouť ") },
+			Params{Variant: TaggedVariantAlbum, Count: 2, Album: "Pouť"}},
+		{"tagged in an untitled album", func(l Language) Text { return RenderTaggedInAlbum(l, 1, " ") },
+			Params{Variant: TaggedVariantAlbum, Count: 1}},
+		{"tagged other", func(l Language) Text { return RenderTaggedOther(l, 5) },
+			Params{Variant: TaggedVariantOther, Count: 5}},
+		{"featured", func(l Language) Text { return RenderAlbumFeatured(l, long) },
+			Params{Album: shorten(long, MaxAlbumNameLen)}},
+		{"task", func(l Language) Text { return RenderTaskAssigned(l, " Anna ", long) },
+			Params{Name: "Anna", Title: shorten(long, MaxTaskTitleLen)}},
+		{"task by nobody", func(l Language) Text { return RenderTaskAssigned(l, " ", "Kdy?") },
+			Params{Title: "Kdy?"}},
+		{"mention", func(l Language) Text {
+			return RenderCommentMention(l, "Anna", MentionPlaceAlbum, " Svatba ", "Hele")
+		}, Params{Name: "Anna", Place: MentionPlaceAlbum, Title: "Svatba"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			for _, lang := range []Language{LanguageCzech, LanguageEnglish} {
+				if got := tt.got(lang).Params; got != tt.want {
+					t.Errorf("%s params = %+v, want %+v", lang, got, tt.want)
+				}
+			}
+		})
+	}
+	if !(Params{}).IsZero() || (Params{Count: 1}).IsZero() {
+		t.Error("IsZero must be true for the zero Params only")
 	}
 }

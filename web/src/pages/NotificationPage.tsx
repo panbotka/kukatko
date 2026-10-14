@@ -15,6 +15,7 @@ import { directEntryState, isFirstEntry } from '../lib/directEntry'
 import { formatDateTime } from '../lib/format'
 import { gridScrollKey } from '../lib/gridScroll'
 import { LIBRARY_PATH } from '../lib/libraryView'
+import { notificationText } from '../lib/notificationText'
 import { useNotificationInbox } from '../notifications/NotificationInboxContext'
 import { useProjectPath } from '../project/ProjectContext'
 import { isNotFound } from '../services/auth'
@@ -137,7 +138,8 @@ export function NotificationPage() {
     })
   }, [sole, navigate, projectPath])
 
-  useDocumentTitle(state.status === 'ready' ? state.detail.title : t('notification.title'))
+  const text = state.status === 'ready' ? notificationText(state.detail, t) : undefined
+  useDocumentTitle(text?.title ?? t('notification.title'))
 
   // Where the grid was left, so the viewer's way back returns to the tile it
   // was opened from. The set is loaded whole, so there is no count to restore.
@@ -172,6 +174,7 @@ export function NotificationPage() {
   }
 
   const { detail } = state
+  const shown = notificationText(detail, t)
   const dropped = detail.dropped_count
   const empty = detail.photos.length === 0
 
@@ -179,8 +182,8 @@ export function NotificationPage() {
     <>
       <div className="mb-3">
         {backToLibrary}
-        <h1 className="kk-page-title mt-2 mb-1">{detail.title}</h1>
-        {detail.body !== '' && <p className="mb-1">{detail.body}</p>}
+        <h1 className="kk-page-title mt-2 mb-1">{shown.title}</h1>
+        {shown.body !== '' && <p className="mb-1">{shown.body}</p>}
         <p className="kk-text-caption text-secondary mb-0">
           <time dateTime={detail.created_at}>
             {formatDateTime(detail.created_at, i18n.language)}

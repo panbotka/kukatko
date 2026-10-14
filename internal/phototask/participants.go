@@ -214,17 +214,40 @@ func (s *Store) Unassign(
 	return removed, err
 }
 
-// participantsSQL reads one task's people, oldest membership first. Both user
-// joins resolve a display name; added_by is a LEFT JOIN because the account that
-// asked somebody may since have been deleted.
+// participantsSQL reads one task's people, oldest membership first, $2 being
+// the task's project. Both user joins resolve a display name; added_by is a LEFT
+// JOIN because the account that asked somebody may since have been deleted.
+// An account that has left the project is a former member (participantFormerParam):
+// its name reads empty and its former flag is set.
 const participantsSQL = `
-SELECT p.user_uid, COALESCE(NULLIF(pu.display_name, ''), pu.username, ''), p.joined_at,
-	COALESCE(p.added_by, ''), COALESCE(NULLIF(au.display_name, ''), au.username, '')
+SELECT p.user_uid,
+	CASE WHEN ` + participantFormerParam + ` THEN '' ELSE COALESCE(NULLIF(pu.display_name, ''), pu.username, '') END,
+	p.joined_at, COALESCE(p.added_by, ''),
+	CASE WHEN ` + askerFormerParam + ` THEN '' ELSE COALESCE(NULLIF(au.display_name, ''), au.username, '') END,
+	` + participantFormerParam + `, COALESCE(` + askerFormerParam + `, false)
 FROM photo_task_participants p
 JOIN users pu ON pu.uid = p.user_uid
 LEFT JOIN users au ON au.uid = p.added_by
 WHERE p.task_uid = $1
 ORDER BY p.joined_at, p.user_uid`
+
+// The former-member tests: true when the account row aliased pu (the
+// participant) or au (whoever asked) is no member of the task's project any
+// more and not the instance's maintainer (who belongs everywhere;
+// 'maintainer' is auth.RoleMaintainer). A task's people keep their rows after
+// they leave, and the project must not keep reading their live names. Each is
+// NULL for a missing (LEFT JOINed) account. The Param pair reads the project
+// from $2 (participantsSQL), the Task pair from the task row t (taskJoins).
+const (
+	participantFormerParam = `(pu.role <> 'maintainer' AND NOT EXISTS (SELECT 1 FROM project_members fm
+	WHERE fm.user_uid = pu.uid AND fm.project_uid = $2))`
+	askerFormerParam = `(au.role <> 'maintainer' AND NOT EXISTS (SELECT 1 FROM project_members fm
+	WHERE fm.user_uid = au.uid AND fm.project_uid = $2))`
+	participantFormerTask = `(pu.role <> 'maintainer' AND NOT EXISTS (SELECT 1 FROM project_members fm
+	WHERE fm.user_uid = pu.uid AND fm.project_uid = t.project_id))`
+	askerFormerTask = `(au.role <> 'maintainer' AND NOT EXISTS (SELECT 1 FROM project_members fm
+	WHERE fm.user_uid = au.uid AND fm.project_uid = t.project_id))`
+)
 
 // Participants returns the people on the project's task, oldest membership
 // first. A task nobody is on yields an empty slice, not nil; a task that does not
@@ -238,7 +261,7 @@ func (s *Store) Participants(ctx context.Context, projectUID, taskUID string) ([
 	if !found {
 		return nil, ErrNotFound
 	}
-	rows, err := s.pool.Query(ctx, participantsSQL, taskUID)
+	rows, err := s.pool.Query(ctx, participantsSQL, taskUID, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("phototask: listing participants of %s: %w", taskUID, err)
 	}
@@ -248,7 +271,7 @@ func (s *Store) Participants(ctx context.Context, projectUID, taskUID string) ([
 	for rows.Next() {
 		var p Participant
 		if err := rows.Scan(&p.UserUID, &p.Name, &p.JoinedAt,
-			&p.AddedByUID, &p.AddedByName); err != nil {
+			&p.AddedByUID, &p.AddedByName, &p.Former, &p.AddedByFormer); err != nil {
 			return nil, fmt.Errorf("phototask: scanning participant: %w", err)
 		}
 		out = append(out, p)

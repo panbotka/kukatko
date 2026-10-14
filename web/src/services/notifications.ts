@@ -55,14 +55,40 @@ export const PUSH_CHANNEL: NotificationChannel = 'push'
 /** The e-mail channel: a notification mailed to the account's address. */
 export const EMAIL_CHANNEL: NotificationChannel = 'email'
 
+/**
+ * The facts a notification's text was rendered from (`notification.Params`),
+ * per kind: `tagged` a `count` and a `variant` (`''`, `album` with `album`,
+ * `other`); `registration_pending` a `name`; `album_featured` an `album`;
+ * `task_assigned` a `name` and a `title`; `comment_mention` a `name`, a `place`
+ * and a `title`. A blank name or title is absent. `lib/notificationText`
+ * renders them in the reader's language.
+ */
+export interface NotificationParams {
+  variant?: string
+  count?: number
+  name?: string
+  album?: string
+  title?: string
+  place?: string
+}
+
 /** One notification as its owner reads it (`notificationView`). */
 export interface NotificationRecord {
   uid: string
   kind: NotificationKind
-  /** The headline the push was shown with. */
+  /**
+   * The headline the push was shown with, in the instance's language (Czech).
+   * Show it through `notificationText`, which says it in the reader's language
+   * when `params` allow and falls back to this.
+   */
   title: string
   /** The line under it; may be empty. */
   body: string
+  /**
+   * What `title` and `body` were rendered from; null (or absent) for a
+   * notification stored without them — every one older than the change.
+   */
+  params?: NotificationParams | null
   /** The deeplink the push opened — this page's own path for a photo set. */
   link: string
   /** When it was made (RFC 3339). */

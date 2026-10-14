@@ -620,12 +620,12 @@ is the **one** authoritative list; every entry is a difference the design makes,
 fresh production dump (round 2, 2026-10-14, to 0115: 44 differences, 0 unexpected —
 [`MIGRATION_SAFETY.md`](MIGRATION_SAFETY.md)); 0116 and 0117 only add a column to a table this path
 creates, so they add no difference; 0118 adds `instance_settings.footer_text` (the project's footer line,
-backfilled for `v`). The marker names the range it was proven for: **adding a migration fails `make check`**
+backfilled for `v`), 0119 `notifications.params` (nullable, no backfill). The marker names the range it was proven for: **adding a migration fails `make check`**
 (`TestReleaseExpectList_coversTheNewestMigration`) until the new file is classified here (a table, a column,
 nothing), the marker is moved and the integration test `TestReleaseExpectList_provenOnTheRealPath` — which
 replays 0099 → newest on a seeded schema and judges it with exactly this block — passes again.
 
-<!-- release-expect: 0099..0118 -->
+<!-- release-expect: 0099..0119 -->
 ```sh
 docker run --rm --entrypoint /app/kukatko -v /root/inventory:/inv ghcr.io/panbotka/kukatko:<new> \
   maintenance inventory-diff /inv/A /inv/B \
@@ -638,7 +638,7 @@ docker run --rm --entrypoint /app/kukatko -v /root/inventory:/inv ghcr.io/panbot
   --expect column-removed:users.approved_at --expect column-removed:users.subject_uid \
   --expect column-removed:users.last_seen_at --expect column-removed:users.visit_reference_at \
   --expect column-removed:users.task_digest_at \
-  --expect column-added:instance_settings.footer_text \
+  --expect column-added:instance_settings.footer_text --expect column-added:notifications.params \
   --expect count:schema_migrations --expect role-collapse
 ```
 
@@ -649,7 +649,8 @@ maintainers unchanged), 0109 `project_invites`, 0110 the five per-library `users
 hold (named one by one: `column-removed:users.*` would also hide an unintended drop of, say,
 `users.password_hash`), 0112 `storage_rekey_runs`, 0115 `storage_rekey_derived_failures`; 0114 drops only the
 `project_id` defaults, which the inventory (names and types) does not see; 0118
-`instance_settings.footer_text` (its backfill writes the one `v` row, which no digest covers). **Never allow anything else from
+`instance_settings.footer_text` (its backfill writes the one `v` row, which no digest covers); 0119
+`notifications.params` (nullable, no backfill: older notifications keep only their stored text). **Never allow anything else from
 this list blindly.**
 
 **On a live instance** the app keeps writing between A and B, so the live tables drift: `count:jobs`,
@@ -659,7 +660,7 @@ change but the role collapse, and every catalogue difference (`digest:photos`, `
 `photo:…`) must match an `audit_log` entry written in the window (`created_at` after A). An unexplained
 catalogue difference stops the rollout.
 
-**Never migrate under a running 0.31.0.** The chain 0100–0118 is not backward compatible: 0.31.0 served
+**Never migrate under a running 0.31.0.** The chain 0100–0119 is not backward compatible: 0.31.0 served
 against a migrated schema fails every sign-in with 500 (`column "subject_uid" does not exist` — proven on a
 production copy, 2026-10-13) while its `/healthz` stays 200. Which new-binary commands may run against the
 production database **while the 0.31.0 container is still running**:

@@ -462,6 +462,33 @@ func TestMembers_roleRules(t *testing.T) {
 	}
 }
 
+// TestMembers_maintainersRoleIsNotTheProjects proves a project admin cannot
+// change a system administrator's membership — its project role has no effect,
+// so a change would only make the list lie — and that the list says who it is.
+func TestMembers_maintainersRoleIsNotTheProjects(t *testing.T) {
+	e := newEnv(t)
+	client := e.f.ClientFor(t, e.server, projecttest.SideA)
+	ops := e.seedAccount(t, "ops", "ops@example.test", true)
+	if _, err := e.pool.Exec(t.Context(), `UPDATE users SET role = 'maintainer' WHERE uid = $1`, ops); err != nil {
+		t.Fatalf("promoting ops: %v", err)
+	}
+	e.addMember(t, e.f.A.ProjectUID, ops, project.RoleAdmin, true)
+
+	status, _, raw := e.call(t, client, http.MethodPatch, e.f.PathFor(projecttest.SideA, "members/"+ops),
+		map[string]string{"role": "viewer"})
+	if status != http.StatusConflict || !strings.Contains(raw, `"error":"maintainer"`) {
+		t.Fatalf("demoting the maintainer = %d %s, want 409 maintainer", status, raw)
+	}
+	member, err := project.NewStore(e.pool).Membership(t.Context(), e.f.A.ProjectUID, ops)
+	if err != nil || member.Role != project.RoleAdmin || !member.Maintainer {
+		t.Fatalf("membership after the refusal = %+v, %v; want an untouched admin, flagged maintainer", member, err)
+	}
+	status, _, raw = e.call(t, client, http.MethodGet, e.f.PathFor(projecttest.SideA, "members"), nil)
+	if status != http.StatusOK || strings.Count(raw, `"maintainer":true`) != 1 {
+		t.Errorf("list = %d %s, want exactly the maintainer flagged", status, raw)
+	}
+}
+
 // TestMembers_removeSelfOnlyWhileAnotherAdminRemains proves the only admin
 // cannot leave (409 self), and leaves — losing the project — once another
 // admin is there.

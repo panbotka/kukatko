@@ -15,11 +15,14 @@ import (
 // a reviewer needs to read on one line — who said what, and when — without the
 // thread's edit stamp or subject columns.
 type commentRef struct {
-	UID        string    `json:"uid"`
-	Body       string    `json:"body"`
-	AuthorUID  string    `json:"author_uid"`
-	AuthorName string    `json:"author_name"`
-	CreatedAt  time.Time `json:"created_at"`
+	UID        string `json:"uid"`
+	Body       string `json:"body"`
+	AuthorUID  string `json:"author_uid"`
+	AuthorName string `json:"author_name"`
+	// AuthorFormer marks an author who has left the project; AuthorName is
+	// empty then (comments.Comment.AuthorFormer).
+	AuthorFormer bool      `json:"author_former,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 // lastCommentField is the tri-state `last_comment` of a listing row: absent
@@ -58,7 +61,8 @@ func resolvedLastComment(c *comments.Comment) lastCommentField {
 		return lastCommentField{present: true}
 	}
 	return lastCommentField{present: true, comment: &commentRef{
-		UID: c.UID, Body: c.Body, AuthorUID: c.AuthorUID, AuthorName: c.AuthorName, CreatedAt: c.CreatedAt,
+		UID: c.UID, Body: c.Body, AuthorUID: c.AuthorUID, AuthorName: c.AuthorName, AuthorFormer: c.AuthorFormer,
+		CreatedAt: c.CreatedAt,
 	}}
 }
 

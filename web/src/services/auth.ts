@@ -75,8 +75,8 @@ export interface ProjectMembership {
   slug: string
   name: string
   /**
-   * Free text about the project, shown on the chooser. Optional: `GET /auth/me`
-   * does not send it yet, and an empty one is simply not drawn.
+   * Free text about the project, shown on the chooser; `""` when it has none,
+   * and an empty one is simply not drawn.
    */
   description?: string
   /** False for a deactivated project; it is listed but cannot be entered. */

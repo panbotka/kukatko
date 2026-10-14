@@ -321,7 +321,8 @@ the same way, by its slug in the URL (`/api/v1/p/<project>/…`).
 - **Everybody's photos from the fair, without an account each.** A curator creates an *upload link*
   — pick the albums and labels, a title like "Pouť 2026 – fotky od vás", how many days it stays valid
   — and posts the short `/u/…` address to the group chat. Whoever opens it, signed in or not, sees
-  exactly where the photos will go and nothing else of the library, taps one big "Vybrat fotky" and
+  exactly where the photos will go — the project by name, then its albums and labels — and nothing else
+  of the library, taps one big "Vybrat fotky" and
   picks a whole batch from the phone's gallery (photos, videos, HEIC alike) — or drags it onto the page
   on a computer. While it uploads the page shows nothing but a large progress bar, "X z Y fotek" and
   "zbývá asi 3 min", keeps the screen awake, and has nothing on it that could cancel the batch; a
@@ -639,7 +640,9 @@ are folded into the other photos too, so the hour never fans out into a dozen pu
 for the whole hour, listing the albums with their counts and a link each.
 It never says who did the tagging, never tells you about your own, never counts a private, hidden or
 archived photo, and a tag taken back before the hour is up is taken out of the count. The hour is
-configurable, and each channel of the kind is switched on or off in your notification settings. Tapping a
+configurable, and each channel of the kind is switched on or off in your notification settings. The inbox
+says every notification in **your** language, whichever the instance sent it in (a push or an e-mail keeps
+the instance's). Tapping a
 notification opens exactly
 those photos — the set as it was when the message was sent, not a live search a thirteenth tag would
 change: one photo opens straight in the viewer, several as a grid under the message itself, and if some

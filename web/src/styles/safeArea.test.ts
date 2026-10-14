@@ -42,13 +42,20 @@ const SCREEN_HEIGHT_PX = 852
  */
 const SPACING = spacingScale()
 
-/** Parses `--kk-space-*` out of `tokens.css` into a token → length map. */
+/**
+ * Parses `--kk-space-*` out of `tokens.css`, plus the navbar's height token out
+ * of `app.css`, into a token → length map.
+ */
 function spacingScale(): Map<string, string> {
   const out = new Map<string, string>()
   for (const match of readCss('src/styles/tokens.css').matchAll(
     /(--kk-space-\d+)\s*:\s*([^;]+);/g,
   )) {
     out.set(match[1], match[2].trim())
+  }
+  const navbar = /(--kukatko-navbar-height)\s*:\s*([^;]+);/.exec(readCss('src/styles/app.css'))
+  if (navbar !== null) {
+    out.set(navbar[1], navbar[2].trim())
   }
   return out
 }
@@ -537,8 +544,14 @@ describe('toast stack safe-area insets', () => {
     }
   })
 
-  it('keeps the 1rem it always had where there is no notch', () => {
-    expect(paddingPx(DESKTOP, stack)).toEqual({ top: 16, right: 16, bottom: 16, left: 16 })
+  it('keeps the 1rem it always had where there is no notch, under the navbar on top', () => {
+    const navbar = lengthPx(SPACING.get('--kukatko-navbar-height') ?? '', DESKTOP)
+    expect(navbar).toBeGreaterThan(40)
+    expect(paddingPx(DESKTOP, stack)).toEqual({ top: navbar + 16, right: 16, bottom: 16, left: 16 })
+  })
+
+  it('starts below the sticky navbar, so a toast never covers its links', () => {
+    expect(stack.get('padding') ?? '').toContain('var(--kukatko-navbar-height)')
   })
 
   it('clears the status bar in portrait and the notch column in landscape', () => {
