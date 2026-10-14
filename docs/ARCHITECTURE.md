@@ -1537,8 +1537,9 @@ follow these rules; **a task is not done with red lint or tests.**
   `WHERE` sits in the one nobody did. **`internal/tenancyguard`** is a plain Go test in `make check` that
   parses every non-test `.go` file under `internal/` and `cmd/`, folds each SQL string (literals, `+`,
   package constants, a function's `q +=` locals, `fmt.Sprintf`, `strings.Join`) into a statement, and fails
-  when a statement naming a **root table** after `FROM`/`JOIN`/`UPDATE`/`INTO` does not mention its project
-  column. The root tables are one list (`RootTables`), itself checked against the migrations, so a new
+  when a statement naming a **root table** after `FROM`/`JOIN`/`UPDATE`/`INTO` does not name its project
+  column in a predicate position (`WHERE`, `JOIN … ON`, an `INSERT` column list, `UPDATE … SET`, an
+  `ON CONFLICT` target) — merely selecting the column scopes nothing. The root tables are one list (`RootTables`), itself checked against the migrations, so a new
   table with `project_id` cannot be left out. **How to allow-list:** when a statement must span every
   project (maintenance scan/repair, metrics, reset/purge, backup, storage moves), works from a worker's
   photo uid, or writes a row its own transaction already proved inside the project, add

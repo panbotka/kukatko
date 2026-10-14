@@ -204,7 +204,9 @@ func mergeTables(a, b []string) []string {
 
 // evaluate splits one folded expression into statements and returns those
 // whose root-table references are not all scoped: a reference is scoped when
-// its statement mentions the table's project column or a project-named piece.
+// its statement names the table's project column, or a project-named piece, in
+// a position that constrains or writes the row (predicateColumns) — a project
+// column only in a select list scopes nothing.
 // Each statement is located at its first unscoped reference.
 func (p *pkgScan) evaluate(pieces []piece) []unscopedStmt {
 	var text strings.Builder
@@ -228,12 +230,13 @@ func (p *pkgScan) evaluate(pieces []piece) []unscopedStmt {
 // returns it when some root reference in it is unscoped.
 func (p *pkgScan) judge(stmt string, offset int, pieces []piece, starts []int) (unscopedStmt, bool) {
 	var u unscopedStmt
-	if strings.Contains(stmt, projectMark) {
+	scoped := predicateColumns(stmt)
+	if scoped[projectMark] {
 		return u, false
 	}
 	for _, m := range rootRef.FindAllStringSubmatchIndex(stmt, -1) {
 		table := stmt[m[2]:m[3]]
-		if strings.Contains(stmt, RootTables[table]) {
+		if scoped[RootTables[table]] {
 			continue
 		}
 		if u.tables == nil {

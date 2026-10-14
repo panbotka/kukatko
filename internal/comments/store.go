@@ -155,10 +155,12 @@ var statements = map[SubjectKind]subjectStatements{
 	SubjectAlbum: buildStatements("album_uid"),
 }
 
-// parentJoin joins the subject row of column, aliased px, confined to the
-// project bound to placeholder: a comment whose subject is another project's
-// drops out of the read.
-func parentJoin(column, placeholder string) string {
+// parentInProjectJoin joins the subject row of column, aliased px, confined to
+// the project bound to placeholder: a comment whose subject is another
+// project's drops out of the read. The name says "project" on purpose: the
+// tenancy guard cannot read a helper's text, and takes a project-named piece in
+// a FROM list for the join condition it is.
+func parentInProjectJoin(column, placeholder string) string {
 	return " JOIN " + parentTables[column] + " px ON px.uid = c." + column + " AND px.project_id = " + placeholder
 }
 
@@ -176,17 +178,17 @@ func buildStatements(column string) subjectStatements {
 	return subjectStatements{
 		list: `
 SELECT ` + commentColumns + `
-FROM comments c` + parentJoin(column, "$2") + authorJoin + `
+FROM comments c` + parentInProjectJoin(column, "$2") + authorJoin + `
 WHERE c.` + column + ` = $1 AND c.deleted_at IS NULL
 ORDER BY c.created_at, c.uid`,
 		countsAmong: `
 SELECT c.` + column + `, count(*)
-FROM comments c` + parentJoin(column, "$2") + `
+FROM comments c` + parentInProjectJoin(column, "$2") + `
 WHERE c.` + column + ` = ANY($1) AND c.deleted_at IS NULL
 GROUP BY c.` + column,
 		latestAmong: `
 SELECT DISTINCT ON (c.` + column + `) ` + commentColumns + `
-FROM comments c` + parentJoin(column, "$2") + authorJoin + `
+FROM comments c` + parentInProjectJoin(column, "$2") + authorJoin + `
 WHERE c.` + column + ` = ANY($1) AND c.deleted_at IS NULL
 ORDER BY c.` + column + `, c.created_at DESC, c.uid DESC`,
 		create: `

@@ -1783,7 +1783,7 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   belongs to the project of the photo, task or album it hangs off; every `Store` method takes
   `projectUID` after `ctx` (`List`/`CountsAmong`/`LatestAmong`/`Get`/`Create`/`CreateAlong`/`Update`/
   `Delete`), never defaulted (`ErrNoProject`); the per-kind reads **join the parent confined to the
-  project** (`parentJoin`), the uid-addressed reads and writes check whichever subject the row has
+  project** (`parentInProjectJoin`), the uid-addressed reads and writes check whichever subject the row has
   (`inProjectSQL`), and the insert is an `INSERT … SELECT … WHERE EXISTS (parent in project)` — a subject
   of another project is `ErrSubjectNotFound` with nothing written, another project's comment is the same
   `ErrNotFound` as a missing one, and audited writes default the entry's `ProjectUID`; with `LatestAmong(ctx, subject, uids)`, the **newest live comment
@@ -7204,11 +7204,23 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     q += " WHERE …"` is one statement), `fmt.Sprintf` (each verb replaced by its argument, `%[n]s`
     included) and `strings.Join` over a literal slice. A piece it cannot read is unknown — unless its
     expression names the project (an identifier containing `project`: `projectClause("$1")`,
-    `buildWhere(projectUID, …)`, `env.project`) or carries a literal with a project column, which counts as
-    the predicate. The text is split on `;`; a statement naming a root table after upper-case `FROM`,
+    `buildWhere(projectUID, …)`, `env.project`) or carries a literal with a project column, which stands in
+    for the project. The text is split on `;`; a statement naming a root table after upper-case `FROM`,
     `JOIN`, `UPDATE` or `INTO` (`DELETE FROM`/`INSERT INTO` included; lower-case is error-message prose)
-    must mention that table's column. **One finding per statement**, at the line of its first unscoped
-    table name (a raw string's own line, not the literal's first).
+    must name that table's column **in a predicate position**. **One finding per statement**, at the line
+    of its first unscoped table name (a raw string's own line, not the literal's first).
+  - **The predicate rule** (`clause.go`, `predicateColumns`): a token-position heuristic, not a parser. It
+    walks the statement keeping one clause per parenthesis level — a nested level starts in its parent's
+    clause (a bracketed condition stays a condition), and a subquery's or CTE's own keywords take over
+    until its `)` — and counts the project column only where it constrains or writes the row: after
+    `WHERE`, in a `JOIN … ON` condition, in an `INSERT INTO t (…)` column list, in an `UPDATE … SET` list
+    or in an `ON CONFLICT (…)` target, at any depth (so a CTE's or subquery's inner predicate scopes the
+    statement). In a select list, `FROM` list, `VALUES`, `GROUP BY`/`ORDER BY`, `HAVING` or `RETURNING` it
+    scopes nothing — `SELECT uid, project_id FROM photos WHERE uid = $1` is a finding. Keywords match
+    case-insensitively, quoted `'…'` text is skipped, `DISTINCT ON` is a select list and
+    `IS DISTINCT FROM` a comparison. A project-named stand-in counts in a predicate position **or** a
+    `FROM`/`JOIN` list (an opaque helper there may be the whole `JOIN … ON`, e.g. the comments store's
+    `parentInProjectJoin`), never in a select list.
   - `allow.txt` + `ParseAllowList`/`Judge`: `path:line reason` per line (`#` comments; a missing reason, a
     malformed key or a repeated one is `ErrAllowList`). `TestRepository_rootStatementsNameTheirProject`
     fails on every finding without an entry and on every **stale allow-list entry** — one whose line no
@@ -7218,10 +7230,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     service, and writes by a uid the same transaction already proved inside the project
     (`requireSubjectInProject`, a project-scoped `FOR UPDATE`, …).
   - Deliberately textual, so it has blind spots: a table name built at run time (`FROM %s` with a variable),
-    comma joins (`FROM a, photos`), a project-named piece that is not actually a predicate, and a statement
-    that only *selects* the column (`photoColumns` ends in `project_id`, which is why the worker loaders
-    `GetForJob` and `GetAcrossProjects` need no entry). It is a tripwire for the common mistake, not a proof; the
-    isolation tests stay the proof.
+    comma joins (`FROM a, photos`), a project-named piece that is not actually a predicate, and — since the
+    rule is per statement — a predicate on one table that is taken to scope another table of the same
+    statement, or a `FILTER (WHERE project_id …)` inside a select list. A statement that only *selects*
+    the column is no longer a blind spot: the worker loaders (`GetForJob`, `GetEmbeddingForJob`, …) and
+    the uid-to-project lookups carry allow-list entries. It is a tripwire for the common mistake, not a
+    proof; the isolation tests stay the proof.
   - `BootstrapReferences(root, patterns...)` (`bootstrap.go`) is the request-path half of "there is no
     default project": it parses the non-test `.go` files directly inside every directory matching a
     pattern and reports each `project.BootstrapUID` / `project.BootstrapSlug` (under the package's import

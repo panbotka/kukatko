@@ -53,6 +53,19 @@ func TestScanFiles(t *testing.T) {
 			want: []string{"4:albums", "5:labels", "6:subjects", "7:faces"},
 		},
 		{
+			name: "a project column only in the select list is a finding",
+			body: "func f() { q(\"SELECT uid, project_id FROM photos WHERE uid = $1\") }",
+			want: []string{"3:photos"},
+		},
+		{
+			name: "a CTE scoped inside scopes the statement",
+			body: "func f() { q(\"WITH t AS (SELECT uid FROM photos WHERE project_id = $1) SELECT uid FROM t\") }",
+		},
+		{
+			name: "a subquery scoped inside scopes the statement",
+			body: "func f() { q(\"SELECT x.uid FROM (SELECT uid FROM photos WHERE project_id = $1) x\") }",
+		},
+		{
 			name: "concatenation is one statement",
 			body: "func f() { q(\"SELECT uid FROM photos WHERE \" + \"project_id = $1\") }",
 		},
@@ -67,7 +80,12 @@ func TestScanFiles(t *testing.T) {
 		},
 		{
 			name: "constant columns resolve into the statement",
+			body: "const cols = `uid, project_id`\nfunc f() { q(`INSERT INTO photos (` + cols + `) VALUES ($1, $2)`) }",
+		},
+		{
+			name: "constant columns only selected scope nothing",
 			body: "const cols = `uid, project_id`\nfunc f() { q(`SELECT ` + cols + ` FROM photos`) }",
+			want: []string{"4:photos"},
 		},
 		{
 			name: "Sprintf argument fills its verb",
@@ -138,6 +156,15 @@ func TestScanFiles(t *testing.T) {
 			body: "func f() {\nq(\"UPDATE project_invites SET uses = 1 WHERE project_id = $1\")\n" +
 				"q(\"UPDATE project_invites SET uses = 1 WHERE project_uid = $1\")\n}",
 			want: []string{"4:project_invites"},
+		},
+		{
+			name: "a project-named piece in a FROM list may be the join condition",
+			body: "func f() { q(\"SELECT 1 FROM photos p\" + projectJoin(\"p\")) }",
+		},
+		{
+			name: "a project-named piece in a select list scopes nothing",
+			body: "func f() { q(\"SELECT \" + projectColumn + \" FROM photos WHERE uid = $1\") }",
+			want: []string{"3:photos"},
 		},
 		{
 			name: "a literal nested in an unknown call is scanned on its own",

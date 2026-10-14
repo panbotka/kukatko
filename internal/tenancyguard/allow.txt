@@ -12,9 +12,15 @@
 # The guard fails on an entry whose line no longer holds an unscoped statement
 # ("stale allow-list entry"): when a file shifts, move its entries with it.
 
+# internal/albumfeaturedjob
+internal/albumfeaturedjob/service.go:112 worker-only: the album_featured_notify job learns its project from the album uid of its payload
+
 # internal/bulk
 internal/bulk/apply.go:297 photo uid is one of the batch that requireBatchInProject proved in projectUID earlier in the same tx
 internal/bulk/apply.go:483 loadCoordinate reads only batch uids that requireBatchInProject proved in the project in the same tx
+
+# internal/comments
+internal/comments/store.go:77 commentProjectSQL derives a comment's project from its parent row; resolveMentionsSQL runs on a comment the same tx just wrote or proved in the project
 
 # internal/dupmerge
 internal/dupmerge/apply.go:40 the archive uids come from loadPhotos(project) once requireGroupInProject proved the group in the same tx
@@ -43,6 +49,11 @@ internal/inventory/collect.go:246 instance-wide inventory storage check, reached
 internal/invite/accept.go:36 invite uid comes from lockOpen (code hash, FOR UPDATE) in the same tx; it counts a use of that invite
 internal/invite/store.go:206 uid was locked by `uid = $1 AND project_uid = $2 FOR UPDATE` just before, in the same tx
 
+# internal/mentionnotify
+internal/mentionnotify/mentionnotify.go:155 runs in the comment's tx on its parent, which the comments store proved in the project; reads that project back
+internal/mentionnotify/mentionnotify.go:158 runs in the comment's tx on its parent task, which the comments store proved in the project; reads that project back
+internal/mentionnotify/mentionnotify.go:163 runs in the comment's tx on its parent album, which the comments store proved in the project; reads that project back
+
 # internal/notification
 internal/notification/store.go:164 Photos first checks the notification with Get(project, owner, uid); this reads its child photo rows
 
@@ -66,6 +77,11 @@ internal/people/subjects.go:428 requireSubjectInProject proved the subject in th
 internal/people/subjects.go:435 requireSubjectInProject proved the subject in the project earlier in the same tx
 
 # internal/photos
+internal/photos/store.go:297 SetPhotoprismRef has no production caller (only tests; the PhotoPrism import was removed)
+internal/photos/store.go:318 SetPhotoprismFileHash has no production caller (only tests; the PhotoPrism import was removed)
+internal/photos/store.go:339 SetPhotosorterRef has no production caller (only tests; the photo-sorter migration was removed)
+internal/photos/store.go:355 getPhoto backs only the named cross-project loaders: GetForJob (workers), GetAcrossProjects (userpic checks membership), GetByFileHash (ingest dedup)
+internal/photos/store.go:435 ListByUIDs has no production caller (only tests); a reader uses ListByUIDsInProject
 internal/photos/store.go:589 only caller is the ingest rollback, which deletes the row it just created in the request's project
 internal/photos/store_aliases.go:90 ListPhotoprismAliases has no production caller (tests only); an instance-wide read for import reconciliation
 internal/photos/store_blurhash.go:18 worker/ingest only: thumbjob (GetForJob or photoInProject before ForceRegenerate) and ingest's own new photo
@@ -79,6 +95,7 @@ internal/photos/store_hls.go:112 CountVideos is an instance-wide maintenance str
 internal/photos/store_import.go:112 ApplyImportMetadata has no production caller (only tests; the PhotoPrism import was removed)
 internal/photos/store_impossibledate.go:44 instance-wide maintenance scan/repair (maintenance/repair.go, maintenance.go), maintainer-only
 internal/photos/store_impossibledate.go:89 maintenance repair of a uid its own instance-wide ListImpossibleTakenAt found; maintainer-only
+internal/photos/store_maintenance.go:37 ListPrimaryFiles feeds the instance-wide maintenance integrity scan, which groups rows by project itself
 internal/photos/store_ocr.go:34 ocrjob Recognize is worker-only (job Handle); the uid comes from the payload via GetForJob
 internal/photos/store_query.go:832 correlated subquery on photos.uid; the outer photos query is already scoped by project
 internal/photos/store_sidecar.go:61 sidecarjob Export is a worker-only job handler; the uid comes from the job payload
@@ -97,6 +114,7 @@ internal/photos/store_stacks.go:525 repairStackTx gets a stack_uid read from a m
 internal/photos/store_stacks.go:535 repairStackTx gets a stack_uid read from a member proved in the project; stacks never span projects
 internal/photos/store_stacks.go:539 repairStackTx gets a stack_uid read from a member proved in the project; stacks never span projects
 internal/photos/store_verify.go:13 instance-wide integrity count, used by backup restore verification and the maintenance scan
+internal/photos/store_verify.go:63 ListCataloguedFiles feeds the instance-wide maintenance scan, which reconciles storage per project itself
 internal/photos/store_videometa.go:99 metajob reprobeVideo is worker-only; the photo is loaded from the job payload via GetForJob
 
 # internal/phototask
@@ -125,11 +143,14 @@ internal/tagnotifyjob/recorder.go:103 tag observer runs in the people store's tx
 # internal/uploadlink
 internal/uploadlink/recode.go:71 RestoreCode first locks the link with lockLiveCode (uid AND project_id FOR UPDATE) in the same tx
 internal/uploadlink/recode.go:86 RotateCode locks the link scoped (lockLiveCode) in the same tx; NOT EXISTS is the global code_hash uniqueness
+internal/uploadlink/store.go:55 ByCode: the public /u/{code} lookup by the instance-unique code hash; the link row carries its project
 internal/uploadlink/store.go:306 Extend locks the row with uid AND project_id = $2 FOR UPDATE in the same tx before updating
 internal/uploadlink/store.go:342 Revoke locks the row with uid AND project_id = $2 FOR UPDATE in the same tx before updating
 internal/uploadlink/uploads.go:36 public /u/{code} path; link uid comes from the global code-hash lookup and the link row carries its project
 internal/uploadlink/uploads.go:42 refusal readback for the same code-resolved link uid on the public upload path; the link row is its own scope
 internal/uploadlink/uploads.go:45 gives back the slot of the code-resolved link uid that ReserveUpload just took; the link carries its project
+internal/uploadlink/uploads.go:50 stamps the code-resolved link uid on the public upload path; the link carries its project
+internal/uploadlink/uploads.go:146 fileIntoTargets reads the project of the code-resolved link to confine its targets to it
 internal/uploadlink/uploads.go:234 provenance of a photo loaded scoped (photoInProject/GetByUIDInProject) or by the sidecar worker
 
 # internal/vectors
@@ -142,3 +163,4 @@ internal/vectors/faces.go:520 DeleteFaces has no non-test caller; a child-row de
 internal/vectors/match.go:15 callers prove the photo first: Apply via GetByUIDInProject, PhotoFaces scoped, ClearSurplusLinks worker
 internal/vectors/match.go:61 instance-wide maintenance scan/repair of duplicate face-marker links (maintainer-only)
 internal/vectors/sideways.go:28 instance-wide maintenance repair --sideways-faces listing (maintainer-only)
+internal/vectors/store.go:93 GetEmbeddingForJob is worker-only (embedjob); the photo uid comes from the job payload

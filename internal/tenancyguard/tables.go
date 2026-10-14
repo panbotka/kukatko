@@ -7,16 +7,21 @@
 // The scan is deliberately textual. It folds every string expression it can
 // see — literals, `+` concatenations, package-level constants, `fmt.Sprintf`
 // and `strings.Join` — into one statement text, finds the root tables named
-// after FROM/JOIN/UPDATE/INTO, and asks whether the same statement mentions the
-// table's project column. Legitimate instance-wide statements (worker loaders,
-// maintenance, metrics, reset, backup) are listed in allow.txt with a reason.
+// after FROM/JOIN/UPDATE/INTO, and asks whether the same statement names the
+// table's project column in a position that constrains or writes the row: after
+// WHERE, in a JOIN … ON condition, an INSERT column list, an UPDATE … SET list
+// or an ON CONFLICT target, at any subquery depth. A project column only in a
+// select list (or ORDER BY, RETURNING…) scopes nothing. Legitimate
+// instance-wide statements (worker loaders, maintenance, metrics, reset,
+// backup) are listed in allow.txt with a reason.
 package tenancyguard
 
 // RootTables is the one list of the catalogue's root tables: every table whose
 // rows belong to exactly one project, mapped to the column that names it. A
-// statement over one of them must mention that column. The repository test
-// checks this map (together with ExemptTables) against the migrations, so a new
-// root table cannot be forgotten here.
+// statement over one of them must name that column in a predicate position
+// (see predicateColumns). The repository test checks this map (together with
+// ExemptTables) against the migrations, so a new root table cannot be
+// forgotten here.
 var RootTables = map[string]string{
 	"photos":             "project_id",
 	"subjects":           "project_id",
