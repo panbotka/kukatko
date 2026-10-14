@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/sidecarjob"
@@ -91,7 +90,7 @@ func runSidecarBackfill(cmd *cobra.Command) error {
 	return nil
 }
 
-// openSidecarService loads the config, opens the database (applying migrations)
+// openSidecarService loads the config, opens the database (refusing a stale schema)
 // and builds the sidecar export service plus the project list a backfill walks.
 // The caller owns closing the database via the returned cleanup.
 //
@@ -104,12 +103,8 @@ func openSidecarService(cmd *cobra.Command) (*sidecarjob.Service, projectLister,
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	db, err := database.New(cmd.Context(), cfg.Database)
+	db, err := openCurrentDB(cmd.Context(), cfg.Database)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("connecting to database: %w", err)
-	}
-	if err := migrateAsSideEffect(cmd.Context(), cmd, db); err != nil {
-		db.Close()
 		return nil, nil, nil, err
 	}
 	svc, err := buildSidecarServiceOrNil(cfg, db, jobs.NewEnqueuer(jobs.NewStore(db.Pool())))

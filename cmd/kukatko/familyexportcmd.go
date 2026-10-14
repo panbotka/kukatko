@@ -6,7 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/familyexport"
 	"github.com/panbotka/kukatko/internal/familyexportjob"
 )
@@ -55,8 +54,8 @@ func runSidecarFamilies(cmd *cobra.Command) error {
 	return nil
 }
 
-// openFamilyExportService loads the config, opens the database (applying
-// migrations) and builds the genealogy export service. The caller owns closing
+// openFamilyExportService loads the config, opens the database (refusing a
+// stale schema) and builds the genealogy export service. The caller owns closing
 // the database via the returned cleanup.
 //
 // It fails when the export is switched off rather than silently doing nothing,
@@ -68,12 +67,8 @@ func openFamilyExportService(cmd *cobra.Command) (*familyexportjob.Service, func
 	if err != nil {
 		return nil, nil, err
 	}
-	db, err := database.New(cmd.Context(), cfg.Database)
+	db, err := openCurrentDB(cmd.Context(), cfg.Database)
 	if err != nil {
-		return nil, nil, fmt.Errorf("connecting to database: %w", err)
-	}
-	if err := migrateAsSideEffect(cmd.Context(), cmd, db); err != nil {
-		db.Close()
 		return nil, nil, err
 	}
 	svc, err := buildFamilyExportServiceOrNil(cfg, db)

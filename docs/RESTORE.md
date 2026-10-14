@@ -101,7 +101,7 @@ kukatko restore list
 
 ### 4. Restore the database (destructive)
 
-Restore the most recent dump (the default), re-applying migrations afterwards:
+Restore the most recent dump (the default):
 
 ```bash
 kukatko restore db --yes
@@ -115,9 +115,11 @@ kukatko restore db --dump db/kukatko-20260628T020000Z.dump --yes
 
 What happens: the dump is streamed straight from S3 into `pg_restore`
 (`--clean --if-exists --single-transaction --no-owner --no-privileges`), so the restore runs in a
-single transaction and rolls back cleanly if interrupted. Migrations are then re-applied
-(idempotent — normally a no-op, but it guarantees the schema matches the binary), and finally the
-**streaming renditions are cleared**:
+single transaction and rolls back cleanly if interrupted. The command **never migrates** (only
+`kukatko migrate` and `kukatko serve` do): when the dump's schema is older than the binary it stops
+here with `database is at schema N, this binary expects M …; then run `kukatko restore repair``
+and exit 1 — run `kukatko migrate`, then `kukatko restore repair`. A dump of the same release (the
+normal case) goes straight on, and the **streaming renditions are cleared**:
 
 ```text
 # 214 streaming rendition(s) cleared: the segments are not in the backup, re-encode them with `POST /api/v1/p/<slug>/process/hls` in each project
@@ -151,7 +153,8 @@ pg_restore --no-owner --no-privileges -f - /tmp/old.dump \
   | psql -v ON_ERROR_STOP=1 -d kukatko_restored
 ```
 
-Then point `database.url` at it and run `kukatko migrate` (it applies 0104 and anything newer).
+Then point `database.url` at it and run `kukatko migrate` (it applies 0104 and anything newer), then
+`kukatko restore repair` to clear the streaming renditions.
 
 ### 5. Restore the originals (`storage.backend: fs`)
 

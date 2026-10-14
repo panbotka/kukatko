@@ -127,20 +127,16 @@ func buildMaintenanceForCLI(cfg *config.Config, db *database.DB) (*maintenance.S
 	return buildMaintenanceService(cfg, db, enqueuer, embedSvc, faceSvc, placesSvc, nil)
 }
 
-// openMaintenanceService loads the config, opens the database (applying
-// migrations), and builds the maintenance service. The caller owns closing the
+// openMaintenanceService loads the config, opens the database (refusing one
+// whose schema is behind, see openCurrentDB), and builds the maintenance service. The caller owns closing the
 // database via the returned cleanup.
 func openMaintenanceService(cmd *cobra.Command) (*maintenance.Service, func(), error) {
 	cfg, err := loadConfigFromFlags(cmd)
 	if err != nil {
 		return nil, nil, err
 	}
-	db, err := database.New(cmd.Context(), cfg.Database)
+	db, err := openCurrentDB(cmd.Context(), cfg.Database)
 	if err != nil {
-		return nil, nil, fmt.Errorf("connecting to database: %w", err)
-	}
-	if err := migrateAsSideEffect(cmd.Context(), cmd, db); err != nil {
-		db.Close()
 		return nil, nil, err
 	}
 	svc, err := buildMaintenanceForCLI(cfg, db)

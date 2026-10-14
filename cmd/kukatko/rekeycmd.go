@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/panbotka/kukatko/internal/audit"
-	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/rekey"
 )
@@ -143,9 +142,9 @@ func runStorageRekey(cmd *cobra.Command, slug string) error {
 	if err != nil {
 		return err
 	}
-	db, err := database.New(cmd.Context(), cfg.Database)
+	db, err := openCurrentDB(cmd.Context(), cfg.Database)
 	if err != nil {
-		return fmt.Errorf("connecting to database: %w", err)
+		return err
 	}
 	defer db.Close()
 	proj, err := project.NewStore(db.Pool()).GetBySlug(cmd.Context(), slug)

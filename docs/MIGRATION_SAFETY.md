@@ -65,6 +65,18 @@ timed-out ALTER would fail the start and turn the restart into a loop). Checklis
 2026-10-14 the runner holds one `pg_advisory_lock` for its whole run, so two migrators started at once (a
 `serve` start and a CLI subcommand) take turns instead of racing; the second finds the schema up to date.
 
+**Who migrates (round-2 review, 2026-10-14).** The advisory lock only serialises two *new* binaries; it never
+noticed the old server merely being connected, and every DB-opening subcommand used to migrate as a side
+effect — so an operator running `maintenance scan` with the new image before the switch would have broken
+0.31.0 (every sign-in 500, `/healthz` still 200, proven twice). Now only `kukatko migrate` and `kukatko serve`
+migrate; every other subcommand refuses a schema that is behind (`database is at schema N, this binary
+expects M`), and `maintenance inventory` neither migrates nor refuses. Before migrating, both look for other
+sessions on the database (`pg_stat_activity`: any `kukatko/…` `application_name`, which every release from
+this one on sets, plus any other session of the same user, which is how 0.31.0 shows up): `migrate` refuses
+without `--force`, `serve` logs them at `ERROR` and starts anyway. The deploy order stays **stop old → start
+new**; the runbook ([`OPERATIONS.md`](OPERATIONS.md), "Upgrade runbook — multi-tenancy") lists which
+commands may run while the old container still serves.
+
 ### Inventory diff A → B
 
 `inventory-diff A B` with the expectation set from the runbook exits **0**: 36 differences, 0 unexpected.
@@ -397,10 +409,10 @@ read the real rate from `/system/projects/v` after the first minutes. The move r
 
 **Never migrate under the running 0.31.0.** 0.31.0 served against the migrated schema fails every sign-in with
 500 (`column "subject_uid" does not exist`, proven on the copy). Until step 5 has stopped the old container,
-do **not** run, with the new binary against production, `kukatko migrate` — nor anything that migrates as a
-side effect: `maintenance scan` (and the rest of `maintenance` except `inventory`/`inventory-diff`), `import
-dir`, `maintenance nameless-subjects`, `sidecar families` (the family export), `sidecar backfill`, `storage
-migrate-to-r2`, `restore`. Each prints `applying N pending migration(s)` on stderr just before it would. The
+do **not** run `kukatko migrate` with the new binary against production (it refuses anyway while 0.31.0 is
+connected — never `--force` it). The other DB-opening subcommands (`maintenance scan`, `import dir`, `sidecar
+…`, `storage …`, `restore …`) no longer migrate as a side effect: they refuse a schema that is behind and exit
+1, so running one by mistake is harmless; `maintenance inventory` is the one meant for this moment. The
 "pre-migrate to shorten downtime" advice in [`OPERATIONS.md`](OPERATIONS.md) holds only for releases whose
 migrations are backward compatible — not this one. The only safe order is stop the old container → start the
 new one, which migrates on start.

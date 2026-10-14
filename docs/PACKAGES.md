@@ -39,8 +39,16 @@ to `## Package map` in `CLAUDE.md`.
   outage estimate in `docs/MIGRATION_SAFETY.md` is measured from; the whole run holds one fixed session
   `pg_advisory_lock` on a dedicated connection, so concurrent migrators (a `serve` start + a CLI
   subcommand) serialise and the second finds nothing to do — unbounded wait, no `lock_timeout`, on purpose
-  (a timed-out start would restart-loop); `Pending` lists the not-yet-applied files read-only, which the CLI's
-  `migrateAsSideEffect` announces on stderr before a subcommand migrates —
+  (a timed-out start would restart-loop); `Pending` lists the not-yet-applied files read-only and
+  `SchemaStatus` (`SchemaStatusOf`) adds the highest applied (`Current`) and embedded (`Expected`) version,
+  which the CLI's `requireCurrentSchema`/`openCurrentDB` use to **refuse** every subcommand but
+  `migrate`/`serve`/`maintenance inventory` on a database that is behind (`errSchemaBehind`) —
+  **every connection announces `application_name` `kukatko/<version> <instance>`** (`ApplicationName`, one
+  random 8-hex instance token per process, version sanitised to ASCII and the whole name kept within the
+  server's 63 bytes; it overrides a DSN's `application_name`), and `OtherClients` reads `pg_stat_activity`
+  for the client sessions on the same database that are not this process's — any `kukatko/…` name (any user)
+  plus any other session of the same user (how 0.31.0 and older, which announce nothing, show up) — which
+  `migrate` refuses on and `serve` logs at `ERROR` before migrating a database that is behind —
   pgvector types registered on every connection,
   **session time zone pinned to UTC** (`pinSessionTimeZone` sets the `timezone` startup runtime
   param, overriding the DSN) so SQL calendar arithmetic (`date_part('year', taken_at)`,

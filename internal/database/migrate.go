@@ -132,35 +132,77 @@ func releaseMigrationLock(conn *pgx.Conn) error {
 }
 
 // Pending returns the filenames of the embedded migrations the database has not
-// applied yet, in the order Migrate would apply them. It only reads: a database
-// without schema_migrations reports every migration pending and creates nothing.
-// It takes no lock, so it is a snapshot — good for telling an operator that a
-// command is about to change the schema, not for deciding whether to migrate.
+// applied yet, in the order Migrate would apply them. It is SchemaStatusOf's
+// Pending list; see there for the contract.
 func Pending(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
-	migrations, err := loadMigrations(migrationFS, migrationsDir)
+	status, err := SchemaStatusOf(ctx, pool)
 	if err != nil {
 		return nil, err
+	}
+	return status.Pending, nil
+}
+
+// SchemaStatus is where a database's schema stands relative to the migrations
+// this binary embeds.
+type SchemaStatus struct {
+	// Current is the highest migration version the database has recorded, 0
+	// when it has recorded none (or has no schema_migrations table at all).
+	Current int64
+	// Expected is the highest version this binary embeds — the version the
+	// database is at once Migrate has run.
+	Expected int64
+	// Pending lists the embedded migrations not yet recorded, in the order
+	// Migrate would apply them.
+	Pending []string
+}
+
+// Behind reports whether the database lacks a migration this binary embeds.
+// A database ahead of the binary (Current > Expected, nothing pending) is not
+// behind: that is an older binary on a newer schema, which no migration fixes.
+func (s SchemaStatus) Behind() bool {
+	return len(s.Pending) > 0
+}
+
+// SchemaStatusOf reads which embedded migrations the database has applied. It
+// only reads: a database without schema_migrations reports every migration
+// pending and creates nothing. It takes no lock, so it is a snapshot — good for
+// refusing to run against a stale schema or for telling an operator what a
+// migration is about to change, not for deciding inside Migrate what to apply.
+func SchemaStatusOf(ctx context.Context, pool *pgxpool.Pool) (SchemaStatus, error) {
+	migrations, err := loadMigrations(migrationFS, migrationsDir)
+	if err != nil {
+		return SchemaStatus{}, err
 	}
 	// Looked up in current_schema(), where Migrate's CREATE TABLE IF NOT EXISTS
 	// would put it, not through the whole search_path.
 	var exists bool
 	if err := pool.QueryRow(ctx, `SELECT to_regclass(
 		quote_ident(current_schema()) || '.schema_migrations') IS NOT NULL`).Scan(&exists); err != nil {
-		return nil, fmt.Errorf("checking for schema_migrations: %w", err)
+		return SchemaStatus{}, fmt.Errorf("checking for schema_migrations: %w", err)
 	}
 	versions := map[int64]bool{}
 	if exists {
 		if versions, err = appliedVersions(ctx, pool); err != nil {
-			return nil, err
+			return SchemaStatus{}, err
 		}
 	}
-	var pending []string
+	return schemaStatusFrom(migrations, versions), nil
+}
+
+// schemaStatusFrom compares the embedded migrations (version-sorted, as
+// loadMigrations returns them) with the set of versions a database recorded.
+func schemaStatusFrom(migrations []migration, applied map[int64]bool) SchemaStatus {
+	var status SchemaStatus
+	for version := range applied {
+		status.Current = max(status.Current, version)
+	}
 	for _, mig := range migrations {
-		if !versions[mig.version] {
-			pending = append(pending, mig.filename)
+		status.Expected = max(status.Expected, mig.version)
+		if !applied[mig.version] {
+			status.Pending = append(status.Pending, mig.filename)
 		}
 	}
-	return pending, nil
+	return status
 }
 
 // querier is the slice of pgx both a pooled connection and the pool itself

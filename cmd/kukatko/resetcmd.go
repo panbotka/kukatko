@@ -177,9 +177,9 @@ func runMaintenanceReset(cmd *cobra.Command) error {
 		return fmt.Errorf("resolving the reset target: %w", err)
 	}
 
-	db, err := database.New(cmd.Context(), cfg.Database)
+	db, err := openCurrentDB(cmd.Context(), cfg.Database)
 	if err != nil {
-		return fmt.Errorf("connecting to database: %w", err)
+		return err
 	}
 	defer db.Close()
 	svc, err := buildResetService(cfg, db, target)

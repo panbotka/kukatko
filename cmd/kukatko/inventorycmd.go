@@ -57,6 +57,9 @@ func runMaintenanceInventory(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("%w: %T", errStoreCannotList, store)
 		}
 	}
+	// Deliberately database.New, not openCurrentDB: the inventory is the
+	// release-day "before" snapshot the new binary takes of a database still
+	// on the old schema, so it must neither migrate nor refuse a stale one.
 	db, err := database.New(cmd.Context(), cfg.Database)
 	if err != nil {
 		return fmt.Errorf("connecting to database: %w", err)

@@ -42,6 +42,7 @@ func newRestoreCmd() *cobra.Command {
 	restoreCmd.AddCommand(
 		newRestoreListCmd(),
 		newRestoreDBCmd(),
+		newRestoreRepairCmd(),
 		newRestoreOriginalsCmd(),
 		newRestoreVerifyCmd(),
 	)
@@ -63,14 +64,16 @@ func newRestoreListCmd() *cobra.Command {
 
 // newRestoreDBCmd builds "restore db", which restores the database from a dump
 // in the bucket (the latest by default, or the one named by --dump), then
-// re-applies migrations. It is destructive — it overwrites the current database
-// — so it requires the explicit --yes flag.
+// repairs it (repairRestoredDatabase). It is destructive — it overwrites the
+// current database — so it requires the explicit --yes flag.
 func newRestoreDBCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "db",
 		Short: "Restore the database from a dump (DESTRUCTIVE: overwrites all data)",
 		Long: "Stream a pg_dump archive from the bucket into pg_restore, overwriting the " +
-			"current database, then re-apply migrations (idempotent). Requires --yes.",
+			"current database, then clear the streaming renditions the backup does not carry. " +
+			"It never migrates: a dump older than this binary is restored, then the command stops " +
+			"with an error — run `kukatko migrate`, then `kukatko restore repair`. Requires --yes.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runRestoreDB(cmd)
@@ -80,6 +83,29 @@ func newRestoreDBCmd() *cobra.Command {
 	cmd.Flags().Bool("yes", false, "confirm the destructive restore (required)")
 	cmd.Flags().Bool("verify", false, "run the integrity check against the originals on disk after restoring")
 	return cmd
+}
+
+// newRestoreRepairCmd builds "restore repair", the second half of `restore db`
+// on its own: what a restored database needs before it is served. It is the
+// way through a dump older than the binary — `restore db` stops after the
+// restore, `kukatko migrate` brings the schema up, and this finishes the job.
+func newRestoreRepairCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "repair",
+		Short: "Clear the streaming renditions of a restored database (after `restore db`)",
+		Long: "Clear every streaming rendition row of the configured database: a backup carries the rows " +
+			"but not their HLS segments, so after a restore they promise segments that do not exist. " +
+			"`restore db` runs this itself; run it by hand after `kukatko migrate` when `restore db` " +
+			"stopped because the dump was older than this binary. Refuses a database that is behind.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := loadConfigFromFlags(cmd)
+			if err != nil {
+				return err
+			}
+			return repairRestoredDatabase(cmd, cfg)
+		},
+	}
 }
 
 // newRestoreOriginalsCmd builds "restore originals", which downloads every
@@ -190,8 +216,8 @@ func runRestoreList(cmd *cobra.Command) error {
 	return nil
 }
 
-// runRestoreDB restores the database from the chosen dump, re-applies migrations,
-// and optionally runs the integrity check. It requires the --yes confirmation.
+// runRestoreDB restores the database from the chosen dump, repairs it, and
+// optionally runs the integrity check. It requires the --yes confirmation.
 func runRestoreDB(cmd *cobra.Command) error {
 	cfg, err := restoreConfig(cmd)
 	if err != nil {
@@ -238,10 +264,11 @@ func runRestoreDB(cmd *cobra.Command) error {
 	return nil
 }
 
-// repairRestoredDatabase brings a freshly restored database up to date and back
-// into a truthful state: it re-applies the migrations (idempotent, and the way a
-// dump older than the current schema is caught up), then clears the streaming
-// renditions.
+// repairRestoredDatabase brings a freshly restored database back into a
+// truthful state: it clears the streaming renditions. It does not migrate (only
+// `migrate` and `serve` do): a dump older than the binary is refused with
+// errSchemaBehind, naming `kukatko migrate` and then `kukatko restore repair` as
+// the way on.
 //
 // Clearing them is not housekeeping, it is the other half of what the backup
 // deliberately omits. A video's HLS segments are reproducible from the original,
@@ -250,15 +277,14 @@ func runRestoreDB(cmd *cobra.Command) error {
 // exist. After a restore they do not. Dropping the rows says so, and leaves
 // every video in the state the ordinary encode backfill looks for.
 func repairRestoredDatabase(cmd *cobra.Command, cfg *config.Config) error {
-	db, err := database.New(cmd.Context(), cfg.Database)
-	if err != nil {
-		return fmt.Errorf("connecting to database: %w", err)
+	db, err := openCurrentDB(cmd.Context(), cfg.Database)
+	if errors.Is(err, errSchemaBehind) {
+		return fmt.Errorf("%w; then run `kukatko restore repair` to clear the streaming renditions", err)
 	}
-	defer db.Close()
-	if err := migrateAsSideEffect(cmd.Context(), cmd, db); err != nil {
+	if err != nil {
 		return err
 	}
-	cmd.Println("migrations re-applied (idempotent)")
+	defer db.Close()
 
 	cleared, err := hlsjob.NewStore(db.Pool()).ClearAll(cmd.Context())
 	if err != nil {
@@ -301,9 +327,9 @@ func runRestoreVerify(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	db, err := database.New(cmd.Context(), cfg.Database)
+	db, err := openCurrentDB(cmd.Context(), cfg.Database)
 	if err != nil {
-		return fmt.Errorf("connecting to database: %w", err)
+		return err
 	}
 	defer db.Close()
 

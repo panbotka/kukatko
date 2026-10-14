@@ -71,11 +71,11 @@ func TestMigrateCmd_hasNoDataMigrationChild(t *testing.T) {
 }
 
 // TestRestoreCmd_hasChildren verifies the restore command exposes the
-// list/db/originals/verify subcommands.
+// list/db/repair/originals/verify subcommands.
 func TestRestoreCmd_hasChildren(t *testing.T) {
 	t.Parallel()
 
-	want := map[string]bool{"list": false, "db": false, "originals": false, "verify": false}
+	want := map[string]bool{"list": false, "db": false, "repair": false, "originals": false, "verify": false}
 	for _, c := range newRestoreCmd().Commands() {
 		if _, ok := want[c.Name()]; ok {
 			want[c.Name()] = true

@@ -150,14 +150,11 @@ func runStorageMigrateToR2(cmd *cobra.Command) error {
 	}
 
 	ctx := cmd.Context()
-	db, err := database.New(ctx, cfg.Database)
+	db, err := openCurrentDB(ctx, cfg.Database)
 	if err != nil {
-		return fmt.Errorf("connecting to database: %w", err)
-	}
-	defer db.Close()
-	if err := migrateAsSideEffect(ctx, cmd, db); err != nil {
 		return err
 	}
+	defer db.Close()
 
 	migrator, err := buildStorageMigrator(cmd, cfg, db, flags)
 	if err != nil {

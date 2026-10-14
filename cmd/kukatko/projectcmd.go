@@ -134,9 +134,9 @@ func runProjectPurge(cmd *cobra.Command, slug string) error {
 	if err != nil {
 		return err
 	}
-	db, err := database.New(cmd.Context(), cfg.Database)
+	db, err := openCurrentDB(cmd.Context(), cfg.Database)
 	if err != nil {
-		return fmt.Errorf("connecting to database: %w", err)
+		return err
 	}
 	defer db.Close()
 	purger, err := buildPurger(cfg, db)

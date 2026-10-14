@@ -1387,7 +1387,8 @@ request path singles it out (see *The guards* below). The tables are §5.2a; the
   - `restore list` — lists the dumps in the bucket (`db/kukatko-*.dump`), newest first.
   - `restore db [--dump KEY] [--yes] [--verify]` — **destructive**: downloads the dump from S3 and streams
     it into `pg_restore` (`--clean --if-exists --single-transaction`, password via the `PGPASSWORD` env,
-    never in argv), then idempotently re-applies migrations. Requires `--yes` (overwrites data).
+    never in argv), then clears the streaming renditions. It never migrates: a dump older than the binary
+    stops it there (exit 1) — `kukatko migrate`, then `restore repair`. Requires `--yes` (overwrites data).
     Without `--dump` it restores the newest dump.
   - `restore originals` — downloads missing originals from the bucket into `storage.originals_path`,
     skips ones that already exist by **key + size**; an atomic write via `.tmp` + rename →

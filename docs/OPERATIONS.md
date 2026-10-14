@@ -30,13 +30,25 @@ configuration key both here **and** into `config.example.yaml`.
   one: it only adds an index). **Never for the 0.31.0 → multi-tenant release**: 0.31.0 served against
   the migrated schema fails every sign-in with 500, see "Upgrade runbook — multi-tenancy"; see
   `docs/PERF.md` §3),
-  `kukatko migrate` (runs pending migrations on their own and exits; every migrator — `serve`, `migrate`
-  and the subcommands below that migrate first — holds one fixed `pg_advisory_lock` for its whole run, so
-  two started at once take turns and the second finds the schema up to date; the subcommands that migrate
-  as a side effect — `maintenance` (scan/repair/…), `import dir`, `maintenance nameless-subjects`,
-  `sidecar backfill`, `sidecar families`, `storage migrate-to-r2` and `restore db`'s repair step — print
-  `applying N pending migration(s) (first … last) before running this command` on stderr when the
-  database is behind, and nothing when it is not),
+  `kukatko migrate [--force]` (runs pending migrations on their own and exits). **Only `migrate` and
+  `serve` ever change the schema.** Both hold one fixed `pg_advisory_lock` for the whole run, so two
+  started at once take turns and the second finds the schema up to date. Every other subcommand that opens
+  the database — `maintenance` (scan/repair/reset/…), `import dir`, `maintenance nameless-subjects`,
+  `sidecar backfill`, `sidecar families`, `storage migrate-to-r2`, `storage rekey`, `project purge`,
+  `restore db`'s repair step, `restore repair` and `restore verify` — **refuses** a database that lacks a
+  migration the binary embeds and exits 1: `the database schema is older than this binary: database is at
+  schema N, this binary expects M (K pending migration(s): first … last); run `kukatko migrate` after
+  stopping the old server`. `maintenance inventory` is the one exception: it neither migrates nor refuses
+  (it is the release-day "before" snapshot). Before migrating, both migrators look for **other sessions on
+  the database** in `pg_stat_activity`: every session whose `application_name` starts with `kukatko/` (every
+  Kukátko after 0.31.0 announces `kukatko/<version> <instance>` on each connection, overriding a DSN's
+  `application_name`), and every other session of the same database user (0.31.0 and older announce none).
+  Only when migrations are pending: `migrate` lists them on stderr and **refuses** (exit 1, `other clients
+  are connected to the database`) unless `--force` (for a client that is not Kukátko — an admin's `psql`,
+  say); `serve` logs them at `ERROR` (`migrating a database other clients are connected to…`, then one
+  `other database client` line each) and **starts anyway**, because a compose deploy stops the old container
+  before starting the new one and a refusing server would only restart into the same refusal. A session of
+  another user that announces no Kukátko name (a monitoring exporter) is not counted),
   **`kukatko import dir --project <slug> <path>`** (uploads a **directory from disk** into one project —
   `internal/dirimport`; see below),
   `kukatko backup` (synchronous one-off **S3 backup** — `internal/backup`; pg_dump + sync of
@@ -47,14 +59,17 @@ configuration key both here **and** into `config.example.yaml`.
   **`kukatko restore`** (the restore/disaster-recovery tree — `internal/backup`; shares `backup.s3.*`,
   otherwise `errRestoreNotConfigured`; for ops/cron without a running server): `restore list` (dumps in
   the bucket), `restore db [--dump KEY] [--yes] [--verify]` (**destructive** DB restore via
-  `pg_restore` streamed from S3 + idempotent re-migration + **clearing the streaming renditions**, whose
+  `pg_restore` streamed from S3 + **clearing the streaming renditions**, whose
   segments the backup never carried, so the ordinary `POST /process/hls` backfill re-encodes them;
-  without `--yes` → `errRestoreNotConfirmed`),
+  without `--yes` → `errRestoreNotConfirmed`; it **never migrates**: a dump older than the binary is
+  restored and then the command exits 1 — run `kukatko migrate`, then `restore repair`),
+  `restore repair` (the clearing step on its own, for exactly that case; refuses a schema that is behind),
   `restore originals` (downloads missing originals, skips by key+size, resumable),
   `restore verify` (integrity report of photos in the DB vs originals on disk); runbook
   [`docs/RESTORE.md`](RESTORE.md),
   **`kukatko maintenance`** (library integrity check & repair — `internal/maintenance`; for
-  ops/cron without a running server, applies migrations and builds a service shared with the admin API):
+  ops/cron without a running server, refuses a schema that is behind and builds a service shared with the
+  admin API):
   `maintenance scan` (read-only integrity report — store↔DB drift + missing derived data, the latter counted over
   every active project, since the backfill listings it reads are per project (`cmd/kukatko/allprojects.go`); the store it
   inventories is the configured backend, the originals root under `fs` and the bucket under `r2`, and the
@@ -626,16 +641,26 @@ given pair of releases is the one the pre-release rehearsal records in
 
 **Never migrate under a running 0.31.0.** The chain 0100–0114 is not backward compatible: 0.31.0 served
 against a migrated schema fails every sign-in with 500 (`column "subject_uid" does not exist` — proven on a
-production copy, 2026-10-13). So for this release, with the **new** binary and against the production
-database while the 0.31.0 container is still running, do **not** run `kukatko migrate` — nor any subcommand
-that migrates as a side effect: `maintenance scan` (and the rest of `maintenance` except `inventory` /
-`inventory-diff`), `import dir`, `maintenance nameless-subjects`, `sidecar families` (the family export),
-`sidecar backfill`, `storage migrate-to-r2`, `restore`. Each of them says `applying N pending migration(s)` on stderr just before
-it would; if you see that line against production before step 5, the old container is already broken —
-finish the deploy at once. The only safe order is **stop the old container → start the new one** (it
-migrates on start). The general advice to pre-migrate to shorten the downtime (CLI section above) holds only
-for releases whose migrations are backward compatible with the running binary; `maintenance inventory` is
-the one new-binary command meant for production before the switch, because it never migrates.
+production copy, 2026-10-13) while its `/healthz` stays 200. Which new-binary commands may run against the
+production database **while the 0.31.0 container is still running**:
+
+- `maintenance inventory` / `inventory-diff` — yes; this is what they are for (they never migrate).
+- every other subcommand that opens the database (`maintenance scan`, `import dir`, `sidecar …`,
+  `storage …`, `project purge`, `restore …`) — harmless: it refuses with `database is at schema N, this
+  binary expects M` and exits 1 without touching the schema. (Releases up to 0.31.0 instead migrated as a
+  side effect here.)
+- `kukatko migrate` — **no**. It sees 0.31.0's connections (no `application_name`, same user) and refuses;
+  do not override that with `--force`.
+- `kukatko serve` — only after the old container is stopped (step 5). It would start and migrate even with
+  0.31.0 connected, logging every other client at `ERROR` (`other database client`); seeing that line is
+  the sign the old container is already broken — stop it at once.
+
+The only safe order is **stop the old container → start the new one** (it migrates on start). The general
+advice to pre-migrate to shorten the downtime (CLI section above) holds only for releases whose migrations
+are backward compatible with the running binary — and even then `kukatko migrate` refuses while the old
+server is connected, so pre-migrating means `--force`, deliberately. From this release on every Kukátko
+announces `application_name` `kukatko/<version> <instance>`, so the next upgrade's `migrate` recognises the
+running server by name even if it connects as another database user.
 
 The owner's checklist — in this order, and the storage move only at the very end:
 
@@ -655,7 +680,8 @@ The owner's checklist — in this order, and the storage move only at the very e
    project (`ctl context set <name> --project v`), and a script calling the API gets the `/p/v` prefix.
 5. **Deploy: stop the 0.31.0 container, then start the new one.** The new container's start applies the
    migrations (rehearsed: 0.27 s on the box, ~1–2 s expected on the VPS) — the outage is the container restart
-   plus that. No `kukatko migrate` beforehand (see above).
+   plus that. No `kukatko migrate` beforehand (see above). Its log must show no `other database client`
+   line; one means something still holds a session on the database (the old container?) — find it.
 6. **Inventory B** the same way (`--out /inv/B`), then **diff** with the expectation set above; it must exit 0
    once the live drift has been read and allowed.
 7. **Verify `v`.** The bootstrap project is the whole old library, so check it is whole and reachable:

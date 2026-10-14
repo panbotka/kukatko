@@ -26,6 +26,9 @@ import (
 // DB wraps a pgxpool.Pool and is the entry point for all database access.
 type DB struct {
 	pool *pgxpool.Pool
+	// appName is the application_name every connection of the pool announces,
+	// so OtherClients can tell this process's sessions from everyone else's.
+	appName string
 }
 
 // vectorExtension is the PostgreSQL extension providing the vector/halfvec
@@ -44,16 +47,25 @@ const sessionTimeZone = "UTC"
 // New opens a pgx connection pool from cfg.URL, applies the configured pool-size
 // limits, pins every session to UTC, registers the pgvector types (vector,
 // halfvec, sparsevec) on every connection, and verifies connectivity with a
-// Ping. The caller owns the returned DB and must Close it. It returns a wrapped
-// error if the DSN is invalid, the pool cannot be created, or the initial Ping
-// fails.
+// Ping. Every connection announces the process's application_name
+// (ApplicationName), overriding one the DSN asks for, so another Kukátko on the
+// same database is visible in pg_stat_activity (see OtherClients). The caller
+// owns the returned DB and must Close it. It returns a wrapped error if the DSN
+// is invalid, the pool cannot be created, or the initial Ping fails.
 func New(ctx context.Context, cfg config.DatabaseConfig) (*DB, error) {
+	return newDB(ctx, cfg, ApplicationName())
+}
+
+// newDB is New with the application_name passed in, so a test can open a
+// second pool that looks like another process.
+func newDB(ctx context.Context, cfg config.DatabaseConfig, appName string) (*DB, error) {
 	poolCfg, err := pgxpool.ParseConfig(cfg.URL)
 	if err != nil {
 		return nil, fmt.Errorf("parsing database url: %w", err)
 	}
 	applyPoolLimits(poolCfg, cfg)
 	pinSessionTimeZone(poolCfg)
+	poolCfg.ConnConfig.RuntimeParams["application_name"] = appName
 
 	// This has to happen before the pool exists, not in a migration. The pool's
 	// AfterConnect registers the pgvector types, and on a database that has never
@@ -71,7 +83,7 @@ func New(ctx context.Context, cfg config.DatabaseConfig) (*DB, error) {
 		return nil, fmt.Errorf("creating connection pool: %w", err)
 	}
 
-	db := &DB{pool: pool}
+	db := &DB{pool: pool, appName: appName}
 	if err := db.Ping(ctx); err != nil {
 		pool.Close()
 		return nil, err
@@ -194,4 +206,10 @@ func (db *DB) Migrate(ctx context.Context) ([]string, error) {
 // See the package-level Pending function for the full contract.
 func (db *DB) Pending(ctx context.Context) ([]string, error) {
 	return Pending(ctx, db.pool)
+}
+
+// SchemaStatus reports where this database's schema stands relative to the
+// binary's embedded migrations. See SchemaStatusOf for the full contract.
+func (db *DB) SchemaStatus(ctx context.Context) (SchemaStatus, error) {
+	return SchemaStatusOf(ctx, db.pool)
 }

@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/panbotka/kukatko/internal/audit"
-	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/namelessjob"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/project"
@@ -125,14 +124,11 @@ func runMaintenanceNameless(cmd *cobra.Command) error {
 		return err
 	}
 	ctx := cmd.Context()
-	db, err := database.New(ctx, cfg.Database)
+	db, err := openCurrentDB(ctx, cfg.Database)
 	if err != nil {
-		return fmt.Errorf("connecting to database: %w", err)
-	}
-	defer db.Close()
-	if err := migrateAsSideEffect(ctx, cmd, db); err != nil {
 		return err
 	}
+	defer db.Close()
 
 	p, err := project.NewStore(db.Pool()).GetBySlug(ctx, flags.project)
 	if err != nil {

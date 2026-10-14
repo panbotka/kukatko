@@ -78,8 +78,8 @@ func runServe(cmd *cobra.Command) error {
 		return fmt.Errorf("connecting to database: %w", err)
 	}
 	defer db.Close()
-	if _, err = db.Migrate(ctx); err != nil {
-		return fmt.Errorf("applying migrations: %w", err)
+	if err := migrateOnStart(ctx, logger, db); err != nil {
+		return err
 	}
 	registerDBPoolMetrics(reg, db)
 

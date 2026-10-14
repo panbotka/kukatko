@@ -147,7 +147,7 @@ func dirImportOptionsFromFlags(cmd *cobra.Command, root string) (dirImportOption
 	return opts, nil
 }
 
-// runImportDir loads the configuration, opens the database (applying migrations),
+// runImportDir loads the configuration, opens the database (refusing a stale schema),
 // resolves the uploading user, and runs one folder import, printing a line per
 // file and a final summary. It returns errImportFailures when any file failed, so
 // a script driving the import can tell.
@@ -167,14 +167,11 @@ func runImportDir(cmd *cobra.Command, root string) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	db, err := database.New(ctx, cfg.Database)
+	db, err := openCurrentDB(ctx, cfg.Database)
 	if err != nil {
-		return fmt.Errorf("connecting to database: %w", err)
-	}
-	defer db.Close()
-	if err := migrateAsSideEffect(ctx, cmd, db); err != nil {
 		return err
 	}
+	defer db.Close()
 
 	target, err := resolveImportProject(ctx, project.NewStore(db.Pool()), opts.project)
 	if err != nil {
