@@ -26,8 +26,17 @@ configuration key both here **and** into `config.example.yaml`.
   migration 0047**: it builds a second HNSW graph over the unassigned faces and that is
   minutes of work on a large library — a couple per 50 000 faces on Pi-class hardware,
   once, before the server accepts anything. Run `kukatko migrate` ahead of the deploy if that
-  downtime matters; see `docs/PERF.md` §3),
-  `kukatko migrate` (runs pending migrations on their own and exits),
+  downtime matters — **only for a release whose migrations the running binary survives** (0047 is
+  one: it only adds an index). **Never for the 0.31.0 → multi-tenant release**: 0.31.0 served against
+  the migrated schema fails every sign-in with 500, see "Upgrade runbook — multi-tenancy"; see
+  `docs/PERF.md` §3),
+  `kukatko migrate` (runs pending migrations on their own and exits; every migrator — `serve`, `migrate`
+  and the subcommands below that migrate first — holds one fixed `pg_advisory_lock` for its whole run, so
+  two started at once take turns and the second finds the schema up to date; the subcommands that migrate
+  as a side effect — `maintenance` (scan/repair/…), `import dir`, `maintenance nameless-subjects`,
+  `sidecar backfill`, `sidecar families`, `storage migrate-to-r2` and `restore db`'s repair step — print
+  `applying N pending migration(s) (first … last) before running this command` on stderr when the
+  database is behind, and nothing when it is not),
   **`kukatko import dir --project <slug> <path>`** (uploads a **directory from disk** into one project —
   `internal/dirimport`; see below),
   `kukatko backup` (synchronous one-off **S3 backup** — `internal/backup`; pg_dump + sync of
@@ -604,6 +613,19 @@ every `project_id` column, which the inventory (names and types only) does not s
 given pair of releases is the one the pre-release rehearsal records in
 [`MIGRATION_SAFETY.md`](MIGRATION_SAFETY.md); use that, not a guess.
 
+**Never migrate under a running 0.31.0.** The chain 0100–0114 is not backward compatible: 0.31.0 served
+against a migrated schema fails every sign-in with 500 (`column "subject_uid" does not exist` — proven on a
+production copy, 2026-10-13). So for this release, with the **new** binary and against the production
+database while the 0.31.0 container is still running, do **not** run `kukatko migrate` — nor any subcommand
+that migrates as a side effect: `maintenance scan` (and the rest of `maintenance` except `inventory` /
+`inventory-diff`), `import dir`, `maintenance nameless-subjects`, `sidecar families` (the family export),
+`sidecar backfill`, `storage migrate-to-r2`, `restore`. Each of them says `applying N pending migration(s)` on stderr just before
+it would; if you see that line against production before step 5, the old container is already broken —
+finish the deploy at once. The only safe order is **stop the old container → start the new one** (it
+migrates on start). The general advice to pre-migrate to shorten the downtime (CLI section above) holds only
+for releases whose migrations are backward compatible with the running binary; `maintenance inventory` is
+the one new-binary command meant for production before the switch, because it never migrates.
+
 The owner's checklist — in this order, and the storage move only at the very end:
 
 1. **Backup.** `kukatko backup` in the running (old) container, and note the dump key. A dump of a schema
@@ -620,8 +642,9 @@ The owner's checklist — in this order, and the storage move only at the very e
    the binary, but anything configured by hand must name its project before the switch: an MCP connector
    on `…/api/v1/mcp` becomes `…/api/v1/p/v/mcp` ([`MCP.md`](MCP.md)), a `kukatko ctl` context needs a
    project (`ctl context set <name> --project v`), and a script calling the API gets the `/p/v` prefix.
-5. **Deploy.** The container's start applies the migrations (rehearsed: 0.27 s on the box, ~1–2 s expected
-   on the VPS) — the outage is the container restart plus that.
+5. **Deploy: stop the 0.31.0 container, then start the new one.** The new container's start applies the
+   migrations (rehearsed: 0.27 s on the box, ~1–2 s expected on the VPS) — the outage is the container restart
+   plus that. No `kukatko migrate` beforehand (see above).
 6. **Inventory B** the same way (`--out /inv/B`), then **diff** with the expectation set above; it must exit 0
    once the live drift has been read and allowed.
 7. **Verify `v`.** The bootstrap project is the whole old library, so check it is whole and reachable:

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -59,25 +60,115 @@ type migration struct {
 	sql      string
 }
 
+// migrationLockKey is the fixed pg_advisory_lock key every migrator takes for
+// the whole run. Any constant works as long as nothing else in the database uses
+// it; this one spells "kukatko" in ASCII digits so it is recognisable in
+// pg_locks.
+const migrationLockKey int64 = 0x6b756b61746b6f
+
 // Migrate applies every embedded migration not yet recorded in
 // schema_migrations, in ascending version order, each within its own
 // transaction. It is idempotent: already-applied migrations are skipped. The
 // filenames applied during this call are returned (empty when the database is
 // already up to date). Errors from loading, recording, or executing a migration
 // are returned wrapped.
-func Migrate(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
+//
+// The whole run holds a session-level advisory lock (migrationLockKey) on one
+// dedicated connection, so two migrators started at once — a `serve` start and a
+// CLI subcommand, say — serialise: the second waits, then reads the version list
+// the first one left behind and finds nothing to do, instead of racing the first
+// one's CREATE TABLE IF NOT EXISTS and failing on a duplicate catalogue row. A
+// session lock (not pg_advisory_xact_lock) because every file commits in its own
+// transaction; the lock has to outlive them all.
+//
+// The waiting is unbounded on purpose. A lock_timeout (on the advisory lock or on
+// the files' own ALTERs) was considered and rejected: a migration queued behind a
+// long query would then fail, and a `serve` start that fails restarts, turning
+// one slow upgrade into a restart loop that retries the same wait forever. A
+// stuck upgrade is visible in pg_stat_activity and is the operator's call.
+func Migrate(ctx context.Context, pool *pgxpool.Pool) (applied []string, err error) {
 	migrations, err := loadMigrations(migrationFS, migrationsDir)
 	if err != nil {
 		return nil, err
 	}
-	if err := ensureSchemaMigrationsTable(ctx, pool); err != nil {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("acquiring migration connection: %w", err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", migrationLockKey); err != nil {
+		return nil, fmt.Errorf("taking migration lock: %w", err)
+	}
+	defer func() {
+		err = errors.Join(err, releaseMigrationLock(conn.Conn()))
+	}()
+
+	if err := ensureSchemaMigrationsTable(ctx, conn); err != nil {
 		return nil, err
 	}
-	applied, err := appliedVersions(ctx, pool)
+	versions, err := appliedVersions(ctx, conn)
 	if err != nil {
 		return nil, err
 	}
-	return applyPending(ctx, pool, migrations, applied)
+	return applyPending(ctx, conn, migrations, versions)
+}
+
+// releaseMigrationLock gives the advisory lock back. It runs on a fresh
+// background context so a cancelled run still unlocks; if even that fails, the
+// connection is closed, which ends the session and drops the lock with it — a
+// pooled connection must never go back to the pool still holding it, or every
+// later migrator would wait on a lock nobody is going to release.
+func releaseMigrationLock(conn *pgx.Conn) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", migrationLockKey); err != nil {
+		if closeErr := conn.Close(ctx); closeErr != nil {
+			return errors.Join(fmt.Errorf("releasing migration lock: %w", err),
+				fmt.Errorf("closing migration connection: %w", closeErr))
+		}
+		return nil
+	}
+	return nil
+}
+
+// Pending returns the filenames of the embedded migrations the database has not
+// applied yet, in the order Migrate would apply them. It only reads: a database
+// without schema_migrations reports every migration pending and creates nothing.
+// It takes no lock, so it is a snapshot — good for telling an operator that a
+// command is about to change the schema, not for deciding whether to migrate.
+func Pending(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
+	migrations, err := loadMigrations(migrationFS, migrationsDir)
+	if err != nil {
+		return nil, err
+	}
+	// Looked up in current_schema(), where Migrate's CREATE TABLE IF NOT EXISTS
+	// would put it, not through the whole search_path.
+	var exists bool
+	if err := pool.QueryRow(ctx, `SELECT to_regclass(
+		quote_ident(current_schema()) || '.schema_migrations') IS NOT NULL`).Scan(&exists); err != nil {
+		return nil, fmt.Errorf("checking for schema_migrations: %w", err)
+	}
+	versions := map[int64]bool{}
+	if exists {
+		if versions, err = appliedVersions(ctx, pool); err != nil {
+			return nil, err
+		}
+	}
+	var pending []string
+	for _, mig := range migrations {
+		if !versions[mig.version] {
+			pending = append(pending, mig.filename)
+		}
+	}
+	return pending, nil
+}
+
+// querier is the slice of pgx both a pooled connection and the pool itself
+// provide: what the bookkeeping reads and the per-file transactions need.
+type querier interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
 // loadMigrations reads every "*.sql" file from dir in fsys, parses each filename
@@ -155,8 +246,8 @@ func validateMigrations(migrations []migration) error {
 
 // ensureSchemaMigrationsTable creates the schema_migrations bookkeeping table if
 // it does not already exist.
-func ensureSchemaMigrationsTable(ctx context.Context, pool *pgxpool.Pool) error {
-	if _, err := pool.Exec(ctx, schemaMigrationsDDL); err != nil {
+func ensureSchemaMigrationsTable(ctx context.Context, q querier) error {
+	if _, err := q.Exec(ctx, schemaMigrationsDDL); err != nil {
 		return fmt.Errorf("creating schema_migrations table: %w", err)
 	}
 	return nil
@@ -164,8 +255,8 @@ func ensureSchemaMigrationsTable(ctx context.Context, pool *pgxpool.Pool) error 
 
 // appliedVersions returns the set of migration versions already recorded in
 // schema_migrations.
-func appliedVersions(ctx context.Context, pool *pgxpool.Pool) (map[int64]bool, error) {
-	rows, err := pool.Query(ctx, "SELECT version FROM schema_migrations")
+func appliedVersions(ctx context.Context, q querier) (map[int64]bool, error) {
+	rows, err := q.Query(ctx, "SELECT version FROM schema_migrations")
 	if err != nil {
 		return nil, fmt.Errorf("querying applied migrations: %w", err)
 	}
@@ -191,7 +282,7 @@ func appliedVersions(ctx context.Context, pool *pgxpool.Pool) (map[int64]bool, e
 // together with the error on the first failure.
 func applyPending(
 	ctx context.Context,
-	pool *pgxpool.Pool,
+	q querier,
 	migrations []migration,
 	applied map[int64]bool,
 ) ([]string, error) {
@@ -201,7 +292,7 @@ func applyPending(
 			continue
 		}
 		started := time.Now()
-		if err := applyOne(ctx, pool, mig); err != nil {
+		if err := applyOne(ctx, q, mig); err != nil {
 			return done, err
 		}
 		// The per-file wall time is what an upgrade's outage window is measured
@@ -218,8 +309,8 @@ func applyPending(
 // inside one transaction, so a failure leaves neither the schema change nor the
 // bookkeeping row behind. The deferred rollback is a no-op after a successful
 // commit.
-func applyOne(ctx context.Context, pool *pgxpool.Pool, mig migration) (err error) {
-	tx, err := pool.Begin(ctx)
+func applyOne(ctx context.Context, q querier, mig migration) (err error) {
+	tx, err := q.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning tx for migration %q: %w", mig.filename, err)
 	}

@@ -130,8 +130,8 @@ func runMaintenanceNameless(cmd *cobra.Command) error {
 		return fmt.Errorf("connecting to database: %w", err)
 	}
 	defer db.Close()
-	if _, err := db.Migrate(ctx); err != nil {
-		return fmt.Errorf("applying migrations: %w", err)
+	if err := migrateAsSideEffect(ctx, cmd, db); err != nil {
+		return err
 	}
 
 	p, err := project.NewStore(db.Pool()).GetBySlug(ctx, flags.project)

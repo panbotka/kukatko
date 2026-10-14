@@ -36,7 +36,12 @@ to `## Package map` in `CLAUDE.md`.
   Viper, `Load()`), `internal/database/` (pgxpool wrapper `DB` with `Ping`/`Close`/`Pool`,
   embedded migration runner `Migrate` — each file in its own transaction, logged as
   `migration applied file=… duration_ms=…` when it commits, the per-file wall time the upgrade
-  outage estimate in `docs/MIGRATION_SAFETY.md` is measured from — pgvector types registered on every connection,
+  outage estimate in `docs/MIGRATION_SAFETY.md` is measured from; the whole run holds one fixed session
+  `pg_advisory_lock` on a dedicated connection, so concurrent migrators (a `serve` start + a CLI
+  subcommand) serialise and the second finds nothing to do — unbounded wait, no `lock_timeout`, on purpose
+  (a timed-out start would restart-loop); `Pending` lists the not-yet-applied files read-only, which the CLI's
+  `migrateAsSideEffect` announces on stderr before a subcommand migrates —
+  pgvector types registered on every connection,
   **session time zone pinned to UTC** (`pinSessionTimeZone` sets the `timezone` startup runtime
   param, overriding the DSN) so SQL calendar arithmetic (`date_part('year', taken_at)`,
   `make_timestamptz`) shares one reference frame with the UTC boundaries the Go side builds —

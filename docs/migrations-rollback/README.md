@@ -28,7 +28,8 @@ migration 0110 dropped — `approved_at`, `subject_uid`, `last_seen_at`, `visit_
 `task_digest_at` — filled from the memberships the way the releases that still read them kept them
 in step: approved once any membership is (a maintainer, or an account in no project, always), the
 rest from the bootstrap-project
-membership (and the column comment of `task_digest_at`). Run it before 0109 … 0100 when going back to a
+membership (and the column comment of `task_digest_at`). An account with **no** membership therefore comes
+back approved, even one that was pending; the script header lists them. Run it before 0109 … 0100 when going back to a
 release older than 0110.
 
 **`0114_down.sql`** puts back the transitional `DEFAULT 'pj0000000000000000veselice'` (project `v`)
@@ -46,8 +47,10 @@ done
 ```
 
 `0105`–`0108` and `0111`/`0113` only put indexes back to their pre-tenancy keys (`0107_down` cancels queued
-`task_digest` jobs, `0113_down` queued/running `storage_rekey` jobs — the older key or release cannot hold
-them); `0109_down` drops the invitation links (accepted memberships stay); `0112_down` drops the storage-move
+`task_digest` jobs, `0113_down` queued/running `storage_rekey` jobs, `0108_down` the queued
+`notification_purge` and `0106_down` the queued `family_export` jobs of every project but the bootstrap one —
+the older key or release cannot hold them, and a project deleted before the rollback can leave such jobs
+behind); `0109_down` drops the invitation links (accepted memberships stay); `0112_down` drops the storage-move
 bookkeeping and **refuses once a move has committed a photo** — a moved `file_path` cannot go back to a release
 that knows only the root layout. Proven on the production copy: up → all fifteen down → inventory equal to the
 pre-deploy inventory, zero differences.

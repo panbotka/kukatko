@@ -60,8 +60,10 @@ catalogue table waits; nothing fails. **No file is anywhere near 30 s, so no spl
 **Lock queueing (not a finding against the chain, a deploy rule).** `ACCESS EXCLUSIVE` waits for every
 transaction already holding a lock on those tables, and every later request waits behind it. A running
 `pg_dump` (the nightly backup) holds `ACCESS SHARE` on all of them for its whole run (~2 min), so a deploy
-during a backup would stall the whole app for that long. The runner sets no `lock_timeout`. Checklist step 2
-covers it.
+during a backup would stall the whole app for that long. The runner sets no `lock_timeout` (deliberately: a
+timed-out ALTER would fail the start and turn the restart into a loop). Checklist step 2 covers it. Since
+2026-10-14 the runner holds one `pg_advisory_lock` for its whole run, so two migrators started at once (a
+`serve` start and a CLI subcommand) take turns instead of racing; the second finds the schema up to date.
 
 ### Inventory diff A → B
 
@@ -279,6 +281,25 @@ copy: `kukatko migrate` (new) → `0114_down` … `0100_down` (each `psql -1`, n
   and the comment on `users.task_digest_at`, which `0110_down` dropped. **Fixed here**: `0110_down` now puts
   the comment back.
 
+**Follow-up (2026-10-14) — queued jobs of a second project.** `0108_down` (notification_purge) and `0106_down`
+(family_export) rebuild a dedup index keyed on the job type alone, while the tenancy chain queues one such job
+per project. With a second project's job still queued — e.g. a project deleted before the rollback so that
+`0102_down`'s guard passes, its jobs surviving because a payload's `project_uid` is no foreign key — the
+rebuild failed with a duplicate key and the hand-run chain stopped half-unwound. **Chosen behaviour: cancel,
+not refuse.** Each of the two scripts now first deletes every queued job of its type that is not the bootstrap
+project's, the way `0107_down` cancels digests; the bootstrap project's queued job is kept. Nothing the
+previous release could use is lost: it serves only the bootstrap library, the purge is re-queued by its
+startup and daily scheduler, and a family export by the next relation change (or `kukatko sidecar families`).
+Refusing would have stopped the chain in the same half-unwound place. Covered by
+`TestRollbackChain_queuedJobsOfAGoneProject` (the whole 0114 → 0100 chain over two projects' queued jobs).
+
+**`0110_down` — an account with no membership comes back approved.** It rebuilds `users.approved_at` as "any
+membership approved; a maintainer, or an account in **no** project, always" — the mirror of the forward rule,
+where membership approval decides and an account in no project has nothing to be approved in. So an account
+that was pending before the deploy and has no membership row at rollback time (never got one, or its
+membership was removed) can sign in to the previous release. The script header carries the query that lists
+such accounts; run it before rolling back if that matters.
+
 ### Product walkthrough (staging image of `main`, migrated production copy)
 
 Signed in as the copied maintainer `panbotka` (password reset on the copy only). The copy had **no originals**
@@ -374,13 +395,24 @@ read the real rate from `/system/projects/v` after the first minutes. The move r
 
 ### Release-day checklist (owner)
 
+**Never migrate under the running 0.31.0.** 0.31.0 served against the migrated schema fails every sign-in with
+500 (`column "subject_uid" does not exist`, proven on the copy). Until step 5 has stopped the old container,
+do **not** run, with the new binary against production, `kukatko migrate` — nor anything that migrates as a
+side effect: `maintenance scan` (and the rest of `maintenance` except `inventory`/`inventory-diff`), `import
+dir`, `maintenance nameless-subjects`, `sidecar families` (the family export), `sidecar backfill`, `storage
+migrate-to-r2`, `restore`. Each prints `applying N pending migration(s)` on stderr just before it would. The
+"pre-migrate to shorten downtime" advice in [`OPERATIONS.md`](OPERATIONS.md) holds only for releases whose
+migrations are backward compatible — not this one. The only safe order is stop the old container → start the
+new one, which migrates on start.
+
 1. **Backup** — `kukatko backup` in the running 0.31.0 container; note the dump key (a pre-0104 dump restores
    only with the manual procedure in [`RESTORE.md`](RESTORE.md)).
 2. **No long transactions, no `pg_dump` running** (`pg_stat_activity`) — 0102, 0106–0108 and 0114 queue behind them.
 3. **Inventory A** on production with the **new** image (`--storage` with a read-only R2 token, if one exists by then).
 4. **Repoint hand-configured API clients** to `/p/v` (MCP connector, `ctl` contexts, scripts) — the unprefixed
    API is gone.
-5. **Deploy.** Expected unavailability: the container restart + ~2–3 s of migrations.
+5. **Deploy: stop the 0.31.0 container, then start the new one** (it migrates on start; no `kukatko migrate`
+   beforehand). Expected unavailability: the container restart + ~2–3 s of migrations.
 6. **Inventory B**, then **`inventory-diff A B`** with the expectation set above; exit 0 once the live drift
    (`jobs`, `audit_log`, `sessions`, `notifications`, `search_history`, `digest:users`) has been read against
    `audit_log`.

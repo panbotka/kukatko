@@ -189,3 +189,9 @@ func (db *DB) Pool() *pgxpool.Pool {
 func (db *DB) Migrate(ctx context.Context) ([]string, error) {
 	return Migrate(ctx, db.pool)
 }
+
+// Pending returns the embedded migrations this database has not applied yet.
+// See the package-level Pending function for the full contract.
+func (db *DB) Pending(ctx context.Context) ([]string, error) {
+	return Pending(ctx, db.pool)
+}

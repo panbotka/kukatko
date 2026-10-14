@@ -255,8 +255,8 @@ func repairRestoredDatabase(cmd *cobra.Command, cfg *config.Config) error {
 		return fmt.Errorf("connecting to database: %w", err)
 	}
 	defer db.Close()
-	if _, err := db.Migrate(cmd.Context()); err != nil {
-		return fmt.Errorf("applying migrations: %w", err)
+	if err := migrateAsSideEffect(cmd.Context(), cmd, db); err != nil {
+		return err
 	}
 	cmd.Println("migrations re-applied (idempotent)")
 

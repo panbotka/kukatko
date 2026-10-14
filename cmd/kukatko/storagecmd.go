@@ -155,8 +155,8 @@ func runStorageMigrateToR2(cmd *cobra.Command) error {
 		return fmt.Errorf("connecting to database: %w", err)
 	}
 	defer db.Close()
-	if _, err := db.Migrate(ctx); err != nil {
-		return fmt.Errorf("applying migrations: %w", err)
+	if err := migrateAsSideEffect(ctx, cmd, db); err != nil {
+		return err
 	}
 
 	migrator, err := buildStorageMigrator(cmd, cfg, db, flags)

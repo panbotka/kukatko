@@ -108,9 +108,9 @@ func openSidecarService(cmd *cobra.Command) (*sidecarjob.Service, projectLister,
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("connecting to database: %w", err)
 	}
-	if _, err := db.Migrate(cmd.Context()); err != nil {
+	if err := migrateAsSideEffect(cmd.Context(), cmd, db); err != nil {
 		db.Close()
-		return nil, nil, nil, fmt.Errorf("applying migrations: %w", err)
+		return nil, nil, nil, err
 	}
 	svc, err := buildSidecarServiceOrNil(cfg, db, jobs.NewEnqueuer(jobs.NewStore(db.Pool())))
 	if err != nil {

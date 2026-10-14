@@ -135,9 +135,9 @@ func openMaintenanceService(cmd *cobra.Command) (*maintenance.Service, func(), e
 	if err != nil {
 		return nil, nil, fmt.Errorf("connecting to database: %w", err)
 	}
-	if _, err := db.Migrate(cmd.Context()); err != nil {
+	if err := migrateAsSideEffect(cmd.Context(), cmd, db); err != nil {
 		db.Close()
-		return nil, nil, fmt.Errorf("applying migrations: %w", err)
+		return nil, nil, err
 	}
 	svc, err := buildMaintenanceForCLI(cfg, db)
 	if err != nil {

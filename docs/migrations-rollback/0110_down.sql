@@ -7,6 +7,15 @@
 -- maintainer, or an account in no project, always), and its link, visit clocks and
 -- digest watermark are its bootstrap-project membership's. Run it before the
 -- older scripts (newest first, as the README says).
+--
+-- Note: an account with no membership at all comes back APPROVED (approved_at =
+-- its created_at), even one that was waiting before the deploy. That mirrors the
+-- forward rule — membership approval is what decides, and an account in no
+-- project has nothing left to approve it in — so a pending registrant whose
+-- membership was removed, or who never got one, can sign in to the previous
+-- release. Check for such accounts before rolling back if that matters:
+--   SELECT uid, email FROM users u WHERE role <> 'maintainer'
+--     AND NOT EXISTS (SELECT 1 FROM project_members m WHERE m.user_uid = u.uid);
 ALTER TABLE users
     ADD COLUMN IF NOT EXISTS last_seen_at       TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS visit_reference_at TIMESTAMPTZ,

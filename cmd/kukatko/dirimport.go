@@ -168,8 +168,8 @@ func runImportDir(cmd *cobra.Command, root string) error {
 		return fmt.Errorf("connecting to database: %w", err)
 	}
 	defer db.Close()
-	if _, err := db.Migrate(ctx); err != nil {
-		return fmt.Errorf("applying migrations: %w", err)
+	if err := migrateAsSideEffect(ctx, cmd, db); err != nil {
+		return err
 	}
 
 	target, err := resolveImportProject(ctx, project.NewStore(db.Pool()), opts.project)
