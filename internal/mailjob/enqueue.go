@@ -9,6 +9,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mailer"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 )
 
 // MaxAttempts is how often a `mail_send` job is retried before it is
@@ -31,6 +32,17 @@ type Mail struct {
 	// Data is the template's data struct; it is stored as JSON in the payload, so
 	// it must contain nothing that only makes sense inside this process.
 	Data any
+	// For addresses a notification's e-mail to its account and project, so the
+	// handler checks again, when it runs, that the account may still receive
+	// it; nil (an account's own mails) sends regardless. Set it with Addressed.
+	For *notifystanding.Addressee
+}
+
+// Addressed returns m addressed to a: the handler sends it only while a's
+// account is in standing in a's project (internal/notifystanding).
+func (m Mail) Addressed(a notifystanding.Addressee) Mail {
+	m.For = &a
+	return m
 }
 
 // RegistrationReceived is the mail confirming somebody's registration was
@@ -207,7 +219,7 @@ func encodePayload(m Mail) (json.RawMessage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mailjob: encoding data of %s: %w", m.Template, err)
 	}
-	raw, err := json.Marshal(payload{Template: m.Template, To: m.To, Data: data})
+	raw, err := json.Marshal(payload{Template: m.Template, To: m.To, Data: data, For: m.For})
 	if err != nil {
 		return nil, fmt.Errorf("mailjob: encoding payload of %s: %w", m.Template, err)
 	}

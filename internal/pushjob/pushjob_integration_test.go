@@ -11,11 +11,13 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/push"
 	"github.com/panbotka/kukatko/internal/pushjob"
@@ -36,25 +38,48 @@ type fixture struct {
 	user   string
 }
 
-// newFixture truncates the integration database and seeds one account.
+// newFixture truncates the integration database and seeds one account, an
+// approved viewer of the bootstrap project.
 func newFixture(t *testing.T) fixture {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
 	const uid = "pushjob_owner"
-	if err := auth.NewStore(db.Pool()).CreateUser(context.Background(), auth.User{
-		UID: uid, Username: "owner", Email: "owner@example.test", PasswordHash: "x", Role: auth.RoleUser,
-	}.InProject(project.BootstrapUID, project.RoleViewer)); err != nil {
-		t.Fatalf("creating the account: %v", err)
-	}
+	createAccount(t, db, uid, "owner")
 	return fixture{
 		db: db, store: push.NewStore(db.Pool()), jobs: jobs.NewStore(db.Pool()),
 		sender: push.NewFake(), user: uid,
 	}
 }
 
+// createAccount seeds the account uid named username, an approved viewer of the
+// bootstrap project.
+func createAccount(t *testing.T, db *database.DB, uid, username string) {
+	t.Helper()
+	approved := time.Now()
+	if err := auth.NewStore(db.Pool()).CreateUser(context.Background(), auth.User{
+		UID: uid, Username: username, Email: username + "@example.test", PasswordHash: "x", Role: auth.RoleUser,
+		ApprovedAt: &approved,
+	}.InProject(project.BootstrapUID, project.RoleViewer)); err != nil {
+		t.Fatalf("creating the account %s: %v", uid, err)
+	}
+}
+
+// to is the fixture's account in the bootstrap project, the addressee of every
+// push the tests queue.
+func (f fixture) to() notifystanding.Addressee {
+	return notifystanding.Addressee{UserUID: f.user, ProjectUID: project.BootstrapUID}
+}
+
 // subscribe stores a subscription of the fixture's account for endpoint.
 func (f fixture) subscribe(t *testing.T, endpoint string) push.Subscription {
+	t.Helper()
+	return f.subscribeAs(t, f.user, endpoint)
+}
+
+// subscribeAs stores a subscription of the account userUID for endpoint — a
+// browser already subscribed by another account moves to userUID.
+func (f fixture) subscribeAs(t *testing.T, userUID, endpoint string) push.Subscription {
 	t.Helper()
 	private, err := ecdh.P256().GenerateKey(rand.Reader)
 	if err != nil {
@@ -65,7 +90,7 @@ func (f fixture) subscribe(t *testing.T, endpoint string) push.Subscription {
 		t.Fatalf("generating auth: %v", err)
 	}
 	sub, err := f.store.Upsert(context.Background(), push.Subscription{
-		UserUID:  f.user,
+		UserUID:  userUID,
 		Endpoint: endpoint,
 		P256dh:   base64.RawURLEncoding.EncodeToString(private.PublicKey().Bytes()),
 		Auth:     base64.RawURLEncoding.EncodeToString(secret),
@@ -80,6 +105,7 @@ func (f fixture) subscribe(t *testing.T, endpoint string) push.Subscription {
 func (f fixture) service(maxFailures int) *pushjob.Service {
 	return pushjob.NewService(pushjob.ServiceConfig{
 		Enabled: true, Sender: f.sender, Store: f.store, MaxFailures: maxFailures,
+		Standing: notifystanding.NewChecker(f.db.Pool()),
 	})
 }
 
@@ -128,7 +154,7 @@ var note = push.Notification{Title: "Nová odpověď", Body: "Jana odpověděla"
 // single claimed job.
 func (f fixture) enqueueOne(t *testing.T) jobs.Job {
 	t.Helper()
-	if _, err := enqueuer(true).Enqueue(context.Background(), f.db.Pool(), f.user, note); err != nil {
+	if _, err := enqueuer(true).Enqueue(context.Background(), f.db.Pool(), f.to(), note); err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
 	claimed := f.claimAll(t)
@@ -147,7 +173,7 @@ func TestPushSend_deliversToEveryDeviceOnce(t *testing.T) {
 	phone := f.subscribe(t, "https://push.example.org/phone")
 	laptop := f.subscribe(t, "https://push.example.org/laptop")
 
-	queued, err := enqueuer(true).Enqueue(ctx, f.db.Pool(), f.user, note)
+	queued, err := enqueuer(true).Enqueue(ctx, f.db.Pool(), f.to(), note)
 	if err != nil || queued != 2 {
 		t.Fatalf("Enqueue = %d, %v; want 2", queued, err)
 	}
@@ -256,7 +282,8 @@ func TestPushSend_oversizedPayloadIsTerminal(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	sub := f.subscribe(t, "https://push.example.org/fine")
-	raw := `{"subscription_id":"` + sub.ID + `","notification":{"title":"x","body":"` +
+	raw := `{"subscription_id":"` + sub.ID + `","to":{"user_uid":"` + f.user + `","project_uid":"` +
+		project.BootstrapUID + `"},"notification":{"title":"x","body":"` +
 		strings.Repeat("a", push.MaxPayloadSize) + `"}}`
 	if _, err := jobs.Enqueue(ctx, f.db.Pool(), jobs.TypePushSend, []byte(raw), jobs.EnqueueOptions{}); err != nil {
 		t.Fatalf("inserting the job: %v", err)
@@ -284,7 +311,9 @@ func TestPushSend_nothingToDoCompletes(t *testing.T) {
 	f.subscribe(t, "https://push.example.org/phone")
 	job := f.enqueueOne(t)
 
-	off := pushjob.NewService(pushjob.ServiceConfig{Sender: f.sender, Store: f.store})
+	off := pushjob.NewService(pushjob.ServiceConfig{
+		Sender: f.sender, Store: f.store, Standing: notifystanding.NewChecker(f.db.Pool()),
+	})
 	if err := off.Handle(ctx, job); err != nil {
 		t.Fatalf("Handle with push off = %v, want nil", err)
 	}
@@ -306,11 +335,11 @@ func TestEnqueue_queuesNothingWhenItShouldNot(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
-	if n, err := enqueuer(true).Enqueue(ctx, f.db.Pool(), f.user, note); err != nil || n != 0 {
+	if n, err := enqueuer(true).Enqueue(ctx, f.db.Pool(), f.to(), note); err != nil || n != 0 {
 		t.Fatalf("Enqueue without devices = %d, %v; want 0, nil", n, err)
 	}
 	f.subscribe(t, "https://push.example.org/phone")
-	if n, err := enqueuer(false).Enqueue(ctx, f.db.Pool(), f.user, note); err != nil || n != 0 {
+	if n, err := enqueuer(false).Enqueue(ctx, f.db.Pool(), f.to(), note); err != nil || n != 0 {
 		t.Fatalf("Enqueue with push off = %d, %v; want 0, nil", n, err)
 	}
 
@@ -318,7 +347,7 @@ func TestEnqueue_queuesNothingWhenItShouldNot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	if n, err := enqueuer(true).Enqueue(ctx, tx, f.user, note); err != nil || n != 1 {
+	if n, err := enqueuer(true).Enqueue(ctx, tx, f.to(), note); err != nil || n != 1 {
 		t.Fatalf("Enqueue inside the transaction = %d, %v; want 1", n, err)
 	}
 	if err := tx.Rollback(ctx); err != nil {
@@ -334,7 +363,7 @@ func TestEnqueue_queuesNothingWhenItShouldNot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	if _, err := enqueuer(true).Enqueue(ctx, tx, f.user, note); err != nil {
+	if _, err := enqueuer(true).Enqueue(ctx, tx, f.to(), note); err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -342,5 +371,74 @@ func TestEnqueue_queuesNothingWhenItShouldNot(t *testing.T) {
 	}
 	if n := f.countPushJobs(t); n != 1 {
 		t.Fatalf("%d push_send jobs after commit, want 1", n)
+	}
+}
+
+// TestPushSend_deviceMovedToAnotherAccount proves a queued push follows its
+// account, not the browser (J-3): a shared browser subscribed by one account and
+// then by another moves its subscription row to the second, and a push still
+// queued for the first is dropped rather than shown to the second.
+func TestPushSend_deviceMovedToAnotherAccount(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	const endpoint = "https://push.example.org/shared-browser"
+	f.subscribe(t, endpoint)
+	job := f.enqueueOne(t)
+
+	createAccount(t, f.db, "pushjob_other", "other")
+	moved := f.subscribeAs(t, "pushjob_other", endpoint)
+	if moved.UserUID != "pushjob_other" {
+		t.Fatalf("subscription after the second account subscribed = %+v, want it moved", moved)
+	}
+	if err := f.service(0).Handle(ctx, job); err != nil {
+		t.Fatalf("Handle = %v, want the job to complete", err)
+	}
+	if len(f.sender.Sent()) != 0 {
+		t.Fatalf("sent %d notifications to a device that now belongs to another account, want none",
+			len(f.sender.Sent()))
+	}
+}
+
+// TestPushSend_droppedOutOfStanding proves a queued push is re-checked against
+// the account's standing in the notification's project when it runs: an
+// account disabled, a membership removed or left unapproved, a project
+// deactivated — all after the push was queued — gets nothing, and the job
+// completes. The same push is delivered while the account is in standing.
+func TestPushSend_droppedOutOfStanding(t *testing.T) {
+	tests := []struct {
+		name   string
+		change string
+	}{
+		{name: "in standing"},
+		{name: "account disabled", change: `UPDATE users SET disabled = true WHERE uid = $1`},
+		{name: "membership removed", change: `DELETE FROM project_members WHERE user_uid = $1`},
+		{name: "membership unapproved", change: `UPDATE project_members SET approved_at = NULL WHERE user_uid = $1`},
+		{
+			name: "project deactivated", change: `UPDATE projects SET active = false
+				WHERE uid IN (SELECT project_uid FROM project_members WHERE user_uid = $1)`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t)
+			ctx := context.Background()
+			f.subscribe(t, "https://push.example.org/phone")
+			job := f.enqueueOne(t)
+			if tt.change != "" {
+				if _, err := f.db.Pool().Exec(ctx, tt.change, f.user); err != nil {
+					t.Fatalf("changing the account's standing: %v", err)
+				}
+			}
+			if err := f.service(0).Handle(ctx, job); err != nil {
+				t.Fatalf("Handle = %v, want the job to complete", err)
+			}
+			want := 0
+			if tt.change == "" {
+				want = 1
+			}
+			if got := len(f.sender.Sent()); got != want {
+				t.Fatalf("sent %d notifications, want %d", got, want)
+			}
+		})
 	}
 }

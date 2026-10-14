@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/notifydeliver"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/people"
 )
 
@@ -82,16 +83,16 @@ func NewRecorder(cfg RecorderConfig) *Recorder {
 
 // recipientsSQL lists the accounts that are the tagged subject: those whose
 // membership of the subject's own project links it ("this is me" lives on the
-// membership), approved there and still enabled. A subject may be linked to
-// several accounts (a household login and a personal one, migration 0060);
-// ordering by uid keeps the advisory locks of one transaction in a stable
-// order.
-const recipientsSQL = `
+// membership) and that are in standing there (internal/notifystanding:
+// approved, enabled, the project active). A subject may be linked to several
+// accounts (a household login and a personal one, migration 0060); ordering by
+// uid keeps the advisory locks of one transaction in a stable order.
+var recipientsSQL = `
 SELECT u.uid
 FROM subjects s
 JOIN project_members pm ON pm.project_uid = s.project_id AND pm.subject_uid = s.uid
 JOIN users u ON u.uid = pm.user_uid
-WHERE s.uid = $1 AND pm.approved_at IS NOT NULL AND NOT u.disabled
+WHERE s.uid = $1 AND ` + notifystanding.MemberSQL("u.uid", "s.project_id") + `
 ORDER BY u.uid`
 
 // announceableSQL reports whether the photo may be named to anybody at all: it

@@ -6453,7 +6453,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   three families are sums of each other and one query per scrape answers all of them; `collectTimeout` 5 s,
   so a slow DB does not block the scrape) and `RegisterGeocodeBudget` (`GeocodeBudgetFunc` →
   `kukatko_geocode_credits_remaining`/`_limit`, sampled at scrape time so the gauge follows the budget
-  window rolling over even while no job runs; a nil func = no budget wired) read their data at scrape time
+  window rolling over even while no job runs; a nil func = no budget wired) and `RegisterNotificationDrops`
+  (`NotificationDropsFunc` → `[]NotificationDrop{Stage, Reason, Count}` → the counter
+  `kukatko_notifications_dropped_total{stage,reason}`, `serve` adapting `notifystanding.Drops()`) read their data at scrape time
   without extra goroutines; `RegisterLibrary(LibraryStatsFunc, ttl)` (`library.go`) adds the **library-content**
   gauges, **one series set per active project, each labelled `project="<slug>"`** (the slug, never the
   name — `/metrics` is unauthenticated; the instance total is `sum without (project)`) —
@@ -6601,9 +6603,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   are worth another try. Sending from the HTTP handler that caused the mail has two faults: the request waits
   on a remote host, and a mail server that is briefly away loses the message. Both go away once the persistent
   queue is the only path.
-  - **The payload is a recipe, not a message:** `{template, to, data}` — the template *name* plus its data
-    struct as JSON, never rendered text and never a live object, so a job means the same thing after a restart
-    or an upgrade. `Handle` decodes it, renders through the generic `renderWith[T]` (which is what keeps a
+  - **The payload is a recipe, not a message:** `{template, to, data, for?}` — the template *name* plus its
+    data struct as JSON, never rendered text and never a live object, so a job means the same thing after a
+    restart or an upgrade. `Handle` decodes it, renders through the generic `renderWith[T]` (which is what keeps a
     template and its data struct paired **by the compiler**, not by convention) and hands the `mailer.Message`
     to the `Sender`.
   - **`Enqueuer`** (`NewEnqueuer(EnqueuerConfig{Enabled,Schedule,Logger})`) is what callers use instead of
@@ -6611,6 +6613,14 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     the mutation that caused the mail** and the message is scheduled if and only if that mutation commits, the
     way `audit.Write` joins its mutation. Build the `Mail` with `RegistrationReceived`/`AccountApproved`/
     `NewRegistrationPending`/`PasswordReset`/`TasksWaitingDigest`/`UsernameChanged`, which pair each template with the data it expects.
+  - **A notification's mail is addressed.** `Mail.Addressed(notifystanding.Addressee{UserUID, ProjectUID,
+    Kind})` sets `Mail.For`, stored as the payload's `for`; `internal/notifydeliver` addresses every mail it
+    builds and the task digest addresses its own (kind `taskdigestjob.DigestKind`). When the job runs,
+    **`Handle` asks the standing question again** (`ServiceConfig.Standing`, a `notifystanding.Checker`,
+    required — `NewService` panics without it): an account disabled, a membership removed or never approved,
+    or a project deactivated since the mail was queued → the job **completes unsent**, logged and counted
+    (`notifystanding.StageMail`/`ReasonStanding`); a failed standing query is retried. The account's own mails
+    (registration, approval, password reset, rename) carry no addressee and are never held back.
   - **Two silent refusals, both logged, both returning nil** (they must not fail the mutation that asked):
     `mail.enabled` is false → nothing is enqueued, because an instance nobody gave an SMTP server to must not
     grow a queue that can only fail (`Enabled()` lets a caller skip minting a reset token for it); and a
@@ -6623,7 +6633,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     roughly three hours of outage. A permanent one — `ErrInvalidAddress`/`ErrPlaceholderAddress`, or any SMTP
     **5yz** reply dug out with `errors.As(err, *textproto.Error)` — is a `worker.Terminal` failure: parked in
     `failed` on the first attempt, never retried, still requeueable by hand.
-  - Wired in `cmd/kukatko` next to the other handlers and **only when `mail.enabled`** (`buildMailServiceOrNil`);
+  - Wired in `cmd/kukatko` next to the other handlers and **only when `mail.enabled`** (`buildMailServiceOrNil`,
+    over a `notifystanding.Checker` on the pool);
     with mail off nothing enqueues either, and a job left over from a period when mail was on simply waits in
     the queue until it is configured again. The worker gives `mail_send` its own single-slot pool.
 
@@ -6631,7 +6642,11 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   once a day, every person is mailed, **per project**, the open tasks of that project whose move is theirs,
   so a question an agent opened reaches the human it waits on. It is the `task_digest` job plus the
   scheduler that enqueues it, and it sends nothing itself: every message is a `mail_send` job scheduled
-  through `mailjob.Enqueuer`, so it inherits the queue's retries and the mailer's address guard.
+  through `mailjob.Enqueuer`, so it inherits the queue's retries and the mailer's address guard. Who is
+  mailed is the shared standing rule (`phototask`'s `waitingForEveryoneSQL` embeds
+  `notifystanding.MemberSQL`: an approved member of an active project, enabled), and every digest mail is
+  **addressed** (`Mail.Addressed`, kind **`DigestKind`** = `task_digest`), so a person who falls out of
+  standing before the `mail_send` job runs is not mailed after all.
   - **The unit of work is a (project, person) pair.** The job's payload is `jobs.TaskDigestPayload{
     ProjectUID, UserUID}` (`project_uid` + `user_uid`) and the dedup index keys on both (migration
     `0107_task_digest_per_project.sql`); the watermark is the membership's `project_members.task_digest_at`.
@@ -6749,23 +6764,33 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `internal/push` encrypts and speaks the protocol, this package decides **what** is scheduled, **whether**
   anything is scheduled at all, and what each answer of the push service does to the job **and to the
   device**.
-  - **One job per device, not per account.** The payload is `{subscription_id, notification}` — one
-    `push_subscriptions` row and the `push.Notification` for it. The subscription is read by id **when the
+  - **One job per device, addressed to an account.** The payload is `{subscription_id, to, notification}` —
+    one `push_subscriptions` row, the `notifystanding.Addressee` (account, project, kind) the push is for, and
+    the `push.Notification` for it. The subscription is read by id **when the
     job runs**, so a browser that re-subscribed meanwhile gets the fresh keys and one that unsubscribed gets
     nothing. That split is what makes a retry safe: a job retried because the laptop's push service was
     unreachable re-sends to the laptop only, never a second time to the phone.
   - **`Enqueuer`** (`NewEnqueuer(EnqueuerConfig{Enabled,Schedule,List,Logger})`) is the fan-out:
-    `Enqueue(ctx, exec, userUID, Notification) (queued int, err)` reads the account's subscription ids
+    `Enqueue(ctx, exec, to notifystanding.Addressee, Notification) (queued int, err)` reads the account's
+    (`to.UserUID`) subscription ids
     (`push.SubscriptionIDs`) and inserts one `push_send` per id (`jobs.Enqueue`, `MaxAttempts` **8** ≈ an
     hour of the 30 s-doubling backoff), both through `exec` — a `pushjob.Execer` (`jobs.Execer` +
     `push.Querier`: a pool or **the transaction of the mutation that caused the notification**, so it is
     scheduled if and only if that mutation commits). **Two silent refusals returning `0, nil`:** push is
     disabled, and the account has no subscription — nothing queued is the correct outcome, a job that can
-    never deliver is not. **Refused with an error:** no account (`ErrMissingUser`) and a notification
+    never deliver is not. **Refused with an error:** no account (`ErrMissingUser`), no project
+    (`ErrMissingProject`) and a notification
     `Encode` rejects (`ErrInvalidNotification`, `ErrPayloadTooLarge`) — caller bugs, dead on arrival.
     `Schedule`/`List` are injectable so the unit tests need no database.
-  - **`Service.Handle`** (`NewService(ServiceConfig{Enabled,Sender,Store,MaxFailures,Logger})`, panicking
-    on a nil `Sender`/`Store`) maps every outcome: accepted → `RecordSuccess` and complete (a failed stamp
+  - **`Service.Handle`** (`NewService(ServiceConfig{Enabled,Sender,Store,Standing,MaxFailures,Logger})`,
+    panicking on a nil `Sender`/`Store`/`Standing`) first checks **whom the job is for** (`addressed`): a job
+    naming no account (queued by a release before pushes were addressed) is dropped (`ReasonUnaddressed`); a
+    subscription that now belongs to **another account** — `push.Store.Upsert` moves an endpoint to whoever
+    subscribed it last, so a shared browser changes hands — is dropped (`ReasonDeviceMoved`), never shown to
+    the wrong person; and an account **no longer in standing** in the notification's project
+    (`notifystanding.Checker`: disabled, membership removed or unapproved, project deactivated) is dropped
+    (`ReasonStanding`). Each drop completes the job, is logged and counted (`StagePush`); a failed standing
+    query is retried. Then it maps every outcome: accepted → `RecordSuccess` and complete (a failed stamp
     is only logged — failing would send twice); **`ErrGone` → the subscription is deleted and the job
     completes** (the notification was fine, the device was not — this handler is the **only** place dead
     subscriptions are pruned); `ErrPayloadTooLarge`/`ErrInvalidNotification` → `worker.Terminal`, the
@@ -6785,7 +6810,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     real database — delivery to each device once with the send recorded, 410 deletes, 500 records a
     failure and requeues, the threshold retires, an oversized payload is terminal, the nothing-to-do
     completions, and `Enqueue` queuing nothing with push off, without devices or in a rolled-back
-    transaction.
+    transaction; a push queued for one account and its browser then subscribed by another is not sent
+    (J-3); a push whose account is disabled, removed, unapproved or whose project is deactivated after it
+    was queued is not sent, the same push in standing is.
 
 - **Notification records (`internal/notification`):** what a notification **is** once it has been
   sent — the record the in-app inbox lists and a tapped push or a mail's link opens, with its frozen
@@ -6890,7 +6917,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     notifications recorded more than `Read` ago and unread ones more than `Unread` ago (both measured from
     `created_at`); another project's rows are never touched; an empty project is `ErrNoProject`, `Unread`
     shorter than `Read`, or a non-positive threshold, is `ErrInvalidRetention`. `DefaultRetention()` is
-    30 d / 90 d. It runs daily, one job per active project, through the `notification_purge` job
+    30 d / 90 d. It runs daily, one job per project (deactivated ones included), through the `notification_purge` job
     (`internal/notifypurgejob`).
   - The wipe (`internal/reset`) empties `notifications` + `notification_photos` and preserves
     `notification_prefs`. Tests: field rules, the registry, preference merge and audit-entry shaping as
@@ -6955,8 +6982,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (payload `{user_uid}`, dedup index migration 0089), config `notifications.tags.window` (default **1h**;
   `push.tags.window` is its deprecated alias). The flow is in [`ARCHITECTURE.md`](ARCHITECTURE.md) §8.
   - **`Recorder`** (`NewRecorder(RecorderConfig{Window, Audience, Logger, Now})`, panicking without
-    `Audience` — `*notifydeliver.Deliverer`'s `ChannelsTx`) is the `people.TagObserver`. **`Tagged`** records, for every enabled
-    account whose **approved membership of the subject's project** links the subject (several may —
+    `Audience` — `*notifydeliver.Deliverer`'s `ChannelsTx`) is the `people.TagObserver`. **`Tagged`** records, for every
+    account **in standing** (`notifystanding.MemberSQL`) whose membership of the subject's project links the subject (several may —
     migration 0060), one notice, and opens the account's
     window when none is open: **`jobs.EnqueueOrSkip`** of `tag_notify` with `RunAfter = now + window`.
     It records **nothing at all** when the acting account is itself linked to the
@@ -6980,8 +7007,11 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   - **`Service.Handle`/`Close`** (`New(Config{DB, Deliver, Language, Logger})`, panicking on a
     missing dependency; `Deliver` is `*notifydeliver.Deliverer`'s `Deliver` + `Absolute`): in one
     transaction, take the lock, `DELETE … RETURNING` every notice of the account and keep the photos that
-    **still** qualify — visible now and still carrying the account's linked person on a valid marker (an
-    archive, a merge or an invalidation inside the window is caught here) — **newest photo first**
+    **still** qualify — visible now, still carrying the account's linked person on a valid marker, and the
+    account **still in standing** in the photo's project (`notifystanding.MemberSQL` in `consumeSQL`: an
+    account disabled, a membership unapproved or a project deactivated inside the window is told nothing —
+    review finding J-4; `Deliver` checks again) — (an archive, a merge or an invalidation inside the window
+    is caught here too) **newest photo first**
     (`taken_at DESC NULLS LAST, created_at DESC`); nothing left → commit and send nothing (never "0
     photos"). Otherwise **`collect`** reads the recipient's role and, for the surviving photos, the
     hand-made albums (`albums.type = 'album'`, as `whatsnew` and the featured strip count them) each is
@@ -7021,6 +7051,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     albums collapse to `MaxAlbumGroups` + "other" with nothing repeated; an untag inside the window still
     un-announces; one `mail_send` per window listing the groups in delivery order with their counts and
     links. Unit (`group_test.go`): the grouping rules, the cap, the order, the mail builder, the wording.
+    Standing at close: an account disabled, a membership unapproved or a project deactivated after the tag
+    was recorded → no notification, no push, the notices consumed.
 
 - **Featured album announcement (`internal/albumfeaturedjob`):** "a new album is featured" — the
   `album_featured` kind, one notification per account that asked for it when a curator puts an album on the
@@ -7032,9 +7064,11 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   feature while it waits collapses into that job. **`Service`** (`New(Config{DB, Albums, Deliver,
   Language, Logger})`, `Handle` → **`Announce(ctx, albumUID)`**) runs in one transaction: it reads the album
   through `organize.Store.FeaturedAlbumTx` — `ErrNotFeatured` (unfeatured before the run, lapsed, deleted)
-  completes with nothing sent — then reads the album's project and walks the accounts **of that project**
-  (its members and the maintainers; an account of another project only is not read) with their role there,
-  through the pure **`recipients`** rules: never `featured_by` (nobody is told about their own work), never a
+  completes with nothing sent — then reads the album's project and walks the **members of that project in
+  standing there** (`accountsSQL` embeds `notifystanding.MemberSQL`: an approved membership, an enabled
+  account, an active project — a pending registration, a maintainer who is no member and every member of a
+  deactivated project are not read; review finding J-1, where a pending member got the project's name and
+  the album's title by push and mail) with their role there, through the pure **`recipients`** rules: never `featured_by` (nobody is told about their own work), never a
   disabled account, and a **private album only to curator+** (the strip's own rule); whether an account wants
   the kind is `notifydeliver.Deliver`'s per-account question. Each delivery runs **under a savepoint**, so
   one failing account is logged and skipped, never costing the others. The message: `KindAlbumFeatured`,
@@ -7051,7 +7085,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     editor's mail, not the curator, the admin who never chose or the disabled account; prolonging queues no
     second job and a lapsed feature renewed announces again; unfeatured before the run (twice, collapsing
     into one job) sends nothing; a private album reaches the admin and the editor only; nobody opted in →
-    no record.
+    no record; a pending member and a maintainer who is no member, both wanting every channel, get nothing
+    (no record, no mail) while a member maintainer does; a project deactivated before the run tells nobody.
 
 - **Task hand-over notification (`internal/taskassignnotify`):** "somebody put you on a task" — the
   `task_assigned` kind, one notification to the person asked, **inside the assignment's transaction**.
@@ -7062,8 +7097,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   transaction (the tagging recorder's rule: a notification is worth less than the assignment, so a
   failed delivery is rolled back to the savepoint, logged and swallowed; only a broken transaction is
   returned), reads one row — the task's project and title, the asker's name (display name, else username) and the
-  asked account's `disabled` and whether it may enter the task's project (an approved membership there, or
-  a maintainer) — and applies the pure **`wanted`** rules: never without an
+  asked account's `disabled` and whether it is **in standing** in the task's project
+  (`notifystanding.MemberSQL`: an approved membership of an active project; a maintainer only as a member)
+  — and applies the pure **`wanted`** rules: never without an
   actor (a NULL `added_by` is joined by acting, not asked), never the person who asked themselves,
   never a disabled or unapproved account. Whether the person wants the kind at all is
   `notifydeliver.Deliver`'s per-account question (every channel off by default). The message:
@@ -7089,7 +7125,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   delivery is rolled back to it, logged and swallowed; only a broken transaction is returned), reads the
   **place** with its project (`photoPlaceSQL`: the photo's title and whether it may be named at all —
   `notification.VisiblePhotoSQL`, not private, hidden or archived; `taskPlaceSQL`: the title, always
-  visible) and the mentioned accounts' **standing** in one query (`standingSQL`: enabled, and an approved member of the comment's project or a maintainer),
+  visible) and the mentioned accounts' **standing** in one query (`standingSQL` embeds
+  `notifystanding.MemberSQL`: enabled, an approved member of the comment's project, the project active —
+  a maintainer only as a member),
   and applies the pure **`wanted(userUID, authorUID, standing, place)`** rules: never the writer, never an
   account out of standing, never for a photo that may not be named — the mention is still highlighted in
   the thread, only the announcement is skipped. Whether the person wants the kind at all is
@@ -7105,12 +7143,45 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   database — a photo comment naming Anna, Bedřich, the writer, a newcomer who never chose and a disabled
   account → exactly Anna's and Bedřich's notifications (title with the photo's title, excerpt, anchored
   link, in the inbox) and Anna's mail; a task comment → the task's title and anchor; a private, hidden or
-  archived photo → the mention stored, nobody told; an edit → only the newly named account.
+  archived photo → the mention stored, nobody told; an edit → only the newly named account; a maintainer
+  who is no member and a pending account → nobody but Anna, and nobody once the project is deactivated.
+
+- **Notification standing (`internal/notifystanding`):** the one answer to **"may this account still
+  receive a notification of this project?"** — asked by every producer when it picks recipients, by
+  `internal/notifydeliver` when it records and schedules, and again by the `push_send` and `mail_send`
+  handlers when a queued delivery runs (an account can fall out of standing while its notification waits).
+  Review II findings J-1, J-3, J-4 and J-6 all came down to a producer or a queue asking a weaker question.
+  - **The rule:** an **approved member** of the project (`project_members.approved_at`), an **enabled**
+    account, an **active** project. A maintainer gets no exception for being a maintainer — only as a
+    member — except for the one kind addressed to the instance's operators, `registration_pending`
+    (`ReachesMaintainers(kind)`): an enabled maintainer of an active project, member or not, because a
+    maintainer may approve a registration into any project.
+  - **`MemberSQL(userExpr, projectExpr)`** returns the rule as an `EXISTS (…)` condition over SQL
+    expressions of the enclosing statement (`"u.uid"`, `"$1"`, `"s.project_id"`) — embedded by
+    `albumfeaturedjob` (`accountsSQL`), `tagnotifyjob` (`recipientsSQL`, `consumeSQL`), `mentionnotify`
+    (`standingSQL`), `taskassignnotify` (`contextSQL`) and `phototask`'s digest query, so the rule is written
+    once. **`MaintainerSQL`** is the registration kind's second audience.
+  - **`InStanding(ctx, q, Addressee{UserUID, ProjectUID, Kind})`** asks it on any `Querier` (a pool or the
+    producer's `pgx.Tx`); an addressee without an account or a project is never in standing. **`Checker`**
+    (`NewChecker(pool)`, panicking on nil) is the same on a pool for the queue handlers.
+  - **Drops are counted**, not logged only: `CountDrop(Stage, Reason)` into process-wide atomic counters —
+    stages `deliver` (notifydeliver), `push`, `mail`; reasons `standing`, `device_moved` (a push whose browser
+    subscription now belongs to another account), `unaddressed` (a push queued before pushes carried an
+    account). `Drops()` lists every pair, zeros included; `serve` exports it as
+    `kukatko_notifications_dropped_total{stage,reason}` (`metrics.RegisterNotificationDrops`). Process-wide,
+    like the runtime statistics, because the drops happen in deliverers built in many places.
+  - **Accepted queue semantics, documented:** a notification already *sent* (pushed, mailed, recorded) is
+    not recalled when somebody falls out of standing later; what is still queued is dropped at send.
+  - Tests: `Valid`, `ReachesMaintainers` over every kind, the fragment's parts, the question asked (member
+    vs maintainer form, none for an incomplete addressee, a failure passed on), the counters; over a real
+    database the whole rule — approved member, pending, disabled, another project only, a deactivated
+    project, a maintainer who is no member, a member maintainer, the registration kind for a maintainer of
+    an active and of a deactivated project — and `MemberSQL` agreeing with `InStanding`.
 
 - **Notification delivery (`internal/notifydeliver`):** the **one way a notification leaves Kukátko**.
   A producer builds a `Message{ProjectUID, Kind, Text, Link | SelfLink, PhotoUIDs, Mail, SkipMail}` and
   calls **`Deliverer.Deliver(ctx, tx, userUID, msg)`**; it never checks a preference or touches a queue
-  itself. `New(Config{Notifications, Projects, Push, Mail, BaseURL, Logger})` (panicking on a missing
+  itself. `New(Config{Notifications, Projects, Push, Mail, BaseURL, Standing, Logger})` (panicking on a missing
   dependency; wired once as `buildDeliverer` in `cmd/kukatko/notifydeliver.go` over `notification.Store`,
   `project.Store`, the push and mail enqueuers and `mail.base_url`).
   - **Project and deep links.** `Message.ProjectUID` is required (`notification.ErrNoProject`, nothing
@@ -7127,6 +7198,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     wants (`notification.Store.WantedTx`, one read) **and** the instance can deliver — push counts only
     with `push.enabled`, e-mail only with `mail.enabled`, in-app always. The tagging recorder asks it
     before it collects anything.
+  - **Standing first.** Before anything else `Deliver` asks `notifystanding.InStanding` on `tx` (or the
+    `Config.Standing` stub a unit test injects) whether the account may get a notification of
+    `msg.ProjectUID` at all — an approved member, enabled, the project active; a maintainer only as a member,
+    except the `registration_pending` kind. Out of standing → nothing, no record, zero `Result`, counted
+    (`StageDeliver`). Every producer delivers through here, so this one check covers them all.
+    The push and the mail it queues are **addressed** (`notifystanding.Addressee{user, project, kind}`), and
+    their handlers ask the same question again when they run.
   - **`Deliver`**: no channel → nothing at all, no record (zero `Result`). Otherwise **one record**
     (`CreateTx`, `InApp` = whether in-app is among the channels) — written for any channel, since the push
     opens it and the mail links to it, and kept out of the inbox unless in-app was wanted; then the push
@@ -7143,7 +7221,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     transaction's recipient read): the fan-out table — none, in-app only, push only, mail only, all — with
     the record and its in-app flag, the push and generic-mail payloads (absolute link), a kind's own mail
     builder without a base URL, both instance switches off (no record), a blank address skipping only the
-    mail, the wrapped failures, the required dependencies.
+    mail, the wrapped failures, the required dependencies; both queued deliveries addressed to the account,
+    project and kind; an account out of standing getting nothing on any channel (counted); a failed
+    standing query failing the delivery.
 
 - **Notification retention (`internal/notifypurgejob`):** the `notification_purge` job and its scheduler,
   **one purge per project** (a library-wide job). `New(Config{Notifications, Retention, Clock, Logger})` —
@@ -7152,15 +7232,22 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `notification.DefaultRetention()` (read 30 d, unread 90 d) unless a retention is given; the purge deletes
   only that project's rows (`notifications.project_id`); a failure goes back to the queue.
   `NewScheduler(enqueuer, projects, interval, logger)` enqueues through
-  `jobs.Enqueuer.EnqueueNotificationPurge(ctx, projectUID)` one purge per **active** project (`Tick`,
-  `project.Active`; a failed project does not stop the others) **at startup and every `Interval` (24 h)**
+  `jobs.Enqueuer.EnqueueNotificationPurge(ctx, projectUID)` one purge per project — **a deactivated one
+  included** (`Tick`; a failed project does not stop the others) **at startup and every `Interval` (24 h)**
   after, until its context ends; a failed round is logged and the loop goes on. Dedup:
   `idx_jobs_notification_purge_dedup` (migration 0108, on the type alone since 0096) keeps at most one
   **queued** purge per project, so restarts cannot pile them up. Wired in `cmd/kukatko/notifydeliver.go`
   (`buildNotifyPurgeService` registered unconditionally, `buildNotifyPurgeScheduler` started by `serve`).
+  **A deactivated project is decided as "normal retention, out of reach meanwhile"**, not "purged at
+  deactivation": its members get a 404 at `/p/<slug>/` so its inbox is unreachable, every push or mail
+  still queued for it is dropped at send (`internal/notifystanding`), and the daily purge then deletes its
+  notifications at the usual ages — a project switched back on finds its recent inbox as it was. Before
+  the review fix (J-6) the scheduler skipped deactivated projects and their notifications lived forever.
   Tests: the retention defaulting, the clock, the payload's project and the legacy fallback, the returned
-  failure, the scheduler's startup + periodic enqueues surviving failures, one enqueue per active project,
-  its defaults; the dedup is covered in `internal/jobs`' integration tests.
+  failure, the scheduler's startup + periodic enqueues surviving failures, one enqueue per project (the
+  deactivated one included), its defaults; over a real database one round over the real project list
+  purges a deactivated project's old notification and keeps its fresh one; the dedup is covered in
+  `internal/jobs`' integration tests.
 
 - **Projects (`internal/project`):** the first step of multi-tenancy
   ([design](superpowers/specs/2026-10-11-multi-tenancy-design.md)) — the `projects` table (migration

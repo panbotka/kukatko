@@ -21,6 +21,15 @@
 // server to must not grow a queue of jobs that can only fail — and a recipient in
 // the reserved .invalid domain is skipped, because those are the placeholder
 // addresses of accounts imported without a real one.
+//
+// A mail that is a notification's e-mail channel is addressed (Mail.For): it
+// names the account and the project, and the handler asks again, when it runs,
+// whether that account is still in standing in the project
+// (internal/notifystanding). A mail for somebody whose membership was removed
+// or never approved, whose account was disabled, or whose project was
+// deactivated since it was queued is dropped and counted, not sent. The
+// account's own mails (registration, approval, password reset, rename) carry no
+// addressee and are never held back by it.
 package mailjob
 
 import (
@@ -33,6 +42,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mailer"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/worker"
 )
 
@@ -65,13 +75,27 @@ type payload struct {
 	To string `json:"to"`
 	// Data is the template's data struct, encoded as JSON.
 	Data json.RawMessage `json:"data,omitempty"`
+	// For is the account and project of a notification mail, checked again when
+	// the job runs; nil for an account's own mails.
+	For *notifystanding.Addressee `json:"for,omitempty"`
 }
 
-// ServiceConfig bundles the handler's collaborators. Sender is required.
+// Standing answers whether an account may still receive a notification of a
+// project. It is satisfied by *notifystanding.Checker.
+type Standing interface {
+	// InStanding reports whether a may receive the notification now.
+	InStanding(ctx context.Context, a notifystanding.Addressee) (bool, error)
+}
+
+// ServiceConfig bundles the handler's collaborators. Sender and Standing are
+// required.
 type ServiceConfig struct {
 	// Sender delivers the rendered message. Production wires mailer.SMTPSender;
 	// tests wire mailer.Fake.
 	Sender mailer.Sender
+	// Standing re-checks an addressed (notification) mail's account when the
+	// job runs.
+	Standing Standing
 	// Logger records what was delivered; nil uses slog.Default().
 	Logger *slog.Logger
 }
@@ -79,22 +103,23 @@ type ServiceConfig struct {
 // Service is the worker handler for `mail_send` jobs: it renders the template
 // named in the payload and hands the message to the sender.
 type Service struct {
-	sender mailer.Sender
-	log    *slog.Logger
+	sender   mailer.Sender
+	standing Standing
+	log      *slog.Logger
 }
 
-// NewService builds a Service from cfg. It panics if Sender is nil, since a mail
-// handler without a sender is a wiring bug that should surface at startup rather
-// than dead-letter every message.
+// NewService builds a Service from cfg. It panics if Sender or Standing is nil,
+// since a mail handler without either is a wiring bug that should surface at
+// startup rather than dead-letter (or mis-deliver) every message.
 func NewService(cfg ServiceConfig) *Service {
-	if cfg.Sender == nil {
-		panic("mailjob: NewService requires a Sender")
+	if cfg.Sender == nil || cfg.Standing == nil {
+		panic("mailjob: NewService requires a Sender and a Standing")
 	}
 	log := cfg.Logger
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Service{sender: cfg.Sender, log: log}
+	return &Service{sender: cfg.Sender, standing: cfg.Standing, log: log}
 }
 
 // Handle is the worker.HandlerFunc for `mail_send` jobs. It decodes the payload,
@@ -119,6 +144,9 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	if p.To == "" {
 		return worker.Terminal(ErrMissingRecipient) //nolint:wrapcheck
 	}
+	if ok, err := s.addressed(ctx, job, p); err != nil || !ok {
+		return err
+	}
 	rendered, err := render(p)
 	if err != nil {
 		return worker.Terminal(err) //nolint:wrapcheck
@@ -133,6 +161,27 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	s.log.InfoContext(ctx, "mail delivered",
 		slog.String("template", p.Template), slog.Int64("job_id", job.ID))
 	return nil
+}
+
+// addressed reports whether p may still be sent: always for a mail that names
+// no addressee, and for a notification mail only while its account is in
+// standing in its project. A drop is counted and logged; only a failed
+// standing query is an error, for the queue to retry.
+func (s *Service) addressed(ctx context.Context, job jobs.Job, p payload) (bool, error) {
+	if p.For == nil {
+		return true, nil
+	}
+	ok, err := s.standing.InStanding(ctx, *p.For)
+	if err != nil {
+		return false, fmt.Errorf("mailjob: checking the addressee of %s: %w", p.Template, err)
+	}
+	if !ok {
+		notifystanding.CountDrop(notifystanding.StageMail, notifystanding.ReasonStanding)
+		s.log.InfoContext(ctx, "mail not sent: the account may no longer receive it",
+			slog.String("template", p.Template), slog.Int64("job_id", job.ID),
+			slog.String("user_uid", p.For.UserUID), slog.String("project_uid", p.For.ProjectUID))
+	}
+	return ok, nil
 }
 
 // render turns a payload into the message its template describes, decoding the

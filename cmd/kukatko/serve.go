@@ -24,6 +24,7 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mapy"
 	"github.com/panbotka/kukatko/internal/metrics"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/obs"
 	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/project"
@@ -215,13 +216,26 @@ func trustedProxies(cfg *config.Config, logger *slog.Logger) *clientip.Set {
 	return set
 }
 
-// registerDBPoolMetrics installs the pgx pool collector on reg, a no-op when
-// metrics are disabled (reg nil).
+// registerDBPoolMetrics installs the pgx pool collector on reg, and the
+// counter of notifications dropped for standing beside it (both are process
+// state sampled at scrape time); a no-op when metrics are disabled (reg nil).
 func registerDBPoolMetrics(reg *metrics.Registry, db *database.DB) {
 	if reg == nil {
 		return
 	}
 	reg.RegisterDBPool(db.Pool())
+	reg.RegisterNotificationDrops(notificationDrops)
+}
+
+// notificationDrops adapts internal/notifystanding's process-wide drop counters
+// to the metrics package's shape.
+func notificationDrops() []metrics.NotificationDrop {
+	drops := notifystanding.Drops()
+	out := make([]metrics.NotificationDrop, len(drops))
+	for i, d := range drops {
+		out[i] = metrics.NotificationDrop{Stage: string(d.Stage), Reason: string(d.Reason), Count: d.Count}
+	}
+	return out
 }
 
 // setupAuth builds the auth API, bootstraps the initial admin account, and

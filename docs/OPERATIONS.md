@@ -2863,9 +2863,23 @@ pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 
   account turns it on** (since 2026-10-11; before, the tagged and registration pushes defaulted on —
   accounts that saved an explicit choice keep it). One delivery path, `internal/notifydeliver`, decides
   for all producers. The records are purged by the **`notification_purge`** job (`internal/notifypurgejob`):
-  enqueued at startup and every 24 h, it deletes read notifications older than **30 days** and unread
-  ones older than **90 days** (fixed retention, not configurable); at most one is ever queued
-  (migration 0096). The job shows in *System → Jobs* like every other.
+  enqueued at startup and every 24 h, **one per project, deactivated projects included**, it deletes read
+  notifications older than **30 days** and unread ones older than **90 days** (fixed retention, not
+  configurable); at most one per project is ever queued (migration 0108). The job shows in *System → Jobs*
+  like every other.
+- **Who may receive a notification (`internal/notifystanding`):** only an account **in standing in the
+  notification's project** — an approved member, the account enabled, the project active. A maintainer is
+  notified only as a member of the project, except of a waiting registration (any enabled maintainer of an
+  active project). The rule is checked when a notification is produced **and again when its queued push or
+  e-mail is sent**, so what an operator does takes effect on the queue too: **disabling an account,
+  removing or un-approving a membership, or deactivating a project stops its pending `push_send` and
+  `mail_send` notification jobs** — they complete unsent (*System → Jobs* shows them `done`, the log line is
+  "push not sent: …" / "mail not sent: …"). A push queued for an account whose browser was since subscribed
+  by somebody else is dropped too. A notification already delivered is not recalled. A deactivated project's
+  inbox is unreachable to its members (404) and its notifications age out at the normal retention above;
+  switching the project back on brings back the inbox as it was. Every drop is counted in
+  `kukatko_notifications_dropped_total{stage,reason}` (below). The account's own mails — registration,
+  approval, password reset, rename — are not notifications and are never held back by this.
 
 ### Upload limits — how the three per-file caps and the project quota interact
 
@@ -3010,6 +3024,14 @@ becomes a label value.
   `kukatko_jobs_queue_depth{state}` / `_by_type{type}` / `_by_type_state{type,state}` (all three folded
   from **one** `GROUP BY type, state` — the two one-dimensional families are sums over the third, so
   they can never disagree) and `kukatko_geocode_credits_remaining` / `_limit`.
+- **Notifications dropped:** `kukatko_notifications_dropped_total{stage,reason}` — notifications refused
+  because the account may no longer receive them, since the process started. `stage` is where:
+  `deliver` (when produced), `push` / `mail` (when the queued job ran); `reason` is why: `standing` (not an
+  approved member any more, disabled, or the project deactivated), `device_moved` (a push whose browser
+  subscription now belongs to another account), `unaddressed` (a push queued by a release before pushes
+  named their account — appears only right after the upgrade). Every pair is exported from startup at 0.
+  A steady trickle of `standing` after somebody was disabled or removed is expected; a burst of
+  `device_moved` means a shared browser changing hands.
 - **Library content, per project**, memoised for `metrics.library_ttl` (default 1 m): every gauge below
   carries a **`project` label = the project's slug** (never its name — `/metrics` is unauthenticated), one
   series set per **active** project, counted by one grouped SQL statement (`internal/system`'s

@@ -8,8 +8,10 @@
 //
 // The rules are few and all in one place (wanted): nobody is told about their
 // own doing (asking yourself onto a task), a hand-over by nobody (an internal
-// path with no acting account, a NULL added_by) is not a hand-over, and a
-// disabled or not-yet-approved account hears nothing. "Already on the task" is
+// path with no acting account, a NULL added_by) is not a hand-over, and an
+// account out of standing in the task's project (internal/notifystanding:
+// disabled, not an approved member — a maintainer included —, or the project
+// deactivated) hears nothing. "Already on the task" is
 // the store's rule — it reports only a person who was not on the task before,
 // so re-asking is silent — and whether the person wants the kind at all is
 // notifydeliver's question.
@@ -33,6 +35,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/notifydeliver"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/phototask"
 )
 
@@ -98,9 +101,9 @@ func TaskPath(uid string) string {
 type account struct {
 	// Disabled is whether the account was switched off.
 	Disabled bool
-	// Approved is whether the account may enter the task's project — an
-	// approved member there, or a maintainer; one still waiting for approval
-	// could not open the task.
+	// Approved is whether the account is in standing in the task's project —
+	// an approved member of an active project (internal/notifystanding); one
+	// still waiting for approval could not open the task.
 	Approved bool
 }
 
@@ -125,15 +128,14 @@ func wanted(a phototask.Assignment, acct account) bool {
 // contextSQL reads what one notification needs, in one round trip: the task's
 // project (the inbox the notification lands in) and title, the asking account's
 // name (display name, else username, empty when the account is gone or nobody
-// asked) and the asked account's standing. The task and the asked account are
-// both known to exist — the assignment that just wrote the participant row
-// holds foreign keys to both.
-const contextSQL = `
+// asked) and the asked account's standing (internal/notifystanding). The task
+// and the asked account are both known to exist — the assignment that just
+// wrote the participant row holds foreign keys to both.
+var contextSQL = `
 SELECT t.project_id, t.title,
        COALESCE(NULLIF(a.display_name, ''), a.username, ''),
        u.disabled,
-       u.role = 'maintainer' OR EXISTS (SELECT 1 FROM project_members pm
-           WHERE pm.user_uid = u.uid AND pm.project_uid = t.project_id AND pm.approved_at IS NOT NULL)
+       ` + notifystanding.MemberSQL("u.uid", "t.project_id") + `
 FROM photo_tasks t
 JOIN users u ON u.uid = $2
 LEFT JOIN users a ON a.uid = $3

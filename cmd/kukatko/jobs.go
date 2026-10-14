@@ -23,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/namelessjob"
 	"github.com/panbotka/kukatko/internal/notifypurgejob"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/ocrjob"
 	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/processapi"
@@ -178,7 +179,7 @@ func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service,
 	if err != nil {
 		return registryServices{}, nil, err
 	}
-	mailSvc, err := buildMailServiceOrNil(d.cfg)
+	mailSvc, err := buildMailServiceOrNil(d.cfg, d.db)
 	if err != nil {
 		return registryServices{}, nil, err
 	}
@@ -190,7 +191,7 @@ func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service,
 	if err != nil {
 		return registryServices{}, nil, err
 	}
-	pushSvc, err := buildPushService(d.cfg, push.NewStore(d.db.Pool()))
+	pushSvc, err := buildPushService(d.cfg, push.NewStore(d.db.Pool()), notifystanding.NewChecker(d.db.Pool()))
 	if err != nil {
 		return registryServices{}, nil, err
 	}

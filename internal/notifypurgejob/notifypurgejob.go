@@ -2,7 +2,15 @@
 // the `notification_purge` job deletes, in one project, every read notification
 // older than the read retention and every unread one older than the unread
 // retention (notification.Store.Purge), and a scheduler enqueues one such job
-// per active project once a day.
+// per project once a day.
+//
+// A deactivated project is purged like any other. Its notifications are
+// already out of reach — a member of a deactivated project is answered 404 at
+// /p/<slug>/ and so never sees its inbox, and every push or e-mail still queued
+// for it is dropped when it runs (internal/notifystanding) — and the normal
+// retention then deletes them, so a library switched off does not keep its
+// titles, album names and frozen photo sets forever. Nothing is purged early at
+// deactivation: a project switched back on finds its recent inbox as it was.
 //
 // It follows the task digest's shape (internal/taskdigestjob): the scheduler
 // only enqueues, the work runs in the queue, so a run is retried, observable
@@ -109,14 +117,14 @@ type PurgeEnqueuer interface {
 }
 
 // Projects lists the instance's projects, so the scheduler can enqueue one
-// purge per active one; *project.Store satisfies it.
+// purge per project; *project.Store satisfies it.
 type Projects interface {
 	// List returns every project, active or not.
 	List(ctx context.Context) ([]project.Project, error)
 }
 
-// Scheduler enqueues the purge of every active project at startup and then once
-// per interval, until its context ends.
+// Scheduler enqueues the purge of every project — deactivated ones included —
+// at startup and then once per interval, until its context ends.
 type Scheduler struct {
 	enqueuer PurgeEnqueuer
 	projects Projects
@@ -124,7 +132,7 @@ type Scheduler struct {
 	log      *slog.Logger
 }
 
-// NewScheduler returns a Scheduler enqueuing through enqueuer, for every active
+// NewScheduler returns a Scheduler enqueuing through enqueuer, for every
 // project projects lists, every interval (a non-positive interval uses
 // Interval). A nil logger uses slog.Default(). It panics without an enqueuer or
 // a project lister.
@@ -172,10 +180,11 @@ func (s *Scheduler) tick(ctx context.Context) {
 	}
 }
 
-// Tick enqueues one purge for every active project and returns how many it
-// enqueued (a project whose purge is already queued counts: the enqueue is a
-// no-op for it). A deactivated project is skipped — its data stays, untouched.
-// It goes on past a failed project and returns the failures joined.
+// Tick enqueues one purge for every project and returns how many it enqueued
+// (a project whose purge is already queued counts: the enqueue is a no-op for
+// it). A deactivated project is purged too — retention applies to it as to any
+// other (see the package documentation). It goes on past a failed project and
+// returns the failures joined.
 func (s *Scheduler) Tick(ctx context.Context) (int, error) {
 	all, err := s.projects.List(ctx)
 	if err != nil {
@@ -185,7 +194,7 @@ func (s *Scheduler) Tick(ctx context.Context) (int, error) {
 		enqueued int
 		errs     []error
 	)
-	for _, p := range project.Active(all) {
+	for _, p := range all {
 		if err := s.enqueuer.EnqueueNotificationPurge(ctx, p.UID); err != nil {
 			errs = append(errs, fmt.Errorf("enqueuing the purge of %s: %w", p.UID, err))
 			continue

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/panbotka/kukatko/internal/notifystanding"
 )
 
 // DigestLimit is how many tasks one digest mail lists. A person with more than
@@ -66,22 +68,21 @@ type DigestTarget struct {
 //
 // It groups per (project, person): the participant's membership of the task's
 // project carries the watermark (task_digest_at), so each project's digest is
-// sent and stamped on its own. Accounts that cannot sign in — disabled — and
-// memberships nobody approved are left out rather than mailed about a queue
-// they cannot open, and so is a participant who is no longer a member, or a
-// deactivated project. $2/$3 narrow the run to one project and one person
-// ("" = all), which is how the job for one pair reads its own digest.
-const waitingForEveryoneSQL = `
+// sent and stamped on its own. Only a participant in standing in the task's
+// project is mailed, by the one rule every notification follows
+// (internal/notifystanding): accounts that cannot sign in — disabled —,
+// memberships nobody approved, a participant who is no longer a member and a
+// deactivated project are all left out rather than mailed about a queue they
+// cannot open. $2/$3 narrow the run to one project and one person ("" = all),
+// which is how the job for one pair reads its own digest.
+var waitingForEveryoneSQL = `
 WITH waiting AS (
     SELECT t.project_id, p.user_uid, t.uid, t.title, t.state, COALESCE(la.at, t.created_at) AS activity_at
     FROM photo_task_participants p
-    JOIN photo_tasks t ON t.uid = p.task_uid AND t.state NOT IN ('done', 'rejected')
-    JOIN users u ON u.uid = p.user_uid AND NOT u.disabled
-    JOIN project_members pm ON pm.project_uid = t.project_id AND pm.user_uid = p.user_uid
-        AND pm.approved_at IS NOT NULL
-    JOIN projects pr ON pr.uid = t.project_id AND pr.active` +
+    JOIN photo_tasks t ON t.uid = p.task_uid AND t.state NOT IN ('done', 'rejected')` +
 	activityJoin + `
     WHERE la.by IS DISTINCT FROM p.user_uid
+      AND ` + notifystanding.MemberSQL("p.user_uid", "t.project_id") + `
       AND ($2::text = '' OR t.project_id = $2::text)
       AND ($3::text = '' OR p.user_uid = $3::text)
 )

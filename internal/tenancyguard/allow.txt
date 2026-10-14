@@ -13,7 +13,7 @@
 # ("stale allow-list entry"): when a file shifts, move its entries with it.
 
 # internal/albumfeaturedjob
-internal/albumfeaturedjob/service.go:112 worker-only: the album_featured_notify job learns its project from the album uid of its payload
+internal/albumfeaturedjob/service.go:116 worker-only: the album_featured_notify job learns its project from the album uid of its payload
 
 # internal/audit
 internal/audit/audit.go:1018 Count backs both audit listings: the maintainer's instance-wide /audit (the legitimate cross-project read) and the project admin's /p/{project}/audit, whose handler always sets Filter.ProjectUID
@@ -51,9 +51,9 @@ internal/invite/accept.go:36 invite uid comes from lockOpen (code hash, FOR UPDA
 internal/invite/store.go:206 uid was locked by `uid = $1 AND project_uid = $2 FOR UPDATE` just before, in the same tx
 
 # internal/mentionnotify
-internal/mentionnotify/mentionnotify.go:155 runs in the comment's tx on its parent, which the comments store proved in the project; reads that project back
-internal/mentionnotify/mentionnotify.go:158 runs in the comment's tx on its parent task, which the comments store proved in the project; reads that project back
-internal/mentionnotify/mentionnotify.go:163 runs in the comment's tx on its parent album, which the comments store proved in the project; reads that project back
+internal/mentionnotify/mentionnotify.go:159 runs in the comment's tx on its parent, which the comments store proved in the project; reads that project back
+internal/mentionnotify/mentionnotify.go:162 runs in the comment's tx on its parent task, which the comments store proved in the project; reads that project back
+internal/mentionnotify/mentionnotify.go:167 runs in the comment's tx on its parent album, which the comments store proved in the project; reads that project back
 
 # internal/notification
 internal/notification/store.go:164 Photos first checks the notification with Get(project, owner, uid); this reads its child photo rows
@@ -140,7 +140,10 @@ internal/storagemigrate/store.go:85 instance-wide storage migration work list, u
 internal/storagemigrate/store.go:123 storage migration stamps a uid it read from its own instance-wide batch (CLI only)
 
 # internal/tagnotifyjob
-internal/tagnotifyjob/recorder.go:103 tag observer runs in the people store's tx after requirePhotoInProject/requireLinkable proved photo+subject in-project
+internal/tagnotifyjob/recorder.go:104 tag observer runs in the people store's tx after requirePhotoInProject/requireLinkable proved photo+subject in-project
+
+# internal/taskassignnotify
+internal/taskassignnotify/taskassignnotify.go:139 assign observer runs in the phototask store's tx on a task it proved in the project; reads that project back
 
 # internal/uploadlink
 internal/uploadlink/recode.go:71 RestoreCode first locks the link with lockLiveCode (uid AND project_id FOR UPDATE) in the same tx

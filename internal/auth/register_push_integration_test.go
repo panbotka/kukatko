@@ -17,6 +17,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/notifydeliver"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/push"
 	"github.com/panbotka/kukatko/internal/pushjob"
@@ -30,7 +31,7 @@ type failingPush struct{}
 func (failingPush) Enabled() bool { return true }
 
 // Enqueue always fails.
-func (failingPush) Enqueue(context.Context, pushjob.Execer, string, push.Notification) (int, error) {
+func (failingPush) Enqueue(context.Context, pushjob.Execer, notifystanding.Addressee, push.Notification) (int, error) {
 	return 0, errors.New("the queue is on fire")
 }
 

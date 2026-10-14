@@ -672,3 +672,38 @@ func TestAccountDeleted_windowFindsNothing(t *testing.T) {
 		t.Fatalf("notifications = %d, want 0", n)
 	}
 }
+
+// TestWindow_outOfStandingAtCloseSendsNothing checks the window's close asks
+// the standing question again (J-4): an account disabled, a membership left
+// unapproved or a project deactivated after the tag was recorded gets no
+// notification and no push when the window closes, and the notices are still
+// consumed.
+func TestWindow_outOfStandingAtCloseSendsNothing(t *testing.T) {
+	for name, change := range map[string]string{
+		"account disabled":      `UPDATE users SET disabled = true WHERE uid = $1`,
+		"membership unapproved": `UPDATE project_members SET approved_at = NULL WHERE user_uid = $1`,
+		"project deactivated": `UPDATE projects SET active = false
+			WHERE uid IN (SELECT project_uid FROM project_members WHERE user_uid = $1)`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			f.prefer(t, notification.ChannelInApp, true)
+			f.tag(t, f.addPhoto(t, "p", 0), taggerUID)
+			if n := f.notices(t); n != 1 {
+				t.Fatalf("notices before the change = %d, want 1", n)
+			}
+			f.exec(t, change, annaUID)
+
+			f.closeWindow(t)
+			if n := f.count(t, "SELECT count(*) FROM notifications"); n != 0 {
+				t.Fatalf("notifications = %d, want 0", n)
+			}
+			if n := f.count(t, "SELECT count(*) FROM jobs WHERE type = $1", jobs.TypePushSend); n != 0 {
+				t.Fatalf("push_send jobs = %d, want 0", n)
+			}
+			if n := f.notices(t); n != 0 {
+				t.Fatalf("notices after the close = %d, want them consumed", n)
+			}
+		})
+	}
+}

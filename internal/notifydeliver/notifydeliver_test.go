@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mailer"
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/push"
 	"github.com/panbotka/kukatko/internal/pushjob"
@@ -63,17 +64,21 @@ type fakePush struct {
 	on   bool
 	err  error
 	sent []push.Notification
+	to   []notifystanding.Addressee
 }
 
 // Enabled reports the configured switch.
 func (f *fakePush) Enabled() bool { return f.on }
 
 // Enqueue records n as delivered to two devices.
-func (f *fakePush) Enqueue(_ context.Context, _ pushjob.Execer, _ string, n push.Notification) (int, error) {
+func (f *fakePush) Enqueue(
+	_ context.Context, _ pushjob.Execer, to notifystanding.Addressee, n push.Notification,
+) (int, error) {
 	if f.err != nil {
 		return 0, f.err
 	}
 	f.sent = append(f.sent, n)
+	f.to = append(f.to, to)
 	return 2, nil
 }
 
@@ -92,23 +97,34 @@ func (f *fakeMail) Enqueue(_ context.Context, _ jobs.Execer, m mailjob.Mail) err
 	return nil
 }
 
-// fakeTx is a transaction that answers only the recipient lookup; every other
-// method panics through the nil embedded interface.
+// fakeTx is a transaction that answers only the standing question and the
+// recipient lookup; every other method panics through the nil embedded
+// interface.
 type fakeTx struct {
 	pgx.Tx
 	email, name string
+	// outOfStanding answers the standing question with "no".
+	outOfStanding bool
 }
 
-// QueryRow answers the recipient lookup.
+// QueryRow answers the standing question and the recipient lookup.
 func (f fakeTx) QueryRow(context.Context, string, ...any) pgx.Row {
-	return fakeRow{email: f.email, name: f.name}
+	return fakeRow{email: f.email, name: f.name, standing: !f.outOfStanding}
 }
 
-// fakeRow scans the recipient's address and name.
-type fakeRow struct{ email, name string }
+// fakeRow scans the standing (one bool destination) or the recipient's address
+// and name (two strings).
+type fakeRow struct {
+	email, name string
+	standing    bool
+}
 
-// Scan fills the two string destinations.
+// Scan fills the destinations of whichever question is asked.
 func (r fakeRow) Scan(dest ...any) error {
+	if ok, isBool := dest[0].(*bool); isBool {
+		*ok = r.standing
+		return nil
+	}
 	*dest[0].(*string) = r.email
 	*dest[1].(*string) = r.name
 	return nil
@@ -184,6 +200,62 @@ func TestDeliver_fanOut(t *testing.T) {
 	}
 }
 
+// TestDeliver_outOfStanding checks an account out of standing in the
+// project gets nothing on any channel it wants — no record, no push, no mail —
+// and the drop is counted.
+func TestDeliver_outOfStanding(t *testing.T) {
+	t.Parallel()
+
+	notes := &fakeNotes{wanted: notification.AllChannels()}
+	pusher := &fakePush{on: true}
+	mail := &fakeMail{on: true}
+	d := New(Config{Projects: fakeProjects{}, Notifications: notes, Push: pusher, Mail: mail})
+	before := deliverDrops()
+	got, err := d.Deliver(t.Context(), fakeTx{email: "anna@example.org", outOfStanding: true}, "us1", message())
+	if err != nil {
+		t.Fatalf("Deliver: %v", err)
+	}
+	if got.Notification != nil || got.Channels.Any() || len(notes.created) != 0 ||
+		len(pusher.sent) != 0 || len(mail.sent) != 0 {
+		t.Errorf("result %+v, %d records, %d pushes, %d mails; want nothing",
+			got, len(notes.created), len(pusher.sent), len(mail.sent))
+	}
+	if after := deliverDrops(); after <= before {
+		t.Errorf("deliver drops = %d, want more than %d", after, before)
+	}
+}
+
+// TestDeliver_standingFails checks a failed standing query fails the delivery
+// rather than notifying blindly.
+func TestDeliver_standingFails(t *testing.T) {
+	t.Parallel()
+
+	notes := &fakeNotes{wanted: notification.AllChannels()}
+	boom := errors.New("boom")
+	d := New(Config{
+		Projects: fakeProjects{}, Notifications: notes, Push: &fakePush{on: true}, Mail: &fakeMail{on: true},
+		Standing: func(context.Context, notifystanding.Querier, notifystanding.Addressee) (bool, error) {
+			return false, boom
+		},
+	})
+	if _, err := d.Deliver(t.Context(), fakeTx{}, "us1", message()); !errors.Is(err, boom) {
+		t.Fatalf("Deliver error = %v, want %v", err, boom)
+	}
+	if len(notes.created) != 0 {
+		t.Errorf("recorded %d notifications, want none", len(notes.created))
+	}
+}
+
+// deliverDrops reads the process-wide count of deliveries refused for standing.
+func deliverDrops() uint64 {
+	for _, d := range notifystanding.Drops() {
+		if d.Stage == notifystanding.StageDeliver && d.Reason == notifystanding.ReasonStanding {
+			return d.Count
+		}
+	}
+	return 0
+}
+
 // boolToInt is 1 for true.
 func boolToInt(b bool) int {
 	if b {
@@ -210,10 +282,16 @@ func TestDeliver_payloads(t *testing.T) {
 	if !reflect.DeepEqual(pusher.sent, []push.Notification{wantPush}) {
 		t.Errorf("push = %+v, want %+v", pusher.sent, wantPush)
 	}
+	// Both queued deliveries are addressed, so their handlers re-check the
+	// account's standing when they run.
+	wantTo := notifystanding.Addressee{UserUID: "us1", ProjectUID: "pj1", Kind: "tagged"}
+	if !reflect.DeepEqual(pusher.to, []notifystanding.Addressee{wantTo}) {
+		t.Errorf("push addressed to %+v, want %+v", pusher.to, wantTo)
+	}
 	wantMail := mailjob.Notification("anna@example.org", mailer.NotificationData{
 		DisplayName: "Anna", ProjectName: "Rodina", Title: "Title", Body: "Body",
 		URL: "https://k.example/p/rodina/n/nt1",
-	})
+	}).Addressed(wantTo)
 	if !reflect.DeepEqual(mail.sent, []mailjob.Mail{wantMail}) {
 		t.Errorf("mail = %+v, want %+v", mail.sent, wantMail)
 	}
@@ -248,7 +326,8 @@ func TestDeliver_linkUnderTheProject(t *testing.T) {
 		t.Errorf("push = %+v, want URL %q", pusher.sent, want)
 	}
 	if len(mail.sent) != 1 || !reflect.DeepEqual(mail.sent[0], mailjob.Notification("anna@example.org",
-		mailer.NotificationData{ProjectName: "Rodina", Title: "Title", Body: "Body", URL: "https://k.example" + want})) {
+		mailer.NotificationData{ProjectName: "Rodina", Title: "Title", Body: "Body", URL: "https://k.example" + want}).
+		Addressed(notifystanding.Addressee{UserUID: "us1", ProjectUID: "pj1", Kind: "tagged"})) {
 		t.Errorf("mail = %+v, want the link under the base URL", mail.sent)
 	}
 

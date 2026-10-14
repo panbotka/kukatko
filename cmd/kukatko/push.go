@@ -71,8 +71,11 @@ func newPushGenerateKeysCmd() *cobra.Command {
 // handler completes any job left over from a period when push was on without
 // sending it, so an operator turning push off drains the queue instead of
 // leaving jobs nothing will ever claim. An enabled section with a bad key pair
-// is an error, so the start fails rather than every notification.
-func buildPushService(cfg *config.Config, store pushjob.SubscriptionStore) (*pushjob.Service, error) {
+// is an error, so the start fails rather than every notification. standing
+// re-checks, when a push is sent, that its account may still receive it.
+func buildPushService(
+	cfg *config.Config, store pushjob.SubscriptionStore, standing pushjob.Standing,
+) (*pushjob.Service, error) {
 	sender, err := push.New(push.Config{
 		Enabled:    cfg.Push.Enabled,
 		PublicKey:  cfg.Push.VAPID.PublicKey,
@@ -83,6 +86,6 @@ func buildPushService(cfg *config.Config, store pushjob.SubscriptionStore) (*pus
 		return nil, fmt.Errorf("building the push sender: %w", err)
 	}
 	return pushjob.NewService(pushjob.ServiceConfig{
-		Enabled: cfg.Push.Enabled, Sender: sender, Store: store,
+		Enabled: cfg.Push.Enabled, Sender: sender, Store: store, Standing: standing,
 	}), nil
 }

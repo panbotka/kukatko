@@ -20,6 +20,15 @@
 // as gone is deleted, and one that keeps failing is retired once its run of
 // consecutive failures reaches MaxFailures. The sender in internal/push only
 // reports; it never touches the table.
+//
+// A job is addressed to an account as well as to a device, and the handler
+// checks both again before it sends: a subscription row follows its browser
+// (push.Store moves an endpoint to whoever subscribed it last), so a push whose
+// device now belongs to another account is dropped rather than shown to the
+// wrong person; and an account no longer in standing in the notification's
+// project (internal/notifystanding — membership removed or unapproved, account
+// disabled, project deactivated) gets nothing either. Both drops complete the
+// job and are counted.
 package pushjob
 
 import (
@@ -31,6 +40,7 @@ import (
 	"strings"
 
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/push"
 	"github.com/panbotka/kukatko/internal/worker"
 )
@@ -44,6 +54,9 @@ var (
 	ErrMissingSubscription = errors.New("pushjob: payload names no subscription")
 	// ErrMissingUser indicates Enqueue was asked to notify nobody — a caller bug.
 	ErrMissingUser = errors.New("pushjob: no account to notify")
+	// ErrMissingProject indicates Enqueue was asked to notify about no project
+	// — a caller bug: every notification belongs to one.
+	ErrMissingProject = errors.New("pushjob: no project to notify about")
 )
 
 // MaxFailures is the run of consecutive failed sends after which a subscription
@@ -55,14 +68,25 @@ var (
 const MaxFailures = 20
 
 // payload is the JSON shape of a `push_send` job: which subscription to deliver
-// to and what. The subscription is named by id and read when the job runs, so
-// a browser that re-subscribed with fresh keys meanwhile still gets the message
-// and one that unsubscribed gets nothing.
+// to, whom and what. The subscription is named by id and read when the job
+// runs, so a browser that re-subscribed with fresh keys meanwhile still gets the
+// message and one that unsubscribed gets nothing; the addressee is what the
+// handler checks the subscription's owner and the account's standing against.
 type payload struct {
 	// SubscriptionID is the push_subscriptions row to deliver to.
 	SubscriptionID string `json:"subscription_id"`
+	// To is the account the notification is for and its project; empty in a
+	// job queued by a release before pushes were addressed, which is dropped.
+	To notifystanding.Addressee `json:"to"`
 	// Notification is what to show on that device.
 	Notification push.Notification `json:"notification"`
+}
+
+// Standing answers whether an account may still receive a notification of a
+// project. It is satisfied by *notifystanding.Checker.
+type Standing interface {
+	// InStanding reports whether a may receive the notification now.
+	InStanding(ctx context.Context, a notifystanding.Addressee) (bool, error)
 }
 
 // SubscriptionStore is the part of push.Store the handler needs: reading the
@@ -79,8 +103,8 @@ type SubscriptionStore interface {
 	DeleteByID(ctx context.Context, userUID, id string) error
 }
 
-// ServiceConfig bundles the handler's collaborators. Sender and Store are
-// required.
+// ServiceConfig bundles the handler's collaborators. Sender, Store and Standing
+// are required.
 type ServiceConfig struct {
 	// Enabled mirrors push.enabled. With push switched off a job left in the
 	// queue completes without sending anything.
@@ -90,6 +114,9 @@ type ServiceConfig struct {
 	Sender push.Sender
 	// Store reads the subscription and keeps its bookkeeping.
 	Store SubscriptionStore
+	// Standing re-checks, when the job runs, that the account may still receive
+	// the notification.
+	Standing Standing
 	// MaxFailures overrides the package's MaxFailures; <= 0 uses it.
 	MaxFailures int
 	// Logger records what was delivered and what was retired; nil uses
@@ -104,16 +131,17 @@ type Service struct {
 	enabled     bool
 	sender      push.Sender
 	store       SubscriptionStore
+	standing    Standing
 	maxFailures int
 	log         *slog.Logger
 }
 
-// NewService builds a Service from cfg. It panics if Sender or Store is nil,
-// since a push handler without either is a wiring bug that should surface at
-// startup rather than fail every notification.
+// NewService builds a Service from cfg. It panics if Sender, Store or Standing
+// is nil, since a push handler without any of them is a wiring bug that should
+// surface at startup rather than fail (or mis-deliver) every notification.
 func NewService(cfg ServiceConfig) *Service {
-	if cfg.Sender == nil || cfg.Store == nil {
-		panic("pushjob: NewService requires a Sender and a Store")
+	if cfg.Sender == nil || cfg.Store == nil || cfg.Standing == nil {
+		panic("pushjob: NewService requires a Sender, a Store and a Standing")
 	}
 	maxFailures := cfg.MaxFailures
 	if maxFailures <= 0 {
@@ -124,7 +152,7 @@ func NewService(cfg ServiceConfig) *Service {
 		log = slog.Default()
 	}
 	return &Service{
-		enabled: cfg.Enabled, sender: cfg.Sender, store: cfg.Store,
+		enabled: cfg.Enabled, sender: cfg.Sender, store: cfg.Store, standing: cfg.Standing,
 		maxFailures: maxFailures, log: log,
 	}
 }
@@ -132,13 +160,14 @@ func NewService(cfg ServiceConfig) *Service {
 // Handle is the worker.HandlerFunc for `push_send` jobs. It decodes the
 // payload, reads the subscription and delivers the notification to it.
 //
-// Three situations complete the job without sending, because nothing about
+// Several situations complete the job without sending, because nothing about
 // them is a failure: push has been switched off since the job was queued (an
-// operator turning push off must not fill the queue with failures), and the
+// operator turning push off must not fill the queue with failures), the
 // subscription no longer exists (the person unsubscribed, or their account was
-// deleted and the cascade removed its devices). A payload that does not decode
-// or names no subscription is a worker.Terminal failure; so is any answer that
-// says this notification can never be delivered. See deliver for the rest.
+// deleted and the cascade removed its devices), and the job may not be
+// delivered any more (see addressed). A payload that does not decode or names
+// no subscription is a worker.Terminal failure; so is any answer that says this
+// notification can never be delivered. See deliver for the rest.
 func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	p, err := decodePayload(job.Payload)
 	if err != nil {
@@ -161,7 +190,46 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	if err != nil {
 		return fmt.Errorf("pushjob: reading subscription %s: %w", p.SubscriptionID, err)
 	}
+	ok, err := s.addressed(ctx, job, p, sub)
+	if err != nil || !ok {
+		return err
+	}
 	return s.deliver(ctx, job, sub, p.Notification)
+}
+
+// addressed reports whether the job may still be delivered to sub, counting and
+// logging the drop when it may not:
+//
+//   - a job that names no account (queued before pushes were addressed) cannot
+//     be checked, so it is dropped;
+//   - a subscription that now belongs to another account (the browser was
+//     subscribed again by somebody else) is not the device the push was for;
+//   - an account no longer in standing in the notification's project gets
+//     nothing.
+//
+// Only a failed standing query is an error, for the queue to retry.
+func (s *Service) addressed(ctx context.Context, job jobs.Job, p payload, sub push.Subscription) (bool, error) {
+	var reason notifystanding.Reason
+	switch {
+	case !p.To.Valid():
+		reason = notifystanding.ReasonUnaddressed
+	case sub.UserUID != p.To.UserUID:
+		reason = notifystanding.ReasonDeviceMoved
+	default:
+		ok, err := s.standing.InStanding(ctx, p.To)
+		if err != nil {
+			return false, fmt.Errorf("pushjob: checking the addressee of job %d: %w", job.ID, err)
+		}
+		if ok {
+			return true, nil
+		}
+		reason = notifystanding.ReasonStanding
+	}
+	notifystanding.CountDrop(notifystanding.StagePush, reason)
+	s.log.InfoContext(ctx, "push not sent: no longer addressed to this device's account",
+		slog.Int64("job_id", job.ID), slog.String("subscription", sub.ID),
+		slog.String("kind", p.Notification.Kind), slog.String("reason", string(reason)))
+	return false, nil
 }
 
 // decodePayload parses a `push_send` payload, returning a wrapped decoding

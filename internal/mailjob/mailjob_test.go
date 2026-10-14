@@ -11,6 +11,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mailer"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/worker"
 )
 
@@ -32,7 +33,7 @@ func TestHandle_rendersAndSends(t *testing.T) {
 	t.Parallel()
 
 	fake := mailer.NewFake()
-	svc := NewService(ServiceConfig{Sender: fake})
+	svc := NewService(ServiceConfig{Sender: fake, Standing: inStanding()})
 	mail := AccountApproved("jan@example.com", mailer.AccountApprovedData{
 		DisplayName: "Jan Novák",
 		SignInURL:   "https://kukatko.example/prihlaseni",
@@ -130,7 +131,7 @@ func TestHandle_rendersEveryTemplate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			fake := mailer.NewFake()
-			svc := NewService(ServiceConfig{Sender: fake})
+			svc := NewService(ServiceConfig{Sender: fake, Standing: inStanding()})
 			if err := svc.Handle(context.Background(), jobFor(t, tt.mail)); err != nil {
 				t.Fatalf("Handle: %v", err)
 			}
@@ -169,7 +170,7 @@ func TestHandle_retryableFailure(t *testing.T) {
 			t.Parallel()
 			fake := mailer.NewFake()
 			fake.FailWith(tt.err)
-			svc := NewService(ServiceConfig{Sender: fake})
+			svc := NewService(ServiceConfig{Sender: fake, Standing: inStanding()})
 
 			err := svc.Handle(context.Background(), jobFor(t, AccountApproved(
 				"jan@example.com", mailer.AccountApprovedData{})))
@@ -245,7 +246,7 @@ func TestHandle_terminalFailure(t *testing.T) {
 			if tt.want != nil {
 				fake.FailWith(tt.want)
 			}
-			svc := NewService(ServiceConfig{Sender: fake})
+			svc := NewService(ServiceConfig{Sender: fake, Standing: inStanding()})
 
 			err := svc.Handle(context.Background(), tt.job)
 			var terminal *worker.TerminalError
@@ -259,17 +260,103 @@ func TestHandle_terminalFailure(t *testing.T) {
 	}
 }
 
-// TestNewService_requiresASender verifies the wiring bug surfaces at startup
-// rather than as a dead letter per message.
-func TestNewService_requiresASender(t *testing.T) {
+// TestNewService_requiresCollaborators verifies the wiring bug surfaces at
+// startup rather than as a dead letter (or a mis-delivery) per message.
+func TestNewService_requiresCollaborators(t *testing.T) {
 	t.Parallel()
 
-	defer func() {
-		if recover() == nil {
-			t.Error("NewService(nil sender) did not panic")
+	for name, cfg := range map[string]ServiceConfig{
+		"no sender":   {Standing: inStanding()},
+		"no standing": {Sender: mailer.NewFake()},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if recover() == nil {
+					t.Error("NewService did not panic")
+				}
+			}()
+			_ = NewService(cfg)
+		})
+	}
+}
+
+// stubStanding is a Standing answering every question the same way and
+// recording whom it was asked about.
+type stubStanding struct {
+	ok    bool
+	err   error
+	asked []notifystanding.Addressee
+}
+
+// InStanding returns the configured answer.
+func (s *stubStanding) InStanding(_ context.Context, a notifystanding.Addressee) (bool, error) {
+	s.asked = append(s.asked, a)
+	return s.ok, s.err
+}
+
+// inStanding is a Standing that lets every account through.
+func inStanding() *stubStanding { return &stubStanding{ok: true} }
+
+// TestHandle_addressedMail verifies a notification mail is checked against its
+// addressee when it is sent — delivered while the account is in standing,
+// dropped (completed, counted) when it is not, retried when the question fails
+// — and that an account's own mail, which names no addressee, is never asked
+// about.
+func TestHandle_addressedMail(t *testing.T) {
+	t.Parallel()
+
+	to := notifystanding.Addressee{UserUID: "us1", ProjectUID: "pj1", Kind: "album_featured"}
+	notice := AlbumFeatured("anna@example.org", mailer.AlbumFeaturedData{Title: "Pouť", URL: "https://k.example/a"})
+	own := AccountApproved("anna@example.org", mailer.AccountApprovedData{SignInURL: "https://k.example"})
+	tests := []struct {
+		name      string
+		mail      Mail
+		standing  *stubStanding
+		wantSent  bool
+		wantErr   bool
+		wantAsked bool
+		wantDrop  bool
+	}{
+		{name: "in standing", mail: notice.Addressed(to), standing: inStanding(), wantSent: true, wantAsked: true},
+		{name: "out of standing", mail: notice.Addressed(to), standing: &stubStanding{}, wantAsked: true, wantDrop: true},
+		{
+			name: "question fails", mail: notice.Addressed(to), standing: &stubStanding{err: errors.New("db down")},
+			wantErr: true, wantAsked: true,
+		},
+		{name: "own mail", mail: own, standing: &stubStanding{}, wantSent: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fake := mailer.NewFake()
+			svc := NewService(ServiceConfig{Sender: fake, Standing: tt.standing})
+			before := mailDrops()
+			err := svc.Handle(context.Background(), jobFor(t, tt.mail))
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Handle = %v, want error %v", err, tt.wantErr)
+			}
+			if _, sent := fake.Last(); sent != tt.wantSent {
+				t.Errorf("sent = %v, want %v", sent, tt.wantSent)
+			}
+			if asked := len(tt.standing.asked) == 1 && tt.standing.asked[0] == to; asked != tt.wantAsked {
+				t.Errorf("asked about %+v, want asked = %v", tt.standing.asked, tt.wantAsked)
+			}
+			if tt.wantDrop && mailDrops() <= before {
+				t.Errorf("mail drops did not grow from %d", before)
+			}
+		})
+	}
+}
+
+// mailDrops reads the process-wide count of mails dropped for standing.
+func mailDrops() uint64 {
+	for _, d := range notifystanding.Drops() {
+		if d.Stage == notifystanding.StageMail && d.Reason == notifystanding.ReasonStanding {
+			return d.Count
 		}
-	}()
-	_ = NewService(ServiceConfig{})
+	}
+	return 0
 }
 
 // mustPayload encodes p as a job payload, failing the test if it cannot.

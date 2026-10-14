@@ -167,10 +167,10 @@ func TestScheduler_firesAtStartAndOnEveryTick(t *testing.T) {
 	}
 }
 
-// TestScheduler_TickEnqueuesEveryActiveProject checks one round enqueues one
-// purge per active project, skips a deactivated one, and reports a lister
-// failure.
-func TestScheduler_TickEnqueuesEveryActiveProject(t *testing.T) {
+// TestScheduler_TickEnqueuesEveryProject checks one round enqueues one purge
+// per project — a deactivated one included, so its notifications do not
+// outlive the retention — and reports a lister failure.
+func TestScheduler_TickEnqueuesEveryProject(t *testing.T) {
 	t.Parallel()
 
 	enqueuer := &countingEnqueuer{}
@@ -178,11 +178,11 @@ func TestScheduler_TickEnqueuesEveryActiveProject(t *testing.T) {
 		{UID: "pja", Active: true}, {UID: "pjoff"}, {UID: "pjb", Active: true},
 	}}
 	n, err := NewScheduler(enqueuer, projects, time.Hour, nil).Tick(t.Context())
-	if err != nil || n != 2 {
-		t.Fatalf("Tick = %d, %v; want 2, nil", n, err)
+	if err != nil || n != 3 {
+		t.Fatalf("Tick = %d, %v; want 3, nil", n, err)
 	}
-	if !slices.Equal(enqueuer.projects, []string{"pja", "pjb"}) {
-		t.Fatalf("enqueued %v, want [pja pjb]", enqueuer.projects)
+	if !slices.Equal(enqueuer.projects, []string{"pja", "pjoff", "pjb"}) {
+		t.Fatalf("enqueued %v, want [pja pjoff pjb]", enqueuer.projects)
 	}
 
 	boom := errors.New("db down")

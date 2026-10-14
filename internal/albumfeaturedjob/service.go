@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/notifydeliver"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/worker"
@@ -96,16 +97,19 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	return s.Announce(ctx, albumUID)
 }
 
-// accountsSQL reads every account of the album's project $1 — its members and
-// the maintainers, who see every project — with what the recipient rules need,
-// in a stable order so a retry delivers in the same sequence. The role is the
-// one in that project, admin for a maintainer. An account of another project
-// only is not read at all: an album is news only inside its own library.
-const accountsSQL = `
-SELECT u.uid, CASE WHEN u.role = 'maintainer' THEN 'admin' ELSE COALESCE(m.role, '') END, u.disabled
-FROM users u
-LEFT JOIN project_members m ON m.user_uid = u.uid AND m.project_uid = $1
-WHERE u.role = 'maintainer' OR m.user_uid IS NOT NULL
+// accountsSQL reads every account that may hear about an album of the project
+// $1 — every member in standing there (internal/notifystanding: approved,
+// enabled, the project active; a maintainer only as a member) — with what the
+// recipient rules need, in a stable order so a retry delivers in the same
+// sequence. The role is the one in that project, admin for a maintainer. A
+// pending registration, an account of another project only and every member of
+// a deactivated project are not read at all: an album is news only inside its
+// own library, and only to those the library has let in.
+var accountsSQL = `
+SELECT u.uid, CASE WHEN u.role = 'maintainer' THEN 'admin' ELSE m.role END, u.disabled
+FROM project_members m
+JOIN users u ON u.uid = m.user_uid
+WHERE m.project_uid = $1 AND ` + notifystanding.MemberSQL("u.uid", "$1") + `
 ORDER BY u.uid`
 
 // albumProjectSQL reads the project an album belongs to.

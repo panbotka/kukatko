@@ -291,3 +291,43 @@ func TestEdit_announcesOnlyTheNewMention(t *testing.T) {
 		t.Errorf("untitled photo title = %q", got[0].title)
 	}
 }
+
+// TestMention_onlyMembersInStanding mentions, besides Anna, a maintainer who
+// is no member of the project and an account still waiting for approval, both
+// wanting the kind: only Anna is told — a maintainer hears about a project
+// only as its member, a pending registration not at all. After the project is
+// deactivated nobody is told.
+func TestMention_onlyMembersInStanding(t *testing.T) {
+	f := newFixture(t)
+	const maintainerUID, pendingUID = "us-maint", "us-pending"
+	users := auth.NewStore(f.db.Pool())
+	if err := users.CreateUser(t.Context(), auth.User{
+		UID: maintainerUID, Username: maintainerUID, Email: maintainerUID + "@example.test", PasswordHash: "x",
+		Role: auth.RoleMaintainer,
+	}); err != nil {
+		t.Fatalf("creating the maintainer: %v", err)
+	}
+	if err := users.CreateUser(t.Context(), auth.User{
+		UID: pendingUID, Username: pendingUID, Email: pendingUID + "@example.test", PasswordHash: "x",
+		Role: auth.RoleUser,
+	}.InProject(project.BootstrapUID, project.RoleViewer)); err != nil {
+		t.Fatalf("creating the pending account: %v", err)
+	}
+	for _, uid := range []string{maintainerUID, pendingUID} {
+		f.exec(t, `INSERT INTO notification_prefs (user_uid, kind, channel, enabled)
+			VALUES ($1, 'comment_mention', 'in_app', true)`, uid)
+	}
+	photo := f.makePhoto(t, "one", "Pouť 1987")
+	f.comment(t, comments.PhotoSubject(photo.UID),
+		"@[Anna](user:us-anna), @[Správce](user:us-maint) a @[Čekatel](user:us-pending)")
+	got := f.sentNotifications(t)
+	if len(got) != 1 || got[0].user != annaUID {
+		t.Fatalf("notifications = %+v, want Anna's only", got)
+	}
+
+	f.exec(t, `UPDATE projects SET active = false WHERE uid = $1`, project.BootstrapUID)
+	f.comment(t, comments.PhotoSubject(photo.UID), "Ještě jednou @[Anna](user:us-anna)")
+	if got := f.sentNotifications(t); len(got) != 1 {
+		t.Fatalf("notifications after the project was deactivated = %d, want still 1", len(got))
+	}
+}

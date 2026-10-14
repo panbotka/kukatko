@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/push"
 )
 
@@ -75,6 +76,10 @@ func newEnqueuer(t *testing.T, enabled bool, rec *recorder) *Enqueuer {
 	return NewEnqueuer(EnqueuerConfig{Enabled: enabled, Schedule: rec.schedule, List: rec.list})
 }
 
+// addressee is the account u1 in the project pj1, kind left to the
+// notification's.
+var addressee = notifystanding.Addressee{UserUID: "u1", ProjectUID: "pj1"}
+
 // note is a valid notification for the tests.
 var note = push.Notification{Title: "Nová odpověď", Body: "Jana odpověděla", URL: "/tasks/t1", Kind: "task", Tag: "t1"}
 
@@ -88,7 +93,7 @@ func TestEnqueue_oneJobPerDevice(t *testing.T) {
 	enq := newEnqueuer(t, true, rec)
 	tx := fakeExec{name: "the caller's transaction"}
 
-	queued, err := enq.Enqueue(context.Background(), tx, "u1", note)
+	queued, err := enq.Enqueue(context.Background(), tx, addressee, note)
 	if err != nil || queued != 2 {
 		t.Fatalf("Enqueue = %d, %v; want 2, nil", queued, err)
 	}
@@ -105,6 +110,11 @@ func TestEnqueue_oneJobPerDevice(t *testing.T) {
 		}
 		if call.payload.SubscriptionID != want || call.payload.Notification != note {
 			t.Errorf("payload %d = %+v, want %s with the notification", i, call.payload, want)
+		}
+		// Addressed to the account and the project, with the notification's
+		// kind, so the handler can check both again.
+		if wantTo := (notifystanding.Addressee{UserUID: "u1", ProjectUID: "pj1", Kind: "task"}); call.payload.To != wantTo {
+			t.Errorf("payload %d addressed to %+v, want %+v", i, call.payload.To, wantTo)
 		}
 	}
 }
@@ -130,7 +140,7 @@ func TestEnqueue_refusalsWithoutError(t *testing.T) {
 			if enq.Enabled() != tt.enabled {
 				t.Errorf("Enabled() = %v, want %v", enq.Enabled(), tt.enabled)
 			}
-			queued, err := enq.Enqueue(context.Background(), fakeExec{}, "u1", note)
+			queued, err := enq.Enqueue(context.Background(), fakeExec{}, addressee, note)
 			if err != nil || queued != 0 || len(rec.calls) != 0 {
 				t.Fatalf("Enqueue = %d, %v with %d jobs; want nothing and no error", queued, err, len(rec.calls))
 			}
@@ -147,11 +157,13 @@ func TestEnqueue_refusalsWithError(t *testing.T) {
 	tests := []struct {
 		name    string
 		user    string
+		project string
 		n       push.Notification
 		rec     *recorder
 		wantErr error
 	}{
 		{name: "no account", user: " ", n: note, rec: &recorder{}, wantErr: ErrMissingUser},
+		{name: "no project", user: "u1", project: " ", n: note, rec: &recorder{ids: []string{"ps1"}}, wantErr: ErrMissingProject},
 		{
 			name: "no title", user: "u1", n: push.Notification{URL: "/"},
 			rec: &recorder{ids: []string{"ps1"}}, wantErr: push.ErrInvalidNotification,
@@ -171,7 +183,11 @@ func TestEnqueue_refusalsWithError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			enq := newEnqueuer(t, true, tt.rec)
-			queued, err := enq.Enqueue(context.Background(), fakeExec{}, tt.user, tt.n)
+			to := notifystanding.Addressee{UserUID: tt.user, ProjectUID: "pj1"}
+			if tt.project != "" {
+				to.ProjectUID = tt.project
+			}
+			queued, err := enq.Enqueue(context.Background(), fakeExec{}, to, tt.n)
 			if !errors.Is(err, tt.wantErr) || queued != 0 {
 				t.Fatalf("Enqueue = %d, %v; want 0, %v", queued, err, tt.wantErr)
 			}

@@ -8,8 +8,10 @@
 // e-mail — every one off until chosen) and records it once.
 //
 // The rules are few and all in one place (wanted): the writer is never told
-// about naming themselves (the store already leaves a self-mention out), a
-// disabled or not-yet-approved account hears nothing, and nobody is told
+// about naming themselves (the store already leaves a self-mention out), an
+// account out of standing in the project (internal/notifystanding: disabled,
+// not an approved member — a maintainer included —, or the project
+// deactivated) hears nothing, and nobody is told
 // about a comment on a photograph they could not open — a private, hidden or
 // archived photo, read through notification.VisiblePhotoSQL so this agrees
 // with what every other notification is allowed to name. The mention is still
@@ -45,6 +47,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/notifydeliver"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 )
 
 // Deliver fans one notification out to the channels its account wants, on the
@@ -131,8 +134,9 @@ type place struct {
 }
 
 // wanted is the rule of who is told about a mention: the mentioned account,
-// unless it is the writer's own, it is not in good standing (disabled or not
-// yet approved — standing says so), or the subject may not be announced.
+// unless it is the writer's own, it is not in good standing (disabled, not an
+// approved member, the project deactivated — standing says so), or the
+// subject may not be announced.
 // Whether they want the kind through any channel is not asked here;
 // notifydeliver answers that per delivery. It is a pure function of its
 // arguments.
@@ -163,12 +167,11 @@ const taskPlaceSQL = `SELECT t.title, true, t.project_id FROM photo_tasks t WHER
 const albumPlaceSQL = `SELECT a.title, true, a.project_id FROM albums a WHERE a.uid = $1`
 
 // standingSQL reads, of the given accounts, the ones in good standing in the
-// project $2: enabled, and an approved member there or a maintainer (who
-// enters every project).
-const standingSQL = `SELECT u.uid FROM users u
-WHERE u.uid = ANY($1) AND NOT u.disabled
-  AND (u.role = 'maintainer' OR EXISTS (SELECT 1 FROM project_members pm
-      WHERE pm.user_uid = u.uid AND pm.project_uid = $2 AND pm.approved_at IS NOT NULL))`
+// project $2 by the one rule every notification follows
+// (internal/notifystanding): an approved member there, enabled, the project
+// active — a maintainer only as a member.
+var standingSQL = `SELECT u.uid FROM users u
+WHERE u.uid = ANY($1) AND ` + notifystanding.MemberSQL("u.uid", "$2")
 
 // Mentioned delivers the comment_mention notification to every account in
 // mentioned the rules (wanted) allow, under a savepoint: a delivery that fails

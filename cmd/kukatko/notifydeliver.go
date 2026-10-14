@@ -35,7 +35,7 @@ func buildNotifyPurgeService(db *database.DB) *notifypurgejob.Service {
 }
 
 // buildNotifyPurgeScheduler returns the scheduler that enqueues the purge of
-// every active project at startup and once a day after.
+// every project, deactivated ones included, at startup and once a day after.
 func buildNotifyPurgeScheduler(db *database.DB) *notifypurgejob.Scheduler {
 	return notifypurgejob.NewScheduler(jobs.NewEnqueuer(jobs.NewStore(db.Pool())),
 		project.NewStore(db.Pool()), notifypurgejob.Interval, nil)

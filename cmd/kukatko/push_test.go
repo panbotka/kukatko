@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/config"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/push"
 )
 
@@ -87,7 +89,7 @@ func TestBuildPushService(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			svc, err := buildPushService(&config.Config{Push: tt.push}, push.NewStore(nil))
+			svc, err := buildPushService(&config.Config{Push: tt.push}, push.NewStore(nil), standingStub{})
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("buildPushService error = %v, want %v", err, tt.wantErr)
 			}
@@ -96,4 +98,13 @@ func TestBuildPushService(t *testing.T) {
 			}
 		})
 	}
+}
+
+// standingStub is a pushjob.Standing that is never asked: building the service
+// reads no addressee.
+type standingStub struct{}
+
+// InStanding lets everybody through.
+func (standingStub) InStanding(context.Context, notifystanding.Addressee) (bool, error) {
+	return true, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mailer"
 	"github.com/panbotka/kukatko/internal/mailjob"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/phototask"
 )
 
@@ -80,6 +82,8 @@ type queue struct {
 	jobs []jobs.Job
 	err  error
 	exec []jobs.Execer
+	// standing is what deliver's mail handler asks about every addressed mail.
+	standing standingRecorder
 }
 
 // schedule is the mailjob.Scheduler the enqueuer is built with.
@@ -95,12 +99,25 @@ func (q *queue) schedule(
 	return job, nil
 }
 
+// standingRecorder is a mailjob.Standing that lets everybody through and
+// records whom it was asked about.
+type standingRecorder struct {
+	asked []notifystanding.Addressee
+}
+
+// InStanding records a and answers yes.
+func (s *standingRecorder) InStanding(_ context.Context, a notifystanding.Addressee) (bool, error) {
+	s.asked = append(s.asked, a)
+	return true, nil
+}
+
 // deliver runs every recorded job through the real mail_send handler into a
-// fake mailer and returns what it would have sent.
+// fake mailer and returns what it would have sent. Every digest mail is
+// addressed, so the handler asks q.standing about each one.
 func (q *queue) deliver(t *testing.T) []mailer.Message {
 	t.Helper()
 	fake := mailer.NewFake()
-	svc := mailjob.NewService(mailjob.ServiceConfig{Sender: fake})
+	svc := mailjob.NewService(mailjob.ServiceConfig{Sender: fake, Standing: &q.standing})
 	for _, job := range q.jobs {
 		if err := svc.Handle(context.Background(), job); err != nil {
 			t.Fatalf("delivering job %d: %v", job.ID, err)
@@ -175,6 +192,14 @@ func TestRun_onePairOneMail(t *testing.T) {
 	sent := q.deliver(t)
 	if len(sent) != 2 {
 		t.Fatalf("delivered %d mails, want 2", len(sent))
+	}
+	// Each mail is addressed to its person and project, so the mail handler
+	// re-checks their standing when it sends.
+	wantAsked := []notifystanding.Addressee{
+		{UserUID: "us-a", ProjectUID: "v", Kind: DigestKind}, {UserUID: "us-b", ProjectUID: "v", Kind: DigestKind},
+	}
+	if !slices.Equal(q.standing.asked, wantAsked) {
+		t.Errorf("standing asked about %+v, want %+v", q.standing.asked, wantAsked)
 	}
 	if sent[0].To != "a@example.com" || sent[0].Subject != "Kukátko · Knihovna v: Čekají na tebe 2 úkoly" {
 		t.Errorf("first mail = %q %q, want a's two tasks, the subject naming the project", sent[0].To, sent[0].Subject)

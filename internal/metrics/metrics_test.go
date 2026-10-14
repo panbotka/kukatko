@@ -68,6 +68,7 @@ func TestRegistry_exposesExpectedMetricNames(t *testing.T) {
 		"kukatko_geocode_credits_spent_total",
 		"kukatko_geocode_credits_remaining",
 		"kukatko_geocode_credits_limit",
+		"kukatko_notifications_dropped_total",
 		"go_goroutines",
 	}
 	for _, name := range wantNames {
@@ -93,6 +94,9 @@ func exerciseAll(r *Registry) {
 		return map[QueueCell]int{{Type: "image_embed", State: "queued"}: 2}, nil
 	})
 	r.RegisterGeocodeBudget(func() (int, int) { return 900, 1000 })
+	r.RegisterNotificationDrops(func() []NotificationDrop {
+		return []NotificationDrop{{Stage: "push", Reason: "standing", Count: 1}}
+	})
 	r.RegisterLibrary(func(context.Context) (LibrarySnapshot, error) {
 		return sampleSnapshot(), nil
 	}, time.Minute)
@@ -115,6 +119,37 @@ func TestGeocodeCreditSpent_countsSpend(t *testing.T) {
 	if body := scrape(t, r); !strings.Contains(body, "kukatko_geocode_credits_spent_total 3") {
 		t.Errorf("expected 3 spent credits, got:\n%s", body)
 	}
+}
+
+// TestRegisterNotificationDrops_reportsCounts verifies the drop counter is
+// pulled at scrape time, one series per (stage, reason) pair the source
+// reports, zeros included.
+func TestRegisterNotificationDrops_reportsCounts(t *testing.T) {
+	t.Parallel()
+
+	pushed := uint64(2)
+	r := New()
+	r.RegisterNotificationDrops(func() []NotificationDrop {
+		return []NotificationDrop{
+			{Stage: "deliver", Reason: "standing"},
+			{Stage: "push", Reason: "device_moved", Count: pushed},
+		}
+	})
+	body := scrape(t, r)
+	for _, want := range []string{
+		`kukatko_notifications_dropped_total{reason="standing",stage="deliver"} 0`,
+		`kukatko_notifications_dropped_total{reason="device_moved",stage="push"} 2`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in:\n%s", want, body)
+		}
+	}
+	pushed = 5
+	if body := scrape(t, r); !strings.Contains(body,
+		`kukatko_notifications_dropped_total{reason="device_moved",stage="push"} 5`) {
+		t.Errorf("expected the counter to follow its source, got:\n%s", body)
+	}
+	r.RegisterNotificationDrops(nil) // a no-op, not a duplicate registration
 }
 
 // TestRegisterGeocodeBudget_reportsRemaining verifies the budget gauges are

@@ -341,3 +341,56 @@ func TestFeature_nobodyWantsIt(t *testing.T) {
 		t.Fatalf("notifications = %d, want 0", n)
 	}
 }
+
+// TestFeature_onlyMembersInStanding features an album with three more accounts
+// that want the kind through every channel: a registration still waiting for
+// approval, a maintainer who is no member of the project and a maintainer who
+// is an approved member. Only the member maintainer is told (J-1: a pending
+// member learnt the project's name and the album's title by push and mail);
+// no mail goes to anybody out of standing.
+func TestFeature_onlyMembersInStanding(t *testing.T) {
+	f := newFixture(t)
+	const (
+		pendingUID        = "us-pending"
+		maintainerUID     = "us-maint"
+		maintainerInUID   = "us-maint-in"
+		pendingAddress    = pendingUID + "@example.test"
+		maintainerAddress = maintainerUID + "@example.test"
+	)
+	for uid, role := range map[string]string{pendingUID: "user", maintainerUID: "maintainer", maintainerInUID: "maintainer"} {
+		f.exec(t, `INSERT INTO users (uid, username, email, password_hash, role) VALUES ($1, $2, $3, 'x', $4)`,
+			uid, uid, uid+"@example.test", role)
+		f.exec(t, `INSERT INTO notification_prefs (user_uid, kind, channel, enabled)
+			SELECT $1, 'album_featured', c, true FROM unnest(ARRAY['in_app', 'email']) c`, uid)
+	}
+	f.exec(t, `INSERT INTO project_members (project_uid, user_uid, role, approved_at) VALUES ($1, $2, 'viewer', NULL)`,
+		project.BootstrapUID, pendingUID)
+	f.exec(t, `INSERT INTO project_members (project_uid, user_uid, role, approved_at) VALUES ($1, $2, 'admin', now())`,
+		project.BootstrapUID, maintainerInUID)
+	album := f.album(t, "Pouť 2026", false)
+
+	f.feature(t, album, curatorUID)
+	f.runJob(t, album)
+	if got, want := f.recipients(t), []string{editorUID, maintainerInUID, viewerUID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("recipients = %v, want %v", got, want)
+	}
+	if n := f.count(t, `SELECT count(*) FROM jobs WHERE type = $1 AND payload ->> 'to' = ANY($2)`,
+		jobs.TypeMailSend, []string{pendingAddress, maintainerAddress}); n != 0 {
+		t.Fatalf("mail_send jobs to accounts out of standing = %d, want 0", n)
+	}
+}
+
+// TestFeature_deactivatedProjectTellsNobody features an album of a project
+// that is then deactivated before the job runs: nobody is told about a library
+// nobody may open any more.
+func TestFeature_deactivatedProjectTellsNobody(t *testing.T) {
+	f := newFixture(t)
+	album := f.album(t, "Pouť 2026", false)
+
+	f.feature(t, album, curatorUID)
+	f.exec(t, `UPDATE projects SET active = false WHERE uid = $1`, project.BootstrapUID)
+	f.runJob(t, album)
+	if n := f.count(t, "SELECT count(*) FROM notifications"); n != 0 {
+		t.Fatalf("notifications about a deactivated project = %d, want 0", n)
+	}
+}

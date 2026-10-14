@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/push"
 	"github.com/panbotka/kukatko/internal/worker"
 )
@@ -108,10 +109,34 @@ func newDevice(id, userUID, endpoint string) push.Subscription {
 	}
 }
 
-// jobFor returns a push_send job addressed to subscriptionID carrying n.
+// stubStanding is a Standing answering every question the same way.
+type stubStanding struct {
+	ok  bool
+	err error
+	// asked records the addressees it was asked about.
+	asked []notifystanding.Addressee
+}
+
+// InStanding returns the configured answer.
+func (s *stubStanding) InStanding(_ context.Context, a notifystanding.Addressee) (bool, error) {
+	s.asked = append(s.asked, a)
+	return s.ok, s.err
+}
+
+// inStanding is a Standing that lets every account through.
+func inStanding() *stubStanding { return &stubStanding{ok: true} }
+
+// jobFor returns a push_send job addressed to subscriptionID and device's
+// account u1 in the project pj1, carrying n.
 func jobFor(t *testing.T, subscriptionID string, n push.Notification) jobs.Job {
 	t.Helper()
-	raw, err := json.Marshal(payload{SubscriptionID: subscriptionID, Notification: n})
+	return jobTo(t, subscriptionID, notifystanding.Addressee{UserUID: "u1", ProjectUID: "pj1", Kind: n.Kind}, n)
+}
+
+// jobTo returns a push_send job for subscriptionID addressed to to, carrying n.
+func jobTo(t *testing.T, subscriptionID string, to notifystanding.Addressee, n push.Notification) jobs.Job {
+	t.Helper()
+	raw, err := json.Marshal(payload{SubscriptionID: subscriptionID, To: to, Notification: n})
 	if err != nil {
 		t.Fatalf("encoding the payload: %v", err)
 	}
@@ -168,7 +193,7 @@ func TestHandle_senderAnswers(t *testing.T) {
 			if tt.sendErr != nil {
 				sender.FailWith(fmt.Errorf("push service: %w", tt.sendErr))
 			}
-			svc := NewService(ServiceConfig{Enabled: true, Sender: sender, Store: store})
+			svc := NewService(ServiceConfig{Enabled: true, Sender: sender, Store: store, Standing: inStanding()})
 
 			err := svc.Handle(context.Background(), jobFor(t, device.ID, tt.n))
 			if got := outcome(err); got != tt.want {
@@ -196,7 +221,7 @@ func TestHandle_retiresAHopelessDevice(t *testing.T) {
 	store := newMemStore(device)
 	sender := push.NewFake()
 	sender.FailWith(push.ErrRetryable)
-	svc := NewService(ServiceConfig{Enabled: true, Sender: sender, Store: store, MaxFailures: 3})
+	svc := NewService(ServiceConfig{Enabled: true, Sender: sender, Store: store, MaxFailures: 3, Standing: inStanding()})
 
 	for attempt := 1; attempt <= 3; attempt++ {
 		err := svc.Handle(context.Background(), jobFor(t, device.ID, note))
@@ -230,7 +255,7 @@ func TestHandle_nothingToDo(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			sender := push.NewFake()
-			svc := NewService(ServiceConfig{Enabled: tt.enabled, Sender: sender, Store: newMemStore(device)})
+			svc := NewService(ServiceConfig{Enabled: tt.enabled, Sender: sender, Store: newMemStore(device), Standing: inStanding()})
 			if err := svc.Handle(context.Background(), jobFor(t, tt.subID, note)); err != nil {
 				t.Fatalf("Handle = %v, want nil", err)
 			}
@@ -252,7 +277,7 @@ func TestHandle_badPayloadIsTerminal(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			svc := NewService(ServiceConfig{Enabled: true, Sender: push.NewFake(), Store: newMemStore(device)})
+			svc := NewService(ServiceConfig{Enabled: true, Sender: push.NewFake(), Store: newMemStore(device), Standing: inStanding()})
 			err := svc.Handle(context.Background(), jobs.Job{Type: jobs.TypePushSend, Payload: json.RawMessage(raw)})
 			if !isTerminal(err) {
 				t.Fatalf("Handle = %v, want a terminal failure", err)
@@ -296,7 +321,7 @@ func TestHandle_storeFailures(t *testing.T) {
 			tt.mutate(store)
 			sender := push.NewFake()
 			sender.FailWith(tt.sendErr)
-			svc := NewService(ServiceConfig{Enabled: true, Sender: sender, Store: store})
+			svc := NewService(ServiceConfig{Enabled: true, Sender: sender, Store: store, Standing: inStanding()})
 			err := svc.Handle(context.Background(), jobFor(t, device.ID, note))
 			if got := outcome(err); got != tt.want {
 				t.Fatalf("Handle = %v (%s), want %s", err, got, tt.want)
@@ -311,8 +336,9 @@ func TestNewService_requiresCollaborators(t *testing.T) {
 	t.Parallel()
 
 	for name, cfg := range map[string]ServiceConfig{
-		"no sender": {Store: newMemStore(device)},
-		"no store":  {Sender: push.NewFake()},
+		"no sender":   {Store: newMemStore(device), Standing: inStanding()},
+		"no store":    {Sender: push.NewFake(), Standing: inStanding()},
+		"no standing": {Sender: push.NewFake(), Store: newMemStore(device)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -324,7 +350,95 @@ func TestNewService_requiresCollaborators(t *testing.T) {
 			NewService(cfg)
 		})
 	}
-	if svc := NewService(ServiceConfig{Sender: push.NewFake(), Store: newMemStore(device)}); svc.maxFailures != MaxFailures {
+	if svc := NewService(ServiceConfig{Sender: push.NewFake(), Store: newMemStore(device), Standing: inStanding()}); svc.maxFailures != MaxFailures {
 		t.Errorf("maxFailures = %d, want %d", svc.maxFailures, MaxFailures)
 	}
+}
+
+// TestHandle_addressee verifies the job is checked against whom it is for
+// before anything is sent: a device that now belongs to another account, a job
+// naming no account and an account out of standing all complete unsent and are
+// counted; a failed standing query retries.
+func TestHandle_addressee(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		to         notifystanding.Addressee
+		standing   *stubStanding
+		want       string
+		wantReason notifystanding.Reason
+		wantAsked  bool
+	}{
+		{
+			name: "device moved to another account", to: notifystanding.Addressee{UserUID: "u2", ProjectUID: "pj1"},
+			standing: inStanding(), want: "complete", wantReason: notifystanding.ReasonDeviceMoved,
+		},
+		{
+			name: "unaddressed legacy job", standing: inStanding(), want: "complete",
+			wantReason: notifystanding.ReasonUnaddressed,
+		},
+		{
+			name: "out of standing", to: notifystanding.Addressee{UserUID: "u1", ProjectUID: "pj1"},
+			standing: &stubStanding{}, want: "complete", wantReason: notifystanding.ReasonStanding, wantAsked: true,
+		},
+		{
+			name: "standing query fails", to: notifystanding.Addressee{UserUID: "u1", ProjectUID: "pj1"},
+			standing: &stubStanding{err: errors.New("db down")}, want: "retry", wantAsked: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			sender := push.NewFake()
+			svc := NewService(ServiceConfig{
+				Enabled: true, Sender: sender, Store: newMemStore(device), Standing: tt.standing,
+			})
+			before := pushDrops(tt.wantReason)
+			err := svc.Handle(context.Background(), jobTo(t, device.ID, tt.to, note))
+			if got := outcome(err); got != tt.want {
+				t.Fatalf("Handle = %v (%s), want %s", err, got, tt.want)
+			}
+			if len(sender.Sent()) != 0 {
+				t.Errorf("sent %d notifications, want none", len(sender.Sent()))
+			}
+			if asked := len(tt.standing.asked) > 0; asked != tt.wantAsked {
+				t.Errorf("standing asked = %v, want %v", asked, tt.wantAsked)
+			}
+			if tt.wantReason != "" && pushDrops(tt.wantReason) <= before {
+				t.Errorf("push drops for %s did not grow from %d", tt.wantReason, before)
+			}
+		})
+	}
+}
+
+// TestHandle_asksAboutTheAddressee verifies an addressed job is delivered when
+// its account is in standing, and that the question names that account, the
+// project and the kind.
+func TestHandle_asksAboutTheAddressee(t *testing.T) {
+	t.Parallel()
+
+	sender := push.NewFake()
+	standing := inStanding()
+	svc := NewService(ServiceConfig{Enabled: true, Sender: sender, Store: newMemStore(device), Standing: standing})
+	if err := svc.Handle(context.Background(), jobFor(t, device.ID, note)); err != nil {
+		t.Fatalf("Handle = %v", err)
+	}
+	want := notifystanding.Addressee{UserUID: "u1", ProjectUID: "pj1", Kind: note.Kind}
+	if len(standing.asked) != 1 || standing.asked[0] != want {
+		t.Errorf("asked about %+v, want %+v", standing.asked, want)
+	}
+	if len(sender.Sent()) != 1 {
+		t.Errorf("sent %d notifications, want 1", len(sender.Sent()))
+	}
+}
+
+// pushDrops reads the process-wide count of pushes dropped for reason.
+func pushDrops(reason notifystanding.Reason) uint64 {
+	for _, d := range notifystanding.Drops() {
+		if d.Stage == notifystanding.StagePush && d.Reason == reason {
+			return d.Count
+		}
+	}
+	return 0
 }

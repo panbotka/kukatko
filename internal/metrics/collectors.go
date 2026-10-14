@@ -195,3 +195,58 @@ func (c *geocodeBudgetCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(budgetRemainingDesc, prometheus.GaugeValue, float64(remaining))
 	ch <- prometheus.MustNewConstMetric(budgetLimitDesc, prometheus.GaugeValue, float64(limit))
 }
+
+// NotificationDrop is one counted pair of the notification-drop counter: where
+// a notification was dropped (stage: deliver, push, mail), why (reason:
+// standing, device_moved, unaddressed) and how many times since start.
+type NotificationDrop struct {
+	// Stage is where the notifications were dropped.
+	Stage string
+	// Reason is why they were dropped.
+	Reason string
+	// Count is how many, since the process started.
+	Count uint64
+}
+
+// NotificationDropsFunc reports every counted (stage, reason) pair, zeros
+// included. The serve command adapts internal/notifystanding's counters to it.
+type NotificationDropsFunc func() []NotificationDrop
+
+// RegisterNotificationDrops installs a collector exporting
+// kukatko_notifications_dropped_total, the notifications refused because the
+// account was no longer in standing in the project, or because a queued push's
+// device now belongs to another account. It is sampled at scrape time from the
+// process-wide counters. A nil fn is a no-op.
+func (r *Registry) RegisterNotificationDrops(fn NotificationDropsFunc) {
+	if fn == nil {
+		return
+	}
+	r.reg.MustRegister(&notificationDropsCollector{fn: fn})
+}
+
+// notificationDropsCollector exports the notification-drop counters pulled at
+// scrape time.
+type notificationDropsCollector struct {
+	fn NotificationDropsFunc
+}
+
+// notificationDropsDesc describes the notification-drop counter.
+var notificationDropsDesc = prometheus.NewDesc(
+	prometheus.BuildFQName(namespace, "notifications", "dropped_total"),
+	"Total notifications dropped since start because the account may no longer receive them "+
+		"(stage: deliver, push, mail; reason: standing, device_moved, unaddressed).",
+	[]string{"stage", "reason"}, nil)
+
+// Describe implements prometheus.Collector.
+func (c *notificationDropsCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- notificationDropsDesc
+}
+
+// Collect implements prometheus.Collector, sampling the counters at scrape
+// time.
+func (c *notificationDropsCollector) Collect(ch chan<- prometheus.Metric) {
+	for _, d := range c.fn() {
+		ch <- prometheus.MustNewConstMetric(notificationDropsDesc, prometheus.CounterValue, float64(d.Count),
+			d.Stage, d.Reason)
+	}
+}

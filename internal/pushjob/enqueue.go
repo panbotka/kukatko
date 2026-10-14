@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/push"
 )
 
@@ -86,30 +87,33 @@ func (e *Enqueuer) Enabled() bool {
 	return e.enabled
 }
 
-// Enqueue schedules n for every browser userUID is subscribed on — one
-// `push_send` job per device — using exec both to read the subscriptions and to
-// insert the jobs. Passing the transaction of the mutation that caused the
+// Enqueue schedules n for every browser to.UserUID is subscribed on — one
+// `push_send` job per device, each addressed to the account and the project
+// to.ProjectUID so the handler can check both again when it runs — using exec
+// both to read the subscriptions and to insert the jobs. An addressee without a
+// kind takes n's. Passing the transaction of the mutation that caused the
 // notification is the intended use: the notification is scheduled if and only
 // if that mutation commits. It returns how many jobs were queued.
 //
 // Two cases return 0 and nil without enqueuing anything, because in both
 // nothing queued is the correct outcome and the mutation that asked must not
 // fail: push is disabled in the configuration, and the account has no
-// subscription at all. A missing account and a notification the sender would
-// refuse (push.ErrInvalidNotification, push.ErrPayloadTooLarge) are refused with
-// an error instead — both are caller bugs, and enqueuing them would only produce
-// jobs that are dead on arrival.
-func (e *Enqueuer) Enqueue(ctx context.Context, exec Execer, userUID string, n push.Notification) (int, error) {
+// subscription at all. A missing account or project and a notification the
+// sender would refuse (push.ErrInvalidNotification, push.ErrPayloadTooLarge) are
+// refused with an error instead — all are caller bugs, and enqueuing them would
+// only produce jobs that are dead on arrival.
+func (e *Enqueuer) Enqueue(
+	ctx context.Context, exec Execer, to notifystanding.Addressee, n push.Notification,
+) (int, error) {
 	if !e.enabled {
 		e.log.DebugContext(ctx, "push not scheduled: push is disabled", slog.String("kind", n.Kind))
 		return 0, nil
 	}
-	if strings.TrimSpace(userUID) == "" {
-		return 0, ErrMissingUser
+	to, err := checkAddressee(to, n)
+	if err != nil {
+		return 0, err
 	}
-	if _, err := n.Encode(); err != nil {
-		return 0, fmt.Errorf("pushjob: refusing to enqueue %q: %w", n.Kind, err)
-	}
+	userUID := to.UserUID
 	ids, err := e.list(ctx, exec, userUID)
 	if err != nil {
 		return 0, fmt.Errorf("pushjob: reading the devices of %s: %w", userUID, err)
@@ -120,7 +124,7 @@ func (e *Enqueuer) Enqueue(ctx context.Context, exec Execer, userUID string, n p
 		return 0, nil
 	}
 	for i, id := range ids {
-		raw, err := json.Marshal(payload{SubscriptionID: id, Notification: n})
+		raw, err := json.Marshal(payload{SubscriptionID: id, To: to, Notification: n})
 		if err != nil {
 			return i, fmt.Errorf("pushjob: encoding the payload for %s: %w", id, err)
 		}
@@ -131,4 +135,24 @@ func (e *Enqueuer) Enqueue(ctx context.Context, exec Execer, userUID string, n p
 		}
 	}
 	return len(ids), nil
+}
+
+// checkAddressee checks a push before anything is read or queued and returns its
+// addressee, the kind defaulting to n's: an addressee without an account is
+// ErrMissingUser, one without a project ErrMissingProject, and a notification
+// the sender would refuse its Encode error — all caller bugs.
+func checkAddressee(to notifystanding.Addressee, n push.Notification) (notifystanding.Addressee, error) {
+	switch {
+	case strings.TrimSpace(to.UserUID) == "":
+		return to, ErrMissingUser
+	case strings.TrimSpace(to.ProjectUID) == "":
+		return to, ErrMissingProject
+	}
+	if to.Kind == "" {
+		to.Kind = n.Kind
+	}
+	if _, err := n.Encode(); err != nil {
+		return to, fmt.Errorf("pushjob: refusing to enqueue %q: %w", n.Kind, err)
+	}
+	return to, nil
 }

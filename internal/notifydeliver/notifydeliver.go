@@ -27,6 +27,16 @@
 // project's name travels too: the push's title is prefixed by it ("Veselice ·
 // …") and every mail builder receives it (MailContext.ProjectName), so a
 // person in several projects can tell them apart before opening anything.
+//
+// Nobody out of standing is notified. Before anything else Deliver asks
+// internal/notifystanding whether the account may receive a notification of
+// the project at all — an approved member, enabled, the project active (a
+// maintainer only as a member, except for the kinds addressed to maintainers)
+// — and drops the delivery silently, counted, when it may not. Every producer
+// delivers through here, so that one check covers them all. The push and the
+// mail it queues carry the addressee, and their handlers ask the same question
+// again when they run, so an account that falls out of standing while its
+// notification waits in the queue does not get it either.
 package notifydeliver
 
 import (
@@ -43,6 +53,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mailer"
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/push"
 	"github.com/panbotka/kukatko/internal/pushjob"
@@ -70,10 +81,15 @@ type Recorder interface {
 type PushScheduler interface {
 	// Enabled reports whether this instance sends push notifications at all.
 	Enabled() bool
-	// Enqueue schedules n for userUID's devices using exec and returns how many
-	// deliveries it queued.
-	Enqueue(ctx context.Context, exec pushjob.Execer, userUID string, n push.Notification) (int, error)
+	// Enqueue schedules n for the devices of to's account, addressed to it and
+	// its project, using exec and returns how many deliveries it queued.
+	Enqueue(ctx context.Context, exec pushjob.Execer, to notifystanding.Addressee, n push.Notification) (int, error)
 }
+
+// StandingFunc reports, read through q (the producer's transaction), whether
+// an addressee may receive a notification. notifystanding.InStanding is the one
+// production uses.
+type StandingFunc func(ctx context.Context, q notifystanding.Querier, a notifystanding.Addressee) (bool, error)
 
 // MailScheduler schedules one e-mail. It is satisfied by *mailjob.Enqueuer,
 // which itself refuses nothing but caller bugs and skips a placeholder
@@ -181,6 +197,9 @@ type Config struct {
 	// BaseURL is the instance's public address (mail.base_url) the e-mail's
 	// links are built on; empty leaves the links out of the mail.
 	BaseURL string
+	// Standing decides whether the account may be notified at all; nil uses
+	// notifystanding.InStanding. Unit tests substitute a stub.
+	Standing StandingFunc
 	// Logger records the deliveries that were skipped; nil uses slog.Default().
 	Logger *slog.Logger
 }
@@ -191,6 +210,7 @@ type Deliverer struct {
 	projects Projects
 	push     PushScheduler
 	mail     MailScheduler
+	standing StandingFunc
 	baseURL  string
 	log      *slog.Logger
 }
@@ -206,8 +226,12 @@ func New(cfg Config) *Deliverer {
 	if log == nil {
 		log = slog.Default()
 	}
+	standing := cfg.Standing
+	if standing == nil {
+		standing = notifystanding.InStanding
+	}
 	return &Deliverer{
-		notes: cfg.Notifications, projects: cfg.Projects, push: cfg.Push, mail: cfg.Mail,
+		notes: cfg.Notifications, projects: cfg.Projects, push: cfg.Push, mail: cfg.Mail, standing: standing,
 		baseURL: strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"), log: log,
 	}
 }
@@ -231,8 +255,10 @@ func (d *Deliverer) ChannelsTx(
 	}, nil
 }
 
-// Deliver delivers msg to userUID on tx: it records the notification when any
-// channel will deliver (listed in the inbox only when in-app is one of them),
+// Deliver delivers msg to userUID on tx: unless the account is out of standing
+// in msg's project (see the package documentation; dropped, counted, a zero
+// Result), it records the notification when any channel will deliver (listed
+// in the inbox only when in-app is one of them),
 // schedules the push when push is wanted and on, and schedules the e-mail when
 // e-mail is wanted and on. An account that wants none of them gets nothing —
 // no record either — and a zero Result.
@@ -244,8 +270,9 @@ func (d *Deliverer) ChannelsTx(
 // an e-mail address is not mailed — the other channels still deliver. A message
 // without a project is notification.ErrNoProject and delivers nothing.
 func (d *Deliverer) Deliver(ctx context.Context, tx pgx.Tx, userUID string, msg Message) (Result, error) {
-	if msg.ProjectUID == "" {
-		return Result{}, fmt.Errorf("notifydeliver: delivering to %s: %w", userUID, notification.ErrNoProject)
+	to, ok, err := d.admit(ctx, tx, userUID, msg)
+	if err != nil || !ok {
+		return Result{}, err
 	}
 	channels, err := d.ChannelsTx(ctx, tx, userUID, msg.Kind)
 	if err != nil {
@@ -261,24 +288,64 @@ func (d *Deliverer) Deliver(ctx context.Context, tx pgx.Tx, userUID string, msg 
 		return Result{}, err
 	}
 	result := Result{Channels: channels, Notification: &record}
-	if channels.Push {
-		result.Devices, err = d.push.Enqueue(ctx, tx, userUID, push.Notification{
-			Title: PushTitle(p.Name, record.Title), Body: record.Body, URL: record.Link,
-			Kind: string(record.Kind), Tag: record.UID,
-		})
-		if err != nil {
-			return Result{}, fmt.Errorf("notifydeliver: scheduling the push of %s: %w", userUID, err)
-		}
+	if result.Devices, err = d.schedulePush(ctx, tx, channels.Push, to, p.Name, record); err != nil {
+		return Result{}, err
 	}
 	result.Channels.Email = false
 	if channels.Email && !msg.SkipMail {
-		mailed, err := d.sendMail(ctx, tx, record, p.Name, msg.Mail)
+		mailed, err := d.sendMail(ctx, tx, to, record, p.Name, msg.Mail)
 		if err != nil {
 			return Result{}, err
 		}
 		result.Channels.Email = mailed
 	}
 	return result, nil
+}
+
+// admit returns the addressee of msg for userUID and whether the account may
+// receive it at all, read on tx: a message without a project is
+// notification.ErrNoProject; an account out of standing in the project
+// (internal/notifystanding) is not admitted — the drop is counted and logged,
+// and is no error.
+func (d *Deliverer) admit(
+	ctx context.Context, tx pgx.Tx, userUID string, msg Message,
+) (notifystanding.Addressee, bool, error) {
+	if msg.ProjectUID == "" {
+		return notifystanding.Addressee{}, false,
+			fmt.Errorf("notifydeliver: delivering to %s: %w", userUID, notification.ErrNoProject)
+	}
+	to := notifystanding.Addressee{UserUID: userUID, ProjectUID: msg.ProjectUID, Kind: string(msg.Kind)}
+	ok, err := d.standing(ctx, tx, to)
+	if err != nil {
+		return to, false, fmt.Errorf("notifydeliver: reading the standing of %s: %w", userUID, err)
+	}
+	if !ok {
+		notifystanding.CountDrop(notifystanding.StageDeliver, notifystanding.ReasonStanding)
+		d.log.DebugContext(ctx, "notification not delivered: the account is out of standing in the project",
+			slog.String("user_uid", userUID), slog.String("project_uid", msg.ProjectUID),
+			slog.String("kind", string(msg.Kind)))
+	}
+	return to, ok, nil
+}
+
+// schedulePush queues the push of record, titled with projectName, to the
+// devices of to's account on tx, addressed to it, and returns how many devices
+// it queued — none, without touching the queue, when push is not wanted.
+func (d *Deliverer) schedulePush(
+	ctx context.Context, tx pgx.Tx, wanted bool, to notifystanding.Addressee, projectName string,
+	record notification.Notification,
+) (int, error) {
+	if !wanted {
+		return 0, nil
+	}
+	devices, err := d.push.Enqueue(ctx, tx, to, push.Notification{
+		Title: PushTitle(projectName, record.Title), Body: record.Body, URL: record.Link,
+		Kind: string(record.Kind), Tag: record.UID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("notifydeliver: scheduling the push of %s: %w", to.UserUID, err)
+	}
+	return devices, nil
 }
 
 // record loads msg's project and records msg for userUID on tx, its link put
@@ -332,13 +399,15 @@ const recipientSQL = `SELECT email, display_name FROM users WHERE uid = $1`
 var errNoAddress = errors.New("notifydeliver: the account has no e-mail address")
 
 // sendMail schedules the e-mail of record on tx, built by build (nil means the
-// generic notification mail) and naming projectName. It reports whether a mail
-// was scheduled: an account without an address is skipped and logged, not
-// failed.
+// generic notification mail), naming projectName and addressed to to, so the
+// mail handler checks the account's standing again when it sends. It reports
+// whether a mail was scheduled: an account without an address is skipped and
+// logged, not failed.
 func (d *Deliverer) sendMail(
-	ctx context.Context, tx pgx.Tx, record notification.Notification, projectName string, build MailBuilder,
+	ctx context.Context, tx pgx.Tx, to notifystanding.Addressee, record notification.Notification,
+	projectName string, build MailBuilder,
 ) (bool, error) {
-	to, err := readRecipient(ctx, tx, record.UserUID)
+	recipient, err := readRecipient(ctx, tx, record.UserUID)
 	if errors.Is(err, errNoAddress) {
 		d.log.InfoContext(ctx, "notification mail skipped: no address",
 			slog.String("user_uid", record.UserUID), slog.String("kind", string(record.Kind)))
@@ -351,7 +420,7 @@ func (d *Deliverer) sendMail(
 		build = GenericMail
 	}
 	mail := MailContext{URL: d.Absolute(record.Link), ProjectName: projectName}
-	if err := d.mail.Enqueue(ctx, tx, build(to, record, mail)); err != nil {
+	if err := d.mail.Enqueue(ctx, tx, build(recipient, record, mail).Addressed(to)); err != nil {
 		return false, fmt.Errorf("notifydeliver: scheduling the mail of %s: %w", record.UserUID, err)
 	}
 	return true, nil

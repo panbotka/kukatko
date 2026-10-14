@@ -35,6 +35,7 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mailer"
 	"github.com/panbotka/kukatko/internal/mailjob"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/phototask"
 	"github.com/panbotka/kukatko/internal/project"
 )
@@ -48,6 +49,11 @@ type Source interface {
 	// MarkDigested records when a person's digest of a project was scheduled.
 	MarkDigested(ctx context.Context, projectUID, uid string, at time.Time) error
 }
+
+// DigestKind names the digest mail's addressee kind (notifystanding.Addressee):
+// it is no notification kind of its own, and only the project's members are
+// addressed by it.
+const DigestKind = "task_digest"
 
 // MailScheduler schedules the message. It is satisfied by *mailjob.Enqueuer.
 type MailScheduler interface {
@@ -187,7 +193,12 @@ func (s *Service) send(ctx context.Context, d phototask.Digest) error {
 	if err := mailer.ValidateAddress(d.Email); err != nil {
 		return err //nolint:wrapcheck // the typed error is the whole point: Run classifies it
 	}
-	mail := mailjob.TasksWaitingDigest(d.Email, s.dataFor(d))
+	// Addressed, so a person who falls out of standing in the project before
+	// the mail is sent (disabled, removed, the project deactivated) is not
+	// mailed after all.
+	mail := mailjob.TasksWaitingDigest(d.Email, s.dataFor(d)).Addressed(notifystanding.Addressee{
+		UserUID: d.UserUID, ProjectUID: d.ProjectUID, Kind: DigestKind,
+	})
 	if err := s.mail.Enqueue(ctx, s.exec, mail); err != nil {
 		return fmt.Errorf("scheduling the mail: %w", err)
 	}
