@@ -1,6 +1,7 @@
 // Package tenancyguard is the static half of tenant isolation: it finds the SQL
-// statements in the Go sources that touch a catalogue root table without naming
-// the project they belong to. Its test runs inside `make check`, so a future
+// statements in the Go sources that touch a catalogue root table — or read a
+// read-scoped table such as audit_log — without naming the project they belong
+// to. Its test runs inside `make check`, so a future
 // query that forgets its `project_id` predicate fails the gate instead of
 // leaking one project's rows into another.
 //
@@ -43,13 +44,23 @@ var RootTables = map[string]string{
 	"photoprism_aliases": "project_id",
 }
 
+// ReadScopedTables are the tables whose reads must name the project but whose
+// writes need not, mapped to the column that names it. Their project column is
+// nullable on purpose — an instance-wide row (an account or maintenance action
+// in the audit trail) belongs to no project, so an INSERT, UPDATE or DELETE
+// without one is legitimate — but every row that does carry a project is that
+// project's data, so a statement that reads the table (FROM or JOIN, other than
+// a DELETE's own FROM) must name the column in a predicate exactly like a root
+// table, or be allow-listed with a reason.
+var ReadScopedTables = map[string]string{
+	"audit_log": "project_id",
+}
+
 // ExemptTables are the tables that carry a project column but are not catalogue
 // roots, each with the reason the guard leaves its statements alone. They are
 // listed (rather than silently ignored) so the migration cross-check still
 // accounts for every project column in the schema.
 var ExemptTables = map[string]string{
-	"audit_log": "the trail is instance-wide; project_id is nullable and absent on account " +
-		"and maintenance actions",
 	"project_members": "account table: a user's memberships are read across projects by design " +
 		"(sign-in, the project switcher)",
 	"storage_rekey_runs": "maintainer-only run state of the storage move, addressed by the run's own uid",

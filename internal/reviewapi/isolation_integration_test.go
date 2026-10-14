@@ -4,9 +4,12 @@ package reviewapi_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -68,7 +71,8 @@ func newReviewServer(t *testing.T, pool *pgxpool.Pool) *httptest.Server {
 	authSvc := auth.NewService(auth.NewStore(pool), auth.SessionPolicy{TTL: time.Hour, MaxLifetime: 3 * time.Hour})
 	authAPI := auth.NewAPI(auth.APIConfig{Service: authSvc, Limiter: auth.NewLimiter(100, time.Minute)})
 	api := reviewapi.NewAPI(reviewapi.Config{
-		Service: svc, RequireCurator: authAPI.RequireCurator, RequireAuth: authAPI.RequireAuth,
+		Service: svc, Leaderboard: review.NewLeaderboardStore(pool),
+		RequireCurator: authAPI.RequireCurator, RequireAuth: authAPI.RequireAuth,
 	})
 	r := chi.NewRouter()
 	r.Route(auth.APIBasePath, func(r chi.Router) {
@@ -165,5 +169,103 @@ func TestAnswerRoute_foreignFaceIsMissing(t *testing.T) {
 	}
 	if skips != 0 {
 		t.Errorf("%d skips remembered after B's answers, want none", skips)
+	}
+}
+
+// seedDecisions records n review decisions ("face.assign" via review) by actor
+// in the project projectUID, the way the review game's answer path writes them.
+func seedDecisions(t *testing.T, pool *pgxpool.Pool, projectUID, actor string, n int) {
+	t.Helper()
+	for range n {
+		if _, err := pool.Exec(t.Context(),
+			`INSERT INTO audit_log (project_id, actor_uid, action, target_type, details)
+			 VALUES ($1, $2, 'face.assign', 'face', '{"via": "review"}')`, projectUID, actor); err != nil {
+			t.Fatalf("seeding a decision of %s in %s: %v", actor, projectUID, err)
+		}
+	}
+}
+
+// boardOf reads the all-time leaderboard of which's project as client and
+// returns its raw body and the user uid → total of every row.
+func boardOf(t *testing.T, f *projecttest.Fixture, client *http.Client, which projecttest.Side) (string, map[string]int) {
+	t.Helper()
+	resp := f.Get(t, client, f.PathFor(which, "review/leaderboard"))
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading the leaderboard of %s: %v", which, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("leaderboard of %s = %d (%s), want 200", which, resp.StatusCode, raw)
+	}
+	var body struct {
+		Entries []struct {
+			UserUID string `json:"user_uid"`
+			Total   int    `json:"total"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatalf("decoding the leaderboard of %s: %v", which, err)
+	}
+	totals := make(map[string]int, len(body.Entries))
+	for _, e := range body.Entries {
+		totals[e.UserUID] = e.Total
+	}
+	return string(raw), totals
+}
+
+// TestLeaderboardRoute_isPerProject proves the board is a fact about one
+// project: decisions recorded in A never reach B's board (not even the
+// reviewer's name), a member of both projects is counted on each board only
+// with what they decided there, and a member removed from a project vanishes
+// from its board together with their past decisions there.
+func TestLeaderboardRoute_isPerProject(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	pool := db.Pool()
+	f := projecttest.Seed(t, pool)
+	server := newReviewServer(t, pool)
+	clientA := f.ClientFor(t, server, projecttest.SideA)
+	clientB := f.ClientFor(t, server, projecttest.SideB)
+
+	// A's member plays in A only: B's board is empty and names nobody of A.
+	seedDecisions(t, pool, f.A.ProjectUID, f.A.UserUID, 3)
+	raw, board := boardOf(t, f, clientB, projecttest.SideB)
+	if len(board) != 0 {
+		t.Errorf("B's board after decisions in A only = %v, want empty", board)
+	}
+	for _, leaked := range []string{f.A.UserUID, f.A.Token} {
+		if strings.Contains(raw, leaked) {
+			t.Errorf("B's board names %q of A: %s", leaked, raw)
+		}
+	}
+	if _, board := boardOf(t, f, clientA, projecttest.SideA); board[f.A.UserUID] != 3 {
+		t.Errorf("A's board = %v, want %s with 3", board, f.A.UserUID)
+	}
+
+	// A's member joins B and plays there once: each board counts only its own
+	// project's decisions.
+	if _, err := pool.Exec(t.Context(),
+		`INSERT INTO project_members (project_uid, user_uid, role, approved_at) VALUES ($1, $2, 'curator', now())`,
+		f.B.ProjectUID, f.A.UserUID); err != nil {
+		t.Fatalf("adding A's member to B: %v", err)
+	}
+	seedDecisions(t, pool, f.B.ProjectUID, f.A.UserUID, 1)
+	seedDecisions(t, pool, f.B.ProjectUID, f.B.UserUID, 2)
+	if _, board := boardOf(t, f, clientB, projecttest.SideB); board[f.A.UserUID] != 1 || board[f.B.UserUID] != 2 ||
+		len(board) != 2 {
+		t.Errorf("B's board = %v, want %s with 1 and %s with 2", board, f.A.UserUID, f.B.UserUID)
+	}
+	if _, board := boardOf(t, f, clientA, projecttest.SideA); board[f.A.UserUID] != 3 || len(board) != 1 {
+		t.Errorf("A's board = %v, want only %s with 3", board, f.A.UserUID)
+	}
+
+	// Removed from B, A's member vanishes from B's board with their decisions.
+	if _, err := pool.Exec(t.Context(),
+		`DELETE FROM project_members WHERE project_uid = $1 AND user_uid = $2`,
+		f.B.ProjectUID, f.A.UserUID); err != nil {
+		t.Fatalf("removing A's member from B: %v", err)
+	}
+	if _, board := boardOf(t, f, clientB, projecttest.SideB); len(board) != 1 || board[f.B.UserUID] != 2 {
+		t.Errorf("B's board after the removal = %v, want only %s with 2", board, f.B.UserUID)
 	}
 }

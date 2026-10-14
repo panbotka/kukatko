@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/review"
 )
 
@@ -18,7 +19,8 @@ import (
 // KUKATKO_TEST_DATABASE_URL. They seed users and audit rows directly (explicit
 // created_at, so the time windows are exercised) and read the aggregation back.
 
-// seedUser inserts a user with the given uid, username, display name and role.
+// seedUser inserts a user with the given uid, username and display name, an
+// approved member of the bootstrap project — the project the board is read in.
 func seedUser(t *testing.T, pool *pgxpool.Pool, uid, username, displayName string) {
 	t.Helper()
 	_, err := pool.Exec(context.Background(),
@@ -27,12 +29,34 @@ func seedUser(t *testing.T, pool *pgxpool.Pool, uid, username, displayName strin
 	if err != nil {
 		t.Fatalf("seedUser(%s): %v", uid, err)
 	}
+	seedMembership(t, pool, project.BootstrapUID, uid, true)
 }
 
-// seedAudit inserts one audit row. actor is nil for a deleted-user (NULL) row;
-// via marks the row as review-originated; ageDays sets created_at that many days
-// before now (0 = today).
+// seedMembership makes the user uid a curator of the project projectUID,
+// approved or still waiting for approval.
+func seedMembership(t *testing.T, pool *pgxpool.Pool, projectUID, uid string, approved bool) {
+	t.Helper()
+	_, err := pool.Exec(context.Background(),
+		`INSERT INTO project_members (project_uid, user_uid, role, approved_at)
+		 VALUES ($1, $2, 'curator', CASE WHEN $3 THEN now() END)`, projectUID, uid, approved)
+	if err != nil {
+		t.Fatalf("seedMembership(%s in %s): %v", uid, projectUID, err)
+	}
+}
+
+// seedAudit inserts one audit row in the bootstrap project. actor is nil for a
+// deleted-user (NULL) row; via marks the row as review-originated; ageDays sets
+// created_at that many days before now (0 = today).
 func seedAudit(t *testing.T, pool *pgxpool.Pool, now time.Time, actor *string, action string, via bool, ageDays int) {
+	t.Helper()
+	seedAuditIn(t, pool, project.BootstrapUID, now, actor, action, via, ageDays)
+}
+
+// seedAuditIn is seedAudit in the project projectUID.
+func seedAuditIn(
+	t *testing.T, pool *pgxpool.Pool, projectUID string, now time.Time, actor *string, action string, via bool,
+	ageDays int,
+) {
 	t.Helper()
 	details := map[string]any{}
 	if via {
@@ -43,9 +67,9 @@ func seedAudit(t *testing.T, pool *pgxpool.Pool, now time.Time, actor *string, a
 		t.Fatalf("marshal details: %v", err)
 	}
 	_, err = pool.Exec(context.Background(),
-		`INSERT INTO audit_log (actor_uid, action, target_type, details, created_at)
-		 VALUES ($1, $2, '', $3, $4)`,
-		actor, action, raw, now.AddDate(0, 0, -ageDays))
+		`INSERT INTO audit_log (project_id, actor_uid, action, target_type, details, created_at)
+		 VALUES ($1, $2, $3, '', $4, $5)`,
+		projectUID, actor, action, raw, now.AddDate(0, 0, -ageDays))
 	if err != nil {
 		t.Fatalf("seedAudit(%s %s): %v", action, actionAge(ageDays), err)
 	}
@@ -132,7 +156,7 @@ func TestLeaderboard_aggregatesAcrossActionsWindowsAndExclusions(t *testing.T) {
 
 	store := review.NewLeaderboardStore(pool)
 
-	allTime, err := store.Leaderboard(context.Background(), review.WindowAllTime)
+	allTime, err := store.Leaderboard(context.Background(), project.BootstrapUID, review.WindowAllTime)
 	if err != nil {
 		t.Fatalf("Leaderboard(all): %v", err)
 	}
@@ -143,7 +167,7 @@ func TestLeaderboard_aggregatesAcrossActionsWindowsAndExclusions(t *testing.T) {
 		{"carol", "carol", 1, 1, 2},
 	})
 
-	week, err := store.Leaderboard(context.Background(), review.WindowWeek)
+	week, err := store.Leaderboard(context.Background(), project.BootstrapUID, review.WindowWeek)
 	if err != nil {
 		t.Fatalf("Leaderboard(7d): %v", err)
 	}
@@ -154,7 +178,7 @@ func TestLeaderboard_aggregatesAcrossActionsWindowsAndExclusions(t *testing.T) {
 		{"carol", "carol", 1, 1, 2},
 	})
 
-	today, err := store.Leaderboard(context.Background(), review.WindowToday)
+	today, err := store.Leaderboard(context.Background(), project.BootstrapUID, review.WindowToday)
 	if err != nil {
 		t.Fatalf("Leaderboard(today): %v", err)
 	}
@@ -200,7 +224,7 @@ func TestLeaderboard_reportsTheCurrentDayStreak(t *testing.T) {
 	seedAudit(t, pool, now, carol, "face.assign", true, 3)
 
 	store := review.NewLeaderboardStore(pool)
-	entries, err := store.Leaderboard(context.Background(), review.WindowAllTime)
+	entries, err := store.Leaderboard(context.Background(), project.BootstrapUID, review.WindowAllTime)
 	if err != nil {
 		t.Fatalf("Leaderboard(all): %v", err)
 	}
@@ -220,7 +244,7 @@ func TestLeaderboard_reportsTheCurrentDayStreak(t *testing.T) {
 
 	// The streak is a fact about the habit, not about the slice being shown, so a
 	// narrower window must not shorten it.
-	today, err := store.Leaderboard(context.Background(), review.WindowToday)
+	today, err := store.Leaderboard(context.Background(), project.BootstrapUID, review.WindowToday)
 	if err != nil {
 		t.Fatalf("Leaderboard(today): %v", err)
 	}
@@ -228,5 +252,61 @@ func TestLeaderboard_reportsTheCurrentDayStreak(t *testing.T) {
 		if e.UserUID == "alice" && e.StreakDays != 3 {
 			t.Errorf("alice's streak in the today window = %d, want the same 3", e.StreakDays)
 		}
+	}
+}
+
+// TestLeaderboard_countsOnlyTheProjectsApprovedMembers proves the store's
+// scoping: a decision recorded in another project counts neither on the board
+// nor in the streak, a pending member and an instance maintainer who is no
+// member of the project are left off the board although they answered there,
+// and the same account is counted per project with what it decided in each.
+func TestLeaderboard_countsOnlyTheProjectsApprovedMembers(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	pool := db.Pool()
+	now := time.Now()
+
+	const other = "pjleaderboardotherproject0"
+	if _, err := pool.Exec(context.Background(),
+		`INSERT INTO projects (uid, slug, name) VALUES ($1, 'lb-other', 'Other')`, other); err != nil {
+		t.Fatalf("seeding the other project: %v", err)
+	}
+	seedUser(t, pool, "alice", "alice", "Alice") // member of both
+	seedMembership(t, pool, other, "alice", true)
+	seedUser(t, pool, "olga", "olga", "Olga") // member of the bootstrap project only
+	if _, err := pool.Exec(context.Background(),
+		`INSERT INTO users (uid, username, display_name, email, password_hash, role)
+		 VALUES ('maxim', 'maxim', 'Maxim', 'maxim@example.test', 'x', 'maintainer'),
+		        ('petra', 'petra', 'Petra', 'petra@example.test', 'x', 'user')`); err != nil {
+		t.Fatalf("seeding the maintainer and the pending member: %v", err)
+	}
+	seedMembership(t, pool, project.BootstrapUID, "petra", false)
+	alice, olga, maxim, petra := new("alice"), new("olga"), new("maxim"), new("petra")
+
+	seedAudit(t, pool, now, alice, "face.assign", true, 0)
+	seedAuditIn(t, pool, other, now, alice, "face.assign", true, 0)
+	seedAuditIn(t, pool, other, now, alice, "face.reject", true, 1)
+	seedAuditIn(t, pool, other, now, olga, "face.assign", true, 0) // olga is no member of other
+	seedAudit(t, pool, now, maxim, "face.assign", true, 0)         // a maintainer, no member
+	seedAudit(t, pool, now, petra, "face.assign", true, 0)         // pending member
+
+	store := review.NewLeaderboardStore(pool)
+	home, err := store.Leaderboard(context.Background(), project.BootstrapUID, review.WindowAllTime)
+	if err != nil {
+		t.Fatalf("Leaderboard(bootstrap): %v", err)
+	}
+	assertBoard(t, review.WindowAllTime, home, []wantEntry{{"alice", "Alice", 1, 0, 1}})
+	if home[0].StreakDays != 1 {
+		t.Errorf("alice's streak in the bootstrap project = %d, want 1 (yesterday was in the other project)",
+			home[0].StreakDays)
+	}
+
+	away, err := store.Leaderboard(context.Background(), other, review.WindowAllTime)
+	if err != nil {
+		t.Fatalf("Leaderboard(other): %v", err)
+	}
+	assertBoard(t, review.WindowAllTime, away, []wantEntry{{"alice", "Alice", 1, 1, 2}})
+	if away[0].StreakDays != 2 {
+		t.Errorf("alice's streak in the other project = %d, want 2", away[0].StreakDays)
 	}
 }

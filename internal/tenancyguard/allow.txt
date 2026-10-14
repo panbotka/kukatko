@@ -1,5 +1,5 @@
-# The tenancy guard's allow-list: SQL statements over a root table that may
-# legitimately name no project. One `path:line reason` per line, path relative to
+# The tenancy guard's allow-list: SQL statements over a root table (or reads of
+# a read-scoped table such as audit_log) that may legitimately name no project. One `path:line reason` per line, path relative to
 # the repository root, line = the line the guard reports (the first unscoped
 # table name of the statement). `#` starts a comment.
 #
@@ -14,6 +14,10 @@
 
 # internal/albumfeaturedjob
 internal/albumfeaturedjob/service.go:112 worker-only: the album_featured_notify job learns its project from the album uid of its payload
+
+# internal/audit
+internal/audit/audit.go:1000 Count backs both audit listings: the maintainer's instance-wide /audit (the legitimate cross-project read) and the project admin's /p/{project}/audit, whose handler always sets Filter.ProjectUID
+internal/audit/audittest/audittest.go:42 test support only (Guard): marks the newest audit id instance-wide so it can find unscoped entries written after it
 
 # internal/bulk
 internal/bulk/apply.go:297 photo uid is one of the batch that requireBatchInProject proved in projectUID earlier in the same tx

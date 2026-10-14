@@ -46,9 +46,10 @@ type Service interface {
 // *review.LeaderboardStore satisfies it. The indirection keeps handler tests
 // store-free.
 type Leaderboarder interface {
-	// Leaderboard returns the per-user decision tally for window, highest total
-	// first.
-	Leaderboard(ctx context.Context, window review.LeaderboardWindow) ([]review.LeaderboardEntry, error)
+	// Leaderboard returns the per-member decision tally of the project
+	// projectUID for window, highest total first.
+	Leaderboard(ctx context.Context, projectUID string, window review.LeaderboardWindow) (
+		[]review.LeaderboardEntry, error)
 }
 
 // Config assembles the API: the review service and its guards.
@@ -197,8 +198,9 @@ type leaderboardResponse struct {
 }
 
 // handleLeaderboard answers GET /review/leaderboard?window=all|7d|today with the
-// per-user decision counts for the window. A missing window defaults to all-time;
-// an unrecognised one answers 400.
+// per-member decision counts of the request's project for the window — only
+// decisions recorded in that project, only its approved members. A missing
+// window defaults to all-time; an unrecognised one answers 400.
 func (a *API) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 	if a.leaderboard == nil {
 		writeError(w, http.StatusServiceUnavailable, "review leaderboard not available")
@@ -209,7 +211,7 @@ func (a *API) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	entries, err := a.leaderboard.Leaderboard(r.Context(), window)
+	entries, err := a.leaderboard.Leaderboard(r.Context(), auth.ProjectUIDFromContext(r.Context()), window)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "review leaderboard failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "building leaderboard failed")

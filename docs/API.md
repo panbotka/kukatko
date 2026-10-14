@@ -1763,7 +1763,11 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   sweep and expand endpoints).
   **Leaderboard** `GET /review/leaderboard?window=all|7d|today` (default `all`, other value → 400)
   gated by **`RequireAuth`** — it returns only aggregated counts + names, so **every authenticated user**
-  sees it (even a viewer), not just a curator. It ranks players by the number of **decisions** in the review
+  sees it (even a viewer), not just a curator. **It is per project:** it counts only the decisions recorded
+  in the request's project (`audit_log.project_id`) and lists only **approved members of that project** at
+  read time — a member of another project, a member removed since (with their past decisions here) and an
+  instance maintainer who is no member never appear, even if they answered here; a member of two projects
+  sees on each board only what was decided there. It ranks players by the number of **decisions** in the review
   game, sourced from durable audit rows with `details.via = "review"`. Which actions those are is
   **`audit.ReviewYesActions()` / `ReviewNoActions()`** — one shared list, so a new question type becomes
   countable (here and in the admin decision view, `GET /audit?via=review&decision=yes|no`) the moment its write
@@ -1778,7 +1782,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   row. The windows are computed from `created_at` (7 d = a sliding 7×24 h, today = midnight of the day).
   **`streak_days`** is the player's *current* run of consecutive days with at least one review decision, ending
   today **or yesterday** (the day is not over, so an unfinished today must not break a run); 0 when no run is
-  alive. It is **not** narrowed by `window` — a streak is a fact about the habit, not about the slice being
+  alive, counted from the project's decisions only. It is **not** narrowed by `window` — a streak is a fact about the habit, not about the slice being
   shown — and needs **no new table**: it is a second query over the same `via:review` audit rows, reduced in
   SQL to the distinct *hours* each user was active in over the last 400 days and folded into local days in Go
   (`internal/review/streak.go`), where the day arithmetic is testable. The hour reduction is exact wherever the

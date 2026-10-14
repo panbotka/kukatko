@@ -57,8 +57,8 @@ func TestRepository_rootStatementsNameTheirProject(t *testing.T) {
 }
 
 // TestRootTables_matchMigrations keeps RootTables honest: the tables that carry
-// a project column in the migrations are exactly the root tables plus the
-// documented exemptions, each with the same column.
+// a project column in the migrations are exactly the root tables, the
+// read-scoped tables and the documented exemptions, each with the same column.
 func TestRootTables_matchMigrations(t *testing.T) {
 	t.Parallel()
 	root := repoRoot(t)
@@ -73,13 +73,24 @@ func TestRootTables_matchMigrations(t *testing.T) {
 			}
 			continue
 		}
+		if want, ok := tenancyguard.ReadScopedTables[table]; ok {
+			if col != want {
+				t.Errorf("read-scoped table %s is scoped by %s in the schema, ReadScopedTables says %s",
+					table, col, want)
+			}
+			continue
+		}
 		if _, ok := tenancyguard.ExemptTables[table]; !ok {
-			t.Errorf("table %s has a %s column but is neither in RootTables nor in ExemptTables "+
-				"(internal/tenancyguard/tables.go)", table, col)
+			t.Errorf("table %s has a %s column but is in none of RootTables, ReadScopedTables and "+
+				"ExemptTables (internal/tenancyguard/tables.go)", table, col)
 		}
 	}
-	listed := make([]string, 0, len(tenancyguard.RootTables)+len(tenancyguard.ExemptTables))
+	listed := make([]string, 0,
+		len(tenancyguard.RootTables)+len(tenancyguard.ReadScopedTables)+len(tenancyguard.ExemptTables))
 	for table := range tenancyguard.RootTables {
+		listed = append(listed, table)
+	}
+	for table := range tenancyguard.ReadScopedTables {
 		listed = append(listed, table)
 	}
 	for table := range tenancyguard.ExemptTables {

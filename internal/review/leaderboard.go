@@ -8,6 +8,15 @@ package review
 // time somebody remembers this file. Skips write no row and so never count.
 // Deleted users (a NULL actor_uid) are excluded, and a window narrows the tally
 // to all-time, the last seven days, or today.
+//
+// The board is per project, because projects are foreign tenants: it counts
+// only the decisions recorded in the request's project (audit_log.project_id),
+// and lists only accounts that are approved members of that project at read
+// time. A member removed from the project vanishes from its board together with
+// their past decisions; an instance maintainer who answered while acting in the
+// project appears only if they are a member of it too — the board is a game
+// among the project's people, and a non-member's name is exactly what a member
+// of a foreign tenant must not learn.
 
 import (
 	"context"
@@ -105,23 +114,27 @@ func NewLeaderboardStore(pool *pgxpool.Pool) *LeaderboardStore {
 	return &LeaderboardStore{pool: pool, now: time.Now}
 }
 
-// leaderboardQuery aggregates the via:review audit rows per acting user. The
-// 'review' literal must stay in step with viaReview (answer.go) and the partial
-// index in migration 0037 so the planner can use it. $1/$2 are the yes/no action
-// sets, $3 the union used to bound the scan; an optional created_at bound is
-// appended as $4 for a windowed board.
+// leaderboardQuery aggregates the via:review audit rows of one project per
+// acting user who is an approved member of that project. The 'review' literal
+// must stay in step with viaReview (answer.go) and the partial index in
+// migration 0037 so the planner can use it. $1 is the project, $2/$3 the yes/no
+// action sets, $4 the union used to bound the scan; an optional created_at
+// bound is appended as $5 for a windowed board.
 const leaderboardQuery = `
 SELECT
     a.actor_uid,
     COALESCE(NULLIF(u.display_name, ''), u.username) AS display_name,
-    COUNT(*) FILTER (WHERE a.action = ANY($1)) AS yes_count,
-    COUNT(*) FILTER (WHERE a.action = ANY($2)) AS no_count,
+    COUNT(*) FILTER (WHERE a.action = ANY($2)) AS yes_count,
+    COUNT(*) FILTER (WHERE a.action = ANY($3)) AS no_count,
     COUNT(*) AS total
 FROM audit_log a
 JOIN users u ON u.uid = a.actor_uid
-WHERE a.actor_uid IS NOT NULL
+JOIN project_members m ON m.project_uid = a.project_id AND m.user_uid = a.actor_uid
+WHERE a.project_id = $1
+  AND m.approved_at IS NOT NULL
+  AND a.actor_uid IS NOT NULL
   AND a.details ->> 'via' = 'review'
-  AND a.action = ANY($3)`
+  AND a.action = ANY($4)`
 
 // leaderboardGroupOrder groups per user and orders the board deterministically:
 // highest total first, then more confirmations, then display name.
@@ -129,22 +142,25 @@ const leaderboardGroupOrder = `
 GROUP BY a.actor_uid, u.display_name, u.username
 ORDER BY total DESC, yes_count DESC, display_name ASC`
 
-// Leaderboard returns the per-user review-decision tally for window, ordered
-// highest total first, each row carrying that user's current day streak. Only
-// users with at least one decision in the window appear. It returns a wrapped
-// error on any query or scan failure.
+// Leaderboard returns the per-user review-decision tally of the project
+// projectUID for window, ordered highest total first, each row carrying that
+// user's current day streak in the project. Only approved members of the
+// project with at least one decision there in the window appear. It returns a
+// wrapped error on any query or scan failure.
 //
 // The streak is a second query rather than a column of the first: it aggregates
 // over a different span (always all-time, because a run of days is not a
 // property of the window being shown) and at a different grain (days, not
 // answers), and folding the two into one statement would make both harder to
 // read for no saving worth having on a board of a handful of rows.
-func (s *LeaderboardStore) Leaderboard(ctx context.Context, window LeaderboardWindow) ([]LeaderboardEntry, error) {
-	entries, err := s.tally(ctx, window)
+func (s *LeaderboardStore) Leaderboard(
+	ctx context.Context, projectUID string, window LeaderboardWindow,
+) ([]LeaderboardEntry, error) {
+	entries, err := s.tally(ctx, projectUID, window)
 	if err != nil {
 		return nil, err
 	}
-	streaks, err := s.streaks(ctx)
+	streaks, err := s.streaks(ctx, projectUID)
 	if err != nil {
 		return nil, err
 	}
@@ -154,14 +170,14 @@ func (s *LeaderboardStore) Leaderboard(ctx context.Context, window LeaderboardWi
 	return entries, nil
 }
 
-// tally runs the per-user decision count for window, which is the board's
-// ranking and everything but the streak.
+// tally runs the per-user decision count of the project for window, which is
+// the board's ranking and everything but the streak.
 func (s *LeaderboardStore) tally(
-	ctx context.Context, window LeaderboardWindow,
+	ctx context.Context, projectUID string, window LeaderboardWindow,
 ) ([]LeaderboardEntry, error) {
 	yes := audit.ReviewYesActions()
 	no := audit.ReviewNoActions()
-	args := []any{yes, no, audit.ReviewDecisionActions()}
+	args := []any{projectUID, yes, no, audit.ReviewDecisionActions()}
 
 	query := leaderboardQuery
 	if cutoff := windowCutoff(window, s.now()); cutoff != nil {

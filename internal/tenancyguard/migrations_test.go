@@ -55,10 +55,20 @@ func TestRootAndExemptTables_disjoint(t *testing.T) {
 		if _, ok := RootTables[table]; ok {
 			t.Errorf("%s is both a root table and exempt", table)
 		}
+		if _, ok := ReadScopedTables[table]; ok {
+			t.Errorf("%s is both read-scoped and exempt", table)
+		}
 	}
-	for table, col := range RootTables {
-		if col != "project_id" && col != "project_uid" {
-			t.Errorf("%s: project column %q is neither project_id nor project_uid", table, col)
+	for table := range ReadScopedTables {
+		if _, ok := RootTables[table]; ok {
+			t.Errorf("%s is both a root table and read-scoped", table)
+		}
+	}
+	for _, tables := range []map[string]string{RootTables, ReadScopedTables} {
+		for table, col := range tables {
+			if col != "project_id" && col != "project_uid" {
+				t.Errorf("%s: project column %q is neither project_id nor project_uid", table, col)
+			}
 		}
 	}
 }

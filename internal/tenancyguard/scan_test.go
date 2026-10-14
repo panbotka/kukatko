@@ -53,6 +53,26 @@ func TestScanFiles(t *testing.T) {
 			want: []string{"4:albums", "5:labels", "6:subjects", "7:faces"},
 		},
 		{
+			name: "a read of a read-scoped table without project is a finding",
+			body: "func f() {\nq(\"SELECT count(*) FROM audit_log WHERE actor_uid = $1\")\n" +
+				"q(\"SELECT 1 FROM users u JOIN audit_log a ON a.actor_uid = u.uid\")\n}",
+			want: []string{"4:audit_log", "5:audit_log"},
+		},
+		{
+			name: "a read of a read-scoped table naming the project is scoped",
+			body: "func f() { q(\"SELECT count(*) FROM audit_log a WHERE a.project_id = $1\") }",
+		},
+		{
+			name: "writes to a read-scoped table need no project",
+			body: "func f() {\nq(\"INSERT INTO audit_log (action) VALUES ($1)\")\n" +
+				"q(\"DELETE FROM audit_log WHERE created_at < $1\")\nq(\"UPDATE audit_log SET x = 1\")\n}",
+		},
+		{
+			name: "a write that reads a read-scoped table is judged on the read",
+			body: "func f() { q(\"INSERT INTO t (n) SELECT count(*) FROM audit_log\") }",
+			want: []string{"3:audit_log"},
+		},
+		{
 			name: "a project column only in the select list is a finding",
 			body: "func f() { q(\"SELECT uid, project_id FROM photos WHERE uid = $1\") }",
 			want: []string{"3:photos"},

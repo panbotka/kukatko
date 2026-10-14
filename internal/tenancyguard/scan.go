@@ -15,8 +15,9 @@ import (
 	"sync"
 )
 
-// Finding is one reference to a root table from a statement that names no
-// project: the place a forgotten `WHERE project_id = …` would leak rows.
+// Finding is one reference to a root table, or one read of a read-scoped
+// table, from a statement that names no project: the place a forgotten
+// `WHERE project_id = …` would leak rows.
 type Finding struct {
 	// Path is the slash-separated file path, relative to the scanned root.
 	Path string
@@ -39,8 +40,8 @@ func (f Finding) String() string {
 }
 
 // Scan parses every non-test .go file below the given directories of root and
-// returns the root-table references whose statement names no project, sorted by
-// path and line. Packages are scanned concurrently. It returns an error if a
+// returns the root-table references and read-scoped-table reads whose
+// statement names no project, sorted by path and line. Packages are scanned concurrently. It returns an error if a
 // directory cannot be walked or a file cannot be parsed.
 func Scan(root string, dirs ...string) ([]Finding, error) {
 	packages, err := goPackages(root, dirs)
@@ -149,6 +150,42 @@ var rootRef = func() *regexp.Regexp {
 	return regexp.MustCompile(`\b(?:FROM|JOIN|UPDATE|INTO)\s+(` + strings.Join(tables, "|") + `)\b`)
 }()
 
+// readRef matches a read-scoped table named after the SQL keywords that read
+// it. A DELETE's own FROM is matched too, as the first alternative, so that the
+// leftmost match consumes it and judge can skip it: deleting is a write.
+var readRef = func() *regexp.Regexp {
+	tables := make([]string, 0, len(ReadScopedTables))
+	for t := range ReadScopedTables {
+		tables = append(tables, t)
+	}
+	sort.Strings(tables)
+	return regexp.MustCompile(`\b(DELETE\s+FROM|FROM|JOIN)\s+(` + strings.Join(tables, "|") + `)\b`)
+}()
+
+// scopedRef is one reference a statement makes to a table the guard checks:
+// where the table name sits in the statement and the column that scopes it.
+type scopedRef struct {
+	start, end int
+	column     string
+}
+
+// scopedRefs returns the references of stmt the guard checks, in order: every
+// root-table reference and every read of a read-scoped table.
+func scopedRefs(stmt string) []scopedRef {
+	var refs []scopedRef
+	for _, m := range rootRef.FindAllStringSubmatchIndex(stmt, -1) {
+		refs = append(refs, scopedRef{start: m[2], end: m[3], column: RootTables[stmt[m[2]:m[3]]]})
+	}
+	for _, m := range readRef.FindAllStringSubmatchIndex(stmt, -1) {
+		if strings.HasPrefix(stmt[m[2]:m[3]], "DELETE") {
+			continue
+		}
+		refs = append(refs, scopedRef{start: m[4], end: m[5], column: ReadScopedTables[stmt[m[4]:m[5]]]})
+	}
+	sort.Slice(refs, func(i, j int) bool { return refs[i].start < refs[j].start })
+	return refs
+}
+
 // whitespace collapses runs of whitespace in a statement excerpt.
 var whitespace = regexp.MustCompile(`\s+`)
 
@@ -234,13 +271,13 @@ func (p *pkgScan) judge(stmt string, offset int, pieces []piece, starts []int) (
 	if scoped[projectMark] {
 		return u, false
 	}
-	for _, m := range rootRef.FindAllStringSubmatchIndex(stmt, -1) {
-		table := stmt[m[2]:m[3]]
-		if scoped[RootTables[table]] {
+	for _, ref := range scopedRefs(stmt) {
+		table := stmt[ref.start:ref.end]
+		if scoped[ref.column] {
 			continue
 		}
 		if u.tables == nil {
-			pos, ok := p.position(pieces, starts, offset+m[2])
+			pos, ok := p.position(pieces, starts, offset+ref.start)
 			if !ok {
 				continue
 			}

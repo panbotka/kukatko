@@ -3654,7 +3654,15 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   audit trail already holds it. So that a review face confirmation also lands in the leaderboard,
   `applyFaceYes` sends `AssignRequest.Via = "review"` into facematch `Service.Apply` (until now the only
   unmarked of the four actions). Unit tests `ParseWindow`/`windowCutoff` + an integration test of windows, the yes/no
-  split, ordering, NULL-actor/non-review exclusion; for the partial index see migration `0037`),
+  split, ordering, NULL-actor/non-review exclusion; for the partial index see migration `0037`).
+  **The board is per project** — `Leaderboard(ctx, projectUID, window)`: both queries count only rows with
+  `audit_log.project_id = projectUID` and join `project_members`, so only **approved members of that project
+  at read time** appear. A member removed from the project vanishes from its board with their past decisions
+  there; an instance maintainer who answered while acting in the project counts **only if they are a member**
+  (decided: the board is a game among the project's people, and a non-member's name is what a foreign
+  tenant must not learn); the same account is counted per project with what it decided in each, and its
+  streak is per project too (`TestLeaderboard_countsOnlyTheProjectsApprovedMembers`;
+  `internal/reviewapi`'s `TestLeaderboardRoute_isPerProject` proves it over HTTP with `projecttest`),
   `internal/reviewapi/`
   (an HTTP API over the review game: the `Service` interface (satisfied by `*review.Service`) and `Leaderboarder`
   (satisfied by `*review.LeaderboardStore`), `NewAPI(Config{Service,Leaderboard,RequireCurator,RequireAuth})`
@@ -3667,7 +3675,8 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   `ErrInvalidQuestion`/`ErrInvalidAnswer` → 400, `ErrQuestionNotFound` (a photo, subject or label outside the
   request's project — `auth.ProjectUIDFromContext` — or nowhere) → 404 with one fixed body, any other error →
   500, `result:"gone"` (a vanished face or marker) stays 200;
-  the leaderboard reads `?window=all|7d|today` (default all, `ParseWindow` → 400 on other) and via
+  the leaderboard reads `?window=all|7d|today` (default all, `ParseWindow` → 400 on other), asks the
+  `Leaderboarder` for the request's project (`auth.ProjectUIDFromContext`) and via
   `buildLeaderboardResponse` returns `{window,caller_uid,entries:[…is_me]}` (the caller from `auth.
   UserFromContext`, `is_me` on the own row, entries never null); 503 without a backend; mounted
   in `serve` (`buildReviewAPI` in `cmd/kukatko/review.go`)),
@@ -7274,13 +7283,18 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   nobody wrote a test for — a future query that forgets `project_id`. In the spirit of
   `web/src/styles/colourLiterals.test.ts`: a ban checked over the source, with a reasoned allow-list.
   - `RootTables` (`tables.go`) is **the one list** of catalogue root tables, each with the column that
-    names its project (`project_id`; `project_invites` uses `project_uid`). `ExemptTables` lists the
-    tables that carry a project column but are not roots (`audit_log`, `project_members`,
-    `storage_rekey_runs`), each with its reason. `ProjectColumnTables` replays
-    `internal/database/migrations/*.sql` (`ALTER TABLE … ADD COLUMN project_id|project_uid`, the column
-    inside `CREATE TABLE`, `DROP COLUMN`/`DROP TABLE`) and `TestRootTables_matchMigrations` requires the
-    schema's project tables to be exactly `RootTables` ∪ `ExemptTables` — a new root table cannot be
-    forgotten in the list.
+    names its project (`project_id`; `project_invites` uses `project_uid`). `ReadScopedTables` lists the
+    tables whose **reads** must name the project but whose writes need not — today `audit_log`: its
+    `project_id` is nullable because an account or maintenance entry belongs to no project, so an
+    `INSERT`/`UPDATE`/`DELETE` without one is legitimate, but a `SELECT` reading it (`FROM`/`JOIN`, never a
+    `DELETE`'s own `FROM`) must carry the predicate or be allow-listed (the instance-wide `/audit` count is,
+    the review leaderboard once leaked every project's reviewers through exactly this gap). `ExemptTables`
+    lists the tables that carry a project column but are neither (`project_members`,
+    `storage_rekey_runs`, `storage_rekey_derived_failures`), each with its reason. `ProjectColumnTables`
+    replays `internal/database/migrations/*.sql` (`ALTER TABLE … ADD COLUMN project_id|project_uid`, the
+    column inside `CREATE TABLE`, `DROP COLUMN`/`DROP TABLE`) and `TestRootTables_matchMigrations` requires
+    the schema's project tables to be exactly `RootTables` ∪ `ReadScopedTables` ∪ `ExemptTables` — a new
+    root table cannot be forgotten in the list.
   - `Scan(root, dirs...)` parses every non-test `.go` file under `internal/` and `cmd/` (`go/parser`, one
     goroutine per package; ~0.2 s on the Pi) and **folds** each string expression into a statement text:
     literals, `+` chains, package-level `const`/`var` values (a value folded in at a use site is judged
@@ -7291,7 +7305,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `buildWhere(projectUID, …)`, `env.project`) or carries a literal with a project column, which stands in
     for the project. The text is split on `;`; a statement naming a root table after upper-case `FROM`,
     `JOIN`, `UPDATE` or `INTO` (`DELETE FROM`/`INSERT INTO` included; lower-case is error-message prose)
-    must name that table's column **in a predicate position**. **One finding per statement**, at the line
+    must name that table's column **in a predicate position**; a read-scoped table is checked the same way,
+    but only where it is read (`FROM`/`JOIN`). **One finding per statement**, at the line
     of its first unscoped table name (a raw string's own line, not the literal's first).
   - **The predicate rule** (`clause.go`, `predicateColumns`): a token-position heuristic, not a parser. It
     walks the statement keeping one clause per parenthesis level — a nested level starts in its parent's

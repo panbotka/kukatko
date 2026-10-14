@@ -53,9 +53,10 @@ type fakeLeaderboard struct {
 	window  review.LeaderboardWindow
 }
 
-// Leaderboard records the window and returns the scripted board.
+// Leaderboard records the window and returns the scripted board; the project
+// scoping is proven against the real store in isolation_integration_test.go.
 func (f *fakeLeaderboard) Leaderboard(
-	_ context.Context, window review.LeaderboardWindow,
+	_ context.Context, _ string, window review.LeaderboardWindow,
 ) ([]review.LeaderboardEntry, error) {
 	f.window = window
 	return f.entries, f.err
