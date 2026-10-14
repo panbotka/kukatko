@@ -190,8 +190,8 @@ type meProject struct {
 // meResponse is the body of GET /auth/me: the login response plus the caller's
 // instance role, its memberships and the slug of the project it last worked in
 // ("" when none is remembered). Each membership carries the role and the "this
-// is me" person of that project; the user's own "role" and "subject_uid" are
-// the account record's (see AccountRole) — "maintainer" for a maintainer.
+// is me" person of that project; the user object is the account record, which
+// carries neither — a role and a linked person exist only per project.
 type meResponse struct {
 	loginResponse
 
@@ -232,8 +232,9 @@ func (a *API) meResponseFor(ctx context.Context, p principal) (meResponse, error
 // from the session rather than from the body, so there is nothing to point at
 // somebody else.
 //
-// It responds 200 with the refreshed user (the client re-renders the "my photos"
-// entry and the avatar from it), 400 for a bad body or a subject that does not
+// It responds 200 with the account and the link just written in this project (a
+// LinkedUser — the client re-renders the "my photos" entry and the avatar from
+// it), 400 for a bad body or a subject that does not
 // exist, 404 if the account has since been deleted, or 500.
 //
 // The change is deliberately not audited, following POST /auth/password: the

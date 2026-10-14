@@ -219,8 +219,7 @@ func NewRegistration(cfg RegistrationConfig) *Registration {
 }
 
 // Register creates the account described by in and returns it, unapproved:
-// an unapproved viewer of in.ProjectUID (the bootstrap project when empty),
-// whose switch and secret are the ones checked.
+// an unapproved viewer of in.ProjectUID, whose switch and secret are the ones checked.
 //
 // The account, the audit entry (entry, whose actor and target are stamped with
 // the new account — nobody else was involved), the confirmation mail and the
@@ -308,14 +307,14 @@ func (rg *Registration) RegisterWithInvite(
 		// Defence in depth: the gate already capped it.
 		role = project.RoleEditor
 	}
-	user, err := rg.svc.prepareNewUser(CreateUserInput{
+	user, err := rg.svc.prepareRegistration(NewAccountInput{
 		Username: in.Username, Password: in.Password, DisplayName: in.DisplayName, Email: in.Email,
-		Role: AccountRole(role),
-	})
+	}, grant.ProjectUID, role)
 	if err != nil {
 		return User{}, err
 	}
-	user.joinProject = grant.ProjectUID
+	// The invite is the project admin's approval, given in advance.
+	user.ApprovedAt = rg.svc.approvedNow()
 	entry.ActorUID, entry.TargetUID = user.UID, user.UID
 	entry.Details = withRegistrationDetails(entry.Details, user)
 	entry.Details["invite"] = grant.InviteUID
@@ -336,13 +335,14 @@ func (rg *Registration) RegisterWithInvite(
 }
 
 // withRegistrationDetails returns details (allocated when nil) with the new
-// account's username and role, the details every registration entry carries.
+// account's username and its role in the project it registered into, the
+// details every registration entry carries.
 func withRegistrationDetails(details map[string]any, user User) map[string]any {
 	if details == nil {
 		details = map[string]any{}
 	}
 	details["username"] = user.Username
-	details["role"] = string(user.AccountRole)
+	details["role"] = string(user.join.role)
 	return details
 }
 
@@ -354,21 +354,19 @@ func (rg *Registration) register(
 	ctx context.Context, projectUID string, in RegisterInput, entry audit.Entry,
 	claim func(ctx context.Context, tx pgx.Tx, userUID string) error,
 ) (User, error) {
-	user, err := rg.svc.prepareRegistration(CreateUserInput{
+	// A plain user and the lowest project role there is, in a membership
+	// nobody has approved yet. An administrator who wants this person to edit
+	// or govern anything raises it when they approve the account; registration
+	// itself hands out nothing.
+	user, err := rg.svc.prepareRegistration(NewAccountInput{
 		Username:    in.Username,
 		Password:    in.Password,
 		DisplayName: in.DisplayName,
 		Email:       in.Email,
-		// A plain user and the lowest project role there is, in a membership
-		// nobody has approved yet. An administrator who wants this person to
-		// edit or govern anything raises it when they approve the account;
-		// registration itself hands out nothing.
-		Role: AccountViewer,
-	})
+	}, projectUID, project.RoleViewer)
 	if err != nil {
 		return User{}, err
 	}
-	user.joinProject = projectUID
 
 	// Read before the transaction opens: the recipients are unrelated rows and
 	// holding them under the insert would only lengthen it. A failure here costs

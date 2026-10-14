@@ -283,11 +283,16 @@ A token for the agent (the lowest write-capable role is `editor`; `admin`/`maint
 one on someone else's behalf. So two steps:
 
 ```bash
-# 1) a maintainer creates the account (the role here is its role in the bootstrap project `v`;
-#    make it an editor of any other project via /system/projects or POST /api/v1/projects/{uid}/members)
+# 1) a maintainer creates the account — with no membership: it is the account record only
 curl -X POST https://<host>/api/v1/admin/users \
   -b maintainer-session.txt -H 'Content-Type: application/json' \
-  -d '{"username":"agent","email":"agent@example.org","password":"…","role":"editor"}'
+  -d '{"username":"agent","email":"agent@example.org","password":"…","instance_role":"user"}'
+
+# 1b) …and makes it an editor of each project the agent works in (or the project's admin adds it
+#     on /p/<slug>/members; <project_uid> from GET /api/v1/projects, <user_uid> from step 1)
+curl -X POST https://<host>/api/v1/projects/<project_uid>/members \
+  -b maintainer-session.txt -H 'Content-Type: application/json' \
+  -d '{"user_uid":"<user_uid>","role":"editor"}'
 
 # 2) that user logs in and mints a token for themselves
 curl -X POST https://<host>/api/v1/auth/login -c agent.txt \
@@ -297,7 +302,7 @@ curl -X POST https://<host>/api/v1/auth/tokens -b agent.txt \
 ```
 
 The response carries `secret` — **the plaintext `kkt_…` is shown only once**, save it right away. For a read-only agent
-create a user with the `viewer` role; a token inherits its owner's role, it has none of its own.
+make it a `viewer` of the project; a token inherits its owner's role there, it has none of its own.
 
 Connecting a client (Claude Code):
 

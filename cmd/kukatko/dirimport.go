@@ -333,8 +333,9 @@ func skipBreakdown(byReason map[dirimport.SkipReason]int) string {
 
 // resolveUploader returns the UID of the user the imported photos belong to.
 // A named user must exist (errNoUploader otherwise); with no --uploader the
-// configured bootstrap admin is used, and failing that any admin account. An
-// instance with no admin at all imports with no owner (uploaded_by stays NULL),
+// configured bootstrap admin is used, and failing that any enabled maintainer
+// (the system administrator — the account record knows no project role). An
+// instance with no such account imports with no owner (uploaded_by stays NULL),
 // which keeps a fresh, unbootstrapped install usable.
 func resolveUploader(
 	ctx context.Context, cfg *config.Config, store *auth.Store, username string,
@@ -356,7 +357,7 @@ func resolveUploader(
 		return "", fmt.Errorf("listing users: %w", err)
 	}
 	for i := range users {
-		if users[i].AccountRole == auth.AccountAdmin && !users[i].Disabled {
+		if users[i].Role.CanMaintain() && !users[i].Disabled {
 			return users[i].UID, nil
 		}
 	}

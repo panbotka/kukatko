@@ -83,27 +83,6 @@ func TestAccountRole_Split(t *testing.T) {
 			t.Errorf("AccountRole(%q).Split() = %q, %q, want %q, %q",
 				tt.account, instance, inProject, tt.wantInstance, tt.wantProject)
 		}
-		if tt.wantValid {
-			if back := accountRoleOf(instance, inProject); back != tt.account {
-				t.Errorf("accountRoleOf(Split(%q)) = %q", tt.account, back)
-			}
-		}
-	}
-}
-
-// TestAccountRoleOf_maintainerWins verifies a maintainer reports "maintainer"
-// whatever its membership says, and a user without one reports nothing.
-func TestAccountRoleOf_maintainerWins(t *testing.T) {
-	t.Parallel()
-
-	if got := accountRoleOf(RoleMaintainer, project.RoleViewer); got != AccountMaintainer {
-		t.Errorf("maintainer with a viewer membership = %q, want maintainer", got)
-	}
-	if got := accountRoleOf(RoleMaintainer, ""); got != AccountMaintainer {
-		t.Errorf("maintainer without membership = %q, want maintainer", got)
-	}
-	if got := accountRoleOf(RoleUser, ""); got != "" {
-		t.Errorf("user without membership = %q, want empty", got)
 	}
 }
 

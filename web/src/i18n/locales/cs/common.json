@@ -4775,6 +4775,90 @@
     "demoteTitle": "Odebrat {{name}} správu systému?",
     "demoteBody": "Účet přijde o správu instance. Členství v projektech zůstanou beze změny.",
     "lastMaintainer": "Instance musí mít aspoň jednoho správce systému.",
-    "roleFailed": "Roli se nepodařilo změnit."
+    "roleFailed": "Roli se nepodařilo změnit.",
+    "create": "Nový účet",
+    "actions": {
+      "edit": "Upravit",
+      "password": "Změnit heslo",
+      "resetLink": "Odkaz na heslo",
+      "block": "Zablokovat",
+      "unblock": "Odblokovat"
+    },
+    "selfBlockReason": "Vlastní účet zablokovat nemůžete.",
+    "blockTitle": "Zablokovat účet {{name}}?",
+    "blockBody": "Účet se okamžitě odhlásí ze všech zařízení a nebude se moci přihlásit. Členství v projektech zůstanou a zablokování jde kdykoli vrátit.",
+    "unblockTitle": "Odblokovat účet {{name}}?",
+    "unblockBody": "Účet se zase bude moci přihlásit, s rolemi, které má ve svých projektech.",
+    "pending": "Čeká na schválení",
+    "membershipPerson": "{{slug}} ({{role}}) · {{person}}",
+    "membershipPersonHint": "V projektu {{project}} je tento účet osoba {{person}}. Propojení je věc členství — mění ho uživatel na své stránce Účet v daném projektu.",
+    "notices": {
+      "created": "Účet {{name}} je vytvořený. Zatím nepatří do žádného projektu — přidejte ho na stránce Členové projektu, nebo mu pošlete pozvánku.",
+      "saved": "Účet {{name}} je uložený.",
+      "passwordChanged": "Heslo účtu {{name}} je změněné a účet je odhlášený ze všech zařízení.",
+      "blocked": "Účet {{name}} je zablokovaný.",
+      "unblocked": "Účet {{name}} je odblokovaný."
+    },
+    "form": {
+      "createTitle": "Nový účet",
+      "editTitle": "Upravit účet {{username}}",
+      "username": "Uživatelské jméno",
+      "usernameRenameHint": "Uživatel se pak přihlašuje novým jménem; zůstane přihlášený a dostane o změně e-mail. Ukládá se malými písmeny.",
+      "usernameRequired": "Zadejte uživatelské jméno.",
+      "password": "Heslo",
+      "passwordHint": "Alespoň {{min}} znaků.",
+      "email": "E-mail",
+      "emailHint": "Na tuto adresu chodí oznámení o účtu, například obnova hesla. Povinné.",
+      "emailRequired": "Zadejte platnou e-mailovou adresu.",
+      "instanceRole": "Systémová role",
+      "instanceRoleHint": "Správce systému spravuje celou instanci: všechny projekty, účty i provoz.",
+      "displayName": "Jméno",
+      "note": "Poznámka",
+      "noteHint": "Interní poznámka viditelná pouze správcům systému.",
+      "noProjectHint": "Nový účet nepatří do žádného projektu. Do projektu ho přidá jeho správce na stránce Členové, nebo mu pošle pozvánku.",
+      "cancel": "Zrušit",
+      "submitCreate": "Vytvořit",
+      "submitSave": "Uložit"
+    },
+    "password": {
+      "title": "Změnit heslo účtu {{username}}",
+      "hint": "Nové heslo okamžitě odhlásí uživatele ze všech zařízení. Stávající heslo se nikde nezobrazuje — ukládá se jen jeho otisk.",
+      "newPassword": "Nové heslo",
+      "confirmPassword": "Nové heslo znovu",
+      "mismatch": "Hesla se neshodují.",
+      "submit": "Změnit heslo"
+    },
+    "resetLink": {
+      "title": "Poslat odkaz na nastavení hesla uživateli {{username}}?",
+      "body": "Uživatel {{username}} dostane e-mailem jednorázový odkaz, kterým si sám nastaví nové heslo. Dosavadní heslo platí dál, dokud si nové nenastaví. Starší nepoužité odkazy tohoto účtu přestanou platit.",
+      "bodyNoMail": "Uživatel {{username}} si jednorázovým odkazem sám nastaví nové heslo. Mail není zapnutý, odkaz tedy nikam neodejde — předáte mu ho sami. Dosavadní heslo platí dál, dokud si nové nenastaví. Starší nepoužité odkazy tohoto účtu přestanou platit.",
+      "submit": "Vytvořit odkaz",
+      "mailed": "Odkaz jsme poslali na {{email}} a platí {{days}} dní.",
+      "notMailed": "Účet nemá skutečnou e-mailovou adresu, odkaz jsme tedy nikam neposlali — předejte ho osobně. Platí {{days}} dní.",
+      "mailOff": "Mail není zapnutý, odkaz jsme tedy nikam neposlali — předejte ho osobně. Platí {{days}} dní.",
+      "expires": "Vyprší {{date}}.",
+      "linkLabel": "Odkaz na nastavení hesla",
+      "copy": "Kopírovat",
+      "copied": "Zkopírováno",
+      "close": "Hotovo"
+    },
+    "errors": {
+      "usernameTaken": "Toto uživatelské jméno je již obsazené.",
+      "usernameRequired": "Zadejte uživatelské jméno.",
+      "usernameTooLong": "Uživatelské jméno může mít nejvýše {{max}} znaků.",
+      "passwordTooShort": "Heslo musí mít alespoň {{min}} znaků.",
+      "invalidEmail": "Zadejte platnou e-mailovou adresu.",
+      "invalidRole": "Neplatná systémová role.",
+      "noteTooLong": "Poznámka může mít nejvýše {{max}} znaků.",
+      "lastMaintainer": "Toto je poslední aktivní správce systému. Kdyby byl zablokován, nezůstal by nikdo, kdo může roli udělit, a provozní část aplikace by se stala nedostupnou. Nejdřív povyšte na správce systému někoho dalšího.",
+      "generic": "Akci se nepodařilo dokončit.",
+      "accountBlocked": "Účet je zablokovaný. Nejdřív ho odblokujte, pak akci zopakujte.",
+      "notAllowed": "Účty může spravovat jen správce systému.",
+      "gone": "Účet už neexistuje. Načtěte seznam znovu."
+    },
+    "email": {
+      "none": "Bez adresy",
+      "noneHint": "Zástupná adresa — nic na ni nedojde. Doplňte skutečnou."
+    }
   }
 }

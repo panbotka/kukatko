@@ -14,7 +14,7 @@ function authValue(status: AuthStatus, role: Role | null = null): AuthContextVal
   const isMaintainer = role === 'maintainer'
   return {
     status,
-    user: role ? ({ role } as AuthContextValue['user']) : null,
+    user: role ? ({ uid: 'u1' } as AuthContextValue['user']) : null,
     role,
     instanceRole: role === null ? null : isMaintainer ? 'maintainer' : 'user',
     projects: [],

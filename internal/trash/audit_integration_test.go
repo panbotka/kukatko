@@ -31,8 +31,8 @@ func makeActor(t *testing.T, db *database.DB, uid, username string) string {
 		Username:     username,
 		Email:        username + "@example.test",
 		PasswordHash: "x",
-		Role:         auth.RoleUser, ProjectRole: project.RoleAdmin,
-	}); err != nil {
+		Role:         auth.RoleUser,
+	}.InProject(project.BootstrapUID, project.RoleAdmin)); err != nil {
 		t.Fatalf("creating actor %s: %v", username, err)
 	}
 	return uid

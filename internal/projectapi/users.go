@@ -3,6 +3,7 @@ package projectapi
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -24,11 +25,17 @@ type membershipResponse struct {
 	Active      bool         `json:"active"`
 	Role        project.Role `json:"role"`
 	Approved    bool         `json:"approved"`
+	// SubjectUID is the person of this project the account is linked to ("this
+	// is me"), nil when nobody has said; SubjectName is that person's name.
+	// Read-only here: the link is per membership, never an account-level value.
+	SubjectUID  *string `json:"subject_uid"`
+	SubjectName string  `json:"subject_name"`
 }
 
 // userResponse is one account of the instance as the system administrator
-// sees it: who it is, its instance role, whether it is disabled, and every
-// project it belongs to.
+// sees it: the account record — who it is, its instance role, whether it is
+// disabled or still waiting for an approval, the administrative note, when it
+// last signed in — and every project it belongs to.
 type userResponse struct {
 	UID          string               `json:"uid"`
 	Username     string               `json:"username"`
@@ -36,6 +43,9 @@ type userResponse struct {
 	Email        string               `json:"email"`
 	InstanceRole auth.Role            `json:"instance_role"`
 	Disabled     bool                 `json:"disabled"`
+	Note         string               `json:"note"`
+	ApprovedAt   *time.Time           `json:"approved_at"`
+	LastLoginAt  *time.Time           `json:"last_login_at"`
 	Memberships  []membershipResponse `json:"memberships"`
 }
 
@@ -49,13 +59,14 @@ type setInstanceRoleRequest struct {
 func toUserResponse(u auth.User, memberships []project.MembershipSummary) userResponse {
 	out := userResponse{
 		UID: u.UID, Username: u.Username, DisplayName: u.DisplayName, Email: u.Email,
-		InstanceRole: u.Role, Disabled: u.Disabled,
+		InstanceRole: u.Role, Disabled: u.Disabled, Note: u.Note, ApprovedAt: u.ApprovedAt,
+		LastLoginAt: u.LastLoginAt,
 		Memberships: make([]membershipResponse, 0, len(memberships)),
 	}
 	for _, ms := range memberships {
 		out.Memberships = append(out.Memberships, membershipResponse{
 			ProjectUID: ms.ProjectUID, ProjectSlug: ms.Slug, ProjectName: ms.Name, Active: ms.Active,
-			Role: ms.Role, Approved: ms.Approved,
+			Role: ms.Role, Approved: ms.Approved, SubjectUID: ms.SubjectUID, SubjectName: ms.SubjectName,
 		})
 	}
 	return out

@@ -153,4 +153,8 @@ type MembershipSummary struct {
 	// SubjectUID is the person in this project the account says it is ("this
 	// is me"), or nil when it has not said.
 	SubjectUID *string `json:"subject_uid"`
+	// SubjectName is that person's name. Only AllMemberships (the system
+	// administrator's account list) fills it; MembershipsOf leaves it empty —
+	// the account resolves its own person inside the project.
+	SubjectName string `json:"subject_name,omitempty"`
 }

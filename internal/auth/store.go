@@ -9,8 +9,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/panbotka/kukatko/internal/project"
 )
 
 // uniqueViolation is the PostgreSQL SQLSTATE for a unique-constraint violation.
@@ -35,21 +33,15 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // nullable in the schema, so it is coalesced to the empty string here and the Go
 // model can keep it a plain string.
 //
-// Three columns are read off the memberships by correlated subqueries, so every
-// user read — SELECT … FROM users and UPDATE users … RETURNING alike, which is
-// why the table is never aliased — carries them without a join: the linked
-// person and the role in the bootstrap project (what the maintainer-only
-// /admin/users record speaks), and the account's approval
-// (accountApprovedSQL). A RETURNING clause sees the membership as it was before
-// the statement, so a statement that also writes the membership patches the
-// result in Go.
+// It is the account record and nothing project-shaped: an account's role and
+// linked person in a project live on that membership (internal/project). The
+// one derived column is the account's approval (accountApprovedSQL), read off
+// the memberships by a correlated subquery so every user read — SELECT … FROM
+// users and UPDATE users … RETURNING alike, which is why the table is never
+// aliased — carries it without a join.
 const userColumns = `uid, username, display_name, email, password_hash, role,
 	disabled, created_at, updated_at, last_login_at, COALESCE(note, '') AS note,
-	(SELECT m.subject_uid FROM project_members m
-		WHERE m.user_uid = users.uid AND m.project_uid = '` + project.BootstrapUID + `') AS subject_uid,
-	` + accountApprovedSQL + ` AS approved_at, welcome_seen_at,
-	COALESCE((SELECT m.role FROM project_members m
-		WHERE m.user_uid = users.uid AND m.project_uid = '` + project.BootstrapUID + `'), '') AS project_role`
+	` + accountApprovedSQL + ` AS approved_at, welcome_seen_at`
 
 // accountApprovedSQL is when the account (the users row in scope, never
 // aliased) was let in: the earliest approval of any of its memberships. While
@@ -91,22 +83,12 @@ func scanUser(row pgx.Row) (User, error) {
 	var u User
 	if err := row.Scan(
 		&u.UID, &u.Username, &u.DisplayName, &u.Email, &u.PasswordHash, &u.Role,
-		&u.Disabled, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt, &u.Note, &u.SubjectUID,
-		&u.ApprovedAt, &u.WelcomeSeenAt, &u.ProjectRole,
+		&u.Disabled, &u.CreatedAt, &u.UpdatedAt, &u.LastLoginAt, &u.Note,
+		&u.ApprovedAt, &u.WelcomeSeenAt,
 	); err != nil {
 		return User{}, fmt.Errorf("auth: scanning user: %w", err)
 	}
-	u.AccountRole = accountRoleOf(u.Role, u.ProjectRole)
 	return u, nil
-}
-
-// withProjectRole returns u with its bootstrap project role replaced by role
-// and the derived AccountRole recomputed — for a statement that wrote the
-// membership in the same statement, whose RETURNING still saw the old one.
-func withProjectRole(u User, role project.Role) User {
-	u.ProjectRole = role
-	u.AccountRole = accountRoleOf(u.Role, role)
-	return u
 }
 
 // isUniqueViolation reports whether err is a PostgreSQL unique-constraint
@@ -190,32 +172,24 @@ const insertUserQuery = `WITH new_user AS (
 INSERT INTO project_members (project_uid, user_uid, role, approved_at, subject_uid)
 SELECT $11::text, uid, $12::text, $10, $9 FROM new_user WHERE $12::text <> ''`
 
-// projectToJoin returns the project a new account's membership is created in:
-// u.joinProject, or the bootstrap project when the caller named none.
-func projectToJoin(u User) string {
-	if u.joinProject != "" {
-		return u.joinProject
-	}
-	return project.BootstrapUID
-}
-
 // insertUserArgs returns the arguments of insertUserQuery in its parameter
 // order, so the plain and audited insert paths cannot drift apart. The
-// membership goes into projectToJoin(u).
+// membership, if any, is u.join.
 func insertUserArgs(u User) []any {
 	return []any{
 		u.UID, u.Username, u.DisplayName, u.Email, u.PasswordHash, u.Role, u.Disabled, u.Note,
-		normalizeSubjectUID(u.SubjectUID), u.ApprovedAt, projectToJoin(u), string(u.ProjectRole),
+		normalizeSubjectUID(u.join.subject), u.ApprovedAt, u.join.project, string(u.join.role),
 	}
 }
 
 // insertUser runs insertUserQuery for u on q, refusing a linked person who is
-// not one of the joined project's first. It returns ErrUsernameTaken for a
+// not one of the joined project's first. An account created without a
+// membership (u.join.role empty) links nobody. It returns ErrUsernameTaken for a
 // duplicate username, ErrSubjectNotFound for a person who is nobody there, or a
 // wrapped error.
 func insertUser(ctx context.Context, q execQuerier, u User) error {
-	if u.ProjectRole != "" {
-		if err := checkSubject(ctx, q, projectToJoin(u), u.SubjectUID); err != nil {
+	if u.join.role != "" {
+		if err := checkSubject(ctx, q, u.join.project, u.join.subject); err != nil {
 			return err
 		}
 	}
@@ -234,8 +208,8 @@ func insertUser(ctx context.Context, q execQuerier, u User) error {
 
 // CreateUser inserts u (its CreatedAt/UpdatedAt are assigned by the database
 // defaults and not read back). It returns ErrUsernameTaken if the username
-// already exists, ErrSubjectNotFound if u.SubjectUID names no person of the
-// joined project, or a wrapped error otherwise.
+// already exists, ErrSubjectNotFound if the membership's linked person is no
+// person of the joined project, or a wrapped error otherwise.
 func (s *Store) CreateUser(ctx context.Context, u User) error {
 	return insertUser(ctx, s.pool, u)
 }
@@ -318,55 +292,22 @@ func (s *Store) ListUsers(ctx context.Context, filter UserFilter) ([]User, error
 	return users, nil
 }
 
-// updateUserProfileQuery replaces the mutable profile fields of one user and
-// returns the refreshed row. The note is a partial update: a nil argument leaves
-// the stored note untouched, while a non-nil one (including a pointer to "")
-// overwrites it. COALESCE keeps that branch in SQL, so a nil note needs no
-// separate statement.
-//
-// $4 is the instance role; the same statement sets the account's role in the
-// project $8 to $9 and its linked person there to $7 (which checkSubject has
-// confirmed is one of that project's), creating the membership — approved
-// exactly when the account is — when there is none. RETURNING still sees the
-// old membership; profileUpdate patches the result.
-const updateUserProfileQuery = `WITH member AS (
-	INSERT INTO project_members (project_uid, user_uid, role, approved_at, subject_uid)
-	SELECT $8::text, uid, $9::text, ` + accountApprovedSQL + `, $7::text
-	FROM users WHERE uid = $1
-	ON CONFLICT (project_uid, user_uid) DO UPDATE SET role = EXCLUDED.role, subject_uid = EXCLUDED.subject_uid
-)
-UPDATE users SET display_name = $2, email = $3, role = $4, disabled = $5,
+// updateUserProfileQuery replaces the mutable profile fields of one user — the
+// account record only; it never touches a membership — and returns the
+// refreshed row. The note is a partial update: a nil argument leaves the stored
+// note untouched, while a non-nil one (including a pointer to "") overwrites
+// it. COALESCE keeps that branch in SQL, so a nil note needs no separate
+// statement. $4 is the instance role.
+const updateUserProfileQuery = `UPDATE users SET display_name = $2, email = $3, role = $4, disabled = $5,
 		note = COALESCE($6::text, note), updated_at = now()
 	WHERE uid = $1 RETURNING ` + userColumns
 
-// updateUserProfileArgs returns the arguments of updateUserProfileQuery in its
-// parameter order, so the plain and audited update paths cannot drift apart.
-func updateUserProfileArgs(uid string, in UpdateUserInput) []any {
-	instance, inProject := in.Role.Split()
-	return []any{
-		uid, in.DisplayName, in.Email, instance, in.Disabled, in.Note,
-		normalizeSubjectUID(in.SubjectUID), project.BootstrapUID, string(inProject),
-	}
-}
-
 // profileUpdate returns the guarded mutation that replaces uid's profile with
-// in: the linked person is checked against the bootstrap project (the
-// membership the unprefixed admin routes edit) first, and the refreshed user
-// carries the role and the link just written, which the statement's RETURNING
-// could not see yet.
+// in.
 func profileUpdate(ctx context.Context, uid string, in UpdateUserInput) func(pgx.Tx) (User, error) {
 	return func(tx pgx.Tx) (User, error) {
-		if err := checkSubject(ctx, tx, project.BootstrapUID, in.SubjectUID); err != nil {
-			return User{}, err
-		}
-		user, err := scanUpdatedUser(ctx, tx, updateUserProfileQuery, updateUserProfileArgs(uid, in)...)
-		if err != nil {
-			return User{}, err
-		}
-		_, inProject := in.Role.Split()
-		user = withProjectRole(user, inProject)
-		user.SubjectUID = normalizeSubjectUID(in.SubjectUID)
-		return user, nil
+		return scanUpdatedUser(ctx, tx, updateUserProfileQuery,
+			uid, in.DisplayName, in.Email, in.InstanceRole, in.Disabled, in.Note)
 	}
 }
 
@@ -383,8 +324,7 @@ const setUserDisabledQuery = `UPDATE users SET disabled = $2, updated_at = now()
 
 // UpdateUserProfile updates the mutable profile fields of the user identified by
 // uid and returns the refreshed user. It returns ErrUserNotFound if no such user
-// exists, ErrSubjectNotFound when in.SubjectUID names no person of the
-// bootstrap project, or ErrLastMaintainer when the change would leave the
+// exists, or ErrLastMaintainer when the change would leave the
 // instance without a single enabled maintainer (see withMaintainerGuard).
 // updated_at is bumped to now() by the statement.
 func (s *Store) UpdateUserProfile(ctx context.Context, uid string, in UpdateUserInput) (User, error) {
@@ -396,8 +336,8 @@ func (s *Store) UpdateUserProfile(ctx context.Context, uid string, in UpdateUser
 // nil (or empty). An empty projectUID is ErrNoProject: there is no default
 // project. The link lives on the membership: who you
 // are is a fact about one project's people. It is the self-service write
-// behind the account page and returns the refreshed user carrying the link of
-// that project — nil when the account is no member there (a maintainer
+// behind the account page and returns the account with the link of that
+// project — nil when the account is no member there (a maintainer
 // visiting), where nothing is written — ErrUserNotFound if no such account
 // exists, or ErrSubjectNotFound when the UID names no person of the project.
 //
@@ -406,17 +346,17 @@ func (s *Store) UpdateUserProfile(ctx context.Context, uid string, in UpdateUser
 // purpose: the user-administration screens read that column as "an
 // administrator edited this profile", and somebody saying who they are on
 // their own account page is not that.
-func (s *Store) SetUserSubject(ctx context.Context, projectUID, uid string, subjectUID *string) (User, error) {
+func (s *Store) SetUserSubject(ctx context.Context, projectUID, uid string, subjectUID *string) (LinkedUser, error) {
 	if projectUID == "" {
-		return User{}, ErrNoProject
+		return LinkedUser{}, ErrNoProject
 	}
 	subjectUID = normalizeSubjectUID(subjectUID)
 	user, err := s.GetUserByUID(ctx, uid)
 	if err != nil {
-		return User{}, err
+		return LinkedUser{}, err
 	}
 	if err := checkSubject(ctx, s.pool, projectUID, subjectUID); err != nil {
-		return User{}, err
+		return LinkedUser{}, err
 	}
 	var written *string
 	err = s.pool.QueryRow(ctx, setMemberSubjectQuery, uid, subjectUID, projectUID).Scan(&written)
@@ -424,12 +364,11 @@ func (s *Store) SetUserSubject(ctx context.Context, projectUID, uid string, subj
 	case errors.Is(err, pgx.ErrNoRows):
 		written = nil
 	case isForeignKeyViolation(err):
-		return User{}, ErrSubjectNotFound
+		return LinkedUser{}, ErrSubjectNotFound
 	case err != nil:
-		return User{}, fmt.Errorf("auth: linking %s to a person: %w", uid, err)
+		return LinkedUser{}, fmt.Errorf("auth: linking %s to a person: %w", uid, err)
 	}
-	user.SubjectUID = written
-	return user, nil
+	return LinkedUser{User: user, SubjectUID: written}, nil
 }
 
 // SetUserDisabled flips the disabled flag for the user identified by uid, bumps

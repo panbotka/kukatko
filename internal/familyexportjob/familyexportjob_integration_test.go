@@ -86,8 +86,8 @@ func (f *treeFixture) makeUser(t *testing.T, db *database.DB) string {
 		Username:     "genealogist",
 		Email:        "genealogist@example.test",
 		PasswordHash: "x",
-		Role:         auth.RoleUser, ProjectRole: project.RoleViewer,
-	}); err != nil {
+		Role:         auth.RoleUser,
+	}.InProject(project.BootstrapUID, project.RoleViewer)); err != nil {
 		t.Fatalf("creating the acting user: %v", err)
 	}
 	return uid

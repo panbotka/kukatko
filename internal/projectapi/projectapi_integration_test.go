@@ -448,3 +448,50 @@ func TestUsers_listPromoteDemote(t *testing.T) {
 		http.StatusNotFound, "not_found")
 	e.expectError(t, token, http.MethodPatch, path, `{"role":"user"}`, http.StatusBadRequest, "invalid_body")
 }
+
+// TestUsers_listCarriesRecordAndPerson verifies GET /users carries the account
+// record the system administrator's actions need (the note, the approval) and,
+// per membership, the person the account is linked to in that project — never
+// as one account-level value.
+func TestUsers_listCarriesRecordAndPerson(t *testing.T) {
+	e := newEnv(t)
+	_, token := e.user(t, "maint", auth.AccountMaintainer)
+	if _, err := e.db.Pool().Exec(t.Context(),
+		`INSERT INTO subjects (uid, project_id, slug, name, type) VALUES ('sub_eva', $1, 'eva', 'Eva', 'person')`,
+		project.BootstrapUID); err != nil {
+		t.Fatalf("seeding a subject: %v", err)
+	}
+	subject := "sub_eva"
+	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
+		Username: "eva", Email: "eva@example.test", Password: testPassword, Role: auth.AccountCurator,
+		Note: "sousedka", SubjectUID: &subject,
+	}); err != nil {
+		t.Fatalf("CreateUser(eva): %v", err)
+	}
+
+	var list []struct {
+		Username    string     `json:"username"`
+		Note        string     `json:"note"`
+		ApprovedAt  *time.Time `json:"approved_at"`
+		Memberships []struct {
+			ProjectSlug string  `json:"project_slug"`
+			SubjectUID  *string `json:"subject_uid"`
+			SubjectName string  `json:"subject_name"`
+		} `json:"memberships"`
+	}
+	e.mustDo(t, token, http.MethodGet, "/api/v1/users", "", http.StatusOK, &list)
+	for _, a := range list {
+		if a.Username != "eva" {
+			continue
+		}
+		if a.Note != "sousedka" || a.ApprovedAt == nil {
+			t.Errorf("eva note/approved = %q/%v, want the note and an approval", a.Note, a.ApprovedAt)
+		}
+		if len(a.Memberships) != 1 || a.Memberships[0].SubjectUID == nil ||
+			*a.Memberships[0].SubjectUID != subject || a.Memberships[0].SubjectName != "Eva" {
+			t.Errorf("eva memberships = %+v, want the bootstrap one linked to Eva", a.Memberships)
+		}
+		return
+	}
+	t.Fatalf("eva is missing from %+v", list)
+}

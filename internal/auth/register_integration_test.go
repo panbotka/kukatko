@@ -154,8 +154,11 @@ func TestRegister_createsAWaitingAccountAndMailsEverybody(t *testing.T) {
 	if created.ApprovedAt != nil {
 		t.Errorf("approved_at = %v, want NULL — nobody has approved this account", *created.ApprovedAt)
 	}
-	if created.AccountRole != auth.AccountViewer {
-		t.Errorf("role = %q, want %q — registration hands out nothing", created.Role, auth.AccountViewer)
+	if created.Role != auth.RoleUser {
+		t.Errorf("instance role = %q, want %q — registration hands out nothing", created.Role, auth.RoleUser)
+	}
+	if got := bootstrapRole(t, env.db.Pool(), created.UID); got != project.RoleViewer {
+		t.Errorf("bootstrap role = %q, want %q — registration hands out nothing", got, project.RoleViewer)
 	}
 	if created.Disabled {
 		t.Error("the account is disabled; waiting for approval is not the same as blocked")

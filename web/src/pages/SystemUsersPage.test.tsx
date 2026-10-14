@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
+import { ApiError } from '../services/auth'
 import type { InstanceAccount } from '../services/projects'
 
 import { SystemUsersPage } from './SystemUsersPage'
@@ -15,10 +16,36 @@ vi.mock('../services/projects', async (importOriginal) => {
   return { ...actual, fetchInstanceAccounts: vi.fn(), setInstanceRole: vi.fn() }
 })
 
+vi.mock('../services/users', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/users')>()
+  return {
+    ...actual,
+    createUser: vi.fn(),
+    updateUser: vi.fn(),
+    renameUser: vi.fn(),
+    setUserDisabled: vi.fn(),
+    resetUserPassword: vi.fn(),
+    issuePasswordReset: vi.fn(),
+  }
+})
+
+vi.mock('../services/settings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/settings')>()
+  return { ...actual, fetchPublicSettings: vi.fn() }
+})
+
 const { fetchInstanceAccounts, setInstanceRole, ProjectApiError } =
   await import('../services/projects')
+const { createUser, updateUser, renameUser, setUserDisabled, resetUserPassword } =
+  await import('../services/users')
+const { fetchPublicSettings } = await import('../services/settings')
 const fetchMock = vi.mocked(fetchInstanceAccounts)
 const roleMock = vi.mocked(setInstanceRole)
+const createMock = vi.mocked(createUser)
+const updateMock = vi.mocked(updateUser)
+const renameMock = vi.mocked(renameUser)
+const disabledMock = vi.mocked(setUserDisabled)
+const passwordMock = vi.mocked(resetUserPassword)
 
 /** An account row, overridable. */
 function account(overrides: Partial<InstanceAccount> = {}): InstanceAccount {
@@ -29,6 +56,9 @@ function account(overrides: Partial<InstanceAccount> = {}): InstanceAccount {
     email: 'jana@example.com',
     instance_role: 'user',
     disabled: false,
+    note: '',
+    approved_at: '2026-01-01T00:00:00Z',
+    last_login_at: null,
     memberships: [],
     ...overrides,
   }
@@ -45,7 +75,7 @@ const ME = account({
 function renderPage() {
   const value = {
     status: 'authenticated',
-    user: { uid: 'u1', username: 'admin', display_name: 'Admin', role: 'maintainer' },
+    user: { uid: 'u1', username: 'admin', display_name: 'Admin' },
     isMaintainer: true,
   } as unknown as AuthContextValue
   return render(
@@ -72,6 +102,7 @@ beforeEach(async () => {
   await i18n.changeLanguage('cs')
   fetchMock.mockReset()
   roleMock.mockReset()
+  vi.mocked(fetchPublicSettings).mockResolvedValue({ passkeys_enabled: false, mail_enabled: true })
   fetchMock.mockResolvedValue([
     ME,
     account({
@@ -84,6 +115,8 @@ beforeEach(async () => {
           active: true,
           role: 'curator',
           approved: true,
+          subject_uid: 'sub_jana',
+          subject_name: 'Jana Nováková',
         },
         {
           project_uid: 'pjr',
@@ -92,6 +125,8 @@ beforeEach(async () => {
           active: true,
           role: 'viewer',
           approved: false,
+          subject_uid: null,
+          subject_name: '',
         },
       ],
     }),
@@ -107,7 +142,11 @@ describe('SystemUsersPage', () => {
     expect(jana.getByText('jana@example.com')).toBeInTheDocument()
     expect(jana.getByText('Uživatel')).toBeInTheDocument()
     expect(jana.getByText('Zablokovaný')).toBeInTheDocument()
-    expect(jana.getByText('v (Kurátor)')).toHaveAttribute('title', 'Veselice')
+    // The person is the membership's, shown per project and never edited here.
+    expect(jana.getByText('v (Kurátor) · Jana Nováková')).toHaveAttribute(
+      'title',
+      expect.stringMatching(/V projektu Veselice je tento účet osoba Jana Nováková/),
+    )
     expect(jana.getByText('rodina (Prohlížeč)')).toHaveAttribute('title', 'Čeká na schválení')
 
     const me = within(rowOf('admin'))
@@ -176,5 +215,187 @@ describe('SystemUsersPage', () => {
     await waitFor(() => {
       expect(within(rowOf('jana')).getByText('Uživatel')).toBeInTheDocument()
     })
+  })
+
+  it('shows a placeholder address as none and a waiting account as waiting', async () => {
+    fetchMock.mockResolvedValue([ME, account({ email: 'jana@kukatko.invalid', approved_at: null })])
+    renderPage()
+    await screen.findByText('jana')
+
+    const jana = within(rowOf('jana'))
+    expect(jana.queryByText('jana@kukatko.invalid')).not.toBeInTheDocument()
+    expect(jana.getByText('Bez adresy')).toBeInTheDocument()
+    expect(jana.getByText('Čeká na schválení')).toBeInTheDocument()
+  })
+
+  it('creates an account with no membership and says where it joins a project', async () => {
+    const user = userEvent.setup()
+    createMock.mockResolvedValue({
+      uid: 'u3',
+      username: 'petr',
+      display_name: 'Petr',
+      email: 'petr@example.com',
+      instance_role: 'user',
+      disabled: false,
+      note: '',
+      created_at: '2026-10-14T00:00:00Z',
+      updated_at: '2026-10-14T00:00:00Z',
+    })
+    renderPage()
+    await screen.findByText('jana')
+
+    await user.click(screen.getByRole('button', { name: 'Nový účet' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/nepatří do žádného projektu/)).toBeInTheDocument()
+    await user.type(within(dialog).getByLabelText('Uživatelské jméno'), 'petr')
+    await user.type(within(dialog).getByLabelText('Heslo'), 'correct horse')
+    await user.type(within(dialog).getByLabelText('E-mail'), 'petr@example.com')
+    await user.type(within(dialog).getByLabelText('Jméno'), 'Petr')
+    await user.click(within(dialog).getByRole('button', { name: 'Vytvořit' }))
+
+    await waitFor(() => {
+      expect(createMock).toHaveBeenCalledWith({
+        username: 'petr',
+        password: 'correct horse',
+        display_name: 'Petr',
+        email: 'petr@example.com',
+        instance_role: 'user',
+        note: '',
+      })
+    })
+    expect(await screen.findByText(/Účet Petr je vytvořený/)).toBeInTheDocument()
+    // The list is read again so the new account appears with its (no) memberships.
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('edits the account record, renaming first, and touches no membership', async () => {
+    const user = userEvent.setup()
+    const saved = {
+      uid: 'u2',
+      username: 'janka',
+      display_name: 'Jana',
+      email: 'jana@new.example',
+      instance_role: 'user' as const,
+      disabled: true,
+      note: '',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-10-14T00:00:00Z',
+    }
+    renameMock.mockResolvedValue(saved)
+    updateMock.mockResolvedValue(saved)
+    renderPage()
+    await screen.findByText('jana')
+
+    await user.click(within(rowOf('jana')).getByRole('button', { name: 'Upravit' }))
+    const dialog = await screen.findByRole('dialog')
+    // Editing offers no instance role (that is the confirmed promote/demote)
+    // and no person (that is the membership's).
+    expect(within(dialog).queryByLabelText('Systémová role')).not.toBeInTheDocument()
+    const username = within(dialog).getByLabelText('Uživatelské jméno')
+    await user.clear(username)
+    await user.type(username, 'janka')
+    const email = within(dialog).getByLabelText('E-mail')
+    await user.clear(email)
+    await user.type(email, 'jana@new.example')
+    await user.click(within(dialog).getByRole('button', { name: 'Uložit' }))
+
+    await waitFor(() => {
+      expect(updateMock).toHaveBeenCalledWith('u2', {
+        display_name: 'Jana',
+        email: 'jana@new.example',
+        instance_role: 'user',
+        disabled: true,
+        note: '',
+      })
+    })
+    expect(renameMock).toHaveBeenCalledWith('u2', 'janka')
+    expect(renameMock.mock.invocationCallOrder[0]).toBeLessThan(
+      updateMock.mock.invocationCallOrder[0],
+    )
+    expect(await screen.findByText('Účet Jana je uložený.')).toBeInTheDocument()
+  })
+
+  it('blocks and unblocks behind a confirmation, never one’s own account', async () => {
+    const user = userEvent.setup()
+    disabledMock.mockResolvedValue({} as Awaited<ReturnType<typeof setUserDisabled>>)
+    fetchMock.mockResolvedValue([
+      ME,
+      account(),
+      account({ uid: 'u3', username: 'petr', display_name: 'Petr', disabled: true }),
+    ])
+    renderPage()
+    await screen.findByText('jana')
+
+    const own = within(rowOf('admin')).getByRole('button', { name: 'Zablokovat' })
+    expect(own).toHaveAttribute('aria-disabled', 'true')
+    expect(own).toHaveAttribute('title', 'Vlastní účet zablokovat nemůžete.')
+
+    await user.click(within(rowOf('jana')).getByRole('button', { name: 'Zablokovat' }))
+    let dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Zablokovat účet Jana?')).toBeInTheDocument()
+    expect(disabledMock).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Zablokovat' }))
+    await waitFor(() => {
+      expect(disabledMock).toHaveBeenCalledWith(expect.objectContaining({ uid: 'u2' }), true)
+    })
+    expect(await screen.findByText('Účet Jana je zablokovaný.')).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    await user.click(within(rowOf('petr')).getByRole('button', { name: 'Odblokovat' }))
+    dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Odblokovat' }))
+    await waitFor(() => {
+      expect(disabledMock).toHaveBeenLastCalledWith(expect.objectContaining({ uid: 'u3' }), false)
+    })
+  })
+
+  it('explains a block refused for the last maintainer', async () => {
+    const user = userEvent.setup()
+    disabledMock.mockRejectedValue(new ApiError(409, 'auth: cannot remove the last maintainer'))
+    renderPage()
+    await screen.findByText('jana')
+
+    await user.click(within(rowOf('jana')).getByRole('button', { name: 'Odblokovat' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Odblokovat' }))
+
+    expect(await screen.findByText(/poslední aktivní správce systému/)).toBeInTheDocument()
+  })
+
+  it('sets another account’s password', async () => {
+    const user = userEvent.setup()
+    passwordMock.mockResolvedValue(undefined)
+    renderPage()
+    await screen.findByText('jana')
+
+    await user.click(within(rowOf('jana')).getByRole('button', { name: 'Změnit heslo' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText('Nové heslo'), 'correct horse')
+    await user.type(within(dialog).getByLabelText('Nové heslo znovu'), 'correct horse')
+    await user.click(within(dialog).getByRole('button', { name: 'Změnit heslo' }))
+
+    await waitFor(() => {
+      expect(passwordMock).toHaveBeenCalledWith('u2', 'correct horse')
+    })
+    expect(await screen.findByText(/Heslo účtu Jana je změněné/)).toBeInTheDocument()
+  })
+
+  it('offers the password-reset link, worded for an instance without mail', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchPublicSettings).mockResolvedValue({
+      passkeys_enabled: false,
+      mail_enabled: false,
+    })
+    renderPage()
+    await screen.findByText('jana')
+
+    await user.click(within(rowOf('jana')).getByRole('button', { name: 'Odkaz na heslo' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      within(dialog).getByText('Poslat odkaz na nastavení hesla uživateli jana?'),
+    ).toBeInTheDocument()
+    expect(within(dialog).getByText(/Mail není zapnutý/)).toBeInTheDocument()
   })
 })

@@ -55,8 +55,10 @@ func TestInsertUserArgs(t *testing.T) {
 		wantSubject *string
 	}{
 		{
-			name:        "approved account carries its stamp",
-			user:        User{UID: "us_1", ApprovedAt: &approved, ProjectRole: project.RoleEditor},
+			name: "approved account carries its stamp",
+			user: User{UID: "us_1", ApprovedAt: &approved, join: newMembership{
+				project: project.BootstrapUID, role: project.RoleEditor,
+			}},
 			wantApprove: &approved,
 			wantSubject: nil,
 		},
@@ -67,14 +69,18 @@ func TestInsertUserArgs(t *testing.T) {
 			wantSubject: nil,
 		},
 		{
-			name:        "empty subject link is normalised away",
-			user:        User{UID: "us_3", SubjectUID: &empty},
+			name: "empty subject link is normalised away",
+			user: User{UID: "us_3", join: newMembership{
+				project: project.BootstrapUID, role: project.RoleViewer, subject: &empty,
+			}},
 			wantApprove: nil,
 			wantSubject: nil,
 		},
 		{
-			name:        "real subject link is passed through",
-			user:        User{UID: "us_4", SubjectUID: &subject},
+			name: "real subject link is passed through",
+			user: User{UID: "us_4", join: newMembership{
+				project: project.BootstrapUID, role: project.RoleViewer, subject: &subject,
+			}},
 			wantApprove: nil,
 			wantSubject: &subject,
 		},
@@ -102,11 +108,11 @@ func TestInsertUserArgs(t *testing.T) {
 			case tt.wantSubject != nil && *gotSubject != *tt.wantSubject:
 				t.Errorf("subject arg = %q, want %q", *gotSubject, *tt.wantSubject)
 			}
-			if got := args[10]; got != any(project.BootstrapUID) {
-				t.Errorf("membership project arg = %v, want the bootstrap project", got)
+			if got := args[10]; got != any(tt.user.join.project) {
+				t.Errorf("membership project arg = %v, want %q", got, tt.user.join.project)
 			}
-			if got := args[11]; got != any(string(tt.user.ProjectRole)) {
-				t.Errorf("membership role arg = %v, want %q", got, tt.user.ProjectRole)
+			if got := args[11]; got != any(string(tt.user.join.role)) {
+				t.Errorf("membership role arg = %v, want %q", got, tt.user.join.role)
 			}
 			gotApprove, _ := args[9].(*time.Time)
 			switch {

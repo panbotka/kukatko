@@ -865,14 +865,15 @@ Everything else below is open as written.
     document and whose value closes it — the `name=value\r\n` serialisation then *is* that JSON document plus a
     trailing CRLF the decoder never reads.
   - The strongest blind write is **`POST /api/v1/admin/users`** (`internal/auth/handlers_admin.go:126`) against
-    a logged-in admin victim: an account with an attacker-chosen username, password and role (`admin`),
-    created without reading any response. The attacker then signs in as that account.
+    a logged-in admin victim: an account with an attacker-chosen username, password and role (`admin`; since
+    the tenancy vocabulary `instance_role: maintainer`), created without reading any response. The attacker
+    then signs in as that account.
 - **Confirmed by:** `internal/auth/csrf_content_type_integration_test.go` (kept, pins current behaviour, a fix
   must flip them):
   - `TestCSRF_textPlainJSONCreatesAdmin`: a logged-in admin's client sends `POST /admin/users` with
     `Content-Type: text/plain;charset=UTF-8`, `Origin: https://sibling.example.test`,
     `Sec-Fetch-Site: same-site` — the `fetch(..., {mode:"no-cors"})` shape. It is **201**; the created account
-    is a working admin sign-in.
+    is a working maintainer sign-in.
   - `TestCSRF_textPlainFormCreatesAdmin`: the same account created from an `enctype="text/plain"` form body
     (no script), the JSON split at a `=` inside the `note` value. Also **201**.
   - `TestCSRF_textPlainFormLogsIn`: `POST /auth/login` (public) decodes a `text/plain` form body and answers

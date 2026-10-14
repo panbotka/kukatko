@@ -67,10 +67,12 @@ to `## Package map` in `CLAUDE.md`.
   regression), `internal/auth/`
   (authentication/authorization on **two ladders**: the instance `Role` (`user`/`maintainer`, `users.role`;
   `CanMaintain`/`CanImport`) and the per-project `project.Role` of the caller's membership, which every
-  project-level guard reads. `role.go` also holds the transitional `AccountRole` (the five-rung
-  viewer…maintainer vocabulary the admin user endpoints and a user payload's `role` still speak;
-  `Split` → instance role + bootstrap-project role, never an authorization decision) and the pure
-  `authorize(instance, projectRole, req)`. **`project.go`**: `WithProject(store)` names the request's
+  project-level guard reads. `role.go` also holds `AccountRole`, which **survives only as the seeding
+  vocabulary** of `CreateUserInput`/`Service.CreateUser` (the five rungs viewer…maintainer; `Split` →
+  instance role + a membership of the bootstrap project, never an authorization decision). Its callers
+  are `Bootstrap` (the first maintainer) and the integration-test seeders of ~100 test files, which need
+  "a curator of the library" in one line — rewriting them all buys nothing, so it stays for them. No HTTP
+  route accepts it and no account read returns it. Also the pure `authorize(instance, projectRole, req)`. **`project.go`**: `WithProject(store)` names the request's
   project (chi param `{project}`; a request without it names no project — there is no default), the
   guards' `enterProject` decides access after authentication (a project-scoped guard on a request that
   names no project → 500 with the route logged, a wiring bug) (unknown/foreign/deactivated → identical 404, unapproved → 403
@@ -86,10 +88,15 @@ to `## Package map` in `CLAUDE.md`.
   or store learns the current project. `RequireSignedIn` (every `/auth/*` route but the project's
   `PUT /auth/subject`, and `/push/*`, `/users/{uid}/avatar`) authenticates and enters no project;
   `RequireMaintainer`/`RequireImport` on a route that names no project check the instance role alone. A
-  `User` carries `Role` (instance), `ProjectRole` (bootstrap membership, read by a correlated subquery in
-  `userColumns` — the maintainer-only `/admin/users` vocabulary) and the derived `AccountRole` (JSON
-  `role`); creating or updating an account through `/admin/users` writes its bootstrap membership in the
-  same statement (CTE), and an approval stamps the membership too. `sessions.role` is gone (0103). Bcrypt cost 12
+  `User` is the **account record and nothing project-shaped**: `Role` (instance, JSON `instance_role`),
+  profile, `Disabled`, the derived `ApprovedAt`; `userColumns` reads no membership but the approval (the
+  `ProjectRole`/`AccountRole` fields and the bootstrap subqueries are gone). Its unexported `join` is the
+  membership a new account is **created with** — set by `CreateUserInput` (bootstrap project), by
+  registration (the registered project) and by the seeding builder **`User.InProject(projectUID, role)`**
+  for a hand-built `Store.CreateUser`; empty means no membership. `NewAccountInput` +
+  `Service.CreateUserAudited` (the `POST /admin/users` path) create an account **with no membership**, and
+  `UpdateUserInput` (`InstanceRole`, no subject) writes the `users` row only — no `/admin/users` write
+  touches `project_members`. `sessions.role` is gone (0103). Bcrypt cost 12
   `HashPassword`/`CheckPassword` — the cost is a **build-tag-selected** identifier
   (`password_cost.go` = production 12, `password_cost_integration.go` = `bcrypt.MinCost` and the
   `KUKATKO_TEST_BCRYPT_COST` override, compiled only under the `integration` tag), so no running
@@ -118,16 +125,15 @@ to `## Package map` in `CLAUDE.md`.
   0101; the account-wide `users.subject_uid` of 0060 was dropped by 0110): nullable, **not** unique
   (several accounts may legitimately be the same person), FK `project_members_subject_uid_fkey` →
   `subjects(uid)` **ON DELETE SET NULL** — named explicitly because `kukatko maintenance reset` drops and
-  restores it around its truncation (see `internal/reset`). `auth.User.SubjectUID` is read off a
-  membership by a correlated subquery in `userColumns`: the bootstrap project's on an account read (the
-  `/admin/users` record, like `ProjectRole`); `GET /auth/me` lists every membership's own
-  (`projects[].subject_uid`, `project.MembershipSummary.SubjectUID`), and the frontend reads the current
-  project's from there. It **is** serialised into the login/`/auth/me` payloads, deliberately — the client
-  needs it for the "my photos" entry and the account's avatar. `Store.SetUserSubject(ctx, projectUID,
+  restores it around its truncation (see `internal/reset`). `auth.User` carries **no** subject: `GET
+  /auth/me` lists every membership's own (`projects[].subject_uid`, `project.MembershipSummary.SubjectUID`)
+  and the frontend reads the current project's from there; the system administrator's `GET /users` shows
+  it per membership (`AllMemberships` resolves `subject_name`). `Store.SetUserSubject(ctx, projectUID,
   uid, subject)` is the self-service write behind `PUT /auth/subject` (outside the maintainer guard: the
-  link carries no permission): it writes the membership of `projectUID` and returns the account carrying
-  that link (nil when it is no member there — nothing is written). The admin create/update paths write
-  the bootstrap membership as part of the replaced profile and record it in their audit entries. Every
+  link carries no permission): it writes the membership of `projectUID` and returns a **`LinkedUser`**
+  (the account + `SubjectUID`, JSON `subject_uid`; nil when it is no member there — nothing is written).
+  `/admin/users` no longer writes the link (a `subject_uid` in its bodies is an unknown field → 400); the
+  seeding `CreateUserInput.SubjectUID` links the bootstrap membership. Every
   writer first runs `checkSubject`: a UID naming no person **of that project** (unknown, or another
   project's) is `ErrSubjectNotFound` (→ 400); a FK violation (SQLSTATE 23503) maps to the same error.
   **Approval and the welcome.** `users.welcome_seen_at` (migration `0064_users_approval_welcome.sql`)
@@ -181,13 +187,14 @@ to `## Package map` in `CLAUDE.md`.
   `RegisterWithInvite(ctx, in, InviteGrant, entry)` is the third gate: an invitation admitted through
   the optional `InviteGate` (`APIConfig.Invites`, implemented by `inviteapi.RegistrationGate`;
   `RegisterInput.InviteCode` / the body's `invite_code`, which wins over a link) replaces the secret
-  **and the approval** and ignores the registration switch: the account is built by `prepareNewUser`
-  (approved now) with `AccountRole(grant.Role)` — capped at editor again here, defence in depth — joins
+  **and the approval** and ignores the registration switch: the account is built by `prepareRegistration`
+  with `grant.Role` (approval stamped back to now) — capped at editor again here, defence in depth — joins
   `grant.ProjectUID` only, and `grant.Redeem` runs in the `alongside` transaction (the invite's use and
   its `project.invite.accept` entry; an invite that died meanwhile rolls the account back). No mail, no
   approver notices; a dead invite is `ErrRegistrationInvite`. `withRegistrationDetails` stamps the
   username/role details all three paths share. The account is
-  built by `prepareRegistration` (role `viewer`, `ApprovedAt` nil) and written by
+  built by `prepareRegistration` (a `user`, a `viewer` membership of the project, `ApprovedAt` nil) and
+  written by
   `Store.CreateUserAuditedWith` — `CreateUserAudited` plus an `alongside` hook that runs on the **same
   transaction**, which is how the mails are enqueued: a rolled-back registration schedules
   nothing. `Store.ListApprovalRecipients` reads the enabled admins and maintainers to notify (no
@@ -218,9 +225,9 @@ to `## Package map` in `CLAUDE.md`.
   membership's, given by that project's admin through `internal/memberapi` over
   `project.Store.ApproveWith`; the account's own approval is derived from its memberships. The
   `noMail{}` scheduler the mail-sending flows fall back to lives in `register.go`.
-  `PATCH /admin/users/{uid}` (profile, `disabled`, the transitional five-rung `role`) is
-  **`RequireMaintainer`** like `/disable`: a project admin manages their members' roles through the
-  members API instead.
+  `PATCH /admin/users/{uid}` (profile, `disabled`, `instance_role`) is **`RequireMaintainer`** like every
+  `/admin/users` route: an account spans tenants, so a project admin manages their members' roles through
+  the members API instead.
   **Renaming an account** (`rename.go`, `store_user_rename.go`) is behind `PUT /admin/users/{uid}/username`.
   Another mail-sending type beside `Registration`, `Rename` (built with `NewRename(RenameConfig{Service,Mail,SignInURL})`,
   wired into `APIConfig.Rename`, derived mail-less by `renameFor`). `Rename.Rename` applies
@@ -7101,7 +7108,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     (the `Project` embedded + `MembersCount`, `PhotosCount`, `OriginalsBytes`) from one query — the member
     count a scalar subquery, the usage a lateral sum identical to `Usage`'s; `AllMemberships()` maps every
     user uid to its `MembershipSummary` list (by project name) in one query, instead of one
-    `MembershipsOf` per account.
+    `MembershipsOf` per account, each with its linked person and that person's name (`SubjectName`,
+    looked up in the membership's own project; `MembershipsOf` leaves it empty).
   - `member.go` — the per-project `Role` (`RoleViewer` < `RoleCurator` < `RoleEditor` < `RoleAdmin`, a
     strict ladder like `internal/auth`'s **without maintainer**, which stays the instance role on `users`):
     `ParseRole` (anything else, `maintainer` included = `ErrInvalidRole`), `Valid`, `CanCurate` (curator+),
@@ -7161,7 +7169,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `CreatorUID`; the PATCH body tells an absent limit from `null` from a number through `optionalLimit`
     (its `UnmarshalJSON` runs for an explicit `null` too) and refuses a `slug` key with `slug_immutable`
     before touching the store; a membership is always added **approved**.
-  - `users.go` — the account list (`ListUsers` joined with `AllMemberships`) and the instance-role change:
+  - `users.go` — the account list (`ListUsers` joined with `AllMemberships`: the record incl. `note`,
+    `approved_at`, `last_login_at`, and per membership the linked person, read-only) and the
+    instance-role change:
     `self` when a maintainer would demote themselves, a no-op (no audit row) when the role is unchanged,
     otherwise `auth.Store.SetInstanceRoleAudited` with a `user.instance_role` entry (`instance_role`,
     `previous`) under the store's last-maintainer guard.

@@ -45,7 +45,7 @@ func assertStillEnabledMaintainer(t *testing.T, env *testEnv, uid string) {
 	if err != nil {
 		t.Fatalf("GetUserByUID: %v", err)
 	}
-	if user.AccountRole != auth.AccountMaintainer || user.Disabled {
+	if user.Role != auth.RoleMaintainer || user.Disabled {
 		t.Fatalf("account = role %q disabled %v, want maintainer/false", user.Role, user.Disabled)
 	}
 }
@@ -66,7 +66,7 @@ func TestLastMaintainer_soloCannotStepDown(t *testing.T) {
 			name: "audited demote",
 			call: func() error {
 				_, err := env.svc.UpdateUserAudited(t.Context(), solo.UID,
-					auth.UpdateUserInput{Email: solo.Email, Role: auth.AccountAdmin}, solo.Role,
+					auth.UpdateUserInput{Email: solo.Email, InstanceRole: auth.RoleUser}, solo.Role,
 					mgmtEntry(solo.UID, audit.ActionUserUpdate))
 				return err
 			},
@@ -88,11 +88,12 @@ func TestLastMaintainer_soloCannotStepDown(t *testing.T) {
 		},
 		{
 			// Keeping the role but flipping the flag loses the capability just the
-			// same, so the update path is guarded on `disabled` too, not only on `role`.
+			// same, so the update path is guarded on `disabled` too, not only on the
+			// instance role.
 			name: "plain update that only disables",
 			call: func() error {
 				_, err := env.svc.UpdateUser(t.Context(), solo.UID, auth.UpdateUserInput{
-					Email: solo.Email, Role: auth.AccountMaintainer, Disabled: true,
+					Email: solo.Email, InstanceRole: auth.RoleMaintainer, Disabled: true,
 				})
 				return err
 			},
@@ -131,13 +132,13 @@ func TestLastMaintainer_guardsOnlyTheLastOne(t *testing.T) {
 
 	// Two enabled maintainers: demoting one is a normal, allowed change.
 	demoted, err := env.svc.UpdateUserAudited(t.Context(), first.UID,
-		auth.UpdateUserInput{Email: first.Email, Role: auth.AccountAdmin}, second.Role,
+		auth.UpdateUserInput{Email: first.Email, InstanceRole: auth.RoleUser}, second.Role,
 		mgmtEntry(second.UID, audit.ActionUserUpdate))
 	if err != nil {
 		t.Fatalf("demote with a second maintainer present: %v", err)
 	}
-	if demoted.AccountRole != auth.AccountAdmin {
-		t.Fatalf("demoted role = %q, want admin", demoted.Role)
+	if demoted.Role != auth.RoleUser {
+		t.Fatalf("demoted instance role = %q, want user", demoted.Role)
 	}
 	assertEnabledMaintainers(t, env, 1)
 
@@ -148,7 +149,7 @@ func TestLastMaintainer_guardsOnlyTheLastOne(t *testing.T) {
 
 	// The survivor is now the last one, so the very same demote is refused.
 	if _, err := env.svc.UpdateUserAudited(t.Context(), second.UID,
-		auth.UpdateUserInput{Email: second.Email, Role: auth.AccountAdmin}, second.Role,
+		auth.UpdateUserInput{Email: second.Email, InstanceRole: auth.RoleUser}, second.Role,
 		mgmtEntry(second.UID, audit.ActionUserUpdate)); !errors.Is(err, auth.ErrLastMaintainer) {
 		t.Fatalf("demote of the survivor err = %v, want ErrLastMaintainer", err)
 	}
@@ -180,7 +181,7 @@ func TestLastMaintainer_disabledMaintainerDoesNotCount(t *testing.T) {
 
 	// Re-enabling the spare raises the count, and the active one may then step down.
 	if _, err := env.svc.UpdateUserAudited(t.Context(), spare.UID, auth.UpdateUserInput{
-		Email: spare.Email, Role: auth.AccountMaintainer, Disabled: false,
+		Email: spare.Email, InstanceRole: auth.RoleMaintainer, Disabled: false,
 	}, active.Role, mgmtEntry(active.UID, audit.ActionUserUpdate)); err != nil {
 		t.Fatalf("re-enable the spare maintainer: %v", err)
 	}
@@ -222,7 +223,7 @@ func TestHTTP_lastMaintainerGuard(t *testing.T) {
 		t.Fatalf("login status = %d, want 200 (body %s)", status, body)
 	}
 
-	const demote = `{"display_name":"","email":"solo-maint@example.test","role":"admin","disabled":false}`
+	const demote = `{"display_name":"","email":"solo-maint@example.test","instance_role":"user","disabled":false}`
 	status, body := env.do(t, client, http.MethodPatch, "/api/v1/admin/users/"+maint.UID, demote)
 	if status != http.StatusConflict {
 		t.Fatalf("PATCH self-demote status = %d, want 409 (body %s)", status, body)
@@ -241,7 +242,7 @@ func TestHTTP_lastMaintainerGuard(t *testing.T) {
 	}
 
 	// Hand the instance over, and the refused request goes through unchanged.
-	const promote = `{"display_name":"","email":"successor@example.test","role":"maintainer","disabled":false}`
+	const promote = `{"display_name":"","email":"successor@example.test","instance_role":"maintainer","disabled":false}`
 	if status, body := env.do(t, client, http.MethodPatch,
 		"/api/v1/admin/users/"+successor.UID, promote); status != http.StatusOK {
 		t.Fatalf("PATCH promote successor status = %d, want 200 (body %s)", status, body)

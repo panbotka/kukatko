@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // BootstrapOutcome reports what Bootstrap did, so the caller can log an
@@ -23,48 +24,61 @@ const (
 	BootstrapCreated
 )
 
-// CreateUserInput holds the fields needed to create a user (admin-only).
-// DisplayName and Note are both optional and default to the empty string; Email
-// is not — every account receives mail, so a syntactically valid address is
-// required (see validateEmail).
-//
-// Its field order and types mirror createUserRequest so the HTTP layer can
-// convert between them directly; keep the two in step.
+// CreateUserInput is the seeding shape of an account: the fields of
+// NewAccountInput with the role in the five-rung AccountRole vocabulary, which
+// Service.CreateUser turns into the instance role plus a membership of the
+// bootstrap project (see AccountRole). Bootstrap and the integration-test
+// seeders use it; no HTTP route does. DisplayName and Note are both optional and
+// default to the empty string; Email is not — every account receives mail, so a
+// syntactically valid address is required (see validateEmail).
 type CreateUserInput struct {
 	Username    string
 	Password    string
 	DisplayName string
 	Email       string
-	// Role is the account's role in the five-rung /admin/users vocabulary:
+	// Role is the account's role in the five-rung seeding vocabulary:
 	// maintainer, or the role in the bootstrap project (see AccountRole.Split).
 	Role AccountRole
 	Note string
-	// SubjectUID optionally names the person of the library this account is;
-	// nil (or empty) leaves the account unlinked, which is the default.
+	// SubjectUID optionally names the person of the bootstrap project this
+	// account is, on that membership; nil (or empty) leaves it unlinked.
 	SubjectUID *string
 }
 
-// UpdateUserInput holds the mutable profile fields for an admin user update.
-// Note is a pointer to distinguish "absent" from "empty": nil leaves the stored
-// note untouched, while a pointer to "" clears it. Email has no such escape: the
-// update replaces the whole profile and an account may not end up without an
-// address, so every update carries a valid one.
+// NewAccountInput holds the fields of an account the system administrator
+// creates (POST /admin/users). It is the account record only: the account is
+// created with no membership at all, and joins a project when that project's
+// admin adds it, or when it accepts an invitation. DisplayName and Note are
+// optional; Email is required (see validateEmail). An empty InstanceRole is
+// RoleUser.
+//
+// Its field order and types mirror createUserRequest so the HTTP layer can
+// convert between them directly; keep the two in step.
+type NewAccountInput struct {
+	Username     string
+	Password     string
+	DisplayName  string
+	Email        string
+	InstanceRole Role
+	Note         string
+}
+
+// UpdateUserInput holds the mutable profile fields for an admin user update —
+// the account record, never a membership. Note is a pointer to distinguish
+// "absent" from "empty": nil leaves the stored note untouched, while a pointer
+// to "" clears it. Email has no such escape: the update replaces the whole
+// profile and an account may not end up without an address, so every update
+// carries a valid one.
 //
 // Its field order and types mirror updateUserRequest so the HTTP layer can
 // convert between them directly; keep the two in step.
 type UpdateUserInput struct {
 	DisplayName string
 	Email       string
-	// Role replaces the account's instance role and its role in the bootstrap
-	// project, in the five-rung /admin/users vocabulary (see AccountRole.Split).
-	Role     AccountRole
-	Disabled bool
-	Note     *string
-	// SubjectUID is the person of the library this account is. Unlike Note it is
-	// part of the profile the update *replaces*, so nil clears the link — an
-	// administrator who unlinks somebody does it by sending no subject, exactly
-	// as they clear a display name by sending none.
-	SubjectUID *string
+	// InstanceRole replaces the account's instance role: user or maintainer.
+	InstanceRole Role
+	Disabled     bool
+	Note         *string
 }
 
 // validateNote returns ErrNoteTooLong when note exceeds MaxNoteLen. Length is
@@ -154,8 +168,10 @@ func (s *Service) guardMaintainerBoundary(ctx context.Context, actor Role, uid s
 
 // CreateUser validates and inserts a new user, hashing the supplied password. It
 // records no audit entry and is used for system-initiated creation (bootstrap,
-// test seeding); handlers that must attribute the action to an admin call
-// CreateUserAudited. It returns ErrInvalidRole for an unknown role,
+// test seeding) in the seeding vocabulary of CreateUserInput, so the account is
+// created with its membership of the bootstrap project; the system
+// administrator's audited path is CreateUserAudited. It returns ErrInvalidRole
+// for an unknown role,
 // ErrPasswordTooShort for a weak password, ErrUsernameTooLong or ErrNoteTooLong
 // for an over-length username or note, ErrInvalidEmail for a missing or
 // malformed e-mail address, ErrUsernameTaken on a duplicate username, and the
@@ -171,47 +187,69 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (User, err
 	return s.store.GetUserByUID(ctx, user.UID)
 }
 
-// CreateUserAudited creates a user like CreateUser and writes a user.create audit
-// entry attributed to entry's actor in the same transaction as the insert (see
-// internal/audit). The created user's username and role are recorded in the
-// entry's details, and its UID becomes the entry's target. actor is the role of
-// the account performing the creation: only a maintainer may create an account
-// with the maintainer role, so a lower actor granting it gets ErrMaintainerRequired.
+// CreateUserAudited creates the account described by in — with no membership
+// at all — and writes a user.create audit entry attributed to entry's actor in
+// the same transaction as the insert (see internal/audit). The created
+// account's username and instance role are recorded in the entry's details, and
+// its UID becomes the entry's target. actor is the instance role of the account
+// performing the creation: only a maintainer may create an account with the
+// maintainer role, so a lower actor granting it gets ErrMaintainerRequired. It
+// returns the validation errors of prepareAccount and ErrUsernameTaken.
 func (s *Service) CreateUserAudited(
-	ctx context.Context, in CreateUserInput, actor Role, entry audit.Entry,
+	ctx context.Context, in NewAccountInput, actor Role, entry audit.Entry,
 ) (User, error) {
-	if err := s.guardMaintainerBoundary(ctx, actor, "", instanceRoleOf(in.Role)); err != nil {
+	user, err := s.prepareAccount(in)
+	if err != nil {
 		return User{}, err
 	}
-	user, err := s.prepareNewUser(in)
-	if err != nil {
+	if err := s.guardMaintainerBoundary(ctx, actor, "", user.Role); err != nil {
 		return User{}, err
 	}
 	if entry.Details == nil {
 		entry.Details = map[string]any{}
 	}
 	entry.Details["username"] = user.Username
-	entry.Details["role"] = string(user.AccountRole)
-	if uid := normalizeSubjectUID(user.SubjectUID); uid != nil {
-		// Only when it was actually set: an account created without a link has
-		// nothing to say here, and a null in every entry reads as noise.
-		entry.Details["subject_uid"] = *uid
-	}
+	entry.Details["instance_role"] = string(user.Role)
 	if err := s.store.CreateUserAudited(ctx, user, entry); err != nil {
 		return User{}, err
 	}
 	return s.store.GetUserByUID(ctx, user.UID)
 }
 
-// prepareNewUser validates in and builds the User to insert, hashing the password
-// and assigning a fresh UID. It is shared by CreateUser and CreateUserAudited and
-// returns ErrInvalidRole, ErrUsernameRequired, ErrUsernameTooLong, ErrPasswordTooShort,
-// ErrNoteTooLong or ErrInvalidEmail on invalid input.
+// prepareNewUser validates the seeding input in and builds the User to insert:
+// the account of prepareAccount plus, for a role below maintainer as for a
+// maintainer, its membership of the bootstrap project (see AccountRole.Split).
+// It returns ErrInvalidRole for a role outside the five rungs, and
+// prepareAccount's validation errors.
 func (s *Service) prepareNewUser(in CreateUserInput) (User, error) {
 	if !in.Role.Valid() {
 		return User{}, ErrInvalidRole
 	}
 	instance, inProject := in.Role.Split()
+	user, err := s.prepareAccount(NewAccountInput{
+		Username: in.Username, Password: in.Password, DisplayName: in.DisplayName, Email: in.Email,
+		InstanceRole: instance, Note: in.Note,
+	})
+	if err != nil {
+		return User{}, err
+	}
+	user.join = newMembership{project: project.BootstrapUID, role: inProject, subject: in.SubjectUID}
+	return user, nil
+}
+
+// prepareAccount validates in and builds the account to insert — no
+// membership — hashing the password, assigning a fresh UID and stamping the
+// approval (an administrator creating an account is the approval, see
+// approvedNow). An empty instance role is RoleUser. It returns ErrInvalidRole,
+// ErrUsernameRequired, ErrUsernameTooLong, ErrPasswordTooShort, ErrNoteTooLong
+// or ErrInvalidEmail on invalid input.
+func (s *Service) prepareAccount(in NewAccountInput) (User, error) {
+	if in.InstanceRole == "" {
+		in.InstanceRole = RoleUser
+	}
+	if !in.InstanceRole.Valid() {
+		return User{}, ErrInvalidRole
+	}
 	username := normalizeUsername(in.Username)
 	// Login rejects an over-long username outright and nobody can type an
 	// empty one, so an account with either could never be used; refuse to
@@ -239,34 +277,35 @@ func (s *Service) prepareNewUser(in CreateUserInput) (User, error) {
 		Username:     username,
 		DisplayName:  in.DisplayName,
 		Email:        email,
-		Role:         instance,
-		ProjectRole:  inProject,
-		AccountRole:  in.Role,
+		Role:         in.InstanceRole,
 		PasswordHash: hash,
 		Note:         in.Note,
-		SubjectUID:   in.SubjectUID,
 		ApprovedAt:   s.approvedNow(),
 	}, nil
 }
 
 // prepareRegistration builds the account a self-service registration creates:
-// the same validation, normalization and password hashing as prepareNewUser,
-// minus the approval. The nil ApprovedAt is the whole point — nobody has let this
-// person in yet, and only an administrator's later decision fills it — so it is
-// stripped here rather than never set, which keeps every rule about usernames,
-// addresses and passwords in one place.
-func (s *Service) prepareRegistration(in CreateUserInput) (User, error) {
-	user, err := s.prepareNewUser(in)
+// the same validation, normalization and password hashing as prepareAccount, a
+// plain user joining projectUID with role, minus the approval. The nil
+// ApprovedAt is the whole point — nobody has let this person in yet, and only an
+// administrator's later decision fills it — so it is stripped here rather than
+// never set, which keeps every rule about usernames, addresses and passwords in
+// one place. An invitation, which is that decision made in advance, puts the
+// stamp back.
+func (s *Service) prepareRegistration(in NewAccountInput, projectUID string, role project.Role) (User, error) {
+	in.InstanceRole = RoleUser
+	user, err := s.prepareAccount(in)
 	if err != nil {
 		return User{}, err
 	}
 	user.ApprovedAt = nil
+	user.join = newMembership{project: projectUID, role: role}
 	return user, nil
 }
 
 // approvedNow returns the approval stamp for an account being created here.
 //
-// Every path through prepareNewUser is an administrator making an account — the
+// Every path through prepareAccount is an administrator making an account — the
 // admin API, and the bootstrap that creates the first maintainer on an empty
 // database — and an administrator creating an account *is* the approval, so
 // there is nothing further to wait for. The one caller that must not keep the
@@ -292,16 +331,18 @@ func (s *Service) MarkWelcomeSeen(ctx context.Context, uid string) (User, error)
 }
 
 // SetUserSubject records which person of the library the account identified by
-// uid is — on the account and on its membership of projectUID — or clears the
-// link when subjectUID is nil or empty. It is the
-// self-service path behind the account page, so it records no audit entry — the
-// same bargain Service.ChangePassword strikes for a user acting on their own
-// account; the administrator's path through UpdateUserAudited is audited.
+// uid is in the project projectUID — on its membership there — or clears the
+// link when subjectUID is nil or empty. It is the self-service path behind the
+// account page, so it records no audit entry — the same bargain
+// Service.ChangePassword strikes for a user acting on their own account; the
+// administrative write (internal/project's Store.SetSubject) is audited.
 //
-// It returns the refreshed user, ErrUserNotFound when the account does not
-// exist, ErrSubjectNotFound when the UID names nobody, or ErrNoProject when
-// projectUID is empty.
-func (s *Service) SetUserSubject(ctx context.Context, projectUID, uid string, subjectUID *string) (User, error) {
+// It returns the account with that project's link, ErrUserNotFound when the
+// account does not exist, ErrSubjectNotFound when the UID names nobody, or
+// ErrNoProject when projectUID is empty.
+func (s *Service) SetUserSubject(
+	ctx context.Context, projectUID, uid string, subjectUID *string,
+) (LinkedUser, error) {
 	return s.store.SetUserSubject(ctx, projectUID, uid, subjectUID)
 }
 
@@ -320,7 +361,7 @@ func (s *Service) GetUser(ctx context.Context, uid string) (User, error) {
 // handlers use UpdateUserAudited. When the update disables the account, all of
 // that user's sessions are invalidated so the change takes effect immediately. A
 // nil in.Note leaves the stored note untouched. It returns ErrInvalidRole for an
-// unknown role, ErrInvalidEmail for a missing or malformed e-mail address,
+// unknown instance role, ErrInvalidEmail for a missing or malformed e-mail address,
 // ErrNoteTooLong for an over-length note, ErrUserNotFound if no such user
 // exists, and ErrLastMaintainer when demoting or disabling the account would
 // leave the instance without a single enabled maintainer.
@@ -347,7 +388,7 @@ func (s *Service) UpdateUser(ctx context.Context, uid string, in UpdateUserInput
 func (s *Service) UpdateUserAudited(
 	ctx context.Context, uid string, in UpdateUserInput, actor Role, entry audit.Entry,
 ) (User, error) {
-	if err := s.guardMaintainerBoundary(ctx, actor, uid, instanceRoleOf(in.Role)); err != nil {
+	if err := s.guardMaintainerBoundary(ctx, actor, uid, in.InstanceRole); err != nil {
 		return User{}, err
 	}
 	in, err := validateUserUpdate(in)
@@ -361,12 +402,12 @@ func (s *Service) UpdateUserAudited(
 	return s.invalidateIfDisabled(ctx, uid, in.Disabled, user)
 }
 
-// validateUserUpdate validates the role, e-mail address and optional note of an
-// update input and returns the input with the address normalized, so what the
-// caller stores is what was validated. A nil note skips the note check. It
-// returns ErrInvalidRole, ErrInvalidEmail or ErrNoteTooLong.
+// validateUserUpdate validates the instance role, e-mail address and optional
+// note of an update input and returns the input with the address normalized, so
+// what the caller stores is what was validated. A nil note skips the note
+// check. It returns ErrInvalidRole, ErrInvalidEmail or ErrNoteTooLong.
 func validateUserUpdate(in UpdateUserInput) (UpdateUserInput, error) {
-	if !in.Role.Valid() {
+	if !in.InstanceRole.Valid() {
 		return in, ErrInvalidRole
 	}
 	in.Email = normalizeEmail(in.Email)

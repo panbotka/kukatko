@@ -31,8 +31,8 @@ func (h *harness) maintainerMeta(t *testing.T) audit.Meta {
 		Username:     "impossible-dates",
 		Email:        "impossible-dates@example.test",
 		PasswordHash: "x",
-		Role:         auth.RoleMaintainer, ProjectRole: project.RoleAdmin,
-	}); err != nil {
+		Role:         auth.RoleMaintainer,
+	}.InProject(project.BootstrapUID, project.RoleAdmin)); err != nil {
 		t.Fatalf("creating the acting maintainer: %v", err)
 	}
 	return audit.Meta{ActorUID: uid, IP: "192.0.2.7", UserAgent: "kukatko-test"}

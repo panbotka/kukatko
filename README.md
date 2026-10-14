@@ -239,8 +239,14 @@ the same way, by its slug in the URL (`/api/v1/p/<project>/…`).
   before the original is deleted — and then a live progress bar with photos and bytes moved, the
   speed and the time left, the last file and any errors, and *Pozastavit* / *Pokračovat* /
   *Zkusit znovu*. The project list marks a project being moved with „přesun 42 %". *Účty* (`/system/users`) lists every account of the
-  instance with its memberships, and is where another account is promoted to a system administrator
-  or demoted again — never your own, somebody else has to do that.
+  instance with its memberships (and, per project, the person the account is there), and is where
+  another account is promoted to a system administrator or demoted again — never your own, somebody
+  else has to do that. It is also where the system administrator looks after the account itself:
+  *Nový účet* creates an account that belongs to no project yet (a project's admin adds it on
+  *Členové*, or it accepts an invitation), *Upravit* changes the username, e-mail, name and note,
+  *Změnit heslo* sets a password, *Odkaz na heslo* issues the one-time link somebody who forgot their
+  password needs to get back in (mailed, or shown to copy when mail is off or the address is a
+  placeholder), and *Zablokovat* / *Odblokovat* shuts an account out of every project or lets it back.
 - **The limits hold at every upload.** A project's largest-file limit and its quota are enforced on
   the upload page, through an upload link and by `kukatko import dir` alike, together with the
   instance's own file cap (the smallest cap wins). A file over the limit is refused before its bytes

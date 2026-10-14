@@ -161,7 +161,7 @@ func TestApproval_adminCreatedAccountIsApproved(t *testing.T) {
 	admin := signInAs(t, env, "boss")
 
 	body := `{"username":"newcomer","password":"` + testPassword +
-		`","email":"newcomer@example.test","role":"viewer"}`
+		`","email":"newcomer@example.test","instance_role":"user"}`
 	status, raw := env.do(t, admin, http.MethodPost, "/api/v1/admin/users", body)
 	if status != http.StatusCreated {
 		t.Fatalf("POST /admin/users = %d, body %s", status, raw)

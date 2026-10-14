@@ -170,9 +170,9 @@ func TestUpdateRequestToUpdate(t *testing.T) {
 func TestCommentPolicy(t *testing.T) {
 	t.Parallel()
 
-	author := auth.User{UID: "us1", ProjectRole: project.RoleViewer}
-	stranger := auth.User{UID: "us2", ProjectRole: project.RoleEditor}
-	admin := auth.User{UID: "us3", ProjectRole: project.RoleAdmin}
+	author := auth.User{UID: "us1"}
+	stranger := auth.User{UID: "us2"}
+	admin := auth.User{UID: "us3"}
 	mine := comments.Comment{AuthorUID: "us1"}
 	orphan := comments.Comment{}
 
@@ -180,14 +180,21 @@ func TestCommentPolicy(t *testing.T) {
 		name      string
 		comment   comments.Comment
 		user      auth.User
+		role      project.Role
 		canEdit   bool
 		canDelete bool
 	}{
-		{name: "author", comment: mine, user: author, canEdit: true, canDelete: true},
-		{name: "a stranger with write access", comment: mine, user: stranger},
-		{name: "an admin may delete but not edit", comment: mine, user: admin, canDelete: true},
-		{name: "an authorless comment", comment: orphan, user: author},
-		{name: "an authorless comment and an admin", comment: orphan, user: admin, canDelete: true},
+		{name: "author", comment: mine, user: author, role: project.RoleViewer, canEdit: true, canDelete: true},
+		{name: "a stranger with write access", comment: mine, user: stranger, role: project.RoleEditor},
+		{
+			name: "an admin may delete but not edit", comment: mine, user: admin, role: project.RoleAdmin,
+			canDelete: true,
+		},
+		{name: "an authorless comment", comment: orphan, user: author, role: project.RoleViewer},
+		{
+			name: "an authorless comment and an admin", comment: orphan, user: admin, role: project.RoleAdmin,
+			canDelete: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -195,7 +202,7 @@ func TestCommentPolicy(t *testing.T) {
 			if got := canEditComment(tt.comment, tt.user); got != tt.canEdit {
 				t.Errorf("canEditComment = %v, want %v", got, tt.canEdit)
 			}
-			if got := canDeleteComment(tt.comment, tt.user, tt.user.ProjectRole); got != tt.canDelete {
+			if got := canDeleteComment(tt.comment, tt.user, tt.role); got != tt.canDelete {
 				t.Errorf("canDeleteComment = %v, want %v", got, tt.canDelete)
 			}
 		})

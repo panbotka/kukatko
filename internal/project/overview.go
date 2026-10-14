@@ -77,16 +77,20 @@ func (s *Store) overviews(ctx context.Context, uid *string) ([]Overview, error) 
 	return out, nil
 }
 
-// allMembershipsSQL lists every membership of the instance with its project,
-// each account's in project-name order.
+// allMembershipsSQL lists every membership of the instance with its project
+// and the person it is linked to there (looked up in that project only), each
+// account's in project-name order.
 const allMembershipsSQL = `
-SELECT m.user_uid, p.uid, p.slug, p.name, p.active, m.role, m.approved_at IS NOT NULL
+SELECT m.user_uid, p.uid, p.slug, p.name, p.active, m.role, m.approved_at IS NOT NULL,
+	m.subject_uid, COALESCE(s.name, '')
 FROM project_members m JOIN projects p ON p.uid = m.project_uid
+LEFT JOIN subjects s ON s.uid = m.subject_uid AND s.project_id = m.project_uid
 ORDER BY p.name, p.uid`
 
 // AllMemberships returns the memberships of every account of the instance,
 // keyed by user uid, each list ordered by project name as MembershipsOf orders
-// one account's. An account without memberships has no key. It is the one
+// one account's, each carrying its linked person and that person's name. An
+// account without memberships has no key. It is the one
 // query behind the system administrator's account list, instead of one
 // MembershipsOf per account.
 func (s *Store) AllMemberships(ctx context.Context) (map[string][]MembershipSummary, error) {
@@ -103,7 +107,7 @@ func (s *Store) AllMemberships(ctx context.Context) (map[string][]MembershipSumm
 			ms      MembershipSummary
 		)
 		if err := rows.Scan(&userUID, &ms.ProjectUID, &ms.Slug, &ms.Name, &ms.Active, &ms.Role,
-			&ms.Approved); err != nil {
+			&ms.Approved, &ms.SubjectUID, &ms.SubjectName); err != nil {
 			return nil, fmt.Errorf("project: scanning a membership: %w", err)
 		}
 		out[userUID] = append(out[userUID], ms)

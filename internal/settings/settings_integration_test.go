@@ -50,8 +50,8 @@ func makeAdmin(t *testing.T, store *auth.Store, uid, username string) string {
 		Username:     username,
 		Email:        username + "@example.test",
 		PasswordHash: "x",
-		Role:         auth.RoleUser, ProjectRole: project.RoleAdmin,
-	}); err != nil {
+		Role:         auth.RoleUser,
+	}.InProject(project.BootstrapUID, project.RoleAdmin)); err != nil {
 		t.Fatalf("creating user %s: %v", username, err)
 	}
 	return uid

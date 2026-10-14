@@ -20,22 +20,27 @@ export type Role = 'viewer' | 'curator' | 'editor' | 'admin' | 'maintainer'
  */
 export type GuardRole = Exclude<Role, 'viewer'>
 
-/** Authenticated user, mirroring the backend `auth.User` JSON shape. */
+/**
+ * Authenticated user, mirroring the backend `auth.User` JSON shape — the account
+ * record, which carries nothing project-shaped: the role and the linked person
+ * in a project are that project's membership (`ProjectMembership`).
+ */
 export interface User {
   uid: string
   username: string
   display_name: string
   email: string
-  role: Role
   disabled: boolean
   created_at: string
   updated_at: string
   last_login_at?: string
   /**
-   * The person of the library this account belongs to, or null when nobody has
-   * said. It is what makes "my photos", `person:me` and the account's own face
-   * on a comment possible; almost every account has none, so every reader of it
-   * has to work without it.
+   * The person of the current project this account says it is, or null when
+   * nobody has said. The backend's account record does not carry it — `useAuth`
+   * fills it from the current project's membership, and it is null outside a
+   * project. It is what makes "my photos", `person:me` and the account's own
+   * face on a comment possible; almost every account has none, so every reader
+   * of it has to work without it.
    */
   subject_uid?: string | null
   /**
@@ -53,8 +58,7 @@ export interface User {
   welcome_seen_at?: string | null
   /**
    * The account's instance role: `maintainer` (the system administrator) or
-   * `user`. `role` above stays the role in the current project (`maintainer`
-   * for a maintainer) so every existing check keeps working.
+   * `user`. The role in a project is `useAuth().role`, read off the membership.
    */
   instance_role?: InstanceRole
 }

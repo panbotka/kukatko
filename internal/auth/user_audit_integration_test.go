@@ -64,29 +64,32 @@ func TestUserAudit_mutationsRecordRows(t *testing.T) {
 	admin := env.createUser(t, "admin", auth.AccountAdmin)
 	meta := audit.Meta{ActorUID: admin.UID, IP: "203.0.113.9", UserAgent: "admin-agent"}
 
-	created, err := env.svc.CreateUserAudited(ctx, auth.CreateUserInput{
-		Username: "newuser", Email: "newuser@example.test", Password: testPassword, Role: auth.AccountViewer,
+	created, err := env.svc.CreateUserAudited(ctx, auth.NewAccountInput{
+		Username: "newuser", Email: "newuser@example.test", Password: testPassword, InstanceRole: auth.RoleUser,
 	}, admin.Role, meta.Entry(audit.ActionUserCreate, "users", "", nil))
 	if err != nil {
 		t.Fatalf("CreateUserAudited: %v", err)
 	}
 	rec := requireOneUserAudit(t, ctx, auditStore, audit.ActionUserCreate, admin.UID, created.UID)
-	if rec.Details["username"] != "newuser" || rec.Details["role"] != "viewer" {
-		t.Errorf("create details = %v, want username=newuser role=viewer", rec.Details)
+	if rec.Details["username"] != "newuser" || rec.Details["instance_role"] != "user" {
+		t.Errorf("create details = %v, want username=newuser instance_role=user", rec.Details)
+	}
+	if _, has := rec.Details["role"]; has {
+		t.Errorf("create details = %v, carry a project-shaped role", rec.Details)
 	}
 	if rec.IP == nil || *rec.IP != "203.0.113.9" {
 		t.Errorf("create ip = %v, want 203.0.113.9", rec.IP)
 	}
 
 	if _, err := env.svc.UpdateUserAudited(ctx, created.UID, auth.UpdateUserInput{
-		DisplayName: "New Name", Email: created.Email, Role: auth.AccountEditor,
+		DisplayName: "New Name", Email: created.Email, InstanceRole: auth.RoleUser,
 	}, admin.Role, meta.Entry(audit.ActionUserUpdate, "users", created.UID,
-		map[string]any{"role": "editor", "disabled": false})); err != nil {
+		map[string]any{"instance_role": "user", "disabled": false})); err != nil {
 		t.Fatalf("UpdateUserAudited: %v", err)
 	}
 	upd := requireOneUserAudit(t, ctx, auditStore, audit.ActionUserUpdate, admin.UID, created.UID)
-	if upd.Details["role"] != "editor" {
-		t.Errorf("update details role = %v, want editor", upd.Details["role"])
+	if upd.Details["instance_role"] != "user" {
+		t.Errorf("update details instance_role = %v, want user", upd.Details["instance_role"])
 	}
 
 	if _, err := env.svc.SetUserDisabledAudited(ctx, created.UID, true, admin.Role,
@@ -114,7 +117,7 @@ func TestUserAudit_rollbackWritesNoAudit(t *testing.T) {
 	meta := audit.Meta{ActorUID: admin.UID}
 
 	_, err := env.svc.UpdateUserAudited(ctx, "usr_missing",
-		auth.UpdateUserInput{Email: "missing@example.test", Role: auth.AccountViewer},
+		auth.UpdateUserInput{Email: "missing@example.test", InstanceRole: auth.RoleUser},
 		admin.Role, meta.Entry(audit.ActionUserUpdate, "users", "usr_missing", nil))
 	if !errors.Is(err, auth.ErrUserNotFound) {
 		t.Fatalf("UpdateUserAudited(missing) err = %v, want ErrUserNotFound", err)

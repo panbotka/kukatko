@@ -302,13 +302,11 @@ func TestProject_lastProjectRemembered(t *testing.T) {
 
 // meBody is the part of GET /auth/me these tests read.
 type meBody struct {
-	User struct {
-		UID          string `json:"uid"`
-		Role         string `json:"role"`
-		InstanceRole string `json:"instance_role"`
-	} `json:"user"`
-	InstanceRole    string `json:"instance_role"`
-	LastProjectSlug string `json:"last_project_slug"`
+	// User is decoded as a map so a test can assert a key is absent: the
+	// account record carries no project-shaped "role" or "subject_uid".
+	User            map[string]any `json:"user"`
+	InstanceRole    string         `json:"instance_role"`
+	LastProjectSlug string         `json:"last_project_slug"`
 	Projects        []struct {
 		UID        string  `json:"uid"`
 		Slug       string  `json:"slug"`
@@ -322,8 +320,8 @@ type meBody struct {
 
 // TestProject_meShape pins GET /auth/me: the instance role, every membership
 // with its role, approval and "this is me" person, the remembered last
-// project, and the user's "role" — "maintainer" for a maintainer, so the
-// frontend's maintainer screens keep working.
+// project, and a user object that is the bare account record — its instance
+// role, but no "role" and no "subject_uid", which exist only per membership.
 func TestProject_meShape(t *testing.T) {
 	env := newProjectEnv(t)
 	alfa := env.createProject(t, "alfa")
@@ -350,9 +348,11 @@ func TestProject_meShape(t *testing.T) {
 	if err := json.Unmarshal(body, &me); err != nil {
 		t.Fatalf("decoding %s: %v", body, err)
 	}
-	if me.InstanceRole != "user" || me.User.Role != "curator" || me.LastProjectSlug != project.BootstrapSlug {
-		t.Errorf("instance_role=%q role=%q last=%q, want user/curator/v", me.InstanceRole, me.User.Role, me.LastProjectSlug)
+	if me.InstanceRole != "user" || me.User["instance_role"] != "user" || me.LastProjectSlug != project.BootstrapSlug {
+		t.Errorf("instance_role=%q user.instance_role=%v last=%q, want user/user/v",
+			me.InstanceRole, me.User["instance_role"], me.LastProjectSlug)
 	}
+	assertNoProjectKeys(t, "curator /auth/me user", me.User)
 	if len(me.Projects) != 2 {
 		t.Fatalf("projects = %+v, want two memberships", me.Projects)
 	}
@@ -371,12 +371,15 @@ func TestProject_meShape(t *testing.T) {
 
 	maint, _ := env.signIn(t, "ops", auth.AccountMaintainer)
 	_, body = env.get(t, maint, "/api/v1/auth/me")
+	me = meBody{} // a fresh map, so a key the first answer had cannot linger
 	if err := json.Unmarshal(body, &me); err != nil {
 		t.Fatalf("decoding %s: %v", body, err)
 	}
-	if me.InstanceRole != "maintainer" || me.User.Role != "maintainer" {
-		t.Errorf("maintainer /auth/me instance_role=%q role=%q, want maintainer twice", me.InstanceRole, me.User.Role)
+	if me.InstanceRole != "maintainer" || me.User["instance_role"] != "maintainer" {
+		t.Errorf("maintainer /auth/me instance_role=%q user.instance_role=%v, want maintainer twice",
+			me.InstanceRole, me.User["instance_role"])
 	}
+	assertNoProjectKeys(t, "maintainer /auth/me user", me.User)
 }
 
 // TestProject_registrationCreatesAPendingMembership proves a self-service
@@ -413,35 +416,41 @@ func TestProject_registrationCreatesAPendingMembership(t *testing.T) {
 	}
 }
 
-// TestProject_adminUpdateMovesTheMembership proves the transitional admin
-// endpoint's five-rung role lands as instance role + bootstrap membership.
-func TestProject_adminUpdateMovesTheMembership(t *testing.T) {
+// TestProject_adminUpdateLeavesTheMembership proves the system administrator's
+// account update speaks only the instance role: neither a plain update nor a
+// promotion to maintainer moves the account's membership of the bootstrap
+// project, which is that project admin's to change.
+func TestProject_adminUpdateLeavesTheMembership(t *testing.T) {
 	env := newHTTPEnv(t, 10)
 	projects := project.NewStore(env.db.Pool())
 	maintUser := env.mustCreate(t, "ops", auth.AccountMaintainer)
 	target := env.mustCreate(t, "eva", auth.AccountViewer)
 
 	updated, err := env.svc.UpdateUserAudited(t.Context(), target.UID,
-		auth.UpdateUserInput{Email: target.Email, Role: auth.AccountEditor}, maintUser.Role,
+		auth.UpdateUserInput{Email: target.Email, InstanceRole: auth.RoleUser}, maintUser.Role,
 		audit.Meta{ActorUID: maintUser.UID}.Entry(audit.ActionUserUpdate, "users", "", nil))
 	if err != nil {
 		t.Fatalf("UpdateUserAudited: %v", err)
 	}
-	if updated.Role != auth.RoleUser || updated.ProjectRole != project.RoleEditor || updated.AccountRole != auth.AccountEditor {
-		t.Errorf("updated = %q/%q/%q, want user/editor/editor", updated.Role, updated.ProjectRole, updated.AccountRole)
+	if updated.Role != auth.RoleUser {
+		t.Errorf("updated instance role = %q, want user", updated.Role)
 	}
 	member, err := projects.Membership(t.Context(), project.BootstrapUID, target.UID)
-	if err != nil || member.Role != project.RoleEditor {
-		t.Errorf("membership after update = %+v (%v), want editor", member, err)
+	if err != nil || member.Role != project.RoleViewer {
+		t.Errorf("membership after update = %+v (%v), want viewer (untouched)", member, err)
 	}
 
 	promoted, err := env.svc.UpdateUserAudited(t.Context(), target.UID,
-		auth.UpdateUserInput{Email: target.Email, Role: auth.AccountMaintainer}, maintUser.Role,
+		auth.UpdateUserInput{Email: target.Email, InstanceRole: auth.RoleMaintainer}, maintUser.Role,
 		audit.Meta{ActorUID: maintUser.UID}.Entry(audit.ActionUserUpdate, "users", "", nil))
 	if err != nil {
 		t.Fatalf("promoting: %v", err)
 	}
-	if promoted.Role != auth.RoleMaintainer || promoted.AccountRole != auth.AccountMaintainer {
-		t.Errorf("promoted = %q/%q, want maintainer", promoted.Role, promoted.AccountRole)
+	if promoted.Role != auth.RoleMaintainer {
+		t.Errorf("promoted instance role = %q, want maintainer", promoted.Role)
+	}
+	member, err = projects.Membership(t.Context(), project.BootstrapUID, target.UID)
+	if err != nil || member.Role != project.RoleViewer {
+		t.Errorf("membership after promotion = %+v (%v), want viewer (untouched)", member, err)
 	}
 }

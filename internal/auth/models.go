@@ -120,19 +120,11 @@ type User struct {
 	DisplayName string `json:"display_name"`
 	Email       string `json:"email"`
 	// Role is the account's instance role (users.role): user or maintainer.
-	Role Role `json:"instance_role"`
-	// ProjectRole is the account's role in the bootstrap project, or "" when it
-	// is not a member there: the vocabulary of the maintainer-only /admin/users
-	// record. It decides nothing — the request's own project role is
-	// ProjectRoleFromContext.
-	ProjectRole project.Role `json:"-"`
-	// AccountRole is the pre-project five-rung "role" of the /admin/users record
-	// (see AccountRole): "maintainer" for a maintainer, otherwise ProjectRole.
-	AccountRole AccountRole `json:"role"`
-	Disabled    bool        `json:"disabled"`
-	CreatedAt   time.Time   `json:"created_at"`
-	UpdatedAt   time.Time   `json:"updated_at"`
-	LastLoginAt *time.Time  `json:"last_login_at,omitempty"`
+	Role        Role       `json:"instance_role"`
+	Disabled    bool       `json:"disabled"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
 	// PasswordHash holds the bcrypt hash; it is excluded from JSON output.
 	PasswordHash string `json:"-"`
 	// Note is a free-text administrative note. It is excluded from JSON output
@@ -140,25 +132,6 @@ type User struct {
 	// User verbatim. The admin-only user endpoints re-add it explicitly via
 	// adminUserResponse.
 	Note string `json:"-"`
-	// SubjectUID names the person of the library this account belongs to, or is
-	// nil when nobody has said. It is read off a membership — who you are is a
-	// fact about one project's people: the bootstrap project's on an account
-	// read (the /admin/users record, like ProjectRole); GET /auth/me lists each
-	// membership's own, and PUT /p/{project}/auth/subject answers with that
-	// project's. Several accounts may name the same subject (a
-	// shared family login and a personal one are both that person), and deleting
-	// the subject clears it back to nil, so every reader has to survive an absent
-	// link — which is also the common case.
-	//
-	// Unlike Note it *is* serialised, and that is a deliberate decision rather
-	// than an oversight: the client cannot render the "my photos" entry, resolve
-	// `person:me` in a link or draw the account's face without knowing it, and it
-	// is the caller's own fact about themselves. Where Note is an administrator's
-	// private remark about somebody, this is that somebody's own answer to "who
-	// am I here?" — and the admin listings show it for the same reason they show a
-	// role. It is a subject UID, never anything the subject keeps private: what
-	// may be seen of that person is decided by the people endpoints, not here.
-	SubjectUID *string `json:"subject_uid"`
 	// ApprovedAt is when an administrator let this account in, or nil when
 	// nobody has yet — "registered, waiting". Approval lives on the membership;
 	// this is derived from them: the earliest approved membership, or the
@@ -176,17 +149,51 @@ type User struct {
 	// WelcomeSeenAt is when the account's owner last dismissed or completed the
 	// first-run welcome (the Markdown an admin writes in internal/settings), or
 	// nil when they never have. It is the caller's own fact about themselves and
-	// is serialised for the same reason SubjectUID is: the client cannot decide
-	// whether to open the welcome without it.
+	// is serialised because the client cannot decide whether to open the welcome
+	// without it.
 	//
 	// Only ever moved forward, and only by the account itself — see
 	// Service.MarkWelcomeSeen.
 	WelcomeSeenAt *time.Time `json:"welcome_seen_at"`
-	// joinProject is the project a new account's membership is created in by
-	// CreateUser and its audited twins; empty is the bootstrap project. It is
-	// set only by a registration through an upload link, which joins the link's
-	// project, and is never read back from the database.
-	joinProject string
+	// join is the membership a new account is created with by CreateUser and
+	// its audited twins — none when its role is empty, which is what the
+	// /admin/users creation and a bare seeded account make. It is set only by
+	// the seeding vocabulary (CreateUserInput, the bootstrap project) and by
+	// self-service registration (the project registered into), and is never
+	// read back from the database: the account record carries nothing about a
+	// project.
+	join newMembership
+}
+
+// newMembership is the membership an account is created with: the project, the
+// role there (empty: no membership at all) and the person of that project the
+// account is linked to (nil: nobody), which checkSubject confirms is one of the
+// project's before the insert.
+type newMembership struct {
+	project string
+	role    project.Role
+	subject *string
+}
+
+// InProject returns u set up to be created as a member of the project
+// projectUID with role — the membership Store.CreateUser inserts together with
+// the account, approved exactly when u.ApprovedAt says. It is the seeding
+// counterpart of what CreateUserInput and registration do, for a caller that
+// builds the User itself (the integration-test seeders); an account read never
+// carries it, and without it Store.CreateUser creates no membership.
+func (u User) InProject(projectUID string, role project.Role) User {
+	u.join = newMembership{project: projectUID, role: role}
+	return u
+}
+
+// LinkedUser is an account as one project sees it: the account record plus the
+// person of that project the account says it is ("this is me"), nil when it has
+// not said. Who you are is a fact about one project's people, so it lives on the
+// membership and never on the account record itself; PUT /p/{project}/auth/subject
+// answers with this.
+type LinkedUser struct {
+	User
+	SubjectUID *string `json:"subject_uid"`
 }
 
 // Session is an authenticated session bound to a user. Token is the opaque value

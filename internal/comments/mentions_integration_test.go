@@ -45,8 +45,8 @@ func (f *fixture) makeApprovedUser(t *testing.T, uid, username, displayName stri
 	approved := time.Now().Add(-time.Hour)
 	if err := f.users.CreateUser(context.Background(), auth.User{
 		UID: uid, Username: username, Email: username + "@example.test", DisplayName: displayName,
-		PasswordHash: "x", Role: auth.RoleUser, ProjectRole: project.RoleViewer, Disabled: disabled, ApprovedAt: &approved,
-	}); err != nil {
+		PasswordHash: "x", Role: auth.RoleUser, Disabled: disabled, ApprovedAt: &approved,
+	}.InProject(project.BootstrapUID, project.RoleViewer)); err != nil {
 		t.Fatalf("creating user %s: %v", username, err)
 	}
 	return uid

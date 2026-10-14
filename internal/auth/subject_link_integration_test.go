@@ -145,6 +145,11 @@ func TestSubjectLink_selfService(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("PUT /auth/subject = %d, body %s", status, body)
 	}
+	// The answer is the account as this project sees it: the link just written.
+	if linked := decodeUser(t, body); linked["subject_uid"] != "sub_self" || linked["instance_role"] != "user" {
+		t.Errorf("PUT /auth/subject answered subject_uid=%v instance_role=%v, want sub_self/user",
+			linked["subject_uid"], linked["instance_role"])
+	}
 	if got := env.meSubject(t, client); got == nil || *got != "sub_self" {
 		t.Fatalf("after linking, /auth/me subject = %v, want sub_self", got)
 	}
@@ -237,11 +242,13 @@ func TestSubjectLink_survivesSubjectDeletion(t *testing.T) {
 	}
 }
 
-// TestSubjectLink_adminSetsAndAudits covers the administrator's half: creating
-// an account already linked, changing the link afterwards, and finding both in
-// the audit trail — which is what makes a change to somebody else's account
-// accountable.
-func TestSubjectLink_adminSetsAndAudits(t *testing.T) {
+// TestSubjectLink_adminUsersRefusesALink pins that the system administrator's
+// account endpoints say nothing about who an account is: a person is a fact
+// about one project's people, kept on that membership, so a subject_uid in a
+// POST or PATCH /admin/users body is an unknown field — refused with 400 before
+// anything is written — and an update without one leaves the membership's link
+// alone instead of clearing it.
+func TestSubjectLink_adminUsersRefusesALink(t *testing.T) {
 	env := newLinkEnv(t)
 	env.addSubject(t, "sub_a", "Babička")
 	env.addSubject(t, "sub_b", "Dědeček")
@@ -249,82 +256,70 @@ func TestSubjectLink_adminSetsAndAudits(t *testing.T) {
 	admin := env.signIn(t, "admin")
 
 	status, body := env.do(t, admin, http.MethodPost, "/api/v1/admin/users",
-		`{"username":"novy","password":"correct horse battery","role":"viewer",`+
+		`{"username":"novy","password":"correct horse battery",`+
 			`"display_name":"","email":"novy@example.test","note":"","subject_uid":"sub_a"}`)
-	if status != http.StatusCreated {
-		t.Fatalf("POST /admin/users = %d, body %s", status, body)
+	if status != http.StatusBadRequest {
+		t.Fatalf("POST /admin/users with a subject_uid = %d, want 400 (body %s)", status, body)
 	}
-	var created struct {
-		UID        string  `json:"uid"`
-		SubjectUID *string `json:"subject_uid"`
+	var accounts int
+	if err := env.pool.QueryRow(t.Context(),
+		`SELECT count(*) FROM users WHERE username = 'novy'`).Scan(&accounts); err != nil {
+		t.Fatalf("counting accounts: %v", err)
 	}
-	if err := json.Unmarshal(body, &created); err != nil {
-		t.Fatalf("decoding created user: %v", err)
-	}
-	if created.SubjectUID == nil || *created.SubjectUID != "sub_a" {
-		t.Fatalf("created user linked to %v, want sub_a", created.SubjectUID)
+	if accounts != 0 {
+		t.Fatalf("a refused create left %d accounts named novy, want 0", accounts)
 	}
 
-	status, body = env.do(t, admin, http.MethodPatch, "/api/v1/admin/users/"+created.UID,
-		`{"display_name":"","email":"novy@example.test","role":"viewer","disabled":false,"subject_uid":"sub_b"}`)
-	if status != http.StatusOK {
+	// A member of the bootstrap project, linked there to sub_a.
+	linked := "sub_a"
+	target, err := env.svc.CreateUser(t.Context(), auth.CreateUserInput{
+		Username: "stary", Email: "stary@example.test", Password: "correct horse battery",
+		Role: auth.AccountViewer, SubjectUID: &linked,
+	})
+	if err != nil {
+		t.Fatalf("seeding the linked account: %v", err)
+	}
+	path := "/api/v1/admin/users/" + target.UID
+	if status, body = env.do(t, admin, http.MethodPatch, path,
+		`{"display_name":"Changed","email":"stary@example.test","instance_role":"user","disabled":false,`+
+			`"subject_uid":"sub_b"}`); status != http.StatusBadRequest {
+		t.Fatalf("PATCH /admin/users with a subject_uid = %d, want 400 (body %s)", status, body)
+	}
+	assertLinkedTo(t, env.pool, target.UID, "sub_a")
+
+	// Without the field the update goes through and the link is not its to clear.
+	if status, body = env.do(t, admin, http.MethodPatch, path,
+		`{"display_name":"Changed","email":"stary@example.test","instance_role":"user","disabled":false}`); status != http.StatusOK {
 		t.Fatalf("PATCH /admin/users = %d, body %s", status, body)
 	}
-	var updated struct {
-		SubjectUID *string `json:"subject_uid"`
+	if user := decodeUser(t, body); user["display_name"] != "Changed" {
+		t.Errorf("display_name = %v, want Changed", user["display_name"])
+	} else if _, has := user["subject_uid"]; has {
+		t.Errorf("the account record carries a subject_uid: %v", user)
 	}
-	if err := json.Unmarshal(body, &updated); err != nil {
-		t.Fatalf("decoding updated user: %v", err)
-	}
-	if updated.SubjectUID == nil || *updated.SubjectUID != "sub_b" {
-		t.Fatalf("updated user linked to %v, want sub_b", updated.SubjectUID)
-	}
+	assertLinkedTo(t, env.pool, target.UID, "sub_a")
 
-	assertAuditRecords(t, env.pool, created.UID, "sub_a", "sub_b")
-
-	// An omitted subject clears the link, because the update replaces the profile.
-	if status, body = env.do(t, admin, http.MethodPatch, "/api/v1/admin/users/"+created.UID,
-		`{"display_name":"","email":"novy@example.test","role":"viewer","disabled":false}`); status != http.StatusOK {
-		t.Fatalf("PATCH /admin/users (clear) = %d, body %s", status, body)
+	// Only the accepted update reached the trail, and it names no person.
+	var entries, withSubject int
+	if err := env.pool.QueryRow(t.Context(),
+		`SELECT count(*), count(*) FILTER (WHERE details ? 'subject_uid') FROM audit_log
+		 WHERE action IN ('user.create', 'user.update')`).Scan(&entries, &withSubject); err != nil {
+		t.Fatalf("reading the audit trail: %v", err)
 	}
-	if err := json.Unmarshal(body, &updated); err != nil {
-		t.Fatalf("decoding cleared user: %v", err)
-	}
-	if updated.SubjectUID != nil {
-		t.Fatalf("after an omitted subject the link is %q, want none", *updated.SubjectUID)
+	if entries != 1 || withSubject != 0 {
+		t.Errorf("audit trail has %d user.create/update entries (%d naming a subject), want 1 (0)", entries, withSubject)
 	}
 }
 
-// assertAuditRecords checks that the user.create and user.update entries for
-// targetUID recorded the subject each one set.
-func assertAuditRecords(t *testing.T, pool *pgxpool.Pool, targetUID, wantCreate, wantUpdate string) {
+// assertLinkedTo checks that uid's membership of the bootstrap project is
+// linked to the subject want.
+func assertLinkedTo(t *testing.T, pool *pgxpool.Pool, uid, want string) {
 	t.Helper()
-	rows, err := pool.Query(t.Context(),
-		`SELECT action, details ->> 'subject_uid' FROM audit_log
-		 WHERE target_uid = $1 ORDER BY created_at, action`, targetUID)
-	if err != nil {
-		t.Fatalf("reading the audit trail: %v", err)
+	m := bootstrapMembership(t, pool, uid)
+	if m == nil {
+		t.Fatalf("%s has no membership of the bootstrap project", uid)
 	}
-	defer rows.Close()
-
-	got := map[string]string{}
-	for rows.Next() {
-		var action string
-		var subject *string
-		if err := rows.Scan(&action, &subject); err != nil {
-			t.Fatalf("scanning an audit row: %v", err)
-		}
-		if subject != nil {
-			got[action] = *subject
-		}
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("iterating the audit trail: %v", err)
-	}
-	if got["user.create"] != wantCreate {
-		t.Errorf("user.create recorded subject %q, want %q", got["user.create"], wantCreate)
-	}
-	if got["user.update"] != wantUpdate {
-		t.Errorf("user.update recorded subject %q, want %q", got["user.update"], wantUpdate)
+	if m.SubjectUID == nil || *m.SubjectUID != want {
+		t.Errorf("%s is linked to %v in the bootstrap project, want %s", uid, m.SubjectUID, want)
 	}
 }

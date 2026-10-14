@@ -70,8 +70,8 @@ func newFixture(t *testing.T) *fixture {
 	} {
 		if err := users.CreateUser(t.Context(), auth.User{
 			UID: uid, Username: uid, Email: uid + "@example.test", DisplayName: name, PasswordHash: "x",
-			Role: auth.RoleUser, ProjectRole: project.RoleViewer, Disabled: uid == disabledUID, ApprovedAt: &approved,
-		}); err != nil {
+			Role: auth.RoleUser, Disabled: uid == disabledUID, ApprovedAt: &approved,
+		}.InProject(project.BootstrapUID, project.RoleViewer)); err != nil {
 			t.Fatalf("creating account %s: %v", uid, err)
 		}
 	}

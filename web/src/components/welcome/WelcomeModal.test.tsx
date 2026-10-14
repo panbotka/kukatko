@@ -39,7 +39,6 @@ function account(overrides: Partial<User> = {}): User {
     username: 'anna',
     display_name: 'Anna',
     email: 'anna@example.test',
-    role: 'editor',
     disabled: false,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
@@ -78,7 +77,7 @@ function renderWelcome(
   const auth = {
     status: 'authenticated',
     user,
-    role: user.role,
+    role: 'editor',
     downloadToken: 'tok',
     canCurate: true,
     canWrite: true,

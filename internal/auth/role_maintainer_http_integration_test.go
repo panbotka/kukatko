@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestHTTP_maintainerRoleAssignable proves the 0036 migration applied: a
@@ -16,8 +17,11 @@ import (
 func TestHTTP_maintainerRoleAssignable(t *testing.T) {
 	env := newTokenEnv(t, 50)
 	user := env.user(t, "ops", auth.AccountMaintainer)
-	if user.AccountRole != auth.AccountMaintainer {
-		t.Fatalf("created role = %q, want %q", user.Role, auth.AccountMaintainer)
+	if user.Role != auth.RoleMaintainer {
+		t.Fatalf("created instance role = %q, want %q", user.Role, auth.RoleMaintainer)
+	}
+	if got := bootstrapRole(t, env.db.Pool(), user.UID); got != project.RoleAdmin {
+		t.Fatalf("created bootstrap role = %q, want %q", got, project.RoleAdmin)
 	}
 }
 
@@ -147,14 +151,14 @@ func TestHTTP_disableIsMaintainerOnly(t *testing.T) {
 }
 
 // TestHTTP_accountUpdateIsMaintainerOnly pins that the account edit — which
-// carries the instance-wide disabled flag and the transitional role — is the
+// carries the instance-wide disabled flag and the instance role — is the
 // system administrator's: a project admin manages roles of their own members
 // through /p/{project}/members instead, and is refused here before anything
 // changes.
 func TestHTTP_accountUpdateIsMaintainerOnly(t *testing.T) {
 	env := newTokenEnv(t, 50)
 	target := env.user(t, "upd-target", auth.AccountViewer)
-	body := `{"display_name":"","email":"upd-target@example.test","role":"editor","disabled":false}`
+	body := `{"display_name":"","email":"upd-target@example.test","instance_role":"user","disabled":false}`
 	tests := []struct {
 		role auth.AccountRole
 		user string

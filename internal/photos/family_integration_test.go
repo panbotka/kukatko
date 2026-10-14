@@ -56,8 +56,8 @@ func seedClan(t *testing.T, store *photos.Store, db *database.DB) clan {
 	actor := "usfamflt00000000000000001"
 	if err := auth.NewStore(db.Pool()).CreateUser(ctx, auth.User{
 		UID: actor, Username: "genealogist", Email: "genealogist@example.test",
-		PasswordHash: "x", Role: auth.RoleUser, ProjectRole: project.RoleViewer,
-	}); err != nil {
+		PasswordHash: "x", Role: auth.RoleUser,
+	}.InProject(project.BootstrapUID, project.RoleViewer)); err != nil {
 		t.Fatalf("creating actor: %v", err)
 	}
 

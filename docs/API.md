@@ -115,11 +115,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   membership, inactive projects included, by name; `subject_uid` is the account's "this is me" in that
   project) and `last_project_slug` (the project the account last entered, `""` when none). The
   per-project facts live in `projects`: the frontend reads the role and the linked person of the
-  current project from there. The top-level **`user.subject_uid`** is the **bootstrap project's**
-  membership link (MT04 transition value). It is kept for compatibility with clients older than projects
-  and is wrong for any other project. Read `projects[].subject_uid` of the current project instead, as
-  the SPA does: `AuthContext` overlays it onto `user`. `user.role` is the account record's five-rung role (see *Roles on the
-  admin user endpoints*) and `"maintainer"` for a maintainer; `user.instance_role` repeats the
+  current project from there (`AuthContext` overlays the current project's `subject_uid` onto `user`).
+  **`user` is the account record and carries nothing project-shaped**: no `role` and no `subject_uid`
+  (both dropped with the pre-tenancy vocabulary — read `projects[]`); `user.instance_role` repeats the
   instance role.
   **Project resolution (every project-scoped route):** the project comes from the `{project}` URL
   slug; there is no default. After authentication: an unknown slug,
@@ -134,16 +132,25 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   project): `GET|POST /admin/users`, `PUT /admin/users/{uid}/username` (rename, see below),
   `POST /admin/users/{uid}/password` (reset revokes all of the user's sessions),
   `POST /admin/users/{uid}/password-reset` (see below), `PATCH /admin/users/{uid}` (profile,
-  `disabled`, `role`) and `POST /admin/users/{uid}/disable` (blocking locks the account out of every
-  project). The SPA no longer calls them (its system screens use `/users` and `/projects`); they stay for
-  scripts and the agent account of `docs/MCP.md`. A project admin
-  manages roles and approval of their own members through the **Members API** below. **Removed:**
+  `disabled`, `instance_role`) and `POST /admin/users/{uid}/disable` (blocking locks the account out of
+  every project). **Decision (kept, 2026-10-14): every route stays `RequireMaintainer`** — one account
+  holds memberships in several tenants, so a project admin who could rename, block, re-address or reset
+  the password of an account would reach into every other project that account belongs to (and could
+  read accounts that are no member of theirs at all); a project admin governs memberships only, through
+  the **Members API** below and invitations. The SPA's `/system/users` uses them for the account
+  actions (create, edit, rename, password, reset link, block/unblock); they also serve scripts and the
+  agent account of `docs/MCP.md`. **Removed:**
   `POST /admin/users/{uid}/approve` — approval is a membership's (`POST /p/{project}/members/{user_uid}/approve`).
-  **Roles on the admin user endpoints:** `role` in the bodies and responses is the pre-project
-  five-rung `viewer|curator|editor|admin|maintainer`: `maintainer` sets `users.role = 'maintainer'` (and
-  an admin membership of the bootstrap project), any other value sets `users.role = 'user'` and the
-  account's membership **of the bootstrap project** to that role (created when missing). Memberships of
-  any other project are managed through `/projects/{uid}/members` or the Members API. A registration creates a `user`
+  **Tenancy vocabulary only:** the bodies and responses speak the account record — **`instance_role`**
+  (`user`|`maintainer`) and nothing project-shaped. `POST /admin/users` takes `{username, password,
+  display_name, email, instance_role, note}` (`instance_role` optional, default `user`) and creates the
+  account **with no membership**: it joins a project when that project's admin adds it (Members API) or
+  through an invitation. `PATCH /admin/users/{uid}` takes `{display_name, email, instance_role, disabled,
+  note}` and writes the `users` row only — **no `/admin/users` write touches `project_members`**. An
+  `instance_role` outside the two → 400 `invalid instance role (want user or maintainer)`; a body still
+  carrying the old `role` or `subject_uid` → 400 (unknown field). The audit details of `user.create`
+  /`user.update` name `instance_role`. Memberships are managed through `/projects/{uid}/members` or the
+  Members API. A registration creates a `user`
   with an **unapproved viewer membership**; a project admin's `POST /p/{project}/members/{user_uid}/approve`
   approves that membership — sign-in lets an account in once **any** of its memberships is approved (a
   maintainer, or an account in no project, always); the account carries no approval of its own (`approved_at` in a user payload is derived:
@@ -167,13 +174,13 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   editing). Accounts that predate this rule were given an undeliverable placeholder in the reserved
   `.invalid` domain (`<username>-<uid>@kukatko.invalid`, migration 0063), as is the **bootstrap admin**
   created on an empty database, so a first start still needs no mailbox.
-  **Which person the account is:** every user payload — login, `/auth/me` and the admin listings —
-  carries **`subject_uid`**, the subject of the library this account belongs to, or `null`. Unlike
-  `note` it *is* in the login and `/auth/me` payloads, deliberately: the client cannot render the
-  "my photos" entry or draw the account's face without it, and it is the caller's own fact about
-  themselves. The link lives **only on the membership** (`project_members.subject_uid`; the account-wide
-  `users.subject_uid` was dropped by migration 0110): `GET /auth/me` lists it **per membership**
-  (`projects[].subject_uid`), the admin listings carry the bootstrap project's. `PUT
+  **Which person the account is:** the subject of the library this account belongs to, or `null` — a
+  fact about **one project's** people, so it is never on the account record (no user payload carries
+  it). It is the caller's own fact about themselves and the client cannot render the "my photos" entry
+  or draw the account's face without it, so `GET /auth/me` lists it **per membership**
+  (`projects[].subject_uid`). The link lives **only on the membership** (`project_members.subject_uid`;
+  the account-wide `users.subject_uid` was dropped by migration 0110); the system administrator's
+  `GET /users` shows it per membership (`subject_uid` + `subject_name`), read-only. `PUT
   /api/v1/p/{project}/auth/subject` writes the caller's membership of that project and answers with that
   link — a caller who is no member there (a maintainer visiting) gets `null` and nothing is written;
   **`person:me`/`family:me` resolve the membership's link** (`project_members.subject_uid`) of
@@ -182,13 +189,13 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   family login and a personal one are both that person), and **deleting the subject clears the link**
   (`ON DELETE SET NULL`), so every reader must survive `null` — the common case.
   Self-service: **`PUT /api/v1/p/{project}/auth/subject`** (`RequireAuth`, any role) with `{"subject_uid": "sub…"}` or
-  `{"subject_uid": null}` → 200 with the refreshed user; the account written to is **the session's**,
+  `{"subject_uid": null}` → 200 with the account record plus that project's `subject_uid`; the account
+  written to is **the session's**,
   never one named in the body. A UID naming no person **of that project** (unknown, or another project's)
   → **400**. It writes **no audit entry**,
   following `POST /auth/password`: the trail records what was done *to* an account by somebody else.
-  Admin: `POST /admin/users` and `PATCH /admin/users/{uid}` accept `subject_uid` as part of the
-  **replaced** profile (unlike `note`, an omitted or null value **clears** the link) and write it on the
-  bootstrap membership, 400 for a subject that is no person of the bootstrap project, and both record it in the `user.create`/`user.update` audit details.
+  There is no administrative write of the link over HTTP any more: `POST`/`PATCH /admin/users` refuse a
+  `subject_uid` (400, unknown field) — the person is the membership's, not the account's.
   Linking an account **publishes that person's cover photo** next to every comment the account has
   written (see the comment thread below); the surfaces that set it say so. A subject's `private` flag
   gates no reading today and is unchanged by this.
@@ -206,7 +213,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   welcome (the Markdown a project admin writes in `PUT /p/{project}/settings` — the text shown is the
   project's the account first signs into), or `null` when they never have. It stays **per account**, not
   per membership: somebody who joins a second project is not welcomed again; it is in
-  the `GET /auth/me` payload for the same reason `subject_uid` is — the client cannot decide whether to
+  the `GET /auth/me` payload because the client cannot decide whether to
   open the welcome without it.
   **`POST /auth/welcome-seen`** (`RequireAuth`, **any role** — the welcome is shown to everybody who
   signs in) stamps `welcome_seen_at` with the current time and answers **200** with the refreshed user,
@@ -415,11 +422,14 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     Members API below for what counts).
   - **`GET /users`** (the unprefixed path — **not** the name directory, which lives only under
     `/api/v1/p/{project}/users`) → a bare array by username: `[{uid, username, display_name, email,
-    instance_role, disabled, memberships: [{project_uid, project_slug, project_name, active, role,
-    approved}]}]` — every account of the instance, memberships by project name, `[]` for none.
+    instance_role, disabled, note, approved_at, last_login_at, memberships: [{project_uid, project_slug,
+    project_name, active, role, approved, subject_uid, subject_name}]}]` — every account of the
+    instance, memberships by project name, `[]` for none. `note`/`approved_at`/`last_login_at` are the
+    account record the `/system/users` actions work from; `subject_uid`/`subject_name` are the person the
+    membership is linked to in that project (looked up in that project only, `null`/`""` for none).
   - **`PATCH /users/{uid}`** `{instance_role: "user"|"maintainer"}` → 200 + the account in the shape
-    above: promotes an account to a system administrator or demotes one; its memberships are left as
-    they are. Setting the role it already has records nothing; a change records `user.instance_role`
+    above (its memberships' `subject_name` left empty — the list is the one place that resolves them):
+    promotes an account to a system administrator or demotes one; its memberships are left as they are. Setting the role it already has records nothing; a change records `user.instance_role`
     (`instance_role`, `previous`). **A maintainer demoting themselves → 409 `self`** (somebody else
     must); 409 `last_maintainer` if the demotion would leave no enabled maintainer; 422 `invalid_role`;
     404 `not_found`.

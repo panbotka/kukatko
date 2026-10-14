@@ -14,27 +14,26 @@ import (
 const userTargetType = "users"
 
 // adminAuditMeta builds the audit envelope for an admin user-management mutation
-// from r, attributing it to the acting admin. The /admin/users routes are gated
-// by RequireAdmin, so a principal is always present in production; if one is
+// from r, attributing it to the acting system administrator. The /admin/users
+// routes are gated by RequireMaintainer, so a principal is always present in
+// production; if one is
 // somehow absent the actor is recorded empty rather than blocking the change.
 func adminAuditMeta(r *http.Request) audit.Meta {
 	user, _ := UserFromContext(r.Context())
 	return audit.FromRequest(r, user.UID)
 }
 
-// createUserRequest is the JSON body of POST /admin/users. display_name and note
-// are optional and default to empty. Its shape mirrors CreateUserInput so the
+// createUserRequest is the JSON body of POST /admin/users: the account record,
+// nothing project-shaped. display_name and note are optional and default to
+// empty, instance_role to "user". Its shape mirrors NewAccountInput so the
 // handler can convert directly.
 type createUserRequest struct {
-	Username    string      `json:"username"`
-	Password    string      `json:"password"`
-	DisplayName string      `json:"display_name"`
-	Email       string      `json:"email"`
-	Role        AccountRole `json:"role"`
-	Note        string      `json:"note"`
-	// SubjectUID optionally says, at creation time, which person of the library
-	// the account is; omitted or null leaves it unlinked.
-	SubjectUID *string `json:"subject_uid"`
+	Username     string `json:"username"`
+	Password     string `json:"password"`
+	DisplayName  string `json:"display_name"`
+	Email        string `json:"email"`
+	InstanceRole Role   `json:"instance_role"`
+	Note         string `json:"note"`
 }
 
 // updateUserRequest is the JSON body of PATCH /admin/users/{uid}; it replaces the
@@ -42,14 +41,11 @@ type createUserRequest struct {
 // stored note untouched while an explicit "" clears it. Its shape mirrors
 // UpdateUserInput so the handler can convert directly.
 type updateUserRequest struct {
-	DisplayName string      `json:"display_name"`
-	Email       string      `json:"email"`
-	Role        AccountRole `json:"role"`
-	Disabled    bool        `json:"disabled"`
-	Note        *string     `json:"note"`
-	// SubjectUID is part of the replaced profile, not a partial update like the
-	// note: an omitted or null value clears the account's link to a person.
-	SubjectUID *string `json:"subject_uid"`
+	DisplayName  string  `json:"display_name"`
+	Email        string  `json:"email"`
+	InstanceRole Role    `json:"instance_role"`
+	Disabled     bool    `json:"disabled"`
+	Note         *string `json:"note"`
 }
 
 // adminUserResponse is the admin-only JSON view of a user: every field User
@@ -122,10 +118,12 @@ func pendingParam(r *http.Request) (*bool, error) {
 	return &value, nil
 }
 
-// handleCreateUser creates a user (admin only). It responds 201 with the created
-// user, 400 for a bad body, weak password, invalid role, missing or malformed
-// e-mail address, over-length username or note, 409 for a duplicate username, or
-// 500.
+// handleCreateUser creates an account with no membership (system administrator
+// only): it joins a project when that project's admin adds it, or by an
+// invitation. It responds 201 with the created account, 400 for a bad body,
+// weak password, invalid instance role, missing or malformed
+// e-mail address, over-length username or note, 409 for a duplicate username,
+// or 500.
 func (a *API) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	var req createUserRequest
 	if err := decodeJSON(w, r, &req); err != nil {
@@ -134,7 +132,7 @@ func (a *API) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	actor, _ := UserFromContext(r.Context())
 	entry := adminAuditMeta(r).Entry(audit.ActionUserCreate, userTargetType, "", nil)
-	user, err := a.svc.CreateUserAudited(r.Context(), CreateUserInput(req), actor.Role, entry)
+	user, err := a.svc.CreateUserAudited(r.Context(), NewAccountInput(req), actor.Role, entry)
 	if err != nil {
 		writeCreateUserError(w, err)
 		return
@@ -150,7 +148,7 @@ func writeCreateUserError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrMaintainerRequired):
 		writeError(w, http.StatusForbidden, ErrMaintainerRequired.Error())
 	case errors.Is(err, ErrInvalidRole):
-		writeError(w, http.StatusBadRequest, "invalid role (want viewer, curator, editor, admin, or maintainer)")
+		writeError(w, http.StatusBadRequest, invalidInstanceRoleMessage)
 	default:
 		if verbatim, ok := verbatimInputError(err); ok {
 			writeError(w, http.StatusBadRequest, verbatim.Error())
@@ -159,6 +157,10 @@ func writeCreateUserError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusInternalServerError, "could not create user")
 	}
 }
+
+// invalidInstanceRoleMessage is the 400 answer to an instance role outside
+// user/maintainer.
+const invalidInstanceRoleMessage = "invalid instance role (want user or maintainer)"
 
 // verbatimInputErrors are the refusals of account input whose message already
 // names the offending field, so a handler answers them with a 400 carrying that
@@ -179,9 +181,10 @@ func verbatimInputError(err error) (error, bool) {
 	return nil, false
 }
 
-// handleUpdateUser replaces a user's profile fields (system administrator only). It responds 200
-// with the updated user, 400 for a bad body, invalid role, missing or malformed
-// e-mail address, or over-length note,
+// handleUpdateUser replaces an account's profile fields — the account record,
+// never a membership — (system administrator only). It responds 200 with the
+// updated account, 400 for a bad body, invalid instance role, missing or
+// malformed e-mail address, or over-length note,
 // 404 if the user does not exist, 409 when the change would demote or disable the
 // last enabled maintainer, or 500.
 func (a *API) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -192,15 +195,10 @@ func (a *API) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actor, _ := UserFromContext(r.Context())
-	// The link is recorded as it will stand after the update — the UID, or an
-	// explicit null when the administrator has just unlinked the account. Saying
-	// who somebody else is (or is no longer) is a change to their account, so it
-	// belongs in the trail beside the role and the disabled flag.
 	entry := adminAuditMeta(r).Entry(audit.ActionUserUpdate, userTargetType, uid,
 		map[string]any{
-			"role":        string(req.Role),
-			"disabled":    req.Disabled,
-			"subject_uid": normalizeSubjectUID(req.SubjectUID),
+			"instance_role": string(req.InstanceRole),
+			"disabled":      req.Disabled,
 		})
 	user, err := a.svc.UpdateUserAudited(r.Context(), uid, UpdateUserInput(req), actor.Role, entry)
 	if err != nil {
@@ -299,7 +297,8 @@ func (a *API) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// writeUserMutationError maps the common user-mutation errors (invalid role,
+// writeUserMutationError maps the common user-mutation errors (invalid instance
+// role,
 // invalid e-mail address, over-length note, not found, last maintainer) onto HTTP
 // statuses, falling back to fallback as a 500 message.
 //
@@ -313,7 +312,7 @@ func writeUserMutationError(w http.ResponseWriter, err error, fallback string) {
 	case errors.Is(err, ErrLastMaintainer):
 		writeError(w, http.StatusConflict, ErrLastMaintainer.Error())
 	case errors.Is(err, ErrInvalidRole):
-		writeError(w, http.StatusBadRequest, "invalid role (want viewer, curator, editor, admin, or maintainer)")
+		writeError(w, http.StatusBadRequest, invalidInstanceRoleMessage)
 	case errors.Is(err, ErrNoteTooLong):
 		writeError(w, http.StatusBadRequest, ErrNoteTooLong.Error())
 	case errors.Is(err, ErrInvalidEmail):

@@ -49,8 +49,8 @@ func newFixture(t *testing.T) fixture {
 	}
 	if err := auth.NewStore(db.Pool()).CreateUser(ctx, auth.User{
 		UID: f.curator, Username: "curator", Email: "curator@example.test",
-		PasswordHash: "x", Role: auth.RoleUser, ProjectRole: project.RoleCurator,
-	}); err != nil {
+		PasswordHash: "x", Role: auth.RoleUser,
+	}.InProject(project.BootstrapUID, project.RoleCurator)); err != nil {
 		t.Fatalf("creating curator: %v", err)
 	}
 	var err error

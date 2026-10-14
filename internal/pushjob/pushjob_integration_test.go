@@ -43,8 +43,8 @@ func newFixture(t *testing.T) fixture {
 	dbtest.TruncateAll(t, db)
 	const uid = "pushjob_owner"
 	if err := auth.NewStore(db.Pool()).CreateUser(context.Background(), auth.User{
-		UID: uid, Username: "owner", Email: "owner@example.test", PasswordHash: "x", Role: auth.RoleUser, ProjectRole: project.RoleViewer,
-	}); err != nil {
+		UID: uid, Username: "owner", Email: "owner@example.test", PasswordHash: "x", Role: auth.RoleUser,
+	}.InProject(project.BootstrapUID, project.RoleViewer)); err != nil {
 		t.Fatalf("creating the account: %v", err)
 	}
 	return fixture{

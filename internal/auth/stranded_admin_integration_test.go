@@ -85,7 +85,7 @@ func TestDisable_profileUpdateNotesStrandedProjects(t *testing.T) {
 	entry := audit.Meta{ActorUID: maint.UID}.Entry(audit.ActionUserUpdate, "users", admin.UID,
 		map[string]any{"disabled": true})
 	if _, err := env.svc.UpdateUserAudited(t.Context(), admin.UID, auth.UpdateUserInput{
-		Email: admin.Email, Role: auth.AccountAdmin, Disabled: true,
+		Email: admin.Email, InstanceRole: auth.RoleUser, Disabled: true,
 	}, maint.Role, entry); err != nil {
 		t.Fatalf("disabling the only admin by a profile update: %v", err)
 	}

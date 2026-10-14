@@ -10,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -318,13 +319,17 @@ func TestUpdateUser_disableInvalidatesSessions(t *testing.T) {
 	}
 
 	updated, err := env.svc.UpdateUser(t.Context(), user.UID, auth.UpdateUserInput{
-		DisplayName: "Karl K", Email: "karl@example.com", Role: auth.AccountViewer, Disabled: true,
+		DisplayName: "Karl K", Email: "karl@example.com", InstanceRole: auth.RoleUser, Disabled: true,
 	})
 	if err != nil {
 		t.Fatalf("UpdateUser: %v", err)
 	}
-	if updated.AccountRole != auth.AccountViewer || !updated.Disabled || updated.DisplayName != "Karl K" {
+	if updated.Role != auth.RoleUser || !updated.Disabled || updated.DisplayName != "Karl K" {
 		t.Errorf("update not applied: %+v", updated)
+	}
+	// The update is the account record's; the membership it was seeded with stays.
+	if got := bootstrapRole(t, env.db.Pool(), user.UID); got != project.RoleEditor {
+		t.Errorf("bootstrap role after update = %q, want editor (untouched)", got)
 	}
 	if _, _, err := env.svc.Authenticate(t.Context(), sess.Token); !errors.Is(err, auth.ErrSessionNotFound) {
 		t.Errorf("session after disable error = %v, want ErrSessionNotFound", err)
@@ -356,8 +361,11 @@ func TestBootstrap_outcomes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetUserByUsername: %v", err)
 		}
-		if user.AccountRole != auth.AccountMaintainer {
-			t.Errorf("bootstrap user role = %q, want maintainer", user.Role)
+		if user.Role != auth.RoleMaintainer {
+			t.Errorf("bootstrap user instance role = %q, want maintainer", user.Role)
+		}
+		if got := bootstrapRole(t, env.db.Pool(), user.UID); got != project.RoleAdmin {
+			t.Errorf("bootstrap user project role = %q, want admin", got)
 		}
 		if _, _, err := env.svc.Login(t.Context(), "root", "bootstrap-password"); err != nil {
 			t.Errorf("login as bootstrap maintainer: %v", err)
@@ -395,8 +403,8 @@ func TestAuthenticateDownloadToken(t *testing.T) {
 		if gotUser.UID != user.UID || gotSess.ID != sess.ID {
 			t.Errorf("resolved user=%s session=%s, want %s/%s", gotUser.UID, gotSess.ID, user.UID, sess.ID)
 		}
-		if gotUser.AccountRole != auth.AccountViewer {
-			t.Errorf("user role = %s, want viewer", gotUser.AccountRole)
+		if gotUser.Role != auth.RoleUser {
+			t.Errorf("user instance role = %s, want user", gotUser.Role)
 		}
 	})
 

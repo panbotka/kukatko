@@ -61,8 +61,8 @@ func (f *fixture) makeUser(t *testing.T, uid, username string) {
 	t.Helper()
 	if err := f.users.CreateUser(context.Background(), auth.User{
 		UID: uid, Username: username, Email: username + "@example.test",
-		PasswordHash: "x", Role: auth.RoleUser, ProjectRole: project.RoleViewer,
-	}); err != nil {
+		PasswordHash: "x", Role: auth.RoleUser,
+	}.InProject(project.BootstrapUID, project.RoleViewer)); err != nil {
 		t.Fatalf("creating user %s: %v", username, err)
 	}
 }

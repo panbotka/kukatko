@@ -33,7 +33,6 @@ const SESSION: AuthSession = {
     username: 'alice',
     display_name: 'Alice',
     email: 'alice@example.com',
-    role: 'editor',
     disabled: false,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',

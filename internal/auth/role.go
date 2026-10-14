@@ -64,13 +64,16 @@ func (r Role) CanImport() bool {
 	return r.CanMaintain()
 }
 
-// AccountRole is the pre-project five-rung vocabulary — viewer, curator,
-// editor, admin, maintainer — that the maintainer-only /admin/users endpoints
-// accept and that the "role" field of a serialised User reports. The frontend
-// no longer reads it (it reads instance_role and the per-project roles of
-// GET /auth/me). It is never an authorization decision: Split turns it into the
-// instance role and the role in the bootstrap project, which is what is stored
-// and what is checked.
+// AccountRole is the five-rung seeding vocabulary — viewer, curator, editor,
+// admin, maintainer — of CreateUserInput: "an account with this role", in one
+// value, for Service.CreateUser. Split turns it into the instance role and a role
+// in the bootstrap project, so a seeded account is created together with that
+// membership. Its callers are Bootstrap (the first maintainer) and the
+// integration-test seeders of nearly every API package, which need "a curator
+// of the library" in one line. It is nothing more: no HTTP route accepts it, no
+// account read returns it and it is never an authorization decision — the
+// account record speaks the instance role (Role) and every project its own
+// project.Role.
 type AccountRole string
 
 const (
@@ -100,23 +103,6 @@ func (r AccountRole) Split() (Role, project.Role) {
 		return RoleMaintainer, project.RoleAdmin
 	}
 	return RoleUser, project.Role(r)
-}
-
-// instanceRoleOf returns the instance half of r's Split.
-func instanceRoleOf(r AccountRole) Role {
-	instance, _ := r.Split()
-	return instance
-}
-
-// accountRoleOf folds an instance role and a project role back into the
-// five-rung vocabulary: a maintainer is always "maintainer" — whatever its
-// membership says, it is an admin everywhere — and anybody else is its project
-// role, or "" when it has none.
-func accountRoleOf(instance Role, inProject project.Role) AccountRole {
-	if instance.CanMaintain() {
-		return AccountMaintainer
-	}
-	return AccountRole(inProject)
 }
 
 // requirement is the access level a request must satisfy, used by the RBAC

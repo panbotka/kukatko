@@ -151,10 +151,10 @@ func TestHTTP_createUserRequiresEmail(t *testing.T) {
 		name string
 		body string
 	}{
-		{"omitted", `{"username":"noaddr","password":"correct horse battery","role":"viewer"}`},
-		{"empty", `{"username":"noaddr","password":"correct horse battery","role":"viewer","email":""}`},
-		{"whitespace", `{"username":"noaddr","password":"correct horse battery","role":"viewer","email":"   "}`},
-		{"malformed", `{"username":"noaddr","password":"correct horse battery","role":"viewer","email":"nope"}`},
+		{"omitted", `{"username":"noaddr","password":"correct horse battery","instance_role":"user"}`},
+		{"empty", `{"username":"noaddr","password":"correct horse battery","instance_role":"user","email":""}`},
+		{"whitespace", `{"username":"noaddr","password":"correct horse battery","instance_role":"user","email":"   "}`},
+		{"malformed", `{"username":"noaddr","password":"correct horse battery","instance_role":"user","email":"nope"}`},
 	}
 	for _, tt := range rejected {
 		t.Run(tt.name, func(t *testing.T) {
@@ -170,7 +170,7 @@ func TestHTTP_createUserRequiresEmail(t *testing.T) {
 
 	// The address is normalized on the way in: trimmed, domain lower-cased.
 	status, body := env.do(t, admin, "POST", "/api/v1/admin/users",
-		`{"username":"mailed","password":"correct horse battery","role":"viewer",`+
+		`{"username":"mailed","password":"correct horse battery","instance_role":"user",`+
 			`"email":"  Jan.Novak@Example.COM  "}`)
 	if status != 201 {
 		t.Fatalf("create with a valid address = %d, want 201 (body %s)", status, body)
@@ -195,11 +195,11 @@ func TestHTTP_updateUserRejectsInvalidEmail(t *testing.T) {
 		name string
 		body string
 	}{
-		{"omitted", `{"display_name":"","role":"viewer","disabled":false}`},
-		{"empty", `{"display_name":"","email":"","role":"viewer","disabled":false}`},
-		{"whitespace", `{"display_name":"","email":" \t ","role":"viewer","disabled":false}`},
-		{"malformed", `{"display_name":"","email":"jan@localhost","role":"viewer","disabled":false}`},
-		{"display-name form", `{"display_name":"","email":"Jan <jan@example.com>","role":"viewer","disabled":false}`},
+		{"omitted", `{"display_name":"","instance_role":"user","disabled":false}`},
+		{"empty", `{"display_name":"","email":"","instance_role":"user","disabled":false}`},
+		{"whitespace", `{"display_name":"","email":" \t ","instance_role":"user","disabled":false}`},
+		{"malformed", `{"display_name":"","email":"jan@localhost","instance_role":"user","disabled":false}`},
+		{"display-name form", `{"display_name":"","email":"Jan <jan@example.com>","instance_role":"user","disabled":false}`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			status, body := env.do(t, admin, "PATCH", path, tt.body)

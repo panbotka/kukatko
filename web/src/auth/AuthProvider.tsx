@@ -133,22 +133,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(() => {
     const user = state.session?.user ?? null
     const instanceRole = user
-      ? (state.session?.instance_role ??
-        user.instance_role ??
-        (user.role === 'maintainer' ? 'maintainer' : 'user'))
+      ? (state.session?.instance_role ?? user.instance_role ?? 'user')
       : null
+    // Outside a project there is no project role: only a maintainer, an admin
+    // of every project, holds one anyway. `useAuth` replaces it with the
+    // current project's role.
+    const role = instanceRole === 'maintainer' ? 'maintainer' : null
     const lastProject = state.session?.last_project_slug ?? ''
     return {
       status: state.status,
-      user,
-      role: user?.role ?? null,
+      // The account record carries no linked person; `useAuth` puts the current
+      // project's on it.
+      user: user === null ? null : { ...user, subject_uid: null },
+      role,
       instanceRole,
       projects: state.session?.projects ?? [],
       lastProjectSlug: lastProject === '' ? null : lastProject,
       downloadToken: state.session?.download_token ?? null,
-      canCurate: user ? canCurate(user.role) : false,
-      canWrite: user ? canWrite(user.role) : false,
-      isAdmin: user ? isAdmin(user.role) : false,
+      canCurate: role !== null && canCurate(role),
+      canWrite: role !== null && canWrite(role),
+      isAdmin: role !== null && isAdmin(role),
       isMaintainer: instanceRole === 'maintainer',
       canImport: instanceRole === 'maintainer',
       pictureVersion,

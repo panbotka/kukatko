@@ -339,7 +339,7 @@ func TestHTTP_rbacEnforcement(t *testing.T) {
 		assertStatus(t, env, client, http.MethodGet, apiV+"/probe/write", "", http.StatusForbidden)
 		assertStatus(t, env, client, http.MethodGet, "/api/v1/admin/users", "", http.StatusForbidden)
 		assertStatus(t, env, client, http.MethodPost, "/api/v1/admin/users",
-			`{"username":"x","email":"x@example.test","password":"password123","role":"viewer"}`, http.StatusForbidden)
+			`{"username":"x","email":"x@example.test","password":"password123","instance_role":"user"}`, http.StatusForbidden)
 	})
 
 	t.Run("editor can write but not administer", func(t *testing.T) {
@@ -360,7 +360,7 @@ func TestHTTP_rbacEnforcement(t *testing.T) {
 		client := env.loginClient(t, "maint")
 		assertStatus(t, env, client, http.MethodGet, "/api/v1/admin/users", "", http.StatusOK)
 		assertStatus(t, env, client, http.MethodPost, "/api/v1/admin/users",
-			`{"username":"newbie","email":"newbie@example.test","password":"password123","role":"editor"}`, http.StatusCreated)
+			`{"username":"newbie","email":"newbie@example.test","password":"password123","instance_role":"user"}`, http.StatusCreated)
 	})
 }
 
@@ -544,10 +544,10 @@ func TestHTTP_createUserRejectsOverLongUsername(t *testing.T) {
 	client := env.loginClient(t, "root")
 
 	body := adminUserBody(t, map[string]any{
-		"username": strings.Repeat("a", auth.MaxUsernameLen+1),
-		"password": testPassword,
-		"email":    "toolong@example.test",
-		"role":     string(auth.AccountViewer),
+		"username":      strings.Repeat("a", auth.MaxUsernameLen+1),
+		"password":      testPassword,
+		"email":         "toolong@example.test",
+		"instance_role": string(auth.RoleUser),
 	})
 	assertStatus(t, env, client, http.MethodPost, "/api/v1/admin/users", body, http.StatusBadRequest)
 }
@@ -607,7 +607,7 @@ func (e *httpEnv) createNotedUser(t *testing.T, admin *http.Client, username, no
 	t.Helper()
 	body := adminUserBody(t, map[string]any{
 		"username": username, "password": testPassword, "email": username + "@example.test",
-		"role": "viewer", "note": note,
+		"instance_role": "user", "note": note,
 	})
 	status, data := e.do(t, admin, http.MethodPost, "/api/v1/admin/users", body)
 	if status != http.StatusCreated {
@@ -629,7 +629,7 @@ func TestHTTP_adminUserNoteLifecycle(t *testing.T) {
 
 	// A create that omits display_name and note stays valid and defaults to empty.
 	bare := adminUserBody(t, map[string]any{
-		"username": "bare", "password": testPassword, "email": "bare@example.test", "role": "viewer",
+		"username": "bare", "password": testPassword, "email": "bare@example.test", "instance_role": "user",
 	})
 	status, data := env.do(t, admin, http.MethodPost, "/api/v1/admin/users", bare)
 	if status != http.StatusCreated {
@@ -639,7 +639,7 @@ func TestHTTP_adminUserNoteLifecycle(t *testing.T) {
 
 	// Omitting note from the update leaves the stored note untouched.
 	partial := adminUserBody(t, map[string]any{
-		"display_name": "Noted User", "email": "noted@example.com", "role": "viewer",
+		"display_name": "Noted User", "email": "noted@example.com", "instance_role": "user",
 	})
 	status, data = env.do(t, admin, http.MethodPatch, path, partial)
 	if status != http.StatusOK {
@@ -653,7 +653,7 @@ func TestHTTP_adminUserNoteLifecycle(t *testing.T) {
 
 	// Sending an empty string clears the note.
 	clearBody := adminUserBody(t, map[string]any{
-		"display_name": "Noted User", "email": "noted@example.com", "role": "viewer", "note": "",
+		"display_name": "Noted User", "email": "noted@example.com", "instance_role": "user", "note": "",
 	})
 	status, data = env.do(t, admin, http.MethodPatch, path, clearBody)
 	if status != http.StatusOK {
@@ -697,7 +697,7 @@ func TestHTTP_adminUserNoteTooLong(t *testing.T) {
 
 	create := adminUserBody(t, map[string]any{
 		"username": "toolong", "password": testPassword, "email": "toolong@example.test",
-		"role": "viewer", "note": tooLong,
+		"instance_role": "user", "note": tooLong,
 	})
 	status, data := env.do(t, admin, http.MethodPost, "/api/v1/admin/users", create)
 	if status != http.StatusBadRequest {
@@ -711,7 +711,7 @@ func TestHTTP_adminUserNoteTooLong(t *testing.T) {
 	target := env.createNotedUser(t, admin, "lentarget", "short")
 	uid, _ := target["uid"].(string)
 	update := adminUserBody(t, map[string]any{
-		"email": "lentarget@example.test", "role": "viewer", "note": tooLong,
+		"email": "lentarget@example.test", "instance_role": "user", "note": tooLong,
 	})
 	status, data = env.do(t, admin, http.MethodPatch, "/api/v1/admin/users/"+uid, update)
 	if status != http.StatusBadRequest {
@@ -724,7 +724,7 @@ func TestHTTP_adminUserNoteTooLong(t *testing.T) {
 	// A note of exactly MaxNoteLen runes is accepted.
 	atLimit := adminUserBody(t, map[string]any{
 		"username": "atlimit", "password": testPassword, "email": "atlimit@example.test",
-		"role": "viewer", "note": strings.Repeat("a", auth.MaxNoteLen),
+		"instance_role": "user", "note": strings.Repeat("a", auth.MaxNoteLen),
 	})
 	if status, data := env.do(t, admin, http.MethodPost, "/api/v1/admin/users", atLimit); status != http.StatusCreated {
 		t.Errorf("at-limit create status = %d, want 201 (body %s)", status, data)
@@ -739,7 +739,7 @@ func TestHTTP_userNoteNeverReachesNonAdmin(t *testing.T) {
 	const note = "Do not surface this to the account holder."
 	env.createNotedUser(t, admin, "subject", note)
 
-	// The noted user logs in as a plain viewer: neither the login payload nor
+	// The noted user logs in as a plain user: neither the login payload nor
 	// /auth/me may carry the note.
 	client := newClient(t)
 	status, data := env.do(t, client, http.MethodPost, "/api/v1/auth/login", loginJSON("subject", testPassword))

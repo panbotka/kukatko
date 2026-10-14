@@ -8632,8 +8632,10 @@ membership's role — and `canCurate`/`canWrite`/`isAdmin` derive from it; `isMa
 `canImport` read `instance_role` (`AuthContextValue` now also carries `instanceRole`, `projects`,
 `lastProjectSlug`). So does `user.subject_uid`: it is the current membership's `subject_uid` (`null` when
 the account has not said who it is there), never the account record's — "this is me" is a fact about one
-project's people. The bare `AuthProvider` value (what a test passing `AuthContext.Provider`
-directly sees) keeps the role `/auth/me` reported. `RequireRole` refuses a signed-in user with no
+project's people (the backend's `user` carries neither `role` nor `subject_uid`). The bare
+`AuthProvider` value (what a test passing `AuthContext.Provider` directly sees) has `role`
+`maintainer` for a maintainer and `null` for anybody else, and `user.subject_uid` `null` — outside a
+project there is neither a project role nor a person. `RequireRole` refuses a signed-in user with no
 role at all (no project) with `ForbiddenPage` instead of bouncing to `/login`.
 
 **`/projects` — the chooser** (`pages/ProjectsPage.tsx`, signed in, no project `Layout`): a grid
@@ -8783,13 +8785,28 @@ samples; `null` without a pair, without elapsed time or after a count went down)
 (`Promise.allSettled`, a failed read = no chip) and puts a pill „přesun 42 %" (`primary` running,
 `warning` paused, `title` says which) beside the name of a project whose move is running or paused.
 
-**`SystemUsersPage`** = `/system/users`: a `RecordTable` of every account — username (monospace),
-display name, e-mail, the instance-role badge („Správce systému"/„Uživatel") + „Zablokovaný",
-memberships as `slug (role)` chips (muted with a `title` „Čeká na schválení" / „Projekt je vypnutý"
-when they cannot be entered, else the project's name). The row action is **„Povýšit na správce
-systému"** / **„Odebrat správce"** behind a `ConfirmModal`; on the caller's own row it is a
-`ReasonedButton` greyed out with the reason (the backend's `self`). `last_maintainer` and `self`
-refusals become a dismissible alert in words; a success replaces the row with the server's answer.
+**`SystemUsersPage`** = `/system/users`: a `RecordTable` of every account (`GET /users`) — username
+(monospace), display name, e-mail (`components/users/UserEmail`: a `.invalid` placeholder is „Bez
+adresy" + the ask for a real one), the instance-role badge („Správce systému"/„Uživatel") +
+„Zablokovaný" + „Čeká na schválení" (`approved_at === null`), memberships as `slug (role)` chips — a
+membership linked to a person reads `slug (role) · Jméno` with a `title` saying the link belongs to the
+membership (**read-only**: the person is per project, never one account-level value); muted with „Čeká
+na schválení" / „Projekt je vypnutý" when it cannot be entered. **The account record's actions** (all
+on `/admin/users`, maintainer-only, `services/users.ts`): **„Nový účet"** (header button →
+`AccountFormModal` create: username, password, e-mail, instance role, name, note; the account gets
+**no membership** and the dialog + the success notice say it joins a project on that project's
+members page or by an invitation), per row **„Upravit"** (`AccountFormModal` edit: username — a
+changed name goes first to `PUT …/username` —, e-mail, name, note; instance role and blocked flag are
+echoed back), **„Odkaz na heslo"** (`ResetLinkModal`: asks, issues, shows the link in a copy field and
+says whether it was mailed, not mailed for a placeholder address, or mail is off — `useMailEnabled`),
+**„Změnit heslo"** (`PasswordModal`, twice-typed), **„Zablokovat"/„Odblokovat"** behind a
+`ConfirmModal` (`setUserDisabled`), and **„Povýšit na správce systému"** / **„Odebrat správce"**
+(`PATCH /users/{uid}`) behind a `ConfirmModal`. On the caller's own row block and the role are
+`ReasonedButton`s greyed out with the reason. A success shows a dismissible notice and re-reads the
+list in place (a role change patches its row, keeping the memberships); refusals (`last_maintainer`,
+`self`, a blocked account, a vanished one) become a dismissible alert in words
+(`components/users/errors.ts`: `fieldErrorFor` for the dialogs' inline field errors, `actionErrorFor`
+for the form-less row actions).
 
 Tests: `pages/SystemProjectsPage.test.tsx` (table columns and values, retry, live slug validation +
 a refused empty form, create with limits in bytes → detail, `slug_taken` on the field),
@@ -8800,8 +8817,11 @@ pause/resume/retry, errors newest first, the derived-failure warning and its ret
 load retry), `hooks/useRekeyRun.test.tsx` (3 s / 15 s cadence, stop on done, hidden-tab suspension,
 the rate, `adopt` — fake timers with `shouldAdvanceTime`), `lib/rekeyProgress.test.ts`,
 `services/rekey.test.ts` (URLs, 404 → `null`, codes), the move chip in `SystemProjectsPage.test.tsx`,
-`pages/SystemUsersPage.test.tsx` (chips/badges, own row inert, promote, demote with
-`last_maintainer`), `services/projects.test.ts` (URLs, error codes, `slugProblem`),
+`pages/SystemUsersPage.test.tsx` (chips/badges incl. the membership's person, placeholder address and
+waiting badge, own row inert, promote, demote with `last_maintainer`, create with no membership, edit
+renaming first, block/unblock behind the confirmation + the last-maintainer refusal, set password,
+the reset link worded for mail off), `components/users/ResetLinkModal.test.tsx`,
+`components/users/UserEmail.test.tsx`, `services/projects.test.ts` (URLs, error codes, `slugProblem`),
 `lib/byteLimit.test.ts`, `navItems.test.ts` (`adminItems`, `systemProjectPath`), the admin-section
 enumeration in `Layout.test.tsx` and `MobileNavDrawer.test.tsx`, `App.test.tsx` (maintainer reaches
 `/system/projects`; an admin is refused all three).

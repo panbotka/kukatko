@@ -22,9 +22,10 @@ func mgmtEntry(actorUID, action string) audit.Entry {
 }
 
 // TestMaintainerBoundary_create asserts, through the real service and database,
-// that only a maintainer may create a maintainer account: an admin actor is
-// refused with ErrMaintainerRequired, while lower and equal roles are allowed;
-// and the retired 'ai' role is rejected as invalid.
+// that only a maintainer may create a maintainer account: a plain user actor
+// (an admin of the project, say) is refused with ErrMaintainerRequired, while
+// plain accounts are allowed; and an instance role outside user/maintainer — the
+// retired 'ai', or a project role such as 'admin' — is rejected as invalid.
 func TestMaintainerBoundary_create(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := t.Context()
@@ -35,22 +36,24 @@ func TestMaintainerBoundary_create(t *testing.T) {
 		name     string
 		actor    auth.Role
 		username string
-		role     auth.AccountRole
+		role     auth.Role
 		wantErr  error
 	}{
-		{"admin creates viewer", admin.Role, "v", auth.AccountViewer, nil},
-		{"admin creates admin", admin.Role, "a", auth.AccountAdmin, nil},
-		{"admin creates maintainer", admin.Role, "m1", auth.AccountMaintainer, auth.ErrMaintainerRequired},
-		{"admin creates ai", admin.Role, "ai1", auth.AccountRole("ai"), auth.ErrInvalidRole},
-		{"maintainer creates maintainer", maint.Role, "m2", auth.AccountMaintainer, nil},
+		{"admin creates user", admin.Role, "v", auth.RoleUser, nil},
+		{"admin creates default", admin.Role, "d", "", nil},
+		{"admin creates maintainer", admin.Role, "m1", auth.RoleMaintainer, auth.ErrMaintainerRequired},
+		{"admin creates ai", admin.Role, "ai1", auth.Role("ai"), auth.ErrInvalidRole},
+		{"admin creates project admin", admin.Role, "a", auth.Role("admin"), auth.ErrInvalidRole},
+		{"maintainer creates maintainer", maint.Role, "m2", auth.RoleMaintainer, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := env.svc.CreateUserAudited(ctx, auth.CreateUserInput{
-				Username: tt.username, Email: tt.username + "@example.test", Password: testPassword, Role: tt.role,
+			_, err := env.svc.CreateUserAudited(ctx, auth.NewAccountInput{
+				Username: tt.username, Email: tt.username + "@example.test", Password: testPassword,
+				InstanceRole: tt.role,
 			}, tt.actor, mgmtEntry(admin.UID, audit.ActionUserCreate))
 			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("CreateUserAudited(actor=%s, role=%s) err = %v, want %v",
+				t.Fatalf("CreateUserAudited(actor=%s, instance role=%s) err = %v, want %v",
 					tt.actor, tt.role, err, tt.wantErr)
 			}
 		})
@@ -70,7 +73,7 @@ func TestMaintainerBoundary_modify(t *testing.T) {
 
 	// An admin may not promote an editor to maintainer.
 	_, err := env.svc.UpdateUserAudited(ctx, editor.UID,
-		auth.UpdateUserInput{Email: editor.Email, Role: auth.AccountMaintainer},
+		auth.UpdateUserInput{Email: editor.Email, InstanceRole: auth.RoleMaintainer},
 		admin.Role, mgmtEntry(admin.UID, audit.ActionUserUpdate))
 	if !errors.Is(err, auth.ErrMaintainerRequired) {
 		t.Fatalf("admin promote to maintainer err = %v, want ErrMaintainerRequired", err)
@@ -90,7 +93,7 @@ func TestMaintainerBoundary_modify(t *testing.T) {
 
 	// A maintainer may promote an editor to maintainer.
 	if _, err := env.svc.UpdateUserAudited(ctx, editor.UID,
-		auth.UpdateUserInput{Email: editor.Email, Role: auth.AccountMaintainer},
+		auth.UpdateUserInput{Email: editor.Email, InstanceRole: auth.RoleMaintainer},
 		maint.Role, mgmtEntry(maint.UID, audit.ActionUserUpdate)); err != nil {
 		t.Fatalf("maintainer promote to maintainer: %v", err)
 	}

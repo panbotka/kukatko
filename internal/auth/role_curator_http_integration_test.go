@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestHTTP_curatorRoleAssignable proves the 0085 migration applied: a
@@ -16,8 +17,11 @@ import (
 func TestHTTP_curatorRoleAssignable(t *testing.T) {
 	env := newTokenEnv(t, 50)
 	user := env.user(t, "curator", auth.AccountCurator)
-	if user.AccountRole != auth.AccountCurator {
-		t.Fatalf("created role = %q, want %q", user.Role, auth.AccountCurator)
+	if user.Role != auth.RoleUser {
+		t.Fatalf("created instance role = %q, want %q", user.Role, auth.RoleUser)
+	}
+	if got := bootstrapRole(t, env.db.Pool(), user.UID); got != project.RoleCurator {
+		t.Fatalf("created bootstrap role = %q, want %q", got, project.RoleCurator)
 	}
 }
 

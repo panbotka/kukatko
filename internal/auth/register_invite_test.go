@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // stubInviteGate is an InviteGate answering with a fixed error.
@@ -83,7 +84,7 @@ func TestAPI_RequireSignedIn_anonymous(t *testing.T) {
 func TestWithRegistrationDetails(t *testing.T) {
 	t.Parallel()
 
-	user := User{Username: "anna", AccountRole: AccountEditor}
+	user := User{Username: "anna"}.InProject("pr_1", project.RoleEditor)
 	got := withRegistrationDetails(nil, user)
 	if got["username"] != "anna" || got["role"] != "editor" {
 		t.Errorf("nil map: got %v", got)

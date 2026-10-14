@@ -35,7 +35,8 @@ export interface AuthContextValue {
    * The role the user acts with. Read through {@link useAuth} inside a
    * `ProjectProvider` it is the role in the **current project** (`maintainer`
    * for the instance's maintainer); the provider's own value, which only an
-   * isolated test ever sees, is the role `GET /auth/me` reported.
+   * isolated test ever sees, is `maintainer` for a maintainer and null for
+   * anybody else — outside a project there is no project role.
    */
   role: Role | null
   /** The account's instance role (`maintainer` or `user`); null when signed out. */

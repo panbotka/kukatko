@@ -309,7 +309,7 @@ and are picked up once the box is reachable again — the summary says as much.
 | `--dry-run` | `false` | only reports what it would do (new / duplicate / skipped + reason, including the **full sidecar report**) — **writes nothing**, not even `import_runs` |
 | `--no-sidecars` | `false` | ignores metadata next to the media (a Takeout export then arrives **without dates or captions**) |
 | `--concurrency N` | `3` | how many files are uploaded in parallel; **cap 8** (thumbnailing large photos is memory-hungry and the box has 16 GB shared with everything else) |
-| `--uploader <user>` | bootstrap admin | the username of the owner of the imported photos; without it `auth.bootstrap_admin_username`, otherwise the first admin |
+| `--uploader <user>` | bootstrap admin | the username of the owner of the imported photos; without it `auth.bootstrap_admin_username`, otherwise the first enabled maintainer |
 
 Output: one line per file (`[12/2000] imported 2014/IMG_0001.JPG (sidecar: IMG_0001.JPG.json)`) and at
 the end a summary `imported=… duplicates=… skipped=… failed=…` + a breakdown of the skipped ones by reason,
@@ -2331,8 +2331,8 @@ pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 
   **Auth:** no new mechanism — it sits behind the same `RequireAuth` and the same RBAC as the rest of `/api/v1`;
   the agent authenticates with an **API token** (`Authorization: Bearer kkt_…`) and the **owner's role** decides
   (the token has no role of its own): `viewer` = read only, `editor`/`admin`/**`ai`** = write too.
-  **The token for the agent** is minted by the user **for themselves** — an admin creates a user with the `ai` role
-  (`POST /api/v1/admin/users`), that user logs in (`POST /api/v1/auth/login`) and mints a token
+  **The token for the agent** is minted by the user **for themselves** — a maintainer creates the account
+  (`POST /api/v1/admin/users`, no membership) and makes it an `editor` of the project, that user logs in (`POST /api/v1/auth/login`) and mints a token
   (`POST /api/v1/auth/tokens`); the plaintext `kkt_…` is shown **once**. **Nothing destructive is
   exposed** (no deletion, purge, trash, archiving, restore, backup, user management) and **every mutation
   writes an audit row in its own transaction**, with `"via": "mcp"` in details. The full tool list, the auth model,

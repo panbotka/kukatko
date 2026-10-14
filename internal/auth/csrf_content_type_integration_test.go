@@ -69,29 +69,30 @@ func (e *httpEnv) doRaw(t *testing.T, client *http.Client,
 	return resp.StatusCode, data
 }
 
-// assertCreatedAdmin checks a 201 from POST /admin/users and that the account it
-// reports, and the one stored, carries the admin role.
-func (e *httpEnv) assertCreatedAdmin(t *testing.T, status int, body []byte, username string) map[string]any {
+// assertCreatedMaintainer checks a 201 from POST /admin/users and that the
+// account it reports, and the one stored, is a system administrator (instance
+// role maintainer) — the strongest account the endpoint can create.
+func (e *httpEnv) assertCreatedMaintainer(t *testing.T, status int, body []byte, username string) map[string]any {
 	t.Helper()
 	if status != http.StatusCreated {
 		t.Fatalf("POST /admin/users status = %d, want 201 (body %s)", status, body)
 	}
 	created := decodeUser(t, body)
-	if created["role"] != string(auth.AccountAdmin) {
-		t.Fatalf("created role = %v, want admin", created["role"])
+	if created["instance_role"] != string(auth.RoleMaintainer) {
+		t.Fatalf("created instance_role = %v, want maintainer", created["instance_role"])
 	}
 	stored, err := e.store.GetUserByUsername(t.Context(), username)
 	if err != nil {
 		t.Fatalf("GetUserByUsername(%q): %v", username, err)
 	}
-	if stored.AccountRole != auth.AccountAdmin {
-		t.Fatalf("stored role = %q, want admin", stored.Role)
+	if stored.Role != auth.RoleMaintainer {
+		t.Fatalf("stored instance role = %q, want maintainer", stored.Role)
 	}
 	return created
 }
 
 // TestCSRF_textPlainJSONCreatesAdmin shows that the strongest blind write, a
-// maintainer (the only one who administers accounts) creating an admin account,
+// maintainer (the only one who administers accounts) creating another maintainer,
 // accepts a raw JSON body declared as text/plain — what `fetch(url, {method:
 // "POST", mode: "no-cors", credentials: "include", body: json})` sends from a
 // same-site page — with a sibling Origin and `Sec-Fetch-Site: same-site` on it.
@@ -101,13 +102,13 @@ func TestCSRF_textPlainJSONCreatesAdmin(t *testing.T) {
 	victim := env.loginClient(t, "victim-admin")
 
 	body := adminUserBody(t, map[string]any{
-		"username": "csrf-fetch",
-		"email":    "csrf-fetch@example.test",
-		"password": testPassword, // attacker-chosen; loginClient signs in with it
-		"role":     string(auth.AccountAdmin),
+		"username":      "csrf-fetch",
+		"email":         "csrf-fetch@example.test",
+		"password":      testPassword, // attacker-chosen; loginClient signs in with it
+		"instance_role": string(auth.RoleMaintainer),
 	})
 	status, data := env.doRaw(t, victim, http.MethodPost, "/api/v1/admin/users", body, siblingHeaders())
-	env.assertCreatedAdmin(t, status, data, "csrf-fetch")
+	env.assertCreatedMaintainer(t, status, data, "csrf-fetch")
 
 	// The planted account is a working sign-in for whoever chose its password.
 	env.loginClient(t, "csrf-fetch")
@@ -124,14 +125,14 @@ func TestCSRF_textPlainFormCreatesAdmin(t *testing.T) {
 	victim := env.loginClient(t, "victim-admin")
 
 	name := `{"username":"csrf-form","email":"csrf-form@example.test",` +
-		`"password":"attacker-chosen-pass","role":"admin","note":"`
+		`"password":"attacker-chosen-pass","instance_role":"maintainer","note":"`
 	body := textPlainForm(name, `"}`)
 	if !json.Valid([]byte(strings.TrimSpace(body))) {
 		t.Fatalf("form body is not a JSON document: %q", body)
 	}
 
 	status, data := env.doRaw(t, victim, http.MethodPost, "/api/v1/admin/users", body, siblingHeaders())
-	created := env.assertCreatedAdmin(t, status, data, "csrf-form")
+	created := env.assertCreatedMaintainer(t, status, data, "csrf-form")
 	assertNote(t, created, "=")
 }
 

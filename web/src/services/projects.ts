@@ -111,9 +111,21 @@ export interface AccountMembership {
   active: boolean
   role: ProjectRole
   approved: boolean
+  /**
+   * The person of this project the account says it is ("this is me"), or null
+   * when nobody has said; `subject_name` is that person's name. The link is per
+   * membership — the same account may be a different person, or nobody, in
+   * another project — so it is shown per project and never edited as one value.
+   */
+  subject_uid: string | null
+  subject_name: string
 }
 
-/** One account of the instance (`GET /users`, unprefixed). */
+/**
+ * One account of the instance (`GET /users`, unprefixed): the account record —
+ * who it is, its instance role, whether it is blocked or still waiting for an
+ * approval, the administrative note, its last sign-in — and its memberships.
+ */
 export interface InstanceAccount {
   uid: string
   username: string
@@ -121,6 +133,10 @@ export interface InstanceAccount {
   email: string
   instance_role: InstanceRole
   disabled: boolean
+  note: string
+  /** When it was let in, null while it waits for an approval. */
+  approved_at: string | null
+  last_login_at: string | null
   memberships: AccountMembership[]
 }
 

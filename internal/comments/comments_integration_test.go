@@ -55,8 +55,8 @@ func (f *fixture) makeUser(t *testing.T, uid, username, displayName string) stri
 		Email:        username + "@example.test",
 		DisplayName:  displayName,
 		PasswordHash: "x",
-		Role:         auth.RoleUser, ProjectRole: project.RoleViewer,
-	}); err != nil {
+		Role:         auth.RoleUser,
+	}.InProject(project.BootstrapUID, project.RoleViewer)); err != nil {
 		t.Fatalf("creating user %s: %v", username, err)
 	}
 	return uid

@@ -119,20 +119,19 @@ func TestPrepareRegistration_isUnapprovedViewer(t *testing.T) {
 	now := time.Date(2026, time.August, 23, 10, 30, 0, 0, time.UTC)
 	svc := NewService(nil, SessionPolicy{}).WithClock(func() time.Time { return now })
 
-	user, err := svc.prepareRegistration(CreateUserInput{
+	user, err := svc.prepareRegistration(NewAccountInput{
 		Username: "  Newcomer ",
 		Password: "correct horse battery",
 		Email:    "Newcomer@EXAMPLE.com",
-		Role:     AccountViewer,
-	})
+	}, "pr_1", project.RoleViewer)
 	if err != nil {
 		t.Fatalf("prepareRegistration: %v", err)
 	}
 	if user.ApprovedAt != nil {
 		t.Errorf("ApprovedAt = %v, want nil — nobody has let this account in yet", *user.ApprovedAt)
 	}
-	if user.Role != RoleUser || user.ProjectRole != project.RoleViewer {
-		t.Errorf("Role, ProjectRole = %q, %q, want %q, %q", user.Role, user.ProjectRole, RoleUser, project.RoleViewer)
+	if user.Role != RoleUser || user.join.role != project.RoleViewer || user.join.project != "pr_1" {
+		t.Errorf("Role, membership = %q, %+v, want %q and a viewer of pr_1", user.Role, user.join, RoleUser)
 	}
 	if user.Username != "newcomer" {
 		t.Errorf("Username = %q, want the normalized %q", user.Username, "newcomer")
@@ -157,30 +156,30 @@ func TestPrepareRegistration_rejectsBadInput(t *testing.T) {
 	svc := NewService(nil, SessionPolicy{})
 	tests := []struct {
 		name    string
-		in      CreateUserInput
+		in      NewAccountInput
 		wantErr error
 	}{
 		{
 			name:    "no e-mail address",
-			in:      CreateUserInput{Username: "a", Password: "correct horse battery", Role: AccountViewer},
+			in:      NewAccountInput{Username: "a", Password: "correct horse battery"},
 			wantErr: ErrInvalidEmail,
 		},
 		{
 			name: "malformed e-mail address",
-			in: CreateUserInput{Username: "a", Password: "correct horse battery",
-				Email: "nobody@localhost", Role: AccountViewer},
+			in: NewAccountInput{Username: "a", Password: "correct horse battery",
+				Email: "nobody@localhost"},
 			wantErr: ErrInvalidEmail,
 		},
 		{
 			name:    "password too short",
-			in:      CreateUserInput{Username: "a", Password: "short", Email: "a@example.com", Role: AccountViewer},
+			in:      NewAccountInput{Username: "a", Password: "short", Email: "a@example.com"},
 			wantErr: ErrPasswordTooShort,
 		},
 		{
 			name: "username too long",
-			in: CreateUserInput{
+			in: NewAccountInput{
 				Username: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-				Password: "correct horse battery", Email: "a@example.com", Role: AccountViewer,
+				Password: "correct horse battery", Email: "a@example.com",
 			},
 			wantErr: ErrUsernameTooLong,
 		},
@@ -189,7 +188,7 @@ func TestPrepareRegistration_rejectsBadInput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := svc.prepareRegistration(tt.in); !errors.Is(err, tt.wantErr) {
+			if _, err := svc.prepareRegistration(tt.in, "pr_1", project.RoleViewer); !errors.Is(err, tt.wantErr) {
 				t.Errorf("prepareRegistration() error = %v, want %v", err, tt.wantErr)
 			}
 		})

@@ -60,7 +60,6 @@ const me: User = {
   username: 'botka',
   display_name: 'Pan Botka',
   email: 'botka@example.test',
-  role: 'editor',
   disabled: false,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
