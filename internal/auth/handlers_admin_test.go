@@ -3,6 +3,7 @@ package auth
 import (
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 )
 
@@ -45,6 +46,32 @@ func TestPendingParam(t *testing.T) {
 				t.Errorf("pendingParam(%q) = no filter, want %v", tt.query, *tt.want)
 			case tt.want != nil && *got != *tt.want:
 				t.Errorf("pendingParam(%q) = %v, want %v", tt.query, *got, *tt.want)
+			}
+		})
+	}
+}
+
+// TestUpdateUserRequest_auditDetails pins that the user.update audit entry
+// names only the permission-carrying fields the patch really sets: a name-only
+// edit records neither a role nor a disabled flag it never sent.
+func TestUpdateUserRequest_auditDetails(t *testing.T) {
+	tests := []struct {
+		name string
+		req  updateUserRequest
+		want map[string]any
+	}{
+		{name: "name only", req: updateUserRequest{DisplayName: new("Jan")}, want: map[string]any{}},
+		{
+			name: "role and flag",
+			req:  updateUserRequest{InstanceRole: new(RoleMaintainer), Disabled: new(false)},
+			want: map[string]any{"instance_role": "maintainer", "disabled": false},
+		},
+		{name: "unblock", req: updateUserRequest{Disabled: new(false)}, want: map[string]any{"disabled": false}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.req.auditDetails(); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("auditDetails() = %v, want %v", got, tt.want)
 			}
 		})
 	}

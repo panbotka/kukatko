@@ -236,7 +236,9 @@ to `## Package map` in `CLAUDE.md`.
   membership's, given by that project's admin through `internal/memberapi` over
   `project.Store.ApproveWith`; the account's own approval is derived from its memberships. The
   `noMail{}` scheduler the mail-sending flows fall back to lives in `register.go`.
-  `PATCH /admin/users/{uid}` (profile, `disabled`, `instance_role`) is **`RequireMaintainer`** like every
+  `PATCH /admin/users/{uid}` (a patch — `UpdateUserInput`'s fields are all pointers, nil = keep — of
+  profile, `disabled`, `instance_role`; `updateUserProfileQuery` COALESCEs each one, an empty patch writes
+  nothing) is **`RequireMaintainer`** like every
   `/admin/users` route: an account spans tenants, so a project admin manages their members' roles through
   the members API instead.
   **Renaming an account** (`rename.go`, `store_user_rename.go`) is behind `PUT /admin/users/{uid}/username`.
@@ -373,12 +375,18 @@ to `## Package map` in `CLAUDE.md`.
   audited `CreateUser`/`UpdateUser`/`SetUserDisabled`/`ResetPassword` remain for bootstrap and test
   seeding (they share the core `prepareNewUser`/`validateUserUpdate`/`invalidateIfDisabled`). The handler takes
   the actor from `UserFromContext` and builds `audit.FromRequest(r,uid).Entry(...)`; `details` carries
-  `username`/`role` (create) or `role`/`disabled` (update/disable). A write that **disables** the account
-  (`SetUserDisabledAudited`, or `UpdateUserProfileAudited` with `Disabled`) goes through
-  `updateUserNotingStranded`: inside the transaction `strandedProjectsQuery` lists the projects the
+  `username`/`role` (create) or `role`/`disabled` (update — only the ones the patch sets — /disable). A
+  write of the **disabled flag** (`SetUserDisabledAudited`, or `UpdateUserProfileAudited` with `Disabled`)
+  goes through `updateUserNotingStranded`, which first takes the locks a membership change takes:
+  `lockMemberProjects` locks the row of every project the account is a member of (any role, uid order,
+  repeated until no new one appears), then — under `withMaintainerGuard` — the account row (`lockUser`).
+  Only on the **enabled → disabled transition** does `strandedProjectsQuery` then list the projects the
   account is the last working admin of (approved admin membership, no other approved admin on an enabled
   account); the disable is **allowed**, the list lands on a copy of the entry's details as
-  `stranded_projects` (absent when empty) and is logged as a warning after commit.
+  `stranded_projects` (absent when empty) and is logged as a warning after commit. Holding the project
+  lock serialises the disable with `internal/project`'s last-admin guard (`ensureAnotherAdmin` runs under
+  the same lock), so a disable racing another admin's self-demotion either sees the project stranded or
+  makes the demotion fail with `ErrLastAdmin`.
   `Store.SetInstanceRoleAudited(uid, Role, entry)` is the instance-role write behind the system
   administrator's promote/demote (`internal/projectapi`): it touches no membership, validates the role
   (`ErrInvalidRole`) and runs under the same `withMaintainerGuard` (`ErrLastMaintainer`).

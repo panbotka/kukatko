@@ -36,16 +36,33 @@ type createUserRequest struct {
 	Note         string `json:"note"`
 }
 
-// updateUserRequest is the JSON body of PATCH /admin/users/{uid}; it replaces the
-// user's mutable profile fields. note is a pointer so an omitted key leaves the
-// stored note untouched while an explicit "" clears it. Its shape mirrors
-// UpdateUserInput so the handler can convert directly.
+// updateUserRequest is the JSON body of PATCH /admin/users/{uid}: a patch of
+// the account's mutable profile fields. Every key is optional and an omitted
+// one leaves the stored value untouched, so a client sends only what its user
+// changed and cannot write back a stale disabled flag or instance role over
+// another administrator's change; an explicit "" clears the note or the
+// display name. Its shape mirrors UpdateUserInput so the handler can convert
+// directly.
 type updateUserRequest struct {
-	DisplayName  string  `json:"display_name"`
-	Email        string  `json:"email"`
-	InstanceRole Role    `json:"instance_role"`
-	Disabled     bool    `json:"disabled"`
+	DisplayName  *string `json:"display_name"`
+	Email        *string `json:"email"`
+	InstanceRole *Role   `json:"instance_role"`
+	Disabled     *bool   `json:"disabled"`
 	Note         *string `json:"note"`
+}
+
+// auditDetails names, for the user.update audit entry, the patched fields that
+// carry a permission — the instance role and the disabled flag — each only
+// when the request sets it, so the trail never claims a change nobody made.
+func (req updateUserRequest) auditDetails() map[string]any {
+	details := map[string]any{}
+	if req.InstanceRole != nil {
+		details["instance_role"] = string(*req.InstanceRole)
+	}
+	if req.Disabled != nil {
+		details["disabled"] = *req.Disabled
+	}
+	return details
 }
 
 // adminUserResponse is the admin-only JSON view of a user: every field User
@@ -181,8 +198,10 @@ func verbatimInputError(err error) (error, bool) {
 	return nil, false
 }
 
-// handleUpdateUser replaces an account's profile fields — the account record,
-// never a membership — (system administrator only). It responds 200 with the
+// handleUpdateUser patches an account's profile fields — the account record,
+// never a membership — (system administrator only): only the keys the body
+// carries are written (see updateUserRequest), and a body with none writes
+// nothing and answers the account as it is. It responds 200 with the
 // updated account, 400 for a bad body, invalid instance role, missing or
 // malformed e-mail address, or over-length note,
 // 404 if the user does not exist, 409 when the change would demote or disable the
@@ -195,11 +214,7 @@ func (a *API) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actor, _ := UserFromContext(r.Context())
-	entry := adminAuditMeta(r).Entry(audit.ActionUserUpdate, userTargetType, uid,
-		map[string]any{
-			"instance_role": string(req.InstanceRole),
-			"disabled":      req.Disabled,
-		})
+	entry := adminAuditMeta(r).Entry(audit.ActionUserUpdate, userTargetType, uid, req.auditDetails())
 	user, err := a.svc.UpdateUserAudited(r.Context(), uid, UpdateUserInput(req), actor.Role, entry)
 	if err != nil {
 		writeUserMutationError(w, err, "could not update user")
@@ -212,8 +227,7 @@ func (a *API) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 // validated as on creation, and mails the person the new name when mail is on
 // and their address is real.
 //
-// It is its own route rather than a field of PATCH /admin/users/{uid}: that
-// endpoint replaces the profile and is resent whole by every save, while a
+// It is its own route rather than a field of PATCH /admin/users/{uid}: a
 // rename has its own audit action, its own mail and its own conflict, and a
 // client should have to mean it.
 //

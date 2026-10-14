@@ -66,8 +66,8 @@ export interface AdminUser extends User {
 }
 
 /**
- * The fields of an account a profile update echoes back: what
- * {@link setUserDisabled} needs to re-enable it without touching anything else.
+ * The editable profile of an account as a list row holds it: what the edit
+ * dialog starts from and compares against, so it can send only what changed.
  * Both an {@link AdminUser} and a `/system/users` row satisfy it.
  */
 export type AccountProfile = Pick<
@@ -95,18 +95,20 @@ export interface CreateUserBody {
 }
 
 /**
- * Body of `PATCH /admin/users/{uid}` (`auth.updateUserRequest`). The update
- * *replaces* the mutable profile, so every field must be sent — including the
- * ones the edit dialog does not offer (`disabled`, `instance_role`), echoed
- * back from the row being edited. It never touches a membership. `email` must still be a valid address: an update may not leave
- * an account without one.
+ * Body of `PATCH /admin/users/{uid}` (`auth.updateUserRequest`): a patch. Every
+ * key is optional and an omitted one leaves the stored value as it is, so a
+ * caller sends only what its user changed — an edit made from a row loaded
+ * minutes ago then cannot write back a stale `disabled` or `instance_role` over
+ * another administrator's block or promotion. An empty patch changes nothing
+ * and answers the account as it is. It never touches a membership. An `email`
+ * that is sent must be a valid address: an account may not end up without one.
  */
 export interface UpdateUserBody {
-  display_name: string
-  email: string
-  instance_role: InstanceRole
-  disabled: boolean
-  note: string
+  display_name?: string
+  email?: string
+  instance_role?: InstanceRole
+  disabled?: boolean
+  note?: string
 }
 
 /** Maximum length of a username in characters (`auth.MaxUsernameLen`). */
@@ -129,7 +131,8 @@ export async function createUser(body: CreateUserBody, signal?: AbortSignal): Pr
 }
 
 /**
- * Replaces a user's mutable profile fields.
+ * Patches a user's mutable profile fields: only the keys `body` carries are
+ * written (see {@link UpdateUserBody}).
  *
  * @throws ApiError with `status` 400 (invalid instance role, missing or malformed e-mail
  *   address, over-length note), 404, or
@@ -169,17 +172,17 @@ export async function renameUser(
 /**
  * Blocks or unblocks the account `user`, returning the refreshed record.
  *
- * Disabling goes through the dedicated `POST /admin/users/{uid}/disable`, which
- * needs no profile fields and therefore cannot clobber a concurrent edit.
- * Enabling has no endpoint of its own, so it is a profile update that clears the
- * flag — the remaining fields are echoed back from `user` unchanged. Both paths
- * invalidate the user's sessions on the way to `disabled`.
+ * Disabling goes through the dedicated `POST /admin/users/{uid}/disable`.
+ * Enabling has no endpoint of its own, so it is a profile patch carrying the
+ * flag alone — nothing else of the (possibly stale) row is sent, so neither
+ * path can clobber a concurrent edit. Disabling invalidates the user's
+ * sessions.
  *
  * @throws ApiError with `status` 409 when disabling would take away the last
  *   enabled maintainer, leaving the instance's operations surfaces unreachable.
  */
 export async function setUserDisabled(
-  user: AccountProfile,
+  user: Pick<AdminUser, 'uid'>,
   disabled: boolean,
   signal?: AbortSignal,
 ): Promise<AdminUser> {
@@ -187,17 +190,7 @@ export async function setUserDisabled(
     const res = await request('POST', `/admin/users/${user.uid}/disable`, undefined, signal)
     return (await res.json()) as AdminUser
   }
-  return updateUser(
-    user.uid,
-    {
-      display_name: user.display_name,
-      email: user.email,
-      instance_role: user.instance_role,
-      disabled: false,
-      note: user.note,
-    },
-    signal,
-  )
+  return updateUser(user.uid, { disabled: false }, signal)
 }
 
 /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { isPlaceholderEmail, isWaitingForApproval } from './account'
+import { editPatch, isPlaceholderEmail, isWaitingForApproval } from './account'
 
 describe('isPlaceholderEmail', () => {
   it('recognises the reserved .invalid domain the backend mints placeholders in', () => {
@@ -32,5 +32,28 @@ describe('isWaitingForApproval', () => {
     // The backend always sends the key, so undefined means "this payload does
     // not say" — badging such a row as waiting would invent an errand.
     expect(isWaitingForApproval({})).toBe(false)
+  })
+})
+
+describe('editPatch', () => {
+  const row = { display_name: 'Jana', email: 'jana@example.com', note: '' }
+
+  it('sends only the fields the dialog changed', () => {
+    expect(editPatch(row, { ...row })).toEqual({})
+    expect(editPatch(row, { ...row, display_name: 'Jana Nová' })).toEqual({
+      display_name: 'Jana Nová',
+    })
+    expect(editPatch(row, { display_name: '', email: 'j@new.example', note: 'x' })).toEqual({
+      display_name: '',
+      email: 'j@new.example',
+      note: 'x',
+    })
+  })
+
+  it('never carries the blocked flag or the instance role of the row it started from', () => {
+    const stale = { ...row, disabled: true, instance_role: 'maintainer' as const }
+    const patch = editPatch(stale, { ...row, note: 'changed' })
+    expect(patch).not.toHaveProperty('disabled')
+    expect(patch).not.toHaveProperty('instance_role')
   })
 })

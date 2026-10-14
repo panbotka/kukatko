@@ -115,10 +115,11 @@ func TestValidateNote(t *testing.T) {
 	}
 }
 
-// TestValidateUserUpdate verifies the update input is both checked and
+// TestValidateUserUpdate verifies the update patch is both checked and
 // normalized: a valid update comes back with its address trimmed and its domain
-// lower-cased, while a missing, blank or malformed address, an unknown role and
-// an over-length note are each refused.
+// lower-cased, a field the patch does not set is not checked at all, while a
+// blank or malformed address, an unknown role and an over-length note are each
+// refused.
 func TestValidateUserUpdate(t *testing.T) {
 	t.Parallel()
 
@@ -126,38 +127,48 @@ func TestValidateUserUpdate(t *testing.T) {
 	tests := []struct {
 		name      string
 		in        UpdateUserInput
-		wantEmail string
+		wantEmail *string
 		wantErr   error
 	}{
 		{
 			name:      "valid update is normalized",
-			in:        UpdateUserInput{Email: "  Jan@Example.COM ", InstanceRole: RoleUser},
-			wantEmail: "Jan@example.com",
+			in:        UpdateUserInput{Email: new("  Jan@Example.COM "), InstanceRole: new(RoleUser)},
+			wantEmail: new("Jan@example.com"),
 			wantErr:   nil,
 		},
 		{
-			name:    "missing address is rejected",
-			in:      UpdateUserInput{InstanceRole: RoleUser},
+			name:    "a patch that sets nothing checks nothing",
+			in:      UpdateUserInput{},
+			wantErr: nil,
+		},
+		{
+			name:    "a name-only patch needs no address",
+			in:      UpdateUserInput{DisplayName: new("Jan")},
+			wantErr: nil,
+		},
+		{
+			name:    "empty address is rejected",
+			in:      UpdateUserInput{Email: new("")},
 			wantErr: ErrInvalidEmail,
 		},
 		{
 			name:    "whitespace-only address is rejected",
-			in:      UpdateUserInput{Email: " \t ", InstanceRole: RoleUser},
+			in:      UpdateUserInput{Email: new(" \t ")},
 			wantErr: ErrInvalidEmail,
 		},
 		{
 			name:    "malformed address is rejected",
-			in:      UpdateUserInput{Email: "jan(at)example.com", InstanceRole: RoleUser},
+			in:      UpdateUserInput{Email: new("jan(at)example.com")},
 			wantErr: ErrInvalidEmail,
 		},
 		{
 			name:    "unknown role is rejected before the address",
-			in:      UpdateUserInput{Email: "jan@example.com", InstanceRole: Role("root")},
+			in:      UpdateUserInput{Email: new("jan@example.com"), InstanceRole: new(Role("root"))},
 			wantErr: ErrInvalidRole,
 		},
 		{
 			name:    "over-length note is rejected",
-			in:      UpdateUserInput{Email: "jan@example.com", InstanceRole: RoleUser, Note: &longNote},
+			in:      UpdateUserInput{Note: &longNote},
 			wantErr: ErrNoteTooLong,
 		},
 	}
@@ -169,8 +180,14 @@ func TestValidateUserUpdate(t *testing.T) {
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("validateUserUpdate(%+v) error = %v, want %v", tt.in, err, tt.wantErr)
 			}
-			if tt.wantErr == nil && got.Email != tt.wantEmail {
-				t.Errorf("normalized email = %q, want %q", got.Email, tt.wantEmail)
+			if tt.wantErr != nil {
+				return
+			}
+			switch {
+			case tt.wantEmail == nil && got.Email != nil:
+				t.Errorf("email = %q, want none", *got.Email)
+			case tt.wantEmail != nil && (got.Email == nil || *got.Email != *tt.wantEmail):
+				t.Errorf("normalized email = %v, want %q", got.Email, *tt.wantEmail)
 			}
 		})
 	}

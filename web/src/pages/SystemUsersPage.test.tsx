@@ -300,19 +300,46 @@ describe('SystemUsersPage', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Uložit' }))
 
     await waitFor(() => {
-      expect(updateMock).toHaveBeenCalledWith('u2', {
-        display_name: 'Jana',
-        email: 'jana@new.example',
-        instance_role: 'user',
-        disabled: true,
-        note: '',
-      })
+      // Only what the dialog changed: never the row's blocked flag or role.
+      expect(updateMock).toHaveBeenCalledWith('u2', { email: 'jana@new.example' })
     })
     expect(renameMock).toHaveBeenCalledWith('u2', 'janka')
     expect(renameMock.mock.invocationCallOrder[0]).toBeLessThan(
       updateMock.mock.invocationCallOrder[0],
     )
     expect(await screen.findByText('Účet Jana je uložený.')).toBeInTheDocument()
+  })
+
+  it('sends a name-only edit of a blocked account as the name alone', async () => {
+    const user = userEvent.setup()
+    updateMock.mockResolvedValue({
+      uid: 'u2',
+      username: 'jana',
+      display_name: 'Jana Nová',
+      email: 'jana@example.com',
+      instance_role: 'user' as const,
+      disabled: true,
+      note: '',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-10-14T00:00:00Z',
+    })
+    fetchMock.mockResolvedValue([ME, account({ disabled: true })])
+    renderPage()
+    await screen.findByText('jana')
+
+    await user.click(within(rowOf('jana')).getByRole('button', { name: 'Upravit' }))
+    const dialog = await screen.findByRole('dialog')
+    const name = within(dialog).getByLabelText('Jméno')
+    await user.clear(name)
+    await user.type(name, 'Jana Nová')
+    await user.click(within(dialog).getByRole('button', { name: 'Uložit' }))
+
+    // A dialog opened before another administrator unblocked or promoted the
+    // account must not send the row's stale flag or role back.
+    await waitFor(() => {
+      expect(updateMock).toHaveBeenCalledWith('u2', { display_name: 'Jana Nová' })
+    })
+    expect(renameMock).not.toHaveBeenCalled()
   })
 
   it('blocks and unblocks behind a confirmation, never one’s own account', async () => {

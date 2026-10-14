@@ -489,7 +489,7 @@ func TestProject_adminUpdateLeavesTheMembership(t *testing.T) {
 	target := env.mustCreate(t, "eva", auth.AccountViewer)
 
 	updated, err := env.svc.UpdateUserAudited(t.Context(), target.UID,
-		auth.UpdateUserInput{Email: target.Email, InstanceRole: auth.RoleUser}, maintUser.Role,
+		auth.UpdateUserInput{Email: new(target.Email), InstanceRole: new(auth.RoleUser)}, maintUser.Role,
 		audit.Meta{ActorUID: maintUser.UID}.Entry(audit.ActionUserUpdate, "users", "", nil))
 	if err != nil {
 		t.Fatalf("UpdateUserAudited: %v", err)
@@ -503,7 +503,7 @@ func TestProject_adminUpdateLeavesTheMembership(t *testing.T) {
 	}
 
 	promoted, err := env.svc.UpdateUserAudited(t.Context(), target.UID,
-		auth.UpdateUserInput{Email: target.Email, InstanceRole: auth.RoleMaintainer}, maintUser.Role,
+		auth.UpdateUserInput{Email: new(target.Email), InstanceRole: new(auth.RoleMaintainer)}, maintUser.Role,
 		audit.Meta{ActorUID: maintUser.UID}.Entry(audit.ActionUserUpdate, "users", "", nil))
 	if err != nil {
 		t.Fatalf("promoting: %v", err)

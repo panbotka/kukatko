@@ -66,7 +66,7 @@ func TestLastMaintainer_soloCannotStepDown(t *testing.T) {
 			name: "audited demote",
 			call: func() error {
 				_, err := env.svc.UpdateUserAudited(t.Context(), solo.UID,
-					auth.UpdateUserInput{Email: solo.Email, InstanceRole: auth.RoleUser}, solo.Role,
+					auth.UpdateUserInput{Email: new(solo.Email), InstanceRole: new(auth.RoleUser)}, solo.Role,
 					mgmtEntry(solo.UID, audit.ActionUserUpdate))
 				return err
 			},
@@ -93,7 +93,7 @@ func TestLastMaintainer_soloCannotStepDown(t *testing.T) {
 			name: "plain update that only disables",
 			call: func() error {
 				_, err := env.svc.UpdateUser(t.Context(), solo.UID, auth.UpdateUserInput{
-					Email: solo.Email, InstanceRole: auth.RoleMaintainer, Disabled: true,
+					Email: new(solo.Email), InstanceRole: new(auth.RoleMaintainer), Disabled: new(true),
 				})
 				return err
 			},
@@ -132,7 +132,7 @@ func TestLastMaintainer_guardsOnlyTheLastOne(t *testing.T) {
 
 	// Two enabled maintainers: demoting one is a normal, allowed change.
 	demoted, err := env.svc.UpdateUserAudited(t.Context(), first.UID,
-		auth.UpdateUserInput{Email: first.Email, InstanceRole: auth.RoleUser}, second.Role,
+		auth.UpdateUserInput{Email: new(first.Email), InstanceRole: new(auth.RoleUser)}, second.Role,
 		mgmtEntry(second.UID, audit.ActionUserUpdate))
 	if err != nil {
 		t.Fatalf("demote with a second maintainer present: %v", err)
@@ -149,7 +149,7 @@ func TestLastMaintainer_guardsOnlyTheLastOne(t *testing.T) {
 
 	// The survivor is now the last one, so the very same demote is refused.
 	if _, err := env.svc.UpdateUserAudited(t.Context(), second.UID,
-		auth.UpdateUserInput{Email: second.Email, InstanceRole: auth.RoleUser}, second.Role,
+		auth.UpdateUserInput{Email: new(second.Email), InstanceRole: new(auth.RoleUser)}, second.Role,
 		mgmtEntry(second.UID, audit.ActionUserUpdate)); !errors.Is(err, auth.ErrLastMaintainer) {
 		t.Fatalf("demote of the survivor err = %v, want ErrLastMaintainer", err)
 	}
@@ -181,7 +181,7 @@ func TestLastMaintainer_disabledMaintainerDoesNotCount(t *testing.T) {
 
 	// Re-enabling the spare raises the count, and the active one may then step down.
 	if _, err := env.svc.UpdateUserAudited(t.Context(), spare.UID, auth.UpdateUserInput{
-		Email: spare.Email, InstanceRole: auth.RoleMaintainer, Disabled: false,
+		Email: new(spare.Email), InstanceRole: new(auth.RoleMaintainer), Disabled: new(false),
 	}, active.Role, mgmtEntry(active.UID, audit.ActionUserUpdate)); err != nil {
 		t.Fatalf("re-enable the spare maintainer: %v", err)
 	}

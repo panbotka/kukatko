@@ -7775,20 +7775,19 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `ApiError` from `auth.ts` and `ImportRun` from `import.ts`,
   `users.ts` = the admin account-management client over `/api/v1/admin/users`: `fetchUsers(signal)` → `AdminUser[]`
   (= `User` + `note`), `createUser(body,signal)` (`POST`, 409 = the username is taken, 400 = a weak password /
-  an invalid role / too long a note), `updateUser(uid,body,signal)` (`PATCH`, a **replace** of the whole
-  mutable profile → send the fields the dialog doesn't offer as well), `setUserDisabled(user,disabled,signal)`
-  (disable → the dedicated `POST /{uid}/disable`, which doesn't need the profile and won't overwrite a concurrent edit;
-  enable → a `PATCH` with `disabled:false`, there is no dedicated endpoint) and `resetUserPassword(uid,pwd,signal)`
+  an invalid role / too long a note), `updateUser(uid,body,signal)` (`PATCH`, a **patch**: only the keys the
+  body carries are written, so send only what changed — a stale row's `disabled`/`instance_role` echoed back
+  would undo another administrator's block or promotion), `setUserDisabled({uid},disabled,signal)`
+  (disable → the dedicated `POST /{uid}/disable`; enable → a `PATCH` of `{disabled:false}` alone, there is no
+  dedicated endpoint — neither sends anything else of the row) and `resetUserPassword(uid,pwd,signal)`
   (`POST /{uid}/password`, 204, it logs out all of the target's sessions) and
   **`issuePasswordReset(uid,signal)`** (`POST /{uid}/password-reset` → `IssuedPasswordReset`
   = `{reset_url, expires_at, email}`; it sets **no** password — the person chooses their own behind the link —
   mails the link, kills the account's earlier unused ones, 403/404/409 as above); the constants `ROLES`
   (`viewer`/`editor`/`admin`/`maintainer`, ascending along the ladder)/`MAX_NOTE_LENGTH`/**`PASSWORD_RESET_TTL_DAYS`**
   (7, mirroring `auth.PasswordResetTTL` — what the UI *says* has to match what the backend does),
-  the types `AdminUser`/`CreateUserBody`/`UpdateUserBody`/**`IssuedPasswordReset`** — both user bodies carry
-  **`subject_uid: string | null`** (which person of the library the account is), and because `PATCH` replaces
-  the profile, `null` **clears** the link rather than leaving it alone, which is why `setUserDisabled`'s
-  re-enabling `PATCH` echoes the row's own link back; the password hash has nowhere to leak — the backend
+  the types `AdminUser`/`AccountProfile`/`CreateUserBody`/`UpdateUserBody` (every key optional)/
+  **`IssuedPasswordReset`**; the password hash has nowhere to leak — the backend
   doesn't serialize it and no type has a field for it. Since `/users` became the project's members page and
   `/admin/users` maintainer-only, no page calls into it (`AuditPage` names actors from the project's
   directory); the account actions wait for a home on the system side,
@@ -8834,8 +8833,10 @@ on `/admin/users`, maintainer-only, `services/users.ts`): **„Nový účet"** (
 `AccountFormModal` create: username, password, e-mail, instance role, name, note; the account gets
 **no membership** and the dialog + the success notice say it joins a project on that project's
 members page or by an invitation), per row **„Upravit"** (`AccountFormModal` edit: username — a
-changed name goes first to `PUT …/username` —, e-mail, name, note; instance role and blocked flag are
-echoed back), **„Odkaz na heslo"** (`ResetLinkModal`: asks, issues, shows the link in a copy field and
+changed name goes first to `PUT …/username` —, e-mail, name, note; the update is a patch of only the
+fields changed in the dialog — `editPatch` in `components/users/account.ts` — never the row's instance
+role or blocked flag, so a dialog opened before another administrator blocked or promoted the account
+cannot undo it; nothing changed sends `{}`, which writes nothing and refreshes the row), **„Odkaz na heslo"** (`ResetLinkModal`: asks, issues, shows the link in a copy field and
 says whether it was mailed, not mailed for a placeholder address, or mail is off — `useMailEnabled`),
 **„Změnit heslo"** (`PasswordModal`, twice-typed), **„Zablokovat"/„Odblokovat"** behind a
 `ConfirmModal` (`setUserDisabled`), and **„Povýšit na správce systému"** / **„Odebrat správce"**

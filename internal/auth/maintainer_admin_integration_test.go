@@ -73,7 +73,7 @@ func TestMaintainerBoundary_modify(t *testing.T) {
 
 	// An admin may not promote an editor to maintainer.
 	_, err := env.svc.UpdateUserAudited(ctx, editor.UID,
-		auth.UpdateUserInput{Email: editor.Email, InstanceRole: auth.RoleMaintainer},
+		auth.UpdateUserInput{Email: new(editor.Email), InstanceRole: new(auth.RoleMaintainer)},
 		admin.Role, mgmtEntry(admin.UID, audit.ActionUserUpdate))
 	if !errors.Is(err, auth.ErrMaintainerRequired) {
 		t.Fatalf("admin promote to maintainer err = %v, want ErrMaintainerRequired", err)
@@ -93,7 +93,7 @@ func TestMaintainerBoundary_modify(t *testing.T) {
 
 	// A maintainer may promote an editor to maintainer.
 	if _, err := env.svc.UpdateUserAudited(ctx, editor.UID,
-		auth.UpdateUserInput{Email: editor.Email, InstanceRole: auth.RoleMaintainer},
+		auth.UpdateUserInput{Email: new(editor.Email), InstanceRole: new(auth.RoleMaintainer)},
 		maint.Role, mgmtEntry(maint.UID, audit.ActionUserUpdate)); err != nil {
 		t.Fatalf("maintainer promote to maintainer: %v", err)
 	}

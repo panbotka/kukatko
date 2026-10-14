@@ -63,22 +63,35 @@ type NewAccountInput struct {
 	Note         string
 }
 
-// UpdateUserInput holds the mutable profile fields for an admin user update —
-// the account record, never a membership. Note is a pointer to distinguish
-// "absent" from "empty": nil leaves the stored note untouched, while a pointer
-// to "" clears it. Email has no such escape: the update replaces the whole
-// profile and an account may not end up without an address, so every update
-// carries a valid one.
+// UpdateUserInput is a patch of the mutable profile fields for an admin user
+// update — the account record, never a membership. Every field is a pointer and
+// nil means "leave it as it is": only what the caller sets is written, so an
+// edit made from a record loaded minutes ago changes the fields it meant to
+// change and cannot silently undo a block, an unblock or a role change another
+// administrator committed meanwhile. A pointer to "" clears the note or the
+// display name; an e-mail address, when set, must be a valid one — an account
+// may not end up without an address.
 //
 // Its field order and types mirror updateUserRequest so the HTTP layer can
 // convert between them directly; keep the two in step.
 type UpdateUserInput struct {
-	DisplayName string
-	Email       string
+	DisplayName *string
+	Email       *string
 	// InstanceRole replaces the account's instance role: user or maintainer.
-	InstanceRole Role
-	Disabled     bool
+	InstanceRole *Role
+	Disabled     *bool
 	Note         *string
+}
+
+// empty reports whether the patch sets no field at all.
+func (in UpdateUserInput) empty() bool {
+	return in.DisplayName == nil && in.Email == nil && in.InstanceRole == nil &&
+		in.Disabled == nil && in.Note == nil
+}
+
+// disables reports whether the patch sets the disabled flag to true.
+func (in UpdateUserInput) disables() bool {
+	return in.Disabled != nil && *in.Disabled
 }
 
 // validateNote returns ErrNoteTooLong when note exceeds MaxNoteLen. Length is
@@ -357,14 +370,15 @@ func (s *Service) GetUser(ctx context.Context, uid string) (User, error) {
 	return s.store.GetUserByUID(ctx, uid)
 }
 
-// UpdateUser updates a user's profile fields without recording an audit entry;
-// handlers use UpdateUserAudited. When the update disables the account, all of
-// that user's sessions are invalidated so the change takes effect immediately. A
-// nil in.Note leaves the stored note untouched. It returns ErrInvalidRole for an
-// unknown instance role, ErrInvalidEmail for a missing or malformed e-mail address,
-// ErrNoteTooLong for an over-length note, ErrUserNotFound if no such user
-// exists, and ErrLastMaintainer when demoting or disabling the account would
-// leave the instance without a single enabled maintainer.
+// UpdateUser applies the patch in to a user's profile without recording an
+// audit entry; handlers use UpdateUserAudited. Only the fields in sets are
+// written (see UpdateUserInput). When the patch disables the account, all of
+// that user's sessions are invalidated so the change takes effect immediately.
+// It returns ErrInvalidRole for an unknown instance role, ErrInvalidEmail for a
+// missing or malformed e-mail address, ErrNoteTooLong for an over-length note,
+// ErrUserNotFound if no such user exists, and ErrLastMaintainer when demoting
+// or disabling the account would leave the instance without a single enabled
+// maintainer.
 func (s *Service) UpdateUser(ctx context.Context, uid string, in UpdateUserInput) (User, error) {
 	in, err := validateUserUpdate(in)
 	if err != nil {
@@ -374,10 +388,10 @@ func (s *Service) UpdateUser(ctx context.Context, uid string, in UpdateUserInput
 	if err != nil {
 		return User{}, err
 	}
-	return s.invalidateIfDisabled(ctx, uid, in.Disabled, user)
+	return s.invalidateIfDisabled(ctx, uid, in.disables(), user)
 }
 
-// UpdateUserAudited updates a user's profile fields like UpdateUser and writes a
+// UpdateUserAudited applies the patch in like UpdateUser and writes a
 // user.update audit entry attributed to entry's actor in the same transaction as
 // the change (see internal/audit). actor is the role of the account performing
 // the update: only a maintainer may promote an account to, or modify an account
@@ -388,7 +402,11 @@ func (s *Service) UpdateUser(ctx context.Context, uid string, in UpdateUserInput
 func (s *Service) UpdateUserAudited(
 	ctx context.Context, uid string, in UpdateUserInput, actor Role, entry audit.Entry,
 ) (User, error) {
-	if err := s.guardMaintainerBoundary(ctx, actor, uid, in.InstanceRole); err != nil {
+	var newRole Role
+	if in.InstanceRole != nil {
+		newRole = *in.InstanceRole
+	}
+	if err := s.guardMaintainerBoundary(ctx, actor, uid, newRole); err != nil {
 		return User{}, err
 	}
 	in, err := validateUserUpdate(in)
@@ -399,20 +417,24 @@ func (s *Service) UpdateUserAudited(
 	if err != nil {
 		return User{}, err
 	}
-	return s.invalidateIfDisabled(ctx, uid, in.Disabled, user)
+	return s.invalidateIfDisabled(ctx, uid, in.disables(), user)
 }
 
-// validateUserUpdate validates the instance role, e-mail address and optional
-// note of an update input and returns the input with the address normalized, so
-// what the caller stores is what was validated. A nil note skips the note
-// check. It returns ErrInvalidRole, ErrInvalidEmail or ErrNoteTooLong.
+// validateUserUpdate validates the fields the patch in sets — the instance
+// role, the e-mail address and the note; an absent field is not checked — and
+// returns the patch with the address normalized, so what the caller stores is
+// what was validated. It returns ErrInvalidRole, ErrInvalidEmail or
+// ErrNoteTooLong.
 func validateUserUpdate(in UpdateUserInput) (UpdateUserInput, error) {
-	if !in.InstanceRole.Valid() {
+	if in.InstanceRole != nil && !in.InstanceRole.Valid() {
 		return in, ErrInvalidRole
 	}
-	in.Email = normalizeEmail(in.Email)
-	if err := validateEmail(in.Email); err != nil {
-		return in, err
+	if in.Email != nil {
+		email := normalizeEmail(*in.Email)
+		if err := validateEmail(email); err != nil {
+			return in, err
+		}
+		in.Email = &email
 	}
 	if in.Note != nil {
 		if err := validateNote(*in.Note); err != nil {

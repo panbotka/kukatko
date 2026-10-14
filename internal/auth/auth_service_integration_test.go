@@ -319,7 +319,7 @@ func TestUpdateUser_disableInvalidatesSessions(t *testing.T) {
 	}
 
 	updated, err := env.svc.UpdateUser(t.Context(), user.UID, auth.UpdateUserInput{
-		DisplayName: "Karl K", Email: "karl@example.com", InstanceRole: auth.RoleUser, Disabled: true,
+		DisplayName: new("Karl K"), Email: new("karl@example.com"), InstanceRole: new(auth.RoleUser), Disabled: new(true),
 	})
 	if err != nil {
 		t.Fatalf("UpdateUser: %v", err)

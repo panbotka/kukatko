@@ -292,22 +292,29 @@ func (s *Store) ListUsers(ctx context.Context, filter UserFilter) ([]User, error
 	return users, nil
 }
 
-// updateUserProfileQuery replaces the mutable profile fields of one user — the
+// updateUserProfileQuery patches the mutable profile fields of one user — the
 // account record only; it never touches a membership — and returns the
-// refreshed row. The note is a partial update: a nil argument leaves the stored
-// note untouched, while a non-nil one (including a pointer to "") overwrites
-// it. COALESCE keeps that branch in SQL, so a nil note needs no separate
-// statement. $4 is the instance role.
-const updateUserProfileQuery = `UPDATE users SET display_name = $2, email = $3, role = $4, disabled = $5,
-		note = COALESCE($6::text, note), updated_at = now()
+// refreshed row. Every field is optional: a NULL argument keeps what the row
+// holds, read under the lock the UPDATE takes, so an edit that names only the
+// display name cannot write back a stale disabled flag or instance role over a
+// change another administrator committed meanwhile. A non-NULL argument
+// (including "" for the note) overwrites. COALESCE keeps that branch in SQL,
+// so every combination is one statement. $4 is the instance role.
+const updateUserProfileQuery = `UPDATE users SET display_name = COALESCE($2::text, display_name),
+		email = COALESCE($3::text, email), role = COALESCE($4::text, role),
+		disabled = COALESCE($5::boolean, disabled), note = COALESCE($6::text, note), updated_at = now()
 	WHERE uid = $1 RETURNING ` + userColumns
 
-// profileUpdate returns the guarded mutation that replaces uid's profile with
-// in.
+// profileUpdate returns the guarded mutation that applies the patch in to uid's
+// profile.
 func profileUpdate(ctx context.Context, uid string, in UpdateUserInput) func(pgx.Tx) (User, error) {
+	var role *string
+	if in.InstanceRole != nil {
+		role = new(string(*in.InstanceRole))
+	}
 	return func(tx pgx.Tx) (User, error) {
 		return scanUpdatedUser(ctx, tx, updateUserProfileQuery,
-			uid, in.DisplayName, in.Email, in.InstanceRole, in.Disabled, in.Note)
+			uid, in.DisplayName, in.Email, role, in.Disabled, in.Note)
 	}
 }
 
@@ -322,12 +329,16 @@ const setMemberSubjectQuery = `UPDATE project_members SET subject_uid = $2
 const setUserDisabledQuery = `UPDATE users SET disabled = $2, updated_at = now()
 	WHERE uid = $1 RETURNING ` + userColumns
 
-// UpdateUserProfile updates the mutable profile fields of the user identified by
-// uid and returns the refreshed user. It returns ErrUserNotFound if no such user
+// UpdateUserProfile applies the patch in to the user identified by uid (see
+// updateUserProfileQuery) and returns the refreshed user; an empty patch writes
+// nothing and returns the account as it is. It returns ErrUserNotFound if no such user
 // exists, or ErrLastMaintainer when the change would leave the
 // instance without a single enabled maintainer (see withMaintainerGuard).
 // updated_at is bumped to now() by the statement.
 func (s *Store) UpdateUserProfile(ctx context.Context, uid string, in UpdateUserInput) (User, error) {
+	if in.empty() {
+		return s.GetUserByUID(ctx, uid)
+	}
 	return s.updateUserGuarded(ctx, profileUpdate(ctx, uid, in))
 }
 

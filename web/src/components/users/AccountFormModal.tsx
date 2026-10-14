@@ -18,6 +18,7 @@ import {
 } from '../../services/users'
 import Modal from '../Modal'
 
+import { editPatch } from './account'
 import { type FormError, type FormField, fieldErrorFor } from './errors'
 
 /**
@@ -57,8 +58,10 @@ export interface AccountFormModalProps {
  * username, password, e-mail, instance role, name and note, and makes an account
  * with **no membership** — the dialog says where it joins a project. Editing
  * offers the username, e-mail, name and note; the instance role is changed by
- * the list's own promote/demote button behind its confirmation, so the update
- * echoes it back unchanged, together with the blocked flag. A changed username
+ * the list's own promote/demote button behind its confirmation and the block by
+ * its own action. The update is a patch of only the fields changed here (see
+ * {@link editPatch}), so a dialog opened before another administrator blocked
+ * or promoted the account cannot undo that. A changed username
  * goes to its own endpoint before the profile update, so a taken name stops the
  * save with the message under the field and nothing else changes.
  *
@@ -102,15 +105,12 @@ export function AccountFormModal({ account, onHide, onSaved, onRenamed }: Accoun
       setStoredUsername(renamed.username)
       onRenamed(renamed)
     }
-    return updateUser(edited.uid, {
-      display_name: displayName,
-      email: email.trim(),
-      // The update replaces the whole record, so what this dialog does not
-      // offer is echoed back unchanged.
-      instance_role: edited.instance_role,
-      disabled: edited.disabled,
-      note,
-    })
+    // Only what was changed here: an empty patch writes nothing and answers
+    // the account as it is now, which also refreshes the row after a rename.
+    return updateUser(
+      edited.uid,
+      editPatch(edited, { display_name: displayName, email: email.trim(), note }),
+    )
   }
 
   async function handleSubmit(event: SyntheticEvent) {

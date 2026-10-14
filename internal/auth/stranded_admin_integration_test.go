@@ -3,8 +3,11 @@
 package auth_test
 
 import (
+	"context"
+	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
@@ -85,7 +88,7 @@ func TestDisable_profileUpdateNotesStrandedProjects(t *testing.T) {
 	entry := audit.Meta{ActorUID: maint.UID}.Entry(audit.ActionUserUpdate, "users", admin.UID,
 		map[string]any{"disabled": true})
 	if _, err := env.svc.UpdateUserAudited(t.Context(), admin.UID, auth.UpdateUserInput{
-		Email: admin.Email, InstanceRole: auth.RoleUser, Disabled: true,
+		Email: new(admin.Email), InstanceRole: new(auth.RoleUser), Disabled: new(true),
 	}, maint.Role, entry); err != nil {
 		t.Fatalf("disabling the only admin by a profile update: %v", err)
 	}
@@ -96,5 +99,148 @@ func TestDisable_profileUpdateNotesStrandedProjects(t *testing.T) {
 	}
 	if got, want := recs[0].Details["stranded_projects"], []any{project.BootstrapUID}; !reflect.DeepEqual(got, want) {
 		t.Errorf("stranded_projects = %#v, want %#v", got, want)
+	}
+}
+
+// TestDisable_onlyTheTransitionNotesStrandedProjects pins that the note rides
+// the enabled → disabled transition only: disabling an account that is already
+// blocked, or a profile patch that sets disabled on it again, takes no working
+// admin away and must not record the stranded projects a second time.
+func TestDisable_onlyTheTransitionNotesStrandedProjects(t *testing.T) {
+	env := newTestEnv(t)
+	maint := newMaintainerOutsideProjects(t, env)
+	admin := env.createUser(t, "admin-only", auth.AccountAdmin)
+
+	entry := audit.Meta{ActorUID: maint.UID}.Entry(audit.ActionUserDisable, "users", admin.UID, nil)
+	for range 2 {
+		if _, err := env.svc.SetUserDisabledAudited(t.Context(), admin.UID, true, maint.Role, entry); err != nil {
+			t.Fatalf("disabling the only admin: %v", err)
+		}
+	}
+	update := audit.Meta{ActorUID: maint.UID}.Entry(audit.ActionUserUpdate, "users", admin.UID, nil)
+	if _, err := env.svc.UpdateUserAudited(t.Context(), admin.UID, auth.UpdateUserInput{
+		DisplayName: new("Still blocked"), Disabled: new(true),
+	}, maint.Role, update); err != nil {
+		t.Fatalf("editing the blocked admin: %v", err)
+	}
+
+	recs, err := audit.NewStore(env.db.Pool()).List(t.Context(), audit.Filter{TargetUID: admin.UID, Limit: 10})
+	if err != nil {
+		t.Fatalf("listing the audit of %s: %v", admin.UID, err)
+	}
+	noted := 0
+	for _, rec := range recs {
+		if rec.Details["stranded_projects"] != nil {
+			noted++
+		}
+	}
+	if len(recs) != 3 || noted != 1 {
+		t.Errorf("audit rows = %d with %d stranded notes, want 3 rows and exactly one note", len(recs), noted)
+	}
+}
+
+// lockWaiters counts the other sessions of the test database that are waiting
+// for a lock.
+func lockWaiters(t *testing.T, env *testEnv) int {
+	t.Helper()
+	var n int
+	if err := env.db.Pool().QueryRow(t.Context(), `SELECT count(*) FROM pg_stat_activity
+		WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()`).
+		Scan(&n); err != nil {
+		t.Fatalf("counting lock waiters: %v", err)
+	}
+	return n
+}
+
+// TestDisable_serialisedWithTheLastAdminGuard races a maintainer disabling
+// admin B against admin A demoting themselves, both in the one project they
+// govern. Each alone is fine: the demotion sees B still working, the disable
+// sees A still admin. Together they must not leave the project with no working
+// admin and no stranded_projects note — the disable takes the project lock the
+// demotion's last-admin guard holds, so one of them sees the other's result.
+//
+// The interleaving is forced: the test holds B's account row, the last thing
+// the disable needs, so the disable is parked mid-transaction; then the
+// demotion starts. A disable that does not hold the project lets the demotion
+// commit underneath it.
+func TestDisable_serialisedWithTheLastAdminGuard(t *testing.T) {
+	env := newTestEnv(t)
+	maint := newMaintainerOutsideProjects(t, env)
+	adminA := env.createUser(t, "admin-a", auth.AccountAdmin)
+	adminB := env.createUser(t, "admin-b", auth.AccountAdmin)
+	pool := env.db.Pool()
+
+	hold, err := pool.Begin(t.Context())
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = hold.Rollback(context.WithoutCancel(t.Context())) }()
+	if _, err := hold.Exec(t.Context(), `SELECT uid FROM users WHERE uid = $1 FOR UPDATE`, adminB.UID); err != nil {
+		t.Fatalf("holding the account row: %v", err)
+	}
+
+	disabled := make(chan error, 1)
+	go func() {
+		entry := audit.Meta{ActorUID: maint.UID}.Entry(audit.ActionUserDisable, "users", adminB.UID, nil)
+		_, err := env.svc.SetUserDisabledAudited(t.Context(), adminB.UID, true, maint.Role, entry)
+		disabled <- err
+	}()
+	waitFor(t, "the disable to park on the held account row", func() bool { return lockWaiters(t, env) >= 1 })
+
+	demoted := make(chan error, 1)
+	go func() {
+		_, err := project.NewStore(pool).SetRole(t.Context(), audit.Meta{ActorUID: adminA.UID},
+			project.BootstrapUID, adminA.UID, project.RoleEditor)
+		demoted <- err
+	}()
+	var demoteErr error
+	demoteDone := false
+	waitFor(t, "the demotion to finish or queue", func() bool {
+		select {
+		case demoteErr = <-demoted:
+			demoteDone = true
+			return true
+		default:
+			return lockWaiters(t, env) >= 2
+		}
+	})
+
+	if err := hold.Rollback(t.Context()); err != nil {
+		t.Fatalf("releasing the account row: %v", err)
+	}
+	if err := <-disabled; err != nil {
+		t.Fatalf("disabling admin B: %v", err)
+	}
+	if !demoteDone {
+		demoteErr = <-demoted
+	}
+
+	var working int
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM project_members m JOIN users u ON u.uid = m.user_uid
+		WHERE m.project_uid = $1 AND m.role = 'admin' AND m.approved_at IS NOT NULL AND NOT u.disabled`,
+		project.BootstrapUID).Scan(&working); err != nil {
+		t.Fatalf("counting working admins: %v", err)
+	}
+	note := disableAudit(t, env, adminB.UID).Details["stranded_projects"]
+	if working == 0 && note == nil {
+		t.Fatalf("the project was left with no working admin and no stranded_projects note (demotion err %v)",
+			demoteErr)
+	}
+	// The disable held the project first, so the demotion found B disabled.
+	if !errors.Is(demoteErr, project.ErrLastAdmin) || working != 1 || note != nil {
+		t.Errorf("demotion err = %v, working admins = %d, note = %v; want ErrLastAdmin, 1, none",
+			demoteErr, working, note)
+	}
+}
+
+// waitFor polls cond until it holds, failing the test after five seconds.
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

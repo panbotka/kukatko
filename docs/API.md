@@ -148,11 +148,16 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   (`user`|`maintainer`) and nothing project-shaped. `POST /admin/users` takes `{username, password,
   display_name, email, instance_role, note}` (`instance_role` optional, default `user`) and creates the
   account **with no membership**: it joins a project when that project's admin adds it (Members API) or
-  through an invitation. `PATCH /admin/users/{uid}` takes `{display_name, email, instance_role, disabled,
-  note}` and writes the `users` row only — **no `/admin/users` write touches `project_members`**. An
+  through an invitation. `PATCH /admin/users/{uid}` is a **patch** of `{display_name, email, instance_role,
+  disabled, note}`: every key is optional and an omitted one keeps the stored value (read under the row's
+  lock), so a client sends only what its user changed and an edit made from a stale row cannot undo a block
+  or a promotion another administrator committed meanwhile; `{}` writes nothing (no audit entry, no
+  `updated_at` bump) and answers the account as it is. It writes the `users` row only — **no
+  `/admin/users` write touches `project_members`**. An
   `instance_role` outside the two → 400 `invalid instance role (want user or maintainer)`; a body still
   carrying the old `role` or `subject_uid` → 400 (unknown field). The audit details of `user.create`
-  /`user.update` name `instance_role`. Memberships are managed through `/projects/{uid}/members` or the
+  name `instance_role`; those of `user.update` name `instance_role` and `disabled` only when the patch sets
+  them. Memberships are managed through `/projects/{uid}/members` or the
   Members API. A registration creates a `user`
   with an **unapproved viewer membership**; a project admin's `POST /p/{project}/members/{user_uid}/approve`
   approves that membership — sign-in lets an account in once **any** of its memberships is approved (a
@@ -165,8 +170,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   leaves the stored note unchanged, `""` clears it. **Only an admin reads `note`** — it is never in the
   `POST /auth/login` or `GET /auth/me` payload.
   **The e-mail address is required.** Every account receives mail — registration, approval, password
-  reset — so `email` is not optional on either `POST /admin/users` or `PATCH /admin/users/{uid}`: a
-  missing, blank or syntactically invalid address → **400** (`auth: email must be a valid address`).
+  reset — so `email` is required on `POST /admin/users`, and a `PATCH /admin/users/{uid}` that sends it
+  must send a real one: a missing (create), blank or syntactically invalid address → **400** (`auth: email must be a valid address`).
   The address is normalised on the way in — surrounding whitespace trimmed, **domain lower-cased**,
   local part left exactly as typed (RFC 5321 leaves its meaning to the receiving host) — and capped at
   **254 bytes**. Rejected are a display-name form (`Jan <jan@example.cz>`), an address with inner
@@ -441,7 +446,12 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     maintainer locking somebody out must be able to, and can name a new admin afterwards — but never
     silent: the `user.disable` audit entry (and `user.update`, when `PATCH /admin/users/{uid}` disables)
     carries `stranded_projects: [project_uid…]`, the projects left with no working admin, and the server
-    logs a warning. The key is absent when no project is stranded.
+    logs a warning. The key is absent when no project is stranded, and it is noted **only on the
+    enabled → disabled transition** — re-disabling a blocked account, or a patch that sets `disabled: true`
+    on it again, notes nothing. The disable takes the row lock of every project the account is a member of
+    (uid order) before the check, the lock a membership role change or removal holds for its last-admin
+    guard, so a disable racing an admin's self-demotion is serialised with it: either the demotion lands
+    first and the disable notes the project, or the disable lands first and the demotion is refused (409).
 - **Storage move (`/api/v1/projects/{uid}/rekey`, `internal/rekeyapi`):** the system administrator's control
   of a project's move from the store root under `projects/<uid>/` (`internal/rekey`; runbook in
   [`OPERATIONS.md`](OPERATIONS.md)). Instance-level, mounted once beside the routes above (flat routes; chi

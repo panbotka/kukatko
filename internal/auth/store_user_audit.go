@@ -47,18 +47,24 @@ func (s *Store) CreateUserAuditedWith(
 	})
 }
 
-// UpdateUserProfileAudited updates the mutable profile fields of the user
-// identified by uid and writes entry in the same transaction, returning the
-// refreshed user. See CreateUserAudited for the atomicity guarantee. entry's
-// TargetUID defaults to uid. It returns ErrUserNotFound if no such user exists,
-// ErrSubjectNotFound when in.SubjectUID names no subject, or ErrLastMaintainer
-// when the change would leave the instance without a single enabled maintainer
-// (see withMaintainerGuard); in every case nothing changes and no audit row is
-// written. A profile update that disables the last working admin of a project
-// is allowed and noted (see updateUserNotingStranded).
+// UpdateUserProfileAudited applies the patch in to the account identified by
+// uid — only the fields in sets; a nil field keeps what the row holds when the
+// UPDATE takes its lock, so an edit never overwrites a change another
+// administrator made meanwhile — and writes entry in the same transaction,
+// returning the refreshed user. An empty patch writes nothing (no audit row,
+// updated_at untouched) and returns the account as it is. See
+// CreateUserAudited for the atomicity guarantee. entry's TargetUID defaults to
+// uid. It returns ErrUserNotFound if no such user exists, or ErrLastMaintainer
+// when the change would leave the instance without a single enabled
+// maintainer (see withMaintainerGuard); in every case nothing changes and no
+// audit row is written. A patch that disables the last working admin of a
+// project is allowed and noted (see updateUserNotingStranded).
 func (s *Store) UpdateUserProfileAudited(
 	ctx context.Context, uid string, in UpdateUserInput, entry audit.Entry,
 ) (User, error) {
+	if in.empty() {
+		return s.GetUserByUID(ctx, uid)
+	}
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
@@ -78,7 +84,7 @@ func (s *Store) SetUserDisabledAudited(
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
-	return s.updateUserNotingStranded(ctx, uid, disabled, entry, func(tx pgx.Tx) (User, error) {
+	return s.updateUserNotingStranded(ctx, uid, &disabled, entry, func(tx pgx.Tx) (User, error) {
 		return scanUpdatedUser(ctx, tx, setUserDisabledQuery, uid, disabled)
 	})
 }
@@ -100,16 +106,31 @@ ORDER BY m.project_uid`
 const strandedProjectsKey = "stranded_projects"
 
 // updateUserNotingStranded runs update like updateUserAudited and, when the
-// write disables the account, first lists the projects it is the last working
-// admin of (see strandedProjectsQuery). Disabling such an account is allowed —
-// a maintainer locking somebody out must be able to, and may name a new admin
-// afterwards — but never silent: the list rides the audit entry under
-// "stranded_projects" and is logged as a warning once the change commits.
-// entry.Details is copied first, so the caller's map is never written.
+// write sets the disabled flag (disabled non-nil), first takes the locks the
+// membership changes take: the row of every project the account is a member of
+// (see lockMemberProjects), then — under the maintainer guard — the account's
+// own row. Holding them, a disable that turns an enabled account disabled lists
+// the projects it is the last working admin of (see strandedProjectsQuery).
+//
+// The project locks are what make the list true. The last-admin guard of a
+// role change or a removal (internal/project's ensureAnotherAdmin) runs under
+// the project row's lock, so a disable that takes the same lock is serialised
+// with it: either the demotion of the other admin commits first and this
+// disable sees the project stranded, or this disable commits first and the
+// demotion is refused. Without it the two could each see the other admin still
+// working and leave the project with nobody to govern it, unnoted.
+//
+// Disabling such an account is allowed — a maintainer locking somebody out
+// must be able to, and may name a new admin afterwards — but never silent: the
+// list rides the audit entry under "stranded_projects" and is logged as a
+// warning once the change commits. It is noted only on the enabled → disabled
+// transition: re-disabling a blocked account, or an edit that leaves it
+// blocked, takes no working admin away and notes nothing. entry.Details is
+// copied first, so the caller's map is never written.
 func (s *Store) updateUserNotingStranded(
-	ctx context.Context, uid string, disabling bool, entry audit.Entry, update func(pgx.Tx) (User, error),
+	ctx context.Context, uid string, disabled *bool, entry audit.Entry, update func(pgx.Tx) (User, error),
 ) (User, error) {
-	if !disabling {
+	if disabled == nil {
 		return s.updateUserAudited(ctx, entry, update)
 	}
 	entry.Details = maps.Clone(entry.Details)
@@ -117,15 +138,22 @@ func (s *Store) updateUserNotingStranded(
 		entry.Details = map[string]any{}
 	}
 	var stranded []string
-	user, err := s.updateUserAudited(ctx, entry, func(tx pgx.Tx) (User, error) {
-		var listErr error
-		if stranded, listErr = strandedProjects(ctx, tx, uid); listErr != nil {
-			return User{}, listErr
+	var user User
+	err := s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
+		if err := lockMemberProjects(ctx, tx, uid); err != nil {
+			return err
 		}
-		if len(stranded) > 0 {
-			entry.Details[strandedProjectsKey] = stranded
-		}
-		return update(tx)
+		return withMaintainerGuard(ctx, tx, func(tx pgx.Tx) error {
+			var err error
+			if stranded, err = strandedByDisable(ctx, tx, uid, *disabled); err != nil {
+				return err
+			}
+			if len(stranded) > 0 {
+				entry.Details[strandedProjectsKey] = stranded
+			}
+			user, err = update(tx)
+			return err
+		})
 	})
 	if err != nil {
 		return User{}, err
@@ -135,6 +163,64 @@ func (s *Store) updateUserNotingStranded(
 			"user_uid", uid, "projects", stranded)
 	}
 	return user, nil
+}
+
+// lockMemberProjectsQuery locks the row of every project the account $1 is a
+// member of, in uid order — the lock internal/project's membership changes
+// take before they touch a member (lockProject), in the order two multi-project
+// lockers need so they queue instead of deadlocking. Any role counts, not only
+// admin: an existing member promoted to admin meanwhile is promoted under that
+// same lock.
+const lockMemberProjectsQuery = `SELECT p.uid FROM projects p
+WHERE EXISTS (SELECT 1 FROM project_members m WHERE m.project_uid = p.uid AND m.user_uid = $1)
+ORDER BY p.uid FOR UPDATE OF p`
+
+// lockMemberProjects runs lockMemberProjectsQuery on tx until it locks no
+// project it had not locked before. The repeat covers a membership created
+// while the first pass waited (an admin adding the account to another project
+// commits under that project's lock, which the first pass never asked for), so
+// once it returns every project the account belongs to is held. A later pass
+// may lock out of uid order; PostgreSQL detects the deadlock that could cause
+// and fails one transaction rather than hanging, and it needs a membership
+// created mid-disable to happen at all.
+func lockMemberProjects(ctx context.Context, tx pgx.Tx, uid string) error {
+	held := map[string]bool{}
+	for {
+		rows, err := tx.Query(ctx, lockMemberProjectsQuery, uid)
+		if err != nil {
+			return fmt.Errorf("auth: locking the projects of %s: %w", uid, err)
+		}
+		locked, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return fmt.Errorf("auth: locking the projects of %s: %w", uid, err)
+		}
+		fresh := false
+		for _, p := range locked {
+			if !held[p] {
+				held[p], fresh = true, true
+			}
+		}
+		if !fresh {
+			return nil
+		}
+	}
+}
+
+// strandedByDisable locks the account uid's row on tx and, when the write about
+// to set its disabled flag to disabled turns an enabled account disabled,
+// returns the projects it leaves without a working admin (see
+// strandedProjects). Any other write of the flag — an enable, or a disable of
+// an account already blocked — strands nothing new and returns none. A missing
+// account is ErrUserNotFound.
+func strandedByDisable(ctx context.Context, tx pgx.Tx, uid string, disabled bool) ([]string, error) {
+	current, err := lockUser(ctx, tx, uid)
+	if err != nil {
+		return nil, err
+	}
+	if !disabled || current.Disabled {
+		return nil, nil
+	}
+	return strandedProjects(ctx, tx, uid)
 }
 
 // strandedProjects runs strandedProjectsQuery for uid on tx; none is an empty
@@ -204,7 +290,8 @@ func (s *Store) SetPasswordHashAudited(ctx context.Context, uid, hash string, en
 // missing user becomes ErrUserNotFound and a change that would strand the
 // instance becomes ErrLastMaintainer; either rolls the transaction back, so
 // neither the change nor its audit row is written. It is shared by the
-// profile-update, instance-role and disable audited writes.
+// instance-role write and the profile updates that leave the disabled flag
+// alone; a write of the flag goes through updateUserNotingStranded.
 func (s *Store) updateUserAudited(
 	ctx context.Context, entry audit.Entry, update func(pgx.Tx) (User, error),
 ) (User, error) {

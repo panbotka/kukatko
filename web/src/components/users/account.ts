@@ -1,10 +1,11 @@
-import { type AdminUser } from '../../services/users'
+import { type AccountProfile, type AdminUser, type UpdateUserBody } from '../../services/users'
 
 /**
- * The two component-free questions the user roster asks about one account. They
- * live apart from the badges that render their answers because the page asks
- * them too — to count the waiting accounts and to filter the list — and because
- * a module that exports both a component and a plain function loses Fast Refresh.
+ * The component-free helpers of the user roster: the two questions it asks about
+ * one account and the patch its edit dialog sends. They live apart from the
+ * components that use them because the page asks the questions too — to count
+ * the waiting accounts and to filter the list — and because a module that
+ * exports both a component and a plain function loses Fast Refresh.
  */
 
 /**
@@ -49,4 +50,28 @@ export function isPlaceholderEmail(email: string): boolean {
  */
 export function isWaitingForApproval(user: Pick<AdminUser, 'approved_at'>): boolean {
   return user.approved_at === null
+}
+
+/**
+ * The patch an edit sends: each offered field whose value differs from the row
+ * the dialog opened with, and nothing else. Never the blocked flag or the
+ * instance role — the dialog does not offer them, and echoing the row's copy
+ * back would undo a block or a promotion another administrator made since the
+ * list was loaded.
+ */
+export function editPatch(
+  edited: Pick<AccountProfile, 'display_name' | 'email' | 'note'>,
+  fields: { display_name: string; email: string; note: string },
+): UpdateUserBody {
+  const patch: UpdateUserBody = {}
+  if (fields.display_name !== edited.display_name) {
+    patch.display_name = fields.display_name
+  }
+  if (fields.email !== edited.email) {
+    patch.email = fields.email
+  }
+  if (fields.note !== edited.note) {
+    patch.note = fields.note
+  }
+  return patch
 }

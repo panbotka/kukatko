@@ -183,7 +183,9 @@ func TestHTTP_createUserRequiresEmail(t *testing.T) {
 
 // TestHTTP_updateUserRejectsInvalidEmail asserts an existing account cannot be
 // updated into having no usable address — neither by clearing it nor by
-// mistyping it — and that a refused update leaves the stored address alone.
+// mistyping it — and that a refused update leaves the stored address alone. A
+// patch that omits the address is no attempt to clear it: it keeps the stored
+// one.
 func TestHTTP_updateUserRejectsInvalidEmail(t *testing.T) {
 	env := newHTTPEnv(t, 50)
 	env.mustCreate(t, "updadmin", auth.AccountMaintainer)
@@ -195,7 +197,6 @@ func TestHTTP_updateUserRejectsInvalidEmail(t *testing.T) {
 		name string
 		body string
 	}{
-		{"omitted", `{"display_name":"","instance_role":"user","disabled":false}`},
 		{"empty", `{"display_name":"","email":"","instance_role":"user","disabled":false}`},
 		{"whitespace", `{"display_name":"","email":" \t ","instance_role":"user","disabled":false}`},
 		{"malformed", `{"display_name":"","email":"jan@localhost","instance_role":"user","disabled":false}`},
@@ -216,6 +217,14 @@ func TestHTTP_updateUserRejectsInvalidEmail(t *testing.T) {
 	}
 	if after.Email != target.Email {
 		t.Errorf("email after refused updates = %q, want %q", after.Email, target.Email)
+	}
+
+	status, body := env.do(t, admin, "PATCH", path, `{"display_name":"Upd"}`)
+	if status != 200 {
+		t.Fatalf("patch omitting the address = %d, want 200 (body %s)", status, body)
+	}
+	if got := decodeUser(t, body)["email"]; got != target.Email {
+		t.Errorf("email after a patch that omits it = %v, want %q", got, target.Email)
 	}
 }
 

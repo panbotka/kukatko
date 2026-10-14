@@ -82,7 +82,7 @@ func TestUserAudit_mutationsRecordRows(t *testing.T) {
 	}
 
 	if _, err := env.svc.UpdateUserAudited(ctx, created.UID, auth.UpdateUserInput{
-		DisplayName: "New Name", Email: created.Email, InstanceRole: auth.RoleUser,
+		DisplayName: new("New Name"), Email: new(created.Email), InstanceRole: new(auth.RoleUser),
 	}, admin.Role, meta.Entry(audit.ActionUserUpdate, "users", created.UID,
 		map[string]any{"instance_role": "user", "disabled": false})); err != nil {
 		t.Fatalf("UpdateUserAudited: %v", err)
@@ -117,7 +117,7 @@ func TestUserAudit_rollbackWritesNoAudit(t *testing.T) {
 	meta := audit.Meta{ActorUID: admin.UID}
 
 	_, err := env.svc.UpdateUserAudited(ctx, "usr_missing",
-		auth.UpdateUserInput{Email: "missing@example.test", InstanceRole: auth.RoleUser},
+		auth.UpdateUserInput{Email: new("missing@example.test"), InstanceRole: new(auth.RoleUser)},
 		admin.Role, meta.Entry(audit.ActionUserUpdate, "users", "usr_missing", nil))
 	if !errors.Is(err, auth.ErrUserNotFound) {
 		t.Fatalf("UpdateUserAudited(missing) err = %v, want ErrUserNotFound", err)
