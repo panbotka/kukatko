@@ -84,7 +84,7 @@ func expectTurn(t *testing.T, label string, task phototask.Task, wantAnswer, wan
 func TestHasNewAnswer_isCallerRelative(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	f.makeUser(t, agentUID, "panbotka-agent", "Agent")
+	f.makeMember(t, agentUID, "panbotka-agent", "Agent")
 	task := f.mustCreate(t, "V kterém roce?")
 
 	// The author adds context to their own task: no answer for them, an answer
@@ -141,8 +141,8 @@ func TestHasNewAnswer_isCallerRelative(t *testing.T) {
 func TestWaitingOnMe_followsTheConversation(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	f.makeUser(t, agentUID, "panbotka-agent", "Agent")
-	bystander := f.makeUser(t, "us-bystander", "kolemjdouci", "Kolemjdoucí")
+	f.makeMember(t, agentUID, "panbotka-agent", "Agent")
+	bystander := f.makeMember(t, "us-bystander", "kolemjdouci", "Kolemjdoucí")
 	task := f.mustCreate(t, "V kterém roce?")
 
 	// Just opened: the opener is alone on it, so nobody is waited on yet.
@@ -217,7 +217,7 @@ func TestWaitingOnMe_followsTheConversation(t *testing.T) {
 func TestStateBy_legacyRowReadsAsCreator(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	f.makeUser(t, agentUID, "panbotka-agent", "Agent")
+	f.makeMember(t, agentUID, "panbotka-agent", "Agent")
 	task := f.mustCreate(t, "Stará otázka")
 	if _, err := f.db.Pool().Exec(ctx, "UPDATE photo_tasks SET state_by = NULL WHERE uid = $1", task.UID); err != nil {
 		t.Fatalf("clearing state_by: %v", err)

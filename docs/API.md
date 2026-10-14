@@ -1296,7 +1296,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   text, never matched — names an **account**, by uid, so a rename breaks no old mention. On create and on
   edit the server parses the tokens (outside code: a token inside a code span or block is not a mention,
   exactly as the renderer shows it as code), **validates** each uid against the accounts (existing,
-  enabled, an approved member of the comment's project or a maintainer — an unknown, disabled or foreign one is dropped, the token still renders from its own name),
+  enabled, an approved member of the comment's project — `project.ApprovedMemberSQL`, the one rule for
+  naming an account in a project, so a maintainer who is no member is not mentionable there either; an
+  unknown, disabled, pending or foreign one is dropped alike, the token still renders from its own name),
   de-duplicates, stores the set in **`comment_mentions`** (migration `0098_comment_mentions.sql`,
   `(comment_uid, user_uid, position)`, both FKs `ON DELETE CASCADE`) and returns it as **`mentions`**:
   `[{user_uid, name, subject_uid}]` in order of first mention, resolved **on every read** — `name` is the
@@ -1396,8 +1398,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   task handed over at birth reads exactly like one handed over afterwards; each asked person other than
   the creator gets the **`task_assigned` notification** in that same transaction (`internal/taskassignnotify`,
   through the channels they chose). A uid given twice is asked
-  once; a uid naming no account is **404** and nothing at all is written — half a hand-over is worse
-  than none. Closing a task (`state` `done` or `rejected`) without a non-empty `resolution` is
+  once; a uid that is not an **approved member of the project** — no account at all, another project's
+  account, a pending member, a maintainer outside the project — is the one **404** `{"error":"user not
+  found"}` and nothing at all is written — half a hand-over is worse than none. Closing a task (`state` `done` or `rejected`) without a non-empty `resolution` is
   a **400**: "rejected" is a real outcome, and what must never exist is a task that is closed and silent.
   Reopening clears `closed_at`/`closed_by` and keeps the text. Advancing the state stamps `state_at` and
   `state_by` in the same transaction; an edit that leaves the state alone deliberately does neither.
@@ -1459,7 +1462,11 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   is not on it is a no-op, not an error. Asking somebody who was **not** on the task sends them the
   **`task_assigned` notification** in the same transaction (`internal/taskassignnotify`: never the caller
   asking themselves, never a disabled account, never again for a task they are already on); whether it
-  reaches them is their own per-channel choice, off by default. A `user_uid` naming no account is **404**, an empty one **400**.
+  reaches them is their own per-channel choice, off by default. Only an **approved member of the project**
+  can be asked (`project.RequireApprovedMembers`): a `user_uid` of another project's account, a pending
+  member or a maintainer outside the project is the byte-identical **404** `{"error":"user not found"}` a
+  uid naming no account gets, so the route is neither a uid→name oracle nor a way to put a stranger's name
+  on the project's work; an empty one is **400**.
   Both write `task.assign` / `task.unassign` in the mutation's transaction, naming the person under
   `details.user_uid`; joining *by acting* is deliberately not audited, because the act that caused it
   already is. Table `photo_task_participants` (migration `0081_photo_task_participants.sql`), which
@@ -1811,6 +1818,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   magnet for find-or-create-by-name lookups, which is exactly the catch-all `docs/OPERATIONS.md` §
   `maintenance nameless-subjects` describes); `GET /subjects/{uid}` (RequireAuth) →
   the subject (404); `PATCH /subjects/{uid}` (RequireCurator) → editing the same fields (404/400);
+  **`cover_photo_uid` must be a photo of the project**: another project's photo and a uid naming nothing are
+  the same **404** `{"error":"photo not found"}` on both routes (never the 500 an unknown uid used to hit at
+  the foreign key, nor a 201 storing another tenant's photo), and the cover reads
+  (`people.SubjectCovers` behind global search, the avatar) join the picked photo on the project too;
   **`nickname` is what people actually call the subject** — Bohumil Nečas („Bohouš") — `""` when nobody
   recorded one, which is the usual case. It is **searched like the name**: by the subject search behind
   `GET /search/global` (accent-insensitive), by `person:`/`subject:` and by the pickers built on

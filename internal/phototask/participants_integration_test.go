@@ -47,7 +47,7 @@ func TestParticipants_actingJoins(t *testing.T) {
 	}
 
 	// A second person moving it along joins by that act alone.
-	second := f.makeUser(t, "us-second", "pametnik", "Pamětník")
+	second := f.makeMember(t, "us-second", "pametnik", "Pamětník")
 	if _, err := f.tasks.Update(ctx, project.BootstrapUID, task.UID,
 		phototask.Update{State: statePtr(phototask.StateWorking)},
 		audit.Entry{ActorUID: second, Action: audit.ActionTaskUpdate}); err != nil {
@@ -79,7 +79,7 @@ func TestParticipants_assignAndRemove(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	task := f.mustCreate(t, "Kdo je to?")
-	asked := f.makeUser(t, "us-asked", "teta", "Teta")
+	asked := f.makeMember(t, "us-asked", "teta", "Teta")
 
 	if err := f.tasks.Assign(ctx, project.BootstrapUID, task.UID, asked, entry(audit.ActionTaskAssign)); err != nil {
 		t.Fatalf("Assign: %v", err)
@@ -147,8 +147,13 @@ func TestParticipants_observerHearsFreshAssignmentsOnly(t *testing.T) {
 	ctx := context.Background()
 	obs := &recordingObserver{}
 	tasks := f.tasks.WithAssignObserver(obs)
-	anna := f.makeUser(t, "us-anna", "anna", "Anna")
-	bedrich := f.makeUser(t, "us-bedrich", "bedrich", "Bedřich")
+	anna := f.makeMember(t, "us-anna", "anna", "Anna")
+	bedrich := f.makeMember(t, "us-bedrich", "bedrich", "Bedřich")
+	// The opening asks the actor too, and only an approved member can be asked.
+	if _, err := f.db.Pool().Exec(ctx, `UPDATE project_members SET approved_at = now() WHERE user_uid = $1`,
+		actor); err != nil {
+		t.Fatalf("approving the actor: %v", err)
+	}
 
 	task, err := tasks.Create(ctx, project.BootstrapUID, phototask.Task{Title: "Kdy to bylo?"},
 		phototask.Opening{AskedUIDs: []string{anna, actor, anna}}, entry(audit.ActionTaskCreate))
@@ -214,7 +219,7 @@ func TestParticipants_answeringJoins(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	task := f.mustCreate(t, "V kterém roce?")
-	answerer := f.makeUser(t, "us-viewer", "soused", "Soused")
+	answerer := f.makeMember(t, "us-viewer", "soused", "Soused")
 
 	if _, err := f.comments.Create(ctx, project.BootstrapUID, comments.TaskSubject(task.UID), answerer, "1987.",
 		audit.Entry{ActorUID: answerer, Action: audit.ActionCommentCreate}); err != nil {
@@ -234,7 +239,7 @@ func TestParticipants_answeringJoins(t *testing.T) {
 func TestList_byParticipant(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	other := f.makeUser(t, "us-other", "jiny", "Jiný")
+	other := f.makeMember(t, "us-other", "jiny", "Jiný")
 
 	mine := f.mustCreate(t, "Moje otázka")
 	theirs, err := f.tasks.Create(ctx, project.BootstrapUID, phototask.Task{Title: "Cizí otázka"}, phototask.Opening{},
@@ -310,8 +315,8 @@ func TestList_carriesParticipants(t *testing.T) {
 func TestCreate_askedAtOpening(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	anna := f.makeUser(t, "us-anna", "anna", "Anna")
-	agent := f.makeUser(t, "us-agent", "agent", "Agent")
+	anna := f.makeMember(t, "us-anna", "anna", "Anna")
+	agent := f.makeMember(t, "us-agent", "agent", "Agent")
 
 	task, err := f.tasks.Create(ctx, project.BootstrapUID, phototask.Task{Title: "Přejmenovat wf: štítky", State: phototask.StateWorking},
 		phototask.Opening{AskedUIDs: []string{anna, agent, anna}}, entry(audit.ActionTaskCreate))

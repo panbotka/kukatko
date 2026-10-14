@@ -23,9 +23,6 @@ internal/audit/audittest/audittest.go:42 test support only (Guard): marks the ne
 internal/bulk/apply.go:297 photo uid is one of the batch that requireBatchInProject proved in projectUID earlier in the same tx
 internal/bulk/apply.go:483 loadCoordinate reads only batch uids that requireBatchInProject proved in the project in the same tx
 
-# internal/comments
-internal/comments/store.go:77 commentProjectSQL derives a comment's project from its parent row; resolveMentionsSQL runs on a comment the same tx just wrote or proved in the project
-
 # internal/dupmerge
 internal/dupmerge/apply.go:40 the archive uids come from loadPhotos(project) once requireGroupInProject proved the group in the same tx
 internal/dupmerge/apply.go:126 the keeper is a group member that requireGroupInProject/loadPhotos proved in the project in the same tx
@@ -62,9 +59,9 @@ internal/mentionnotify/mentionnotify.go:163 runs in the comment's tx on its pare
 internal/notification/store.go:164 Photos first checks the notification with Get(project, owner, uid); this reads its child photo rows
 
 # internal/people
-internal/people/audit.go:179 runs after updateSubjectSQL (`AND project_id = $12`) found the subject in the same tx
-internal/people/audit.go:206 requireSubjectInProject proved the subject in the project earlier in the same tx
-internal/people/audit.go:213 requireSubjectInProject proved the subject in the project earlier in the same tx
+internal/people/audit.go:187 runs after updateSubjectSQL (`AND project_id = $12`) found the subject in the same tx
+internal/people/audit.go:214 requireSubjectInProject proved the subject in the project earlier in the same tx
+internal/people/audit.go:221 requireSubjectInProject proved the subject in the project earlier in the same tx
 internal/people/markers.go:412 requireMarkerInProject proved the marker in the project earlier in the same DeleteMarker tx
 internal/people/markers.go:446 every caller first proves the marker (or photo) and subject in the project in the same tx
 internal/people/markers.go:458 only caller unassignSubjectTx runs requireMarkerInProject first in the same tx
@@ -76,9 +73,9 @@ internal/people/merge.go:277 the source was locked by the project-scoped lockMer
 internal/people/nameless.go:173 snapshotSubjectTx locked the subject (project-scoped FOR UPDATE) earlier in the same tx
 internal/people/nameless.go:218 runs inside snapshotSubjectTx, right after the subject was loaded and locked within the project
 internal/people/sidecar.go:37 ListMarkersWithSubjects is called only by the sidecarjob worker, keyed by a photo uid
-internal/people/subjects.go:191 runs after updateSubjectTx (`AND project_id = $12`) found the subject in the same tx
-internal/people/subjects.go:428 requireSubjectInProject proved the subject in the project earlier in the same tx
-internal/people/subjects.go:435 requireSubjectInProject proved the subject in the project earlier in the same tx
+internal/people/subjects.go:196 runs after updateSubjectTx (`AND project_id = $12`) found the subject in the same tx
+internal/people/subjects.go:437 requireSubjectInProject proved the subject in the project earlier in the same tx
+internal/people/subjects.go:444 requireSubjectInProject proved the subject in the project earlier in the same tx
 
 # internal/photos
 internal/photos/store.go:297 SetPhotoprismRef has no production caller (only tests; the PhotoPrism import was removed)

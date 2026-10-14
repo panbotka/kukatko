@@ -123,3 +123,52 @@ func TestSubjectWrites_foreignSubjectIsMissingAndUntouched(t *testing.T) {
 		t.Errorf("A's subject was renamed to %q", subject.Name)
 	}
 }
+
+// TestSubjectCover_foreignPhotoIsMissing names A's photo as the cover of a new
+// B subject and of B's existing one, and asserts each write is byte-for-byte the
+// 404 a cover uid that names nothing gets — never a 201/200 that would store
+// another project's photo (and show its thumbnail in B's search), nor a 500 that
+// would tell an existing uid from a made-up one. B's own photo is accepted, and
+// B's subject keeps it after the refused write.
+func TestSubjectCover_foreignPhotoIsMissing(t *testing.T) {
+	server, f, db := newIsolationServer(t)
+	client := f.ClientFor(t, server, projecttest.SideB)
+	missing := projecttest.MissingUID("ph")
+	edit := f.PathFor(projecttest.SideB, "subjects/"+f.B.SubjectUID)
+	body := func(cover string) map[string]any {
+		return map[string]any{"name": "Obálka " + f.B.Token, "cover_photo_uid": cover}
+	}
+
+	foreign := f.Send(t, client, http.MethodPost, f.PathFor(projecttest.SideB, "subjects"), body(f.A.PhotoUID))
+	nobody := f.Send(t, client, http.MethodPost, f.PathFor(projecttest.SideB, "subjects"), body(missing))
+	if foreign.StatusCode != http.StatusNotFound {
+		t.Errorf("creating a B subject with A's photo as cover = %d, want 404", foreign.StatusCode)
+	}
+	projecttest.AssertSameShape(t, foreign, nobody)
+
+	own := f.Send(t, client, http.MethodPatch, edit, body(f.B.PhotoUID))
+	_ = own.Body.Close()
+	if own.StatusCode != http.StatusOK {
+		t.Fatalf("setting B's own photo as cover = %d, want 200", own.StatusCode)
+	}
+	foreign = f.Send(t, client, http.MethodPatch, edit, body(f.A.PhotoUID))
+	nobody = f.Send(t, client, http.MethodPatch, edit, body(missing))
+	if foreign.StatusCode != http.StatusNotFound {
+		t.Errorf("setting A's photo as cover of B's subject = %d, want 404", foreign.StatusCode)
+	}
+	projecttest.AssertSameShape(t, foreign, nobody)
+
+	subject, err := people.NewStore(db.Pool()).GetSubjectByUID(t.Context(), f.B.ProjectUID, f.B.SubjectUID)
+	if err != nil {
+		t.Fatalf("reading B's subject: %v", err)
+	}
+	if subject.CoverPhotoUID == nil || *subject.CoverPhotoUID != f.B.PhotoUID {
+		t.Errorf("B's subject cover after the refused writes = %v, want B's photo", subject.CoverPhotoUID)
+	}
+	var stored int
+	if err := db.Pool().QueryRow(t.Context(),
+		`SELECT count(*) FROM subjects WHERE project_id = $1 AND cover_photo_uid = $2`,
+		f.B.ProjectUID, f.A.PhotoUID).Scan(&stored); err != nil || stored != 0 {
+		t.Errorf("B's subjects with A's photo as cover = %d (%v), want 0", stored, err)
+	}
+}

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/comments"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
@@ -64,5 +66,40 @@ func TestStore_threadsAreScopedByProject(t *testing.T) {
 			t.Errorf("B's thread on %s after A's attempts = %+v, %v; want the one untouched comment",
 				subj.Kind, survived, err)
 		}
+	}
+}
+
+// TestMentions_onlyApprovedMembersOfTheProject mentions, in a comment of B, the
+// writer (a member of B), A's member — a system administrator who belongs to A
+// only — and a uid with no account, and asserts only the writer is resolved and
+// stored: somebody outside the project is dropped exactly like nobody, so the
+// comment neither shows B their name nor announces anything to them.
+func TestMentions_onlyApprovedMembersOfTheProject(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	f := projecttest.Seed(t, db.Pool(), projecttest.AsMaintainer(projecttest.SideA))
+	store := comments.NewStore(db.Pool())
+	ctx := t.Context()
+	missing := projecttest.MissingUID("us")
+	body := "@[Já](user:" + f.B.UserUID + ") @[Správce](user:" + f.A.UserUID + ") @[Nikdo](user:" + missing + ")"
+
+	created, err := store.Create(ctx, f.B.ProjectUID, comments.PhotoSubject(f.B.PhotoUID), f.B.UserUID, body,
+		audit.Entry{ActorUID: f.B.UserUID, Action: audit.ActionCommentCreate})
+	if err != nil {
+		t.Fatalf("Create in B: %v", err)
+	}
+	if len(created.Mentions) != 1 || created.Mentions[0].UserUID != f.B.UserUID {
+		t.Errorf("mentions of B's comment = %+v, want only B's own member", created.Mentions)
+	}
+	rows, err := db.Pool().Query(ctx, `SELECT user_uid FROM comment_mentions WHERE comment_uid = $1`, created.UID)
+	if err != nil {
+		t.Fatalf("reading comment_mentions: %v", err)
+	}
+	stored, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatalf("scanning comment_mentions: %v", err)
+	}
+	if len(stored) != 1 || stored[0] != f.B.UserUID {
+		t.Errorf("comment_mentions of B's comment = %v, want only %s", stored, f.B.UserUID)
 	}
 }

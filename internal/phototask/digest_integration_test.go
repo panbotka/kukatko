@@ -81,13 +81,19 @@ func TestDigests_whoGetsOne(t *testing.T) {
 	agent := f.makeAccount(t, "us-agent", "agent", false)
 	person := f.makeAccount(t, "us-person", "person", false)
 	blocked := f.makeAccount(t, "us-blocked", "blocked", true)
-	pending := f.makeUser(t, "us-pending", "pending", "Nepotvrzený")
+	pending := f.makeAccount(t, "us-pending", "pending", false)
 
 	task := f.mustCreate(t, "V kterém roce?")
 	f.assign(t, task.UID, agent)
 	f.assign(t, task.UID, person)
 	f.assign(t, task.UID, blocked)
+	// Only an approved member can be asked, so the pending participant is one
+	// whose approval was withdrawn after the hand-over.
 	f.assign(t, task.UID, pending)
+	if _, err := f.db.Pool().Exec(ctx,
+		`UPDATE project_members SET approved_at = NULL WHERE user_uid = $1`, pending); err != nil {
+		t.Fatalf("withdrawing the approval: %v", err)
+	}
 
 	// Freshly asked: the opener acted last, so it waits on everybody else who can
 	// sign in — not on the opener, not on a disabled or unapproved account.

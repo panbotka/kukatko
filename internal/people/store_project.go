@@ -125,3 +125,16 @@ func subjectName(ctx context.Context, q rowQuerier, projectUID, uid string) (str
 	}
 	return name, nil
 }
+
+// requireCoverInProject returns ErrPhotoNotFound unless cover — a subject's
+// hand-picked cover photo — names a photo of projectUID; a nil cover (none
+// chosen) passes. A photo of another project and a uid that names nothing are
+// the same ErrPhotoNotFound, so the cover is neither a way to show another
+// project's picture nor an oracle of which photo uids exist. It runs before the
+// write, which the photos foreign key would otherwise fail as an opaque error.
+func requireCoverInProject(ctx context.Context, q rowQuerier, projectUID string, cover *string) error {
+	if cover == nil {
+		return nil
+	}
+	return requirePhotoInProject(ctx, q, projectUID, *cover)
+}

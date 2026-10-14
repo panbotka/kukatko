@@ -71,7 +71,7 @@ WITH best_face AS (
 SELECT picked.uid, bf.photo_uid, bf.x, bf.y, bf.w, bf.h
 FROM subjects s
 LEFT JOIN photos picked ON picked.uid = s.cover_photo_uid
-    AND picked.archived_at IS NULL
+    AND picked.archived_at IS NULL AND picked.project_id = s.project_id
 LEFT JOIN best_face bf ON TRUE
 WHERE s.uid = $1`
 

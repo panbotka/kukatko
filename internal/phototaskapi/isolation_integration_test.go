@@ -27,14 +27,16 @@ import (
 // count only B's.
 
 // newIsolationServer mounts the task routes under /api/v1/p/{project} behind
-// auth.WithProject over the seeded database, the way the server does.
-func newIsolationServer(t *testing.T) (*httptest.Server, *projecttest.Fixture, *comments.Store) {
+// auth.WithProject over the database seeded with opts, the way the server does.
+func newIsolationServer(
+	t *testing.T, opts ...projecttest.Option,
+) (*httptest.Server, *projecttest.Fixture, *comments.Store) {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
 	audittest.Guard(t, db)
 	pool := db.Pool()
-	f := projecttest.Seed(t, pool)
+	f := projecttest.Seed(t, pool, opts...)
 
 	svc := auth.NewService(auth.NewStore(pool), auth.SessionPolicy{TTL: time.Hour, MaxLifetime: 3 * time.Hour})
 	authAPI := auth.NewAPI(auth.APIConfig{Service: svc, Limiter: auth.NewLimiter(100, time.Minute)})
@@ -127,4 +129,44 @@ func TestTasks_listAndSummaryArePerProject(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || summary.Open != 1 {
 		t.Fatalf("B's summary = %d %+v, want 200 and one open task", resp.StatusCode, summary)
 	}
+}
+
+// TestTasks_foreignAccountIsMissing hands B's task — on the assign route and at
+// an opening — to A's member, who is the instance's system administrator but
+// no member of B, and asserts each answer is byte-for-byte the 404 a uid with
+// no account gets: the task is neither a way to learn whether an account exists
+// and what it is called, nor to put a stranger on B's work. B's own member is
+// still accepted, and A's member appears in none of B's tasks afterwards.
+func TestTasks_foreignAccountIsMissing(t *testing.T) {
+	server, f, _ := newIsolationServer(t, projecttest.AsMaintainer(projecttest.SideA))
+	client := f.ClientFor(t, server, projecttest.SideB)
+	missing := projecttest.MissingUID("us")
+	assign := f.PathFor(projecttest.SideB, "tasks/"+f.B.TaskUID+"/participants")
+
+	foreignResp := f.Send(t, client, http.MethodPost, assign, map[string]string{"user_uid": f.A.UserUID})
+	missingResp := f.Send(t, client, http.MethodPost, assign, map[string]string{"user_uid": missing})
+	if foreignResp.StatusCode != http.StatusNotFound {
+		t.Errorf("assigning A's member to B's task = %d, want 404", foreignResp.StatusCode)
+	}
+	projecttest.AssertSameShape(t, foreignResp, missingResp)
+
+	open := f.PathFor(projecttest.SideB, "tasks")
+	foreignResp = f.Send(t, client, http.MethodPost, open, map[string]any{
+		"title": "Kdo to je?", "photo_uids": []string{f.B.PhotoUID}, "participants": []string{f.A.UserUID},
+	})
+	missingResp = f.Send(t, client, http.MethodPost, open, map[string]any{
+		"title": "Kdo to je?", "photo_uids": []string{f.B.PhotoUID}, "participants": []string{missing},
+	})
+	if foreignResp.StatusCode != http.StatusNotFound {
+		t.Errorf("opening a B task asking A's member = %d, want 404", foreignResp.StatusCode)
+	}
+	projecttest.AssertSameShape(t, foreignResp, missingResp)
+
+	own := f.Send(t, client, http.MethodPost, assign, map[string]string{"user_uid": f.B.UserUID})
+	_ = own.Body.Close()
+	if own.StatusCode != http.StatusOK {
+		t.Errorf("assigning B's own member = %d, want 200", own.StatusCode)
+	}
+	f.AssertListExcludes(t, client, f.PathFor(projecttest.SideB, "tasks"), f.A.UserUID)
+	f.AssertListExcludes(t, client, assign, f.A.UserUID)
 }

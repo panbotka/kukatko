@@ -121,8 +121,9 @@ func insertAuditedAttempt[T any](
 // (the durable-audit convention; see internal/audit). entry's TargetUID defaults
 // to the subject's generated UID. It behaves like CreateSubject otherwise (unique
 // slug, ErrInvalidType for a bad type, ErrInvalidLifeYears for an impossible
-// birth/death year). The subject is created in projectUID, which also defaults
-// the entry's ProjectUID.
+// birth/death year, ErrPhotoNotFound for a cover that is not a photo of the
+// project). The subject is created in projectUID, which also defaults the
+// entry's ProjectUID.
 func (s *Store) CreateSubjectAudited(
 	ctx context.Context, projectUID string, subj Subject, entry audit.Entry,
 ) (Subject, error) {
@@ -137,6 +138,9 @@ func (s *Store) CreateSubjectAudited(
 	if entry.TargetUID == "" {
 		entry.TargetUID = prepared.UID
 	}
+	if err := requireCoverInProject(ctx, s.pool, projectUID, prepared.CoverPhotoUID); err != nil {
+		return Subject{}, err
+	}
 	return insertAuditedWithUniqueSlug(ctx, s.pool, base, entry, func(tx pgx.Tx, slug string) (Subject, error) {
 		prepared.Slug = slug
 		return scanSubject(tx.QueryRow(ctx, insertSubjectSQL,
@@ -150,9 +154,10 @@ func (s *Store) CreateSubjectAudited(
 // entry in the same transaction. entry's TargetUID defaults to uid. It behaves like
 // UpdateSubject otherwise — re-slugging from the new name, refreshing the cached
 // subject_name on the photo's faces, and returning ErrSubjectNotFound (writing no
-// audit row) if no such subject exists, ErrInvalidType for a bad type, or
-// ErrInvalidLifeYears for an impossible birth/death year. A subject of another
-// project than projectUID is not found.
+// audit row) if no such subject exists, ErrPhotoNotFound for a cover that is not
+// a photo of the project, ErrInvalidType for a bad type, or ErrInvalidLifeYears
+// for an impossible birth/death year. A subject of another project than
+// projectUID is not found.
 func (s *Store) UpdateSubjectAudited(
 	ctx context.Context, projectUID, uid string, upd SubjectUpdate, entry audit.Entry,
 ) (Subject, error) {
@@ -168,6 +173,9 @@ func (s *Store) UpdateSubjectAudited(
 		entry.TargetUID = uid
 	}
 	base := Slugify(upd.Name)
+	if err := requireCoverInProject(ctx, s.pool, projectUID, upd.CoverPhotoUID); err != nil {
+		return Subject{}, err
+	}
 	updated, err := insertAuditedWithUniqueSlug(ctx, s.pool, base, entry, func(tx pgx.Tx, slug string) (Subject, error) {
 		row, err := scanSubject(tx.QueryRow(ctx, updateSubjectSQL,
 			uid, slug, upd.Name, upd.Nickname, upd.Type, upd.Favorite, upd.Private,

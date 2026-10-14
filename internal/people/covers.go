@@ -33,7 +33,9 @@ type Cover struct {
 //
 // A cover chosen by hand wins over the derived one, and is honoured whatever
 // state its photo is in: it is the user's own explicit answer to what the
-// subject looks like.
+// subject looks like. It is honoured only as a photo of the project, though: the
+// write already refuses another project's photo, and the join re-checks it so a
+// row written before that rule can never stamp a foreign thumbnail.
 //
 // Every kind of marker is eligible here, hand-attached links included, and that
 // is deliberate: this query elects a *photo*, which the caller draws whole and
@@ -56,7 +58,7 @@ SELECT s.uid,
        COALESCE(picked.file_hash, derived.file_hash),
        COALESCE(picked.file_path, derived.file_path)
 FROM subjects s
-LEFT JOIN photos picked ON picked.uid = s.cover_photo_uid
+LEFT JOIN photos picked ON picked.uid = s.cover_photo_uid AND picked.project_id = $2
 LEFT JOIN derived ON derived.subject_uid = s.uid
 WHERE s.uid = ANY($1) AND s.project_id = $2`
 

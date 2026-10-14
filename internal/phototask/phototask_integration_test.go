@@ -66,6 +66,21 @@ func (f *fixture) makeUser(t *testing.T, uid, username, displayName string) stri
 	return uid
 }
 
+// makeMember inserts an account with the given uid, username and display name
+// that is an approved member of the bootstrap project — the only kind of
+// account a task may be handed to (project.RequireApprovedMembers).
+func (f *fixture) makeMember(t *testing.T, uid, username, displayName string) string {
+	t.Helper()
+	approved := time.Now().Add(-time.Hour)
+	if err := f.users.CreateUser(context.Background(), auth.User{
+		UID: uid, Username: username, Email: username + "@example.test",
+		DisplayName: displayName, PasswordHash: "x", Role: auth.RoleUser, ApprovedAt: &approved,
+	}.InProject(project.BootstrapUID, project.RoleViewer)); err != nil {
+		t.Fatalf("creating member %s: %v", username, err)
+	}
+	return uid
+}
+
 // makePhoto catalogues a photo whose file hash is derived from name, so several
 // photos in one test never collide on the dedup unique key.
 func (f *fixture) makePhoto(t *testing.T, name string) photos.Photo {

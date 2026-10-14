@@ -309,7 +309,7 @@ and are picked up once the box is reachable again — the summary says as much.
 | `--dry-run` | `false` | only reports what it would do (new / duplicate / skipped + reason, including the **full sidecar report**) — **writes nothing**, not even `import_runs` |
 | `--no-sidecars` | `false` | ignores metadata next to the media (a Takeout export then arrives **without dates or captions**) |
 | `--concurrency N` | `3` | how many files are uploaded in parallel; **cap 8** (thumbnailing large photos is memory-hungry and the box has 16 GB shared with everything else) |
-| `--uploader <user>` | bootstrap admin | the username of the owner of the imported photos; without it `auth.bootstrap_admin_username`, otherwise the first enabled maintainer |
+| `--uploader <user>` | bootstrap admin | the username of the owner of the imported photos, which must be an approved member of `--project` (its name is shown there; another account fails the run before anything is imported); without it `auth.bootstrap_admin_username`, otherwise the first enabled maintainer — each only if a member of the project, else the photos have no owner |
 
 Output: one line per file (`[12/2000] imported 2014/IMG_0001.JPG (sidecar: IMG_0001.JPG.json)`) and at
 the end a summary `imported=… duplicates=… skipped=… failed=…` + a breakdown of the skipped ones by reason,

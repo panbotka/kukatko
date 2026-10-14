@@ -35,6 +35,10 @@ var errImportFailures = errors.New("some files failed to import")
 // errNoUploader indicates --uploader named a user that does not exist.
 var errNoUploader = errors.New("no such user")
 
+// errUploaderNotMember indicates --uploader named a user who is not an approved
+// member of the target project, whose name the project must not be shown.
+var errUploaderNotMember = errors.New("uploader is not an approved member of the project")
+
 // errImportProjectRequired is returned when --project is missing: an import
 // lands in exactly one project, and guessing which would be a silent leak.
 var errImportProjectRequired = errors.New("--project <slug> is required: an import lands in exactly one project")
@@ -176,7 +180,7 @@ func runImportDir(cmd *cobra.Command, root string) error {
 	if err != nil {
 		return err
 	}
-	uploader, err := resolveUploader(ctx, cfg, auth.NewStore(db.Pool()), opts.uploader)
+	uploader, err := resolveUploader(ctx, cfg, auth.NewStore(db.Pool()), db.Pool(), target.UID, opts.uploader)
 	if err != nil {
 		return err
 	}
@@ -331,37 +335,67 @@ func skipBreakdown(byReason map[dirimport.SkipReason]int) string {
 	return strings.Join(parts, " ")
 }
 
-// resolveUploader returns the UID of the user the imported photos belong to.
-// A named user must exist (errNoUploader otherwise); with no --uploader the
-// configured bootstrap admin is used, and failing that any enabled maintainer
-// (the system administrator — the account record knows no project role). An
-// instance with no such account imports with no owner (uploaded_by stays NULL),
-// which keeps a fresh, unbootstrapped install usable.
+// resolveUploader returns the UID of the user the photos imported into the
+// project projectUID belong to. The uploader's name is shown to that project, so
+// only an approved member of it qualifies (project.RequireApprovedMembers): a
+// named user must exist (errNoUploader otherwise) and be such a member
+// (errUploaderNotMember otherwise). With no --uploader the configured bootstrap
+// admin is used, and failing that any enabled maintainer (the system
+// administrator — the account record knows no project role) — each only when
+// they are a member of the project. A project with no such account imports with
+// no owner (uploaded_by stays NULL), which keeps a fresh, unbootstrapped install
+// — and a project whose members are nobody's default — usable.
 func resolveUploader(
-	ctx context.Context, cfg *config.Config, store *auth.Store, username string,
+	ctx context.Context, cfg *config.Config, store *auth.Store, members project.RowQuerier,
+	projectUID, username string,
 ) (string, error) {
 	if username != "" {
 		user, err := store.GetUserByUsername(ctx, username)
 		if err != nil {
 			return "", fmt.Errorf("%w: %s: %w", errNoUploader, username, err)
 		}
+		if err := project.RequireApprovedMembers(ctx, members, projectUID, user.UID); err != nil {
+			return "", fmt.Errorf("%w: %s: %w", errUploaderNotMember, username, err)
+		}
 		return user.UID, nil
 	}
+	candidates, err := defaultUploaders(ctx, cfg, store)
+	if err != nil {
+		return "", err
+	}
+	for _, uid := range candidates {
+		err := project.RequireApprovedMembers(ctx, members, projectUID, uid)
+		if err == nil {
+			return uid, nil
+		}
+		if !errors.Is(err, project.ErrNotMember) {
+			return "", fmt.Errorf("checking the default uploader: %w", err)
+		}
+	}
+	return "", nil
+}
+
+// defaultUploaders lists, in order of preference, the accounts an import with
+// no --uploader may be owned by: the configured bootstrap admin when it exists,
+// then every enabled maintainer. The caller picks the first that is a member of
+// the target project.
+func defaultUploaders(ctx context.Context, cfg *config.Config, store *auth.Store) ([]string, error) {
+	var out []string
 	if bootstrap := cfg.Auth.BootstrapAdminUsername; bootstrap != "" {
 		if user, err := store.GetUserByUsername(ctx, bootstrap); err == nil {
-			return user.UID, nil
+			out = append(out, user.UID)
 		}
 	}
 	users, err := store.ListUsers(ctx, auth.UserFilter{})
 	if err != nil {
-		return "", fmt.Errorf("listing users: %w", err)
+		return nil, fmt.Errorf("listing users: %w", err)
 	}
 	for i := range users {
 		if users[i].Role.CanMaintain() && !users[i].Disabled {
-			return users[i].UID, nil
+			out = append(out, users[i].UID)
 		}
 	}
-	return "", nil
+	return out, nil
 }
 
 // recursiveFlag reads --recursive and its negative form --no-recursive (the two

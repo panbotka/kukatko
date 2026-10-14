@@ -251,7 +251,9 @@ RETURNING ` + subjectColumns
 // differ, because another subject may have taken the base slug in the meantime and
 // slugs are unique. A marker or face deleted since the snapshot is simply not
 // restored — the update matches what still exists — so a partially outdated
-// snapshot restores what it can instead of failing.
+// snapshot restores what it can instead of failing. The same goes for the cover:
+// one that is no longer a photo of the project (deleted, or never of it) is
+// left out rather than written.
 func (s *Store) RestoreSubject(
 	ctx context.Context, projectUID string, snap SubjectSnapshot, entry audit.Entry,
 ) (Subject, error) {
@@ -269,7 +271,10 @@ func (s *Store) RestoreSubject(
 	// transaction it happens in, so a retry inside one would only ever hit 25P02.
 	restored, err := insertAuditedWithUniqueSlug(ctx, s.pool, snap.Subject.Slug, withProject(entry, projectUID),
 		func(tx pgx.Tx, slug string) (Subject, error) {
-			subj := snap.Subject
+			subj, err := withCoverInProject(ctx, tx, projectUID, snap.Subject)
+			if err != nil {
+				return Subject{}, err
+			}
 			// The insert's error is returned unwrapped by design: the caller inspects
 			// it for the slug unique violation that drives the next attempt.
 			restored, err := scanSubject(tx.QueryRow(ctx, restoreSubjectSQL,
@@ -285,6 +290,20 @@ func (s *Store) RestoreSubject(
 		return Subject{}, fmt.Errorf("people: restoring subject %s: %w", snap.Subject.UID, err)
 	}
 	return restored, nil
+}
+
+// withCoverInProject returns subj with its cover cleared unless the cover is a
+// photo of projectUID. The undo file is supplied by hand, so its cover is
+// proven like any other written one (requireCoverInProject) — but a restore
+// keeps what it can rather than failing, so a cover deleted since the snapshot,
+// or one of another project, is dropped instead of refusing the whole undo.
+func withCoverInProject(ctx context.Context, tx pgx.Tx, projectUID string, subj Subject) (Subject, error) {
+	err := requireCoverInProject(ctx, tx, projectUID, subj.CoverPhotoUID)
+	if errors.Is(err, ErrPhotoNotFound) {
+		subj.CoverPhotoUID = nil
+		return subj, nil
+	}
+	return subj, err
 }
 
 // relinkSnapshotTx re-points the snapshot's markers and cached faces of the

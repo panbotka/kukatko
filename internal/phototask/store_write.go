@@ -112,7 +112,7 @@ func (s *Store) createIn(
 	if err := joinParticipant(ctx, tx, uid, entry.ActorUID); err != nil {
 		return err
 	}
-	if err := s.askParticipants(ctx, tx, uid, opening.AskedUIDs, entry); err != nil {
+	if err := s.askParticipants(ctx, tx, projectUID, uid, opening.AskedUIDs, entry); err != nil {
 		return err
 	}
 	if err := audit.Write(ctx, tx, withTarget(entry, uid, "photo_uids", photoUIDs)); err != nil {

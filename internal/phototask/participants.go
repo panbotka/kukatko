@@ -2,12 +2,14 @@ package phototask
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // joinSQL records that somebody is on a task. It is idempotent and it never
@@ -79,10 +81,23 @@ VALUES ($1, $2, $3)
 ON CONFLICT (task_uid, user_uid) DO UPDATE SET added_by = excluded.added_by
 RETURNING (xmax = 0)`
 
-// ask runs assignSQL for userUID on taskUID as asked by actorUID and reports
-// the fresh assignment to the store's observer when the person was not on the
-// task before. what names the step for the error.
-func (s *Store) ask(ctx context.Context, tx pgx.Tx, taskUID, userUID, actorUID, what string) error {
+// ask runs assignSQL for userUID on taskUID — a task of projectUID — as asked
+// by actorUID and reports the fresh assignment to the store's observer when the
+// person was not on the task before. what names the step for the error.
+//
+// Only an approved member of the project can be asked (project.
+// RequireApprovedMembers): anybody else — an account of another project, a
+// pending member, the system administrator outside their memberships — is
+// ErrUserNotFound, exactly like a uid with no account, so a task is neither a
+// way to plant a foreign name in the project nor an oracle of which accounts
+// exist.
+func (s *Store) ask(ctx context.Context, tx pgx.Tx, projectUID, taskUID, userUID, actorUID, what string) error {
+	if err := project.RequireApprovedMembers(ctx, tx, projectUID, userUID); err != nil {
+		if errors.Is(err, project.ErrNotMember) {
+			return ErrUserNotFound
+		}
+		return fmt.Errorf("%s: %w", what, err)
+	}
 	var inserted bool
 	if err := tx.QueryRow(ctx, assignSQL, taskUID, userUID, nullableUID(actorUID)).Scan(&inserted); err != nil {
 		return fmt.Errorf("%s: %w", what, err)
@@ -96,11 +111,11 @@ func (s *Store) ask(ctx context.Context, tx pgx.Tx, taskUID, userUID, actorUID, 
 
 // Assign puts userUID on the task on purpose — asking a particular person —
 // and writes entry in the same transaction. A missing task — or one of another
-// project — yields ErrNotFound
-// and a person with no account ErrUserNotFound; in either case nothing is
-// written. Assigning somebody already on the task is not an error. An assign
-// observer (WithAssignObserver) hears the change only when the person was not
-// on the task before — re-asking is silent.
+// project — yields ErrNotFound and a person who is not an approved member of
+// the project — no account at all included — ErrUserNotFound; in either case
+// nothing is written. Assigning somebody already on the task is not an error.
+// An assign observer (WithAssignObserver) hears the change only when the
+// person was not on the task before — re-asking is silent.
 func (s *Store) Assign(ctx context.Context, projectUID, taskUID, userUID string, entry audit.Entry) error {
 	if err := requireProject(projectUID); err != nil {
 		return err
@@ -110,7 +125,7 @@ func (s *Store) Assign(ctx context.Context, projectUID, taskUID, userUID string,
 		if err := lockTask(ctx, tx, projectUID, taskUID); err != nil {
 			return err
 		}
-		if err := s.ask(ctx, tx, taskUID, userUID, entry.ActorUID, "inserting task participant"); err != nil {
+		if err := s.ask(ctx, tx, projectUID, taskUID, userUID, entry.ActorUID, "inserting task participant"); err != nil {
 			return err
 		}
 		// The person doing the asking is on the task too — they are the one
@@ -126,15 +141,16 @@ func (s *Store) Assign(ctx context.Context, projectUID, taskUID, userUID string,
 // and audits each as an assign, inside the caller's transaction — so a task
 // handed to somebody at its opening reads, in the participants and in the
 // trail, exactly as one handed over afterwards. A uid given twice is asked
-// once; a person with no account fails the whole transaction (ErrUserNotFound
-// once translated), because half a hand-over is worse than none. The store's
+// once; a person who is not an approved member of projectUID (no account at
+// all included) fails the whole transaction with ErrUserNotFound, because half
+// a hand-over is worse than none. The store's
 // assign observer hears each person who was not on the task yet — at an
 // opening that is everybody but the actor, who joined by opening it.
 func (s *Store) askParticipants(
-	ctx context.Context, tx pgx.Tx, taskUID string, userUIDs []string, entry audit.Entry,
+	ctx context.Context, tx pgx.Tx, projectUID, taskUID string, userUIDs []string, entry audit.Entry,
 ) error {
 	for _, userUID := range uniqueUIDs(userUIDs) {
-		if err := s.ask(ctx, tx, taskUID, userUID, entry.ActorUID, "inserting asked participant"); err != nil {
+		if err := s.ask(ctx, tx, projectUID, taskUID, userUID, entry.ActorUID, "inserting asked participant"); err != nil {
 			return err
 		}
 		asked := audit.Entry{

@@ -6,22 +6,33 @@ import (
 	"slices"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/panbotka/kukatko/internal/project"
 )
 
-// resolveMentionsSQL turns the uids a body mentions into the accounts that can
-// be mentioned on the comment $2: existing, enabled and in its project — an
-// approved member, or a maintainer, who enters every project. A uid that
-// matches no such row is dropped — the token still renders from its own name,
-// but nothing is stored or announced for an account that could not be
-// notified anyway. The linked person is the one the membership of the
-// comment's project names.
-const resolveMentionsSQL = `
+// resolveMentionsFrom, completed by resolveMentionsSQL, turns the uids a body
+// mentions into the accounts that can be mentioned on the comment $2: existing,
+// enabled and an approved member of its project (project.ApprovedMemberSQL —
+// the one rule for naming somebody in a project, so a system administrator
+// outside the project is not mentionable there either). A uid that matches no
+// such row is dropped — the token still renders from its own name, but nothing
+// is stored, resolved or announced for an account the project must not learn
+// about. The linked person is the one the membership of the comment's project
+// names.
+const resolveMentionsFrom = `
 SELECT u.uid, COALESCE(NULLIF(u.display_name, ''), u.username), pm.subject_uid
 FROM users u
 CROSS JOIN (SELECT ` + commentProjectSQL + ` AS project_uid FROM comments c WHERE c.uid = $2) cp
 LEFT JOIN project_members pm ON pm.user_uid = u.uid AND pm.project_uid = cp.project_uid
 WHERE u.uid = ANY($1) AND NOT u.disabled
-  AND (pm.approved_at IS NOT NULL OR u.role = 'maintainer')`
+  AND `
+
+// resolveMentionsSQL returns the whole mention-resolving statement:
+// resolveMentionsFrom with the approved-member predicate over the comment's
+// project appended.
+func resolveMentionsSQL() string {
+	return resolveMentionsFrom + project.ApprovedMemberSQL("cp.project_uid", "u.uid")
+}
 
 // existingMentionsSQL reads who a comment mentioned before this write, so an
 // edit can tell a fresh mention from one the previous body already carried.
@@ -107,7 +118,7 @@ func resolveMentions(ctx context.Context, tx pgx.Tx, commentUID string, refs []M
 	for _, ref := range refs {
 		uids = append(uids, ref.UserUID)
 	}
-	rows, err := tx.Query(ctx, resolveMentionsSQL, uids, commentUID)
+	rows, err := tx.Query(ctx, resolveMentionsSQL(), uids, commentUID)
 	if err != nil {
 		return nil, fmt.Errorf("querying accounts: %w", err)
 	}

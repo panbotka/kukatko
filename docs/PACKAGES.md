@@ -1886,8 +1886,8 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   `@Name`, whitespace collapsed, cut with an ellipsis at `MaxExcerptLen` 140). On **every create and
   edit** the shared `mutateAudited` runs a `postStep` (`mentionsThen`, `store_mentions.go`) after the audit
   row and before the caller's `Along`: **`syncMentions`** resolves the refs on the transaction against the
-  accounts (`resolveMentionsSQL`: existing, `NOT disabled`, `approved_at IS NOT NULL` — the rest are
-  dropped), prunes the `comment_mentions` rows the body no longer carries, upserts the rest at their body
+  accounts (`resolveMentionsSQL`: existing, `NOT disabled`, an approved member of the comment's project by
+  `project.ApprovedMemberSQL` — a maintainer outside the project included, the rest are dropped), prunes the `comment_mentions` rows the body no longer carries, upserts the rest at their body
   position, sets `Comment.Mentions` (the create's read-back ran before any row existed) and reports the
   **fresh** ones — not in the previous set, not the author's own (a self-mention is stored, so it renders,
   but is nobody's news) — to the **`MentionObserver`** (`WithMentionObserver`, a copy of the store like
@@ -2602,7 +2602,13 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   request's). The nameless repair is scoped since step 14: `ListNamelessSubjects`/`SnapshotSubject`/
   `DetachSubject`/`RestoreSubject` take the project (a subject of another project is `ErrSubjectNotFound`,
   writing nothing), `RestoreSubject` inserts the row **into** the project and re-links only markers on the
-  project's photos and faces of the project, and the audited ones default the entry's `ProjectUID`. `subjects`
+  project's photos and faces of the project, and the audited ones default the entry's `ProjectUID`. A
+  hand-picked **cover must be a photo of the project** on every write (`requireCoverInProject`,
+  `store_project.go`: `CreateSubject`, `CreateSubjectAudited`, `CreateSubjectTx`, `UpdateSubject`,
+  `UpdateSubjectAudited`) — another project's photo and a uid naming nothing are the same `ErrPhotoNotFound`
+  (`peopleapi` → 404 `photo not found`), checked before the instance-wide FK could fail; `RestoreSubject`
+  drops such a cover from the hand-supplied snapshot instead (`withCoverInProject`), and `SubjectCovers` /
+  `SubjectAvatar` join the picked photo on the subject's project as defence in depth. `subjects`
   = `uid PK` (prefix `su`), `slug UNIQUE (project_id, slug)`, `name`, `nickname` (`TEXT NOT NULL DEFAULT ''`, migration
   `0074`), `type IN (person|pet|other)`, `favorite`,
   `private`, `notes`, `cover_photo_uid` (FK photos `ON DELETE SET NULL`),
@@ -4192,8 +4198,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   opened — `askParticipants` runs the same `assignSQL` a later `Assign` does and writes one
   `audit.ActionTaskAssign` entry per person, so a task handed over at birth is indistinguishable, in the
   participants and in the trail, from one handed over afterwards; `uniqueUIDs` drops blanks and repeats
-  so asking the same person twice asks them once, and an unknown account fails the whole transaction
-  (`ErrUserNotFound`) rather than leaving half a hand-over; **the daily
+  so asking the same person twice asks them once, and an account that is not an **approved member of the
+  task's project** (`project.RequireApprovedMembers` in `ask`, the one step `Assign` and `askParticipants`
+  share; no account at all, another project's account, a pending member, a maintainer outside the project)
+  fails the whole transaction with the same `ErrUserNotFound` rather than leaving half a hand-over; **the daily
   digest's reads** (`digest.go`), **per (project, person)**: `Digests(ctx)` →
   `[]Digest{ProjectUID,ProjectSlug,ProjectName,UserUID,Email,DisplayName,Total,Tasks
   (≤ DigestLimit = 20, newest activity first),NewestActivityAt,DigestedAt}` — the listing's `waitingSQL`
@@ -7160,6 +7168,15 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     and **always** writes `project.member.add` with `details.outcome` (`added`/`already_member`/
     `no_such_account`/`ambiguous`; the typed `identifier` when nobody was resolved). The outcome is for
     the trail and the tests, never for the person who asked. `ErrEmptyIdentifier` for a blank one.
+  - `member_check.go` — **the one rule for naming an account in a project**: `ApprovedMemberSQL(projectExpr,
+    userExpr)` is the SQL predicate (an `EXISTS` over `project_members … approved_at IS NOT NULL`; both
+    arguments are SQL expressions pasted verbatim, never user input) and `RequireApprovedMembers(ctx, q,
+    projectUID, uids...)` its Go check on a pool or a transaction (`RowQuerier`) — `ErrNotMember` unless every
+    distinct uid is an approved member, a uid with no account included, so a caller answering both alike is no
+    account-existence oracle. Every write that stores somebody else's account uid where the project displays
+    it uses it: task participants (`internal/phototask` `ask`), mention resolution (`internal/comments`
+    `resolveMentionsSQL`) and the import's `--uploader` (`cmd/kukatko` `resolveUploader`). A pending member
+    and a maintainer outside the project do not pass.
   - `internal/reset` keeps `projects` and `project_members` among the **preserved** tables (account-side,
     like `users`); `project_members.subject_uid` points into the wiped `subjects`, so the reset lifts,
     nulls and restores `project_members_subject_uid_fkey` (`subjectLinks` in `reset.go`; the

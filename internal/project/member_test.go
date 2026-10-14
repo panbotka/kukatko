@@ -116,3 +116,15 @@ func TestWrapMemberErr(t *testing.T) {
 		t.Errorf("wrapMemberErr(other) = %q", got)
 	}
 }
+
+// TestApprovedMemberSQL verifies the predicate pastes both expressions in and
+// admits approved memberships only.
+func TestApprovedMemberSQL(t *testing.T) {
+	t.Parallel()
+	got := ApprovedMemberSQL("$1", "u.uid")
+	want := "EXISTS (SELECT 1 FROM project_members apm WHERE apm.project_uid = $1" +
+		" AND apm.user_uid = u.uid AND apm.approved_at IS NOT NULL)"
+	if got != want {
+		t.Errorf("ApprovedMemberSQL = %q, want %q", got, want)
+	}
+}

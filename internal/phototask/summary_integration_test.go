@@ -18,7 +18,7 @@ import (
 func TestSummary_countsTheQueuePerCaller(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	f.makeUser(t, agentUID, "panbotka-agent", "Agent")
+	f.makeMember(t, agentUID, "panbotka-agent", "Agent")
 
 	// Asked and untouched: waits on the agent.
 	asked := f.mustCreate(t, "V kterém roce?")

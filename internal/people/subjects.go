@@ -44,14 +44,18 @@ func scanSubject(row pgx.Row) (Subject, error) {
 // CreateSubject inserts subj and returns it refreshed with the generated UID,
 // unique slug and timestamps. The slug is derived from subj.Name (Slugify) and a
 // numeric suffix is appended on collision. An empty type defaults to
-// SubjectPerson; an unrecognised type returns ErrInvalidType. The subject is
-// created in projectUID, and its slug is unique within that project only.
+// SubjectPerson; an unrecognised type returns ErrInvalidType, and a cover that is
+// not a photo of the project ErrPhotoNotFound. The subject is created in
+// projectUID, and its slug is unique within that project only.
 func (s *Store) CreateSubject(ctx context.Context, projectUID string, subj Subject) (Subject, error) {
 	if err := requireProject(projectUID); err != nil {
 		return Subject{}, err
 	}
 	prepared, base, err := prepareSubjectInsert(subj)
 	if err != nil {
+		return Subject{}, err
+	}
+	if err := requireCoverInProject(ctx, s.pool, projectUID, prepared.CoverPhotoUID); err != nil {
 		return Subject{}, err
 	}
 	return insertWithUniqueSlug(base, func(slug string) (Subject, error) {
@@ -167,8 +171,9 @@ func prepareSubjectUpdate(upd SubjectUpdate) (SubjectUpdate, error) {
 // UpdateSubject applies upd to the subject identified by uid: it re-slugs from the
 // new name (kept unique), rewrites the editable fields, and refreshes the cached
 // subject_name on the photo's faces. It returns ErrSubjectNotFound if no such
-// subject exists, ErrInvalidType for an unrecognised type, or ErrInvalidLifeYears
-// for an impossible birth/death year. A subject of another project is not found.
+// subject exists, ErrPhotoNotFound for a cover photo that is not a photo of the
+// project, ErrInvalidType for an unrecognised type, or ErrInvalidLifeYears for an
+// impossible birth/death year. A subject of another project is not found.
 func (s *Store) UpdateSubject(ctx context.Context, projectUID, uid string, upd SubjectUpdate) (Subject, error) {
 	if err := requireProject(projectUID); err != nil {
 		return Subject{}, err
@@ -199,8 +204,12 @@ func (s *Store) UpdateSubject(ctx context.Context, projectUID, uid string, upd S
 }
 
 // updateSubjectTx performs the slug-unique UPDATE inside tx, translating a missing
-// row to ErrSubjectNotFound. It is the transactional core of UpdateSubject.
+// row to ErrSubjectNotFound and a cover photo outside the project to
+// ErrPhotoNotFound. It is the transactional core of UpdateSubject.
 func updateSubjectTx(ctx context.Context, tx pgx.Tx, projectUID, uid string, upd SubjectUpdate) (Subject, error) {
+	if err := requireCoverInProject(ctx, tx, projectUID, upd.CoverPhotoUID); err != nil {
+		return Subject{}, err
+	}
 	base := Slugify(upd.Name)
 	updated, err := insertWithUniqueSlug(base, func(slug string) (Subject, error) {
 		return scanSubject(tx.QueryRow(ctx, updateSubjectSQL,
@@ -449,7 +458,8 @@ func (s *Store) DeleteSubject(ctx context.Context, projectUID, uid string) error
 // refreshed with the generated UID, unique slug and timestamps. It applies the
 // same rules as CreateSubject — an empty type defaults to SubjectPerson, an
 // unrecognised one returns ErrInvalidType, an impossible birth/death year
-// ErrInvalidLifeYears — and differs only in whose transaction the row lands in.
+// ErrInvalidLifeYears, a cover outside the project ErrPhotoNotFound — and
+// differs only in whose transaction the row lands in.
 //
 // That difference is the point: it lets another package create a subject as part
 // of a larger mutation of its own, so the subject and whatever it was created for
@@ -466,6 +476,9 @@ func CreateSubjectTx(ctx context.Context, tx pgx.Tx, projectUID string, subj Sub
 	}
 	prepared, base, err := prepareSubjectInsert(subj)
 	if err != nil {
+		return Subject{}, err
+	}
+	if err := requireCoverInProject(ctx, tx, projectUID, prepared.CoverPhotoUID); err != nil {
 		return Subject{}, err
 	}
 	return insertWithUniqueSlug(base, func(slug string) (Subject, error) {
