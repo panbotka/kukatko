@@ -31,6 +31,8 @@ type memStore struct {
 	failDelete map[string]error
 	multipart  map[string]bool
 	copies     int
+	// lists counts the listings by prefix.
+	lists map[string]int
 }
 
 // compile-time assertions that the fake is a store a move can run over, with
@@ -48,6 +50,7 @@ func newMemStore() *memStore {
 		failCopy:   map[string]error{},
 		failDelete: map[string]error{},
 		multipart:  map[string]bool{},
+		lists:      map[string]int{},
 	}
 }
 
@@ -153,8 +156,12 @@ func (m *memStore) Delete(_ context.Context, key string) error {
 	return nil
 }
 
-// KeysWithPrefix yields every key starting with prefix, sorted.
+// KeysWithPrefix yields every key starting with prefix, sorted, and counts the
+// listing.
 func (m *memStore) KeysWithPrefix(_ context.Context, prefix string, yield func(string) error) error {
+	m.mu.Lock()
+	m.lists[prefix]++
+	m.mu.Unlock()
 	for _, key := range m.keys() {
 		if !strings.HasPrefix(key, prefix) {
 			continue

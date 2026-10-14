@@ -42,11 +42,16 @@ thumbnails or streaming segments stayed at the root) and the run's `derived_curs
 time: an older release neither reads nor retries those rows, and `kukatko maintenance scan` finds the
 objects again from a bucket listing. Run it first when going back to a release older than 0115.
 
+**`0116_down.sql`** drops `storage_rekey_derived_failures.root_keys` (the root thumbnail and streaming
+keys a storage move's final sweep found for a photo, which the retry moves or drops). Safe at any time:
+an older release neither reads nor writes the column, and its sweep finds the objects again from a bucket
+listing. Run it first when going back to a release older than 0116.
+
 **Every file of the chain has a down script** since the final safety gate (2026-10-13). To go back to
 0.31.0 (schema 0099):
 
 ```sh
-for f in 0115 0114 0113 0112 0111 0110 0109 0108 0107 0106 0105 0104 0103 0102 0101 0100; do
+for f in 0116 0115 0114 0113 0112 0111 0110 0109 0108 0107 0106 0105 0104 0103 0102 0101 0100; do
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f docs/migrations-rollback/${f}_down.sql || break
 done
 ```

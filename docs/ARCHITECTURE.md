@@ -230,7 +230,9 @@ research ([§17](#17-reference)).
   skipped (over 100 errors fail the run; retry starts another pass). A thumbnail or segment that cannot be
   copied after the row moved keeps all of the photo's root thumbnails/segments and is recorded per photo in
   `storage_rekey_derived_failures`; later passes retry it, the closing sweep adds any moved photo whose
-  derived objects a bucket listing still finds at the root, and the run is `done` only when none is left. At the end the sidecars and
+  derived objects a bucket listing still finds at the root — with the keys it found, so the retry moves (or,
+  for a key no layout builds any more, drops) exactly what the sweep saw and a stray cannot loop the close —
+  and the run is `done` only when none is left. At the end the sidecars and
   `families.yaml` are rewritten by their jobs, and the root ones are deleted only once a listing shows their
   prefixed replacements. It is driven by the `storage_rekey` job (`internal/rekeyjob`, one worker slot): a
   pass moves `storage.rekey.per_second` photos and defers itself for the rest of that second, so a restart

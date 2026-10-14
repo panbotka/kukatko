@@ -983,17 +983,25 @@ to `## Package map` in `CLAUDE.md`.
   `DerivedFailed` (`derived_failed`) counts the project's rows. Once no photo is left in the old layout,
   `Step` retries the recorded photos instead (`stepDerived`, uid order after the run's `derived_cursor`,
   which `Resume`/`Retry` reset): re-plan the photo's root thumbnails/segments against the prefix its row
-  points at, keep a prefixed copy that exists, copy a missing one, delete the root copies only once all
-  exist, then forget the photo (or refresh its record). A crash before
+  points at — **plus every root key the final sweep recorded for it** (`root_keys`, migration `0116`;
+  `sweptMoves`) — keep a prefixed copy that exists, copy a missing one, delete the root copies only once all
+  exist, then forget the photo (or refresh its record). A recorded key becomes a move under the prefix when
+  the layout's own builder spells it for the photo's hash (`thumb.RelPath` of a registered size, `hls.Key` of
+  a valid rendition + name), otherwise a **drop** (`Move` without `To`: deleted in the second phase, never
+  copied — an unregistered thumbnail size, a name the streaming layout cannot hold); only root `thumb/`/`hls/`
+  keys named after the photo's own hash are taken (`rootDerivedMove`). A crash before
   the commit leaves both copies and the old row (the next pass re-verifies the copy); a crash after it leaves
   the photo pending, and the next step verifies the new copy again — re-copying from the still-present old key
   when it does not verify — before deleting anything. A per-photo failure goes into the `errors` ring (last
   50 `{key, message, at}`) and is skipped; `error_count > 100` fails the run (`ErrRunFailed`); a cancelled
   context or `storage.IsSystemic` error returns without recording. **`Finish(ctx, run)`**: no photo left in
   the old layout (else the run fails with `ErrPhotosRemain`; `ErrPendingCleanup` while one is pending) →
-  **sweep** the bucket's root `thumb/` and `hls/` trees for objects of moved photos (matched by the content
-  hash in the key) not yet recorded — recorded, derived cursor reset, `ErrPendingCleanup` so the job steps
-  them → no recorded derived failure left (else the run fails with `ErrDerivedRemain`) →
+  **sweep** the bucket's root `thumb/` and `hls/` trees — each listed **once per `Finish`** — for objects of
+  moved photos (matched by the content hash in the key) and record every key found with its photo
+  (`root_keys`, merged into an existing record); a photo recorded **only now** resets the derived cursor and
+  returns `ErrPendingCleanup` so the job steps it, while one already recorded (its retry failed) only gains
+  the keys — so the sweep and the retry own the same objects and a stray no plan knows can never loop the
+  close → no recorded derived failure left (else the run fails with `ErrDerivedRemain`) →
   enqueue `family_export` for the project and a `sidecar` rewrite for **every** photo → copy the root
   `families.yaml` under the prefix when no export landed there yet, then delete the root one and every root
   `sidecars/` key **only once a listing shows its prefixed replacement** (nothing at the root is touched while
@@ -1018,9 +1026,13 @@ to `## Package map` in `CLAUDE.md`.
   (the gate and `ActiveRuns` through start, pause, resume and finish), `plan_test.go` (plan, rendition names,
   verification over an in-memory fake with S3-style ETags), `derived_test.go` (the two-phase move: a copy
   failure keeps every root object, a retry moves them, a newer prefixed copy is kept, a systemic failure is
-  fatal; the key-hash parsers), `derived_integration_test.go` (a derived failure keeps the root tiles and a
-  later pass moves them with `derived_failed` back to 0; a failed run retried; the final sweep; the
-  maintenance find/move; the retry query's project scoping and order) and `rekey_integration_test.go` (tag
+  fatal; a drop deletes without copying and waits for the copies; the key-hash parsers; which root keys move,
+  which drop and which are never taken), `derived_integration_test.go` (a derived failure keeps the root tiles
+  and a later pass moves them with `derived_failed` back to 0; a failed run retried; the final sweep; strays no
+  plan names — an old thumbnail size, an unrecorded rendition, an invalid segment name — reach `done` in two
+  `Finish` calls with the root trees listed once per call (a listing-counting fake); a stray that cannot move
+  fails the run instead of looping, and `Retry` moves it; the maintenance find/move; the retry query's project
+  scoping and order) and `rekey_integration_test.go` (tag
   `integration`, real DB + the fake): a full run, a crash after copy and after commit, a verification failure
   (old kept, run continues, `Finish` fails it, `Retry` completes it), the error threshold, pause/resume and
   the `Start` refusals, the transitions' audit entries and their one queued job, the preview, with an

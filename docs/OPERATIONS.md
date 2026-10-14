@@ -461,7 +461,7 @@ instance-wide findings:
 | --- | --- |
 | `projects[]` | One entry per project (deactivated ones included), in listing order: `uid`, `slug`, `name`, `storage_prefix`, `photos` (with a primary file), `files_in_db`, `originals` (in the store, attributed to it), and its share of `missing_originals`, `orphan_files` and `missing_thumbnails`. The shares add up to the instance-wide findings. |
 | `orphan_project` | Objects of any kind under `projects/<uid>/` for a uid no project has — e.g. what a purge whose store half failed left behind. Never repaired: a maintainer decides. |
-| `root_derived` | Thumbnails and streaming segments at the **root** whose photo already lives under its project's prefix — what a storage move could not move, or what a move before 0115 left behind. Found from the **bucket listing** (the root `thumb/` and `hls/` trees, matched to a moved photo by the content hash in the key — never the local thumbnail cache), only for projects a storage move touched, sampled by root key and **not** counted again under `legacy_layout`. Nothing serves them (a photo's URLs name its prefixed keys), so a tile whose prefixed copy is missing shows blank. `maintenance repair --root-derived` moves them. |
+| `root_derived` | Thumbnails and streaming segments at the **root** whose photo already lives under its project's prefix — what a storage move could not move, or what a move before 0115 left behind. Found from the **bucket listing** (the root `thumb/` and `hls/` trees, matched to a moved photo by the content hash in the key — never the local thumbnail cache), only for projects a storage move touched, sampled by root key and **not** counted again under `legacy_layout`. Nothing serves them (a photo's URLs name its prefixed keys), so a tile whose prefixed copy is missing shows blank. `maintenance repair --root-derived` moves them — a key the layout no longer builds (an unregistered thumbnail size, a name the streaming layout cannot hold) is deleted instead, as the storage move's retry does. |
 | `legacy_layout` | Root-layout objects once **no** project uses the root layout (the bootstrap project's storage has moved): an original no catalogue row points at, and — once no catalogued file lives at the root any more — every thumbnail, sidecar, segment or `families.yaml` still there. Half-way through the move a root original the catalogue still points at is the project's own, and the root's derived objects are still in use. Never repaired. |
 
 `orphan_files` (and so `repair --import-orphans`) counts only originals of a **real** project's tree; an original
@@ -721,6 +721,21 @@ re-plans the derived objects of the recorded photos: a prefixed copy that exists
 copied from the root, the root copies are deleted only once every prefixed one exists, and the record is
 cleared. Before closing, the run also **sweeps the bucket**: a moved photo whose thumbnails or segments a
 listing still finds at the root (e.g. from a move before 0115) is recorded and retried the same way.
+
+**The sweep and the retry own the same objects.** The sweep records not just the photo but **every root key it
+found for it** (`storage_rekey_derived_failures.root_keys`, migration 0116), and the retry handles those keys
+besides the ones its own plan names. So an object no plan knows — a thumbnail of a size no longer registered,
+a segment of a rendition nobody recorded, a name the streaming layout cannot hold — no longer makes the sweep
+find "the same photo again" after every retry (before 0116 the move could go round `pending cleanup` forever
+on such a stray). What the retry does with a recorded key: a key the layout's own builder spells for the
+photo's hash (a registered thumbnail size, a valid rendition + segment name) **moves** under the prefix like
+any other; any other key in the root `thumb/` or `hls/` tree is never served, so it is **deleted** — both trees
+are regenerable from the original. Only keys of those two trees named after the photo's own content hash are
+ever touched; an original never is. Deletion still waits for every copy of the photo, as above. The sweep
+lists the root `thumb/` and `hls/` once per close attempt (not per photo, not per retry pass); a photo is news
+only the first time it is recorded, so a stray whose move keeps failing ends the run `failed`
+(`derived_failed`) for a `--retry` instead of another round. A root object whose hash names **no** photo of
+the project is never matched: it stays at the root for `maintenance scan` to report as an orphan.
 
 **Jobs during a move.** The `thumbnail`, `hls_transcode` and `sidecar` jobs publish a photo's derived objects
 under the prefix of its original, and the move snapshots those objects when it steps the photo. So while a

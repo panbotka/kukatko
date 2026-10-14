@@ -424,3 +424,32 @@ new one, which migrates on start.
    „Spustit přesun" on `/system/projects/v`, and **watch it** — rate, ETA, errors; pause/resume from the same
    card. A few minutes in, check that a moved photo's tile loads (finding 4). When it says `done`, run
    `inventory --storage` and `maintenance scan`.
+
+---
+
+## 2026-10-14 — root derived strays before the storage move of `v` (read-only measurement)
+
+**Question:** how many root `thumb/` and `hls/` objects does production hold that a storage move's plan does
+not name — the strays that, before migration 0116, made `Finish` go round `pending cleanup` forever (the
+final sweep found them, the retry did not touch them)? **Answer: none.** Measured read-only: the R2 bucket
+listed with the read-only `kukatko-backup-r2-object-read` token (`aws s3api list-objects-v2 --prefix thumb/`
+and `hls/`), production's `photos` and `photo_hls_renditions` read with `SELECT` (schema 0099 then), and every
+key compared with what `internal/rekey`'s plan builds — the eight registered thumbnail sizes, and per
+recorded rendition `init.mp4`, `00000…(segment_count−1).m4s` and the names its playlist lists.
+
+| Root tree | Objects | Named after a photo's hash | … of those not planned (strays) | Hash of no photo (orphans) | Other shape |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `thumb/` | 169,518 | 169,206 | **0** | 312 (39 hashes × 8 sizes) | 0 |
+| `hls/` | 125 | 125 (7 renditions = the 7 rows) | **0** | 0 | 0 |
+
+All 21,151 photos have thumbnails (one lacks `fit_2560`/`fit_3840`: a planned key with no object, which the
+move skips). The **312 orphans** belong to 39 hashes that no `photos`/`photo_files` row names — most likely
+left behind by purges or merges (79 `photo.purge`, 10 `photos.merge` in the audit log; not proven). The sweep
+matches root keys by a photo's hash, so they never enter the move: they stay at the root after `v` is `done`,
+and `maintenance scan` reports them as orphans — review, then delete by hand if wanted (nothing needs them:
+their photos are gone).
+
+So the move of `v` would not have looped on today's bucket; the fix (0116: the sweep records the keys it
+found and the retry moves or drops exactly those) still matters for whatever lands at the root between now
+and the move — a thumbnail size retired by a later release, an encode published under a rendition the row no
+longer records.

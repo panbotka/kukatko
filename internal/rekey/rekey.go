@@ -207,6 +207,9 @@ type PhotoFiles struct {
 // and the kind of object it is.
 type Move struct {
 	From string
+	// To is the key under the new prefix. Empty only for a drop: a root
+	// thumbnail or streaming object no layout builds any more, which the final
+	// sweep's retry deletes rather than moves (see rootDerivedMove).
 	To   string
 	Kind storekeys.Kind
 }

@@ -5,10 +5,12 @@ import (
 	"io"
 	"log/slog"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/storekeys"
+	"github.com/panbotka/kukatko/internal/thumb"
 )
 
 // storeOnly returns a Service over mem alone: enough for moveTracked, which
@@ -168,5 +170,104 @@ func TestRootDerivedMoves(t *testing.T) {
 	}
 	if !slices.ContainsFunc(moves, func(m Move) bool { return m.From == "hls/"+testHash+"/720p/init.mp4" }) {
 		t.Errorf("moves %v lack the rendition's init segment", moves)
+	}
+}
+
+func TestRootDerivedMove(t *testing.T) {
+	t.Parallel()
+	tile, err := thumb.RelPath("", testHash, thumb.GridSize)
+	if err != nil {
+		t.Fatalf("thumbnail key: %v", err)
+	}
+	segment := "hls/" + testHash + "/720p/00003.m4s"
+	tests := []struct {
+		name, key string
+		kind      storekeys.Kind
+		moved     bool
+	}{
+		{"registered thumbnail size", tile, storekeys.KindThumbnail, true},
+		{"unregistered thumbnail size", "thumb/ab/cd/ef/" + testHash + "_fit_999.jpg", storekeys.KindThumbnail, false},
+		{"thumbnail in the wrong shard", "thumb/01/23/45/" + testHash + "_tile_500.jpg", storekeys.KindThumbnail, false},
+		{"segment of an unrecorded rendition", segment, storekeys.KindHLS, true},
+		{"initialisation segment", "hls/" + testHash + "/1080p/init.mp4", storekeys.KindHLS, true},
+		{"name the layout cannot hold", "hls/" + testHash + "/1080p/index.m3u8", storekeys.KindHLS, false},
+		{"too deep", "hls/" + testHash + "/1080p/x/00000.m4s", storekeys.KindHLS, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			move := rootDerivedMove(tt.key, tt.kind, testHash, testPrefix)
+			if move.From != tt.key || move.Kind != tt.kind {
+				t.Fatalf("move = %+v, want from %s of kind %s", move, tt.key, tt.kind)
+			}
+			want := ""
+			if tt.moved {
+				want = testPrefix + tt.key
+			}
+			if move.To != want {
+				t.Errorf("to = %q, want %q", move.To, want)
+			}
+		})
+	}
+}
+
+func TestSweptMoves_takesOnlyThePhotosOwnRootDerivedKeys(t *testing.T) {
+	t.Parallel()
+	photo := PhotoFiles{FilePath: testPrefix + "2023/01/clip.mp4", FileHash: testHash}
+	planned := rootDerivedMoves(photo)
+	otherHash := strings.Repeat("0", len(testHash))
+	stray := "thumb/ab/cd/ef/" + testHash + "_fit_999.jpg"
+	orphanSegment := "hls/" + testHash + "/old/00000.m4s"
+	keys := []string{
+		planned[0].From,                      // the plan's own: not twice
+		stray,                                // dropped
+		orphanSegment,                        // moved
+		orphanSegment,                        // recorded twice: once
+		"hls/" + otherHash + "/old/init.mp4", // another photo's
+		"2023/01/clip.mp4",                   // an original: never
+		testPrefix + "thumb/ab/cd/ef/" + testHash + "_tile_500.jpg", // already prefixed
+		"sidecars/2023/01/clip.mp4.yml",                             // not a tracked kind
+	}
+	got := sweptMoves(photo, keys, planned)
+	want := []Move{
+		{From: stray, Kind: storekeys.KindThumbnail},
+		{From: orphanSegment, To: testPrefix + orphanSegment, Kind: storekeys.KindHLS},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("sweptMoves = %+v, want %+v", got, want)
+	}
+}
+
+func TestMoveTracked_dropDeletesWithoutCopying(t *testing.T) {
+	t.Parallel()
+	mem := newMemStore()
+	moves := tileMoves(mem, testPrefix, 2)
+	moves[1].To = ""
+
+	outcome, err := storeOnly(mem).moveTracked(t.Context(), moves, true)
+	if err != nil || outcome.problem != nil {
+		t.Fatalf("moveTracked = %+v, %v", outcome, err)
+	}
+	if mem.copies != 1 {
+		t.Errorf("copies = %d, want only the moved tile copied", mem.copies)
+	}
+	if got := mem.keys(); !slices.Equal(got, []string{moves[0].To}) {
+		t.Errorf("store = %v, want only the moved tile under the prefix", got)
+	}
+}
+
+func TestMoveTracked_dropWaitsForTheCopies(t *testing.T) {
+	t.Parallel()
+	mem := newMemStore()
+	moves := tileMoves(mem, testPrefix, 2)
+	moves[1].To = ""
+	mem.failCopy[moves[0].To] = errors.New("429 slow down")
+
+	outcome, err := storeOnly(mem).moveTracked(t.Context(), moves, true)
+	if err != nil || outcome.problem == nil {
+		t.Fatalf("moveTracked = %+v, %v; want the copy failure reported", outcome, err)
+	}
+	if _, ok := mem.get(moves[1].From); !ok {
+		t.Error("the dropped tile was deleted although another copy of the photo failed")
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storekeys"
+	"github.com/panbotka/kukatko/internal/thumb"
 )
 
 // trackedDerived returns the thumbnail and streaming keys of photo (not the
@@ -238,5 +239,134 @@ func TestService_derivedBatchIsProjectScopedAndOrdered(t *testing.T) {
 		VALUES ('rk1', $1, 'running', $2)`, project.BootstrapUID, bootstrapTarget)
 	if got := h.status(); got.DerivedFailed != 3 {
 		t.Errorf("derived_failed = %d, want the bootstrap project's 3 only", got.DerivedFailed)
+	}
+}
+
+// finishToDone calls Finish on run, stepping the retry pass after every
+// ErrPendingCleanup, and returns how many Finish calls it took to reach done.
+// It fails the test when the move is not done within limit calls — a sweep and
+// a retry that disagree about what a photo owns would go round forever.
+func (h *harness) finishToDone(run Run, limit int) int {
+	h.t.Helper()
+	for attempt := 1; attempt <= limit; attempt++ {
+		done, err := h.svc.Finish(h.t.Context(), run)
+		switch {
+		case err == nil && done.State == StateDone:
+			return attempt
+		case errors.Is(err, ErrPendingCleanup):
+			if err := h.stepToEnd(run, 5); err != nil {
+				h.t.Fatalf("stepping the retry after Finish %d: %v", attempt, err)
+			}
+		default:
+			h.t.Fatalf("Finish %d = %+v, %v; want done or ErrPendingCleanup", attempt, done, err)
+		}
+	}
+	h.t.Fatalf("the move was not done after %d Finish calls: the final sweep keeps finding the same objects", limit)
+	return 0
+}
+
+// rootStrays puts three objects of photo at the root that no plan of it names:
+// a thumbnail of a size no longer registered and a name the streaming layout
+// cannot hold (both dropped), and a segment of a rendition nobody recorded
+// (moved). It returns them in that order.
+func (h *harness) rootStrays(photo seeded) (oldSize, badName, orphanSegment string) {
+	h.t.Helper()
+	hash := sha256Hex(photo.content)
+	tile, err := thumb.RelPath("", hash, thumb.GridSize)
+	if err != nil {
+		h.t.Fatalf("thumbnail key: %v", err)
+	}
+	oldSize = strings.TrimSuffix(tile, thumb.GridSize+".jpg") + "fit_600.jpg"
+	badName = "hls/" + hash + "/1080p/index.m3u8"
+	orphanSegment = "hls/" + hash + "/480p/00000.m4s"
+	for _, key := range []string{oldSize, badName, orphanSegment} {
+		h.mem.put(key, []byte("stray "+key))
+	}
+	return oldSize, badName, orphanSegment
+}
+
+func TestService_finishEndsDespiteStrayRootDerived(t *testing.T) {
+	h := newHarness(t)
+	clip := h.seedPhoto("ph1", "2023/01/clip.mp4", true)
+	other := h.seedPhoto("ph2", "2023/02/b.jpg", false)
+	run := h.start()
+	if err := h.stepToEnd(run, 5); err != nil {
+		t.Fatalf("stepping: %v", err)
+	}
+	// What an earlier layout left beside the planned objects.
+	oldSize, badName, orphanSegment := h.rootStrays(clip)
+	thumbLists, hlsLists := h.mem.lists["thumb/"], h.mem.lists["hls/"]
+
+	finishes := h.finishToDone(run, 3)
+	if finishes != 2 {
+		t.Errorf("Finish calls = %d, want 2: one sweep that records the strays, one that finds nothing", finishes)
+	}
+	// The root trees are listed once per Finish call — never per photo or per
+	// retry.
+	if got := h.mem.lists["thumb/"] - thumbLists; got != finishes {
+		t.Errorf("root thumb/ listings = %d, want one per Finish call (%d)", got, finishes)
+	}
+	if got := h.mem.lists["hls/"] - hlsLists; got != finishes {
+		t.Errorf("root hls/ listings = %d, want one per Finish call (%d)", got, finishes)
+	}
+	h.assertMoved(clip)
+	h.assertMoved(other)
+	for _, key := range []string{oldSize, badName, orphanSegment} {
+		if h.mem.has(key) {
+			t.Errorf("stray %s is still at the root", key)
+		}
+	}
+	if data, _ := h.mem.get(bootstrapTarget + orphanSegment); string(data) != "stray "+orphanSegment {
+		t.Errorf("the orphan segment under the prefix = %q, want it moved there", data)
+	}
+	for _, key := range []string{oldSize, badName} {
+		if h.mem.has(bootstrapTarget + key) {
+			t.Errorf("%s was carried under the prefix, want it dropped", key)
+		}
+	}
+	if _, _, found := h.derivedRow(clip.uid); found {
+		t.Error("the swept record survived the retry")
+	}
+}
+
+func TestService_strayThatCannotMoveFailsTheRunInsteadOfLooping(t *testing.T) {
+	h := newHarness(t)
+	clip := h.seedPhoto("ph1", "2023/01/clip.mp4", true)
+	run := h.start()
+	if err := h.stepToEnd(run, 5); err != nil {
+		t.Fatalf("stepping: %v", err)
+	}
+	_, _, orphanSegment := h.rootStrays(clip)
+	h.mem.failCopy[bootstrapTarget+orphanSegment] = errTransient
+
+	if _, err := h.svc.Finish(t.Context(), run); !errors.Is(err, ErrPendingCleanup) {
+		t.Fatalf("first Finish = %v, want ErrPendingCleanup", err)
+	}
+	if kinds, _, found := h.derivedRow(clip.uid); !found || !slices.Equal(kinds, []string{"hls", "thumbnail"}) {
+		t.Errorf("swept record = %v, %v; want hls and thumbnail", kinds, found)
+	}
+	if err := h.stepToEnd(run, 5); err != nil {
+		t.Fatalf("stepping the retry: %v", err)
+	}
+	// The segment could not move, so nothing of the photo's left the root; the
+	// next sweep finds only what is recorded already and the run fails.
+	failed, err := h.svc.Finish(t.Context(), run)
+	if !errors.Is(err, ErrDerivedRemain) || failed.State != StateFailed || failed.DerivedFailed != 1 {
+		t.Fatalf("second Finish = %+v, %v; want failed with ErrDerivedRemain", failed, err)
+	}
+	if !h.mem.has(orphanSegment) {
+		t.Error("the stray segment was deleted although its copy failed")
+	}
+
+	delete(h.mem.failCopy, bootstrapTarget+orphanSegment)
+	if _, err := h.svc.Retry(t.Context(), audit.Meta{}, project.BootstrapUID); err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+	if err := h.stepToEnd(run, 5); err != nil {
+		t.Fatalf("retried pass: %v", err)
+	}
+	h.finishToDone(run, 1)
+	if h.mem.has(orphanSegment) || !h.mem.has(bootstrapTarget+orphanSegment) {
+		t.Error("the stray segment did not move once the store recovered")
 	}
 }
