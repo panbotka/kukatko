@@ -61,14 +61,14 @@ type registerResponse struct {
 //
 // It responds 201 with the account (pending, or approved through an invite), 400 for a bad body or input the
 // account store will not take (over-long username, malformed address, weak
-// password), 403 when registration is not open, the secret is wrong, the
-// upload link standing in for it is not live or the invitation is not usable,
-// 409 for a
-// username somebody already holds, 429 when the address has spent its budget, or
+// password), 403 when registration is not open or the secret is wrong (one
+// message for both, see writeRegisterError), the upload link standing in for
+// it is not live or the invitation is not usable, 409 for a username somebody
+// already holds, 429 when the address has spent its budget, or
 // 500.
 func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if a.registration == nil {
-		writeError(w, http.StatusForbidden, ErrRegistrationClosed.Error())
+		writeError(w, http.StatusForbidden, registrationRefused)
 		return
 	}
 	var req registerRequest
@@ -128,8 +128,8 @@ func (a *API) register(r *http.Request, in RegisterInput, slug string, entry aud
 // registrationProject resolves the slug a secret registration names into the
 // project's uid. An empty slug, a slug naming no project and a deactivated
 // project are all ErrRegistrationClosed — a door that does not exist is as shut as one whose
-// admin closed it, and the anonymous GET /p/{project}/settings/public already
-// tells the two apart for anybody who asks.
+// admin closed it, and the anonymous GET /p/{project}/settings/public answers
+// the two identically too.
 func (a *API) registrationProject(ctx context.Context, slug string) (string, error) {
 	if slug == "" || a.projects == nil {
 		return "", ErrRegistrationClosed
@@ -166,16 +166,17 @@ func (a *API) registerWithInvite(r *http.Request, in RegisterInput, entry audit.
 // writeCreateUserError already words (its role and subject branches are
 // unreachable from here — a registration names neither).
 //
-// A wrong secret and a closed instance are both 403 and both say only what the
-// caller needs: whether registration is open is public knowledge (the anonymous
-// settings endpoint publishes it), while the secret's contents never leak from
-// either message.
+// A wrong secret and a closed door are one answer: the same 403 with the same
+// message (registrationRefused). Two messages would tell a stranger which
+// slugs name a project with registration open — "wrong secret" is only ever
+// said by an open door — and the anonymous settings endpoint takes care not to
+// say that (it answers a closed project exactly like a missing one). The
+// person typing the word loses nothing they could act on: either way the fix
+// is to ask whoever sent them the link.
 func writeRegisterError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, ErrRegistrationClosed):
-		writeError(w, http.StatusForbidden, ErrRegistrationClosed.Error())
-	case errors.Is(err, ErrRegistrationSecret):
-		writeError(w, http.StatusForbidden, ErrRegistrationSecret.Error())
+	case errors.Is(err, ErrRegistrationClosed), errors.Is(err, ErrRegistrationSecret):
+		writeError(w, http.StatusForbidden, registrationRefused)
 	case errors.Is(err, ErrRegistrationLink):
 		writeError(w, http.StatusForbidden, ErrRegistrationLink.Error())
 	case errors.Is(err, ErrRegistrationInvite):
@@ -187,6 +188,10 @@ func writeRegisterError(w http.ResponseWriter, err error) {
 		writeCreateUserError(w, err)
 	}
 }
+
+// registrationRefused is the one message a refused secret registration gets,
+// whether the door was closed (or names no project) or the secret was wrong.
+const registrationRefused = "auth: registration is closed or the secret is wrong"
 
 // isCreateUserInputError reports whether err is one of the refusals a caller
 // caused and can fix, so only the rest — a database or mail failure — is logged

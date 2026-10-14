@@ -243,14 +243,20 @@ describe('RegisterPage', () => {
 
   it('says the registration word is wrong, not that the server failed', async () => {
     const user = userEvent.setup()
-    registerMock.mockRejectedValue(new ApiError(403, 'auth: wrong registration secret'))
+    registerMock.mockRejectedValue(
+      new ApiError(403, 'auth: registration is closed or the secret is wrong'),
+    )
     renderRegister()
 
     await fillForm(user, { secret: 'nonsense' })
     await user.click(await screen.findByRole('button', { name: 'Register' }))
 
     const group = groupOf('Registration word')
-    expect(await within(group).findByText(/not the right registration word/i)).toBeVisible()
+    expect(
+      await within(group).findByText(
+        /not the right registration word, or the project is not taking/i,
+      ),
+    ).toBeVisible()
     expect(screen.getByLabelText('Registration word')).toBeInvalid()
     // A wrong word is not an outage, and nothing generic may stand in for it.
     expect(screen.queryByText(/Registration failed/i)).not.toBeInTheDocument()
@@ -305,12 +311,13 @@ describe('RegisterPage', () => {
     expect(screen.queryByLabelText('Registration word')).not.toBeInTheDocument()
   })
 
-  it('says so for a project that does not exist or is deactivated', async () => {
+  it('says so for a project that does not exist, is deactivated or is closed', async () => {
+    // The server answers all three with one 404, so the page has one sentence.
     projectMock.mockRejectedValue(new ApiError(404, 'project not found'))
     renderRegister('/p/nic/register')
 
     expect(await screen.findByTestId('register-project-missing')).toHaveTextContent(
-      'does not exist or is no longer active',
+      'does not exist, is no longer active, or is not taking registrations',
     )
     expect(screen.queryByLabelText('Username')).not.toBeInTheDocument()
   })

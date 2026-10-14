@@ -5,13 +5,16 @@ import (
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/ratelimit"
 	"github.com/panbotka/kukatko/internal/settings"
 	"github.com/panbotka/kukatko/internal/settingsapi"
 )
 
 // buildSettingsAPI assembles the settings HTTP API over the shared pool. Under
-// /p/{project}: anybody may learn the project's name and whether it takes
-// registrations (its registration page asks before there is an account), any
+// /p/{project}: anybody may learn the name of a project that takes
+// registrations (its registration page asks before there is an account),
+// throttled per client IP with the ratelimit.invite settings in a bucket of its
+// own — the same class of anonymous, slug- or code-keyed lookup — any
 // member reads the project's first-sign-in welcome text, and the project's
 // administrator reads and replaces the full record including the readable
 // registration secret, and reads the project's usage beside its limits.
@@ -35,6 +38,7 @@ func buildSettingsAPI(cfg *config.Config, db *database.DB, authAPI *auth.API) *s
 		Usage:                project.NewStore(db.Pool()),
 		Passkeys:             authAPI.PasskeysEnabled(),
 		Mail:                 cfg.Mail.Enabled,
+		IPLimit:              ratelimit.New(cfg.RateLimit.Invite.RatePerSec, cfg.RateLimit.Invite.Burst),
 		RequireActiveProject: auth.RequireActiveProject,
 		RequireAuth:          authAPI.RequireAuth,
 		RequireAdmin:         authAPI.RequireAdmin,

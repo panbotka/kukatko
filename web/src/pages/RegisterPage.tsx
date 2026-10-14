@@ -26,7 +26,7 @@ type RegisterErrorKey =
   | 'register.errorEmailInvalid'
   | 'register.errorPasswordShort'
   | 'register.errorPasswordMismatch'
-  | 'register.errorSecret'
+  | 'register.errorRefused'
   | 'register.errorClosed'
   | 'register.errorLink'
   | 'register.errorInvite'
@@ -78,18 +78,20 @@ type InviteLookup =
  * Maps a failed `POST /auth/register` onto the sentence to print and the field
  * to print it under.
  *
- * The backend answers a wrong shared secret with a 403 whose message names the
- * secret, and a closed instance with a 403 whose message does not — the two are
- * the same status on purpose (neither discloses anything about the secret), so
- * the message is what tells them apart. Getting that wrong is the failure this
- * function exists to prevent: "that is not the right word" must never reach the
- * reader as a server error, because the word is the one thing they can fix.
+ * The backend answers a wrong shared secret and a closed project with one and
+ * the same 403 — two answers would tell a stranger which projects take
+ * registrations — so the form cannot tell them apart either and says both,
+ * under the secret field (`asksSecret`; a form without one can only have met a
+ * closed project). Only an upload link or an invitation gets its own 403
+ * message. Getting the mapping wrong is the failure this function exists to
+ * prevent: "that is not the right word" must never reach the reader as a server
+ * error, because the word is the one thing they can fix.
  *
  * A {@link NetworkError} comes first: a request that never left the device had
  * nothing judge it, so blaming the username or the secret would send somebody
  * off editing input that was fine.
  */
-function rejectionFor(error: unknown): Rejection {
+function rejectionFor(error: unknown, asksSecret: boolean): Rejection {
   if (error instanceof NetworkError) {
     return { field: null, messageKey: 'register.errorOffline' }
   }
@@ -104,8 +106,10 @@ function rejectionFor(error: unknown): Rejection {
       if (error.message.includes('invitation')) {
         return { field: null, messageKey: 'register.errorInvite' }
       }
-      return error.message.includes('secret')
-        ? { field: 'secret', messageKey: 'register.errorSecret' }
+      // Without a secret field (an upload link) the generic 403 can only mean
+      // the link's project stopped taking registrations.
+      return asksSecret
+        ? { field: 'secret', messageKey: 'register.errorRefused' }
         : { field: null, messageKey: 'register.errorClosed' }
     }
     if (error.status === 429) {
@@ -384,7 +388,7 @@ function RegisterForm({ door, intro }: RegisterFormProps) {
         pendingApproval: account.pending_approval,
       })
     } catch (error: unknown) {
-      setSubmit({ status: 'error', rejection: rejectionFor(error) })
+      setSubmit({ status: 'error', rejection: rejectionFor(error, asksSecret) })
     }
   }
 
@@ -628,8 +632,9 @@ export function RegisterPage() {
  *
  * It asks `GET /p/<slug>/settings/public` whether there is a form to show at
  * all. While asking it shows a spinner; a slug the server does not admit
- * (unknown, or a deactivated project — one 404) gets a plain sentence, and so
- * does a project whose admin closed registration. When the question could not
+ * (unknown, a deactivated project, or one whose admin closed registration —
+ * one 404, so the endpoint lists no projects) gets one plain sentence that
+ * covers all three. When the question could not
  * be asked at all the form is shown anyway: the server has the final word, and
  * it words a closed door better than a failed probe could.
  *

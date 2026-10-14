@@ -53,8 +53,9 @@ var (
 	// never what they meant.
 	ErrRegistrationClosed = errors.New("auth: registration is not open")
 	// ErrRegistrationSecret indicates the registration carried the wrong shared
-	// secret. It is separate from ErrRegistrationClosed only for the caller's
-	// message; both are answered with the same status.
+	// secret. It is separate from ErrRegistrationClosed only inside the
+	// process; over HTTP both get the same status and the same message, so the
+	// answer never tells an open door from a closed one.
 	ErrRegistrationSecret = errors.New("auth: wrong registration secret")
 	// ErrRegistrationLink indicates the registration named an upload link in
 	// place of the shared secret, and the link is unknown, expired or revoked —

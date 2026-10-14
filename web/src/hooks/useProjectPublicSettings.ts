@@ -7,8 +7,8 @@ import { fetchProjectPublicSettings, type ProjectPublicSettings } from '../servi
  * What an anonymous screen managed to learn about one project.
  *
  * `none` means there was no project to ask about. `notFound` is the server's
- * 404 — a slug nobody has, or a deactivated project, which it does not tell
- * apart. `unknown` is not a synonym for either: the question could not be asked
+ * 404 — a slug nobody has, a deactivated project, or one whose registration is
+ * closed, which it does not tell apart. `unknown` is not a synonym for either: the question could not be asked
  * at all (an unreachable backend, a 5xx), and each caller decides what that
  * silence means for the affordance it is about to draw.
  */
@@ -21,7 +21,7 @@ export type ProjectPublicState =
 
 /**
  * Asks `GET /api/v1/p/<slug>/settings/public` once what anybody may know about
- * the project `slug`: its name and whether it takes registrations.
+ * the project `slug`: its name, answered only while it takes registrations.
  *
  * The endpoint is anonymous, so this works on the project's registration page
  * and on the sign-in screen alike. A `null` slug asks nothing and reports

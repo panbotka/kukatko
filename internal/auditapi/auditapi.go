@@ -17,7 +17,8 @@
 // # Every filter is checked
 //
 // A reader's filters are validated strictly, and an unknown query key is refused
-// by name rather than ignored. The reason is that this endpoint's empty answer
+// by name rather than ignored (the own-activity listing's user and project are
+// the one exception, see below). The reason is that this endpoint's empty answer
 // is a statement about a person: ?user=panbotka returning nothing reads as "they
 // did nothing", not "you spelled the parameter wrong", and that is a half hour
 // of looking for actions that were there all along. So a user value is resolved
@@ -36,9 +37,21 @@
 // shape rather than of a branch a later edit could weaken. It costs one small
 // handler; the filter parsing, the response building and the store are shared.
 //
-// A caller who asks for another user's actions there is answered 403 rather than
-// silently served their own: quietly rewriting the request would leave the user
-// believing they are looking at something they are not.
+// # /audit/mine ignores user and project
+//
+// The own-activity listing drops the user and project parameters before
+// anything reads them (ownOnly), for every caller. Validating them there was an
+// oracle: any signed-in account could tell an existing username from a missing
+// one (403 "only your own actions" vs 400 "no such account") and an existing
+// project slug from a missing one (200 vs 400) — and multi-tenancy promises a
+// project learns nothing about another, not even a name. So the listing is
+// always the caller's own actions — in the instance mount across every project,
+// in a project mount in that project — whatever those two values say, and an
+// unknown value gets the same 200 as a valid one. The cost is the one the
+// strict checking above guards against: ?user=somebody-else is silently served
+// your own actions. The client never sends either parameter (the page offers no
+// such filter), and a maintainer who wants them filters the whole trail on GET
+// /audit, which keeps every check.
 //
 // The narrowed listing returns the full record, ip and user_agent included.
 // Those are the caller's own request metadata — the address and browser they
@@ -117,10 +130,11 @@ func NewAPI(cfg Config) *API {
 // has scoped under the API base path (for example /api/v1):
 //
 //	GET /audit        RequireMaintainer  the whole trail, filters (project= too) + pagination
-//	GET /audit/mine   RequireSignedIn    the same, narrowed to the caller's own actions
+//	GET /audit/mine   RequireSignedIn    the same, narrowed to the caller's own actions;
+//	                                     user= and project= are ignored
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireMaintainer).Get("/audit", a.handleList)
-	r.With(a.requireSignedIn).Get("/audit/mine", a.handleListMine)
+	r.With(a.requireSignedIn).Get("/audit/mine", ownOnly(a.handleListMine))
 }
 
 // RegisterProjectRoutes mounts the project audit endpoints onto r, which the
@@ -129,11 +143,36 @@ func (a *API) RegisterRoutes(r chi.Router) {
 //	GET /audit        RequireAdmin  the project's entries, filters + pagination
 //	GET /audit/mine   RequireAuth   the same, narrowed to the caller's own actions
 //
-// Both are narrowed to the request's project on every page, and refuse a
-// project parameter: the route already names the one project they read.
+// Both are narrowed to the request's project on every page: the route already
+// names the one project they read. The admin listing refuses a project
+// parameter by name; the own-activity one ignores it, and user, like its
+// instance twin.
 func (a *API) RegisterProjectRoutes(r chi.Router) {
 	r.With(a.requireAdmin).Get("/audit", a.inProject(a.handleList))
-	r.With(a.requireAuth).Get("/audit/mine", a.inProject(a.handleListMine))
+	r.With(a.requireAuth).Get("/audit/mine", ownOnly(a.inProject(a.handleListMine)))
+}
+
+// ownOnly strips the user and project parameters from the request before the
+// own-activity listing reads it, so neither is ever resolved there: the answer
+// is the same 200 whether they name an existing account or project, a foreign
+// one or nothing at all (see "/audit/mine ignores user and project" in the
+// package comment). Every other parameter passes through and is checked as
+// usual.
+func ownOnly(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if !q.Has(userParam) && !q.Has(projectParam) {
+			next(w, r)
+			return
+		}
+		q.Del(userParam)
+		q.Del(projectParam)
+		u := *r.URL
+		u.RawQuery = q.Encode()
+		stripped := r.Clone(r.Context())
+		stripped.URL = &u
+		next(w, stripped)
+	}
 }
 
 // listResponse is the JSON body returned by the list endpoint. NextOffset is the
@@ -205,13 +244,10 @@ func (a *API) parseRequest(r *http.Request) (audit.Filter, error) {
 
 // handleListMine serves the caller's own actions: the same filters and paging as
 // handleList, except the actor is taken from the authenticated session and
-// overwrites whatever the query asked for, on every page. Entries with no actor
-// (system actions) therefore never appear. A user parameter naming somebody else
-// is answered with 403 — the request is refused rather than quietly rewritten,
-// so nobody reads a listing believing it is somebody else's; naming oneself is
-// accepted and changes nothing. Since the user parameter also accepts a
-// username, asking for somebody else by name is the same refusal — the value is
-// resolved first, and it is the resolved account that is compared.
+// overwrites whatever the filter holds, on every page. Entries with no actor
+// (system actions) therefore never appear. It sits behind ownOnly, so the
+// query's user and project never reach it; the overwrite below holds even for
+// a route mounted without it.
 func (a *API) handleListMine(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
@@ -222,10 +258,6 @@ func (a *API) handleListMine(w http.ResponseWriter, r *http.Request) {
 	filter, err := a.parseRequest(r)
 	if err != nil {
 		writeFilterError(w, err)
-		return
-	}
-	if filter.ActorUID != "" && filter.ActorUID != user.UID {
-		writeError(w, http.StatusForbidden, "this listing only serves your own actions")
 		return
 	}
 	filter.ActorUID = user.UID
@@ -290,7 +322,7 @@ const (
 // below, and the frontend's audit client (web/src/services/audit.ts) sends
 // nothing else.
 var recognisedParams = map[string]struct{}{
-	projectParam: {}, "user": {}, "entity_type": {}, "entity_uid": {}, "action": {},
+	projectParam: {}, userParam: {}, "entity_type": {}, "entity_uid": {}, "action": {},
 	"via": {}, "decision": {}, "since": {}, "until": {},
 	"limit": {}, "offset": {},
 }
@@ -306,6 +338,9 @@ type ResolveUser func(ctx context.Context, value string) (string, error)
 
 // projectParam is the instance listing's project filter: a project's slug.
 const projectParam = "project"
+
+// userParam is the listings' actor filter: an account UID or a username.
+const userParam = "user"
 
 // ResolveProject maps the project filter's value — a project's slug, the name
 // in its URL — onto that project's uid. It returns ErrUnknownProject when the
@@ -385,7 +420,7 @@ func parseFilter(ctx context.Context, q url.Values, resolve ResolveUser) (audit.
 	// The actor is resolved last: it is the only filter that reaches the
 	// database, and there is no point paying for that behind a value the pure
 	// checks above would have rejected anyway.
-	actorUID, err := resolveActor(ctx, q.Get("user"), resolve)
+	actorUID, err := resolveActor(ctx, q.Get(userParam), resolve)
 	if err != nil {
 		return audit.Filter{}, err
 	}

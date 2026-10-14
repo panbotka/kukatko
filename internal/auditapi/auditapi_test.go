@@ -353,9 +353,10 @@ func TestResolveProjectFilter(t *testing.T) {
 	}
 }
 
-// TestProjectRoutesRefuseProjectParam verifies a project route refuses a
-// project parameter by name — it cannot widen the listing to another project —
-// and fails closed when it is reached without a project.
+// TestProjectRoutesRefuseProjectParam verifies the admin's project route
+// refuses a project parameter by name — it cannot widen the listing to another
+// project — while the own-activity route ignores it (no 400 that would differ
+// by the slug), and that both fail closed when reached without a project.
 func TestProjectRoutesRefuseProjectParam(t *testing.T) {
 	t.Parallel()
 	passthrough := func(next http.Handler) http.Handler { return next }
@@ -366,13 +367,34 @@ func TestProjectRoutesRefuseProjectParam(t *testing.T) {
 
 	for path, want := range map[string]int{
 		"/audit?project=other":      http.StatusBadRequest,
-		"/audit/mine?project=other": http.StatusBadRequest,
+		"/audit/mine?project=other": http.StatusNotFound,
 		"/audit":                    http.StatusNotFound,
 	} {
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil))
 		if rec.Code != want {
 			t.Errorf("%s = %d, want %d", path, rec.Code, want)
+		}
+	}
+}
+
+// TestOwnOnly verifies the own-activity wrapper drops exactly the user and
+// project parameters — so neither is ever resolved there — and passes every
+// other parameter through untouched, a request without either unchanged.
+func TestOwnOnly(t *testing.T) {
+	t.Parallel()
+	tests := map[string]string{
+		"/audit/mine?user=other&project=b&action=album.create&limit=5": "action=album.create&limit=5",
+		"/audit/mine?project=nowhere":                                  "",
+		"/audit/mine?user=nobody":                                      "",
+		"/audit/mine?limit=5&offset=10":                                "limit=5&offset=10",
+	}
+	for target, want := range tests {
+		var got string
+		handler := ownOnly(func(_ http.ResponseWriter, r *http.Request) { got = r.URL.RawQuery })
+		handler(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, target, nil))
+		if got != want {
+			t.Errorf("%s reached the handler as %q, want %q", target, got, want)
 		}
 	}
 }

@@ -347,11 +347,50 @@ func TestRegister_noProjectIsAClosedDoor(t *testing.T) {
 	body := `{"username":"nikde","email":"nikde@example.test","password":"` + testPassword +
 		`","secret":"` + theSecret + `"}`
 	status, raw := env.do(t, newClient(t), http.MethodPost, "/api/v1/auth/register", body)
-	if status != http.StatusForbidden || !strings.Contains(string(raw), "registration is not open") {
+	if status != http.StatusForbidden || !strings.Contains(string(raw), "registration is closed or the secret is wrong") {
 		t.Fatalf("POST /auth/register without a project = %d %s, want the closed-registration 403", status, raw)
 	}
 	if _, err := env.store.GetUserByUsername(t.Context(), "nikde"); !errors.Is(err, auth.ErrUserNotFound) {
 		t.Errorf("account after a refused registration: %v, want ErrUserNotFound", err)
+	}
+}
+
+// TestRegister_refusalsAnswerAlike verifies a refused secret registration says
+// nothing about why: a slug naming no project, a project with registration
+// closed and an open project given the wrong word all get the same 403 with the
+// same body, so the answer never tells which slugs take registrations.
+func TestRegister_refusalsAnswerAlike(t *testing.T) {
+	env := newHTTPEnv(t, 10)
+
+	attempt := func(projectSlug, secret string) (int, string) {
+		t.Helper()
+		body, _ := json.Marshal(map[string]string{
+			"username": "probe", "email": "probe@example.test", "password": testPassword,
+			"secret": secret, "project": projectSlug,
+		})
+		status, raw := env.do(t, newClient(t), http.MethodPost, "/api/v1/auth/register", string(body))
+		return status, string(raw)
+	}
+
+	setRegistration(t, env, settings.Update{RegistrationEnabled: false, RegistrationSecret: theSecret})
+	closedStatus, closedBody := attempt("v", theSecret)
+	unknownStatus, unknownBody := attempt("no-such-project", theSecret)
+	openRegistration(t, env)
+	wrongStatus, wrongBody := attempt("v", "not the word")
+
+	if closedStatus != http.StatusForbidden {
+		t.Fatalf("closed registration = %d %s, want 403", closedStatus, closedBody)
+	}
+	if unknownStatus != closedStatus || unknownBody != closedBody {
+		t.Errorf("unknown project = %d %s, want the closed answer %d %s",
+			unknownStatus, unknownBody, closedStatus, closedBody)
+	}
+	if wrongStatus != closedStatus || wrongBody != closedBody {
+		t.Errorf("wrong secret = %d %s, want the closed answer %d %s",
+			wrongStatus, wrongBody, closedStatus, closedBody)
+	}
+	if _, err := env.store.GetUserByUsername(t.Context(), "probe"); !errors.Is(err, auth.ErrUserNotFound) {
+		t.Errorf("account after refused registrations: %v, want ErrUserNotFound", err)
 	}
 }
 

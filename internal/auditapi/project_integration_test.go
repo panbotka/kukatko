@@ -157,3 +157,33 @@ func TestProjectMine_narrowedToProject(t *testing.T) {
 		t.Errorf("/audit/mine targets = %v, want both projects' entries", seen)
 	}
 }
+
+// TestMine_noSlugOrUsernameOracle proves the own-activity listing tells a
+// member nothing about other projects or accounts: a viewer of v probing either
+// mount with another project's slug, a slug nobody has, another project's
+// member or a name nobody has gets exactly the answer the bare request gets —
+// the same status and the same body, the caller's own entries in scope.
+func TestMine_noSlugOrUsernameOracle(t *testing.T) {
+	f := newProjectFixture(t)
+	viewer, uid := f.env.loginUser(t, "vera", auth.AccountViewer)
+	f.env.seed(t, audit.Entry{ActorUID: uid, Action: audit.ActionAlbumCreate, TargetType: "albums",
+		TargetUID: "al-vera", ProjectUID: project.BootstrapUID})
+	base := f.env.baseURL + "/api/v1"
+
+	probes := []string{"project=b", "project=nowhere", "user=admin-b", "user=nobody-by-that-name"}
+	for _, mount := range []string{"/audit/mine", "/p/v/audit/mine"} {
+		wantStatus, wantBody := rawGet(t, viewer, base+mount)
+		if wantStatus != http.StatusOK {
+			t.Fatalf("%s = %d %s, want 200", mount, wantStatus, wantBody)
+		}
+		for _, probe := range probes {
+			status, body := rawGet(t, viewer, base+mount+"?"+probe)
+			if status != wantStatus || body != wantBody {
+				t.Errorf("%s?%s = %d %s, want the bare answer %d %s", mount, probe, status, body, wantStatus, wantBody)
+			}
+		}
+		if seen := targets(list(t, viewer, base+mount+"?project=b")); len(seen) != 1 || seen[0] != "al-vera" {
+			t.Errorf("%s?project=b targets = %v, want only the caller's own [al-vera]", mount, seen)
+		}
+	}
+}

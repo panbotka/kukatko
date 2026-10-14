@@ -23,9 +23,18 @@
 // has to know whether it can run a passkey ceremony and whether the instance
 // sends any mail at all before anybody is signed in, and a project's
 // registration page has to know whether that project takes registrations. Each
-// answers what the screen asking it would show anyway; the project one is a
-// 404 for an unknown or deactivated slug, the same answer every other project
-// route gives a stranger.
+// answers what the screen asking it would show anyway.
+//
+// The project one is the instance's only anonymous answer keyed by a slug, so
+// it is built not to be a slug oracle. It answers 404 "project not found" —
+// byte for byte what RequireActiveProject says for an unknown or deactivated
+// slug — also for an active project whose registration is closed, and it is
+// throttled per client IP like the invite page. The trade-off: a project
+// reveals its existence and its name to anybody who guesses its slug only
+// while its registration is open, which is exactly when its registration page
+// exists to greet strangers. A closed project's own registration page can no
+// longer say "closed" in particular; it says "does not exist or takes no
+// registrations", the same sentence a mistyped link gets.
 //
 // The welcome text is the project's, while whether a person has seen a welcome
 // (users.welcome_seen_at) stays per account: somebody who joins a second
@@ -50,6 +59,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/ratelimit"
 	"github.com/panbotka/kukatko/internal/settings"
 )
 
@@ -88,6 +98,7 @@ type API struct {
 	usage                UsageSource
 	passkeys             bool
 	mail                 bool
+	ipLimit              *ratelimit.Limiter
 	requireActiveProject func(http.Handler) http.Handler
 	requireAuth          func(http.Handler) http.Handler
 	requireAdmin         func(http.Handler) http.Handler
@@ -113,6 +124,9 @@ type Config struct {
 	// waiting for approval) are the screens nobody is signed in on, and a promise
 	// an instance with mail off can never keep is worse than no promise at all.
 	Mail bool
+	// IPLimit throttles the project's anonymous public settings per client IP,
+	// so nobody walks a dictionary of slugs against it; nil throttles nothing.
+	IPLimit *ratelimit.Limiter
 	// RequireActiveProject admits anybody, signed in or not, into an existing,
 	// active project (auth.RequireActiveProject) — the guard of the project's
 	// public settings, which its registration page reads.
@@ -123,30 +137,36 @@ type Config struct {
 	RequireAdmin func(http.Handler) http.Handler
 }
 
-// NewAPI returns an API from cfg.
+// NewAPI returns an API from cfg. A nil limiter becomes a disabled one, so the
+// route never branches on whether throttling is configured.
 func NewAPI(cfg Config) *API {
-	return &API{
+	a := &API{
 		store:                cfg.Store,
 		usage:                cfg.Usage,
 		passkeys:             cfg.Passkeys,
 		mail:                 cfg.Mail,
+		ipLimit:              cfg.IPLimit,
 		requireActiveProject: cfg.RequireActiveProject,
 		requireAuth:          cfg.RequireAuth,
 		requireAdmin:         cfg.RequireAdmin,
 	}
+	if a.ipLimit == nil {
+		a.ipLimit = ratelimit.New(0, 0)
+	}
+	return a
 }
 
 // RegisterRoutes mounts the project's settings endpoints onto r, which the
 // caller has scoped to one project (/api/v1/p/{project}):
 //
-//	GET /settings/public    RequireActiveProject  {"project_name":"…","registration_enabled":…}
-//	GET /settings/welcome   RequireAuth           {"welcome_markdown":"…"}
-//	GET /settings           RequireAdmin          the full record, secret included
-//	PUT /settings           RequireAdmin          replaces all three values
-//	GET /settings/usage     RequireAdmin          photos, originals bytes and the two limits
+//	GET /settings/public    IP limit + RequireActiveProject  {"project_name":"…","registration_enabled":true}
+//	GET /settings/welcome   RequireAuth                      {"welcome_markdown":"…"}
+//	GET /settings           RequireAdmin                     the full record, secret included
+//	PUT /settings           RequireAdmin                     replaces all three values
+//	GET /settings/usage     RequireAdmin                     photos, originals bytes and the two limits
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/settings", func(r chi.Router) {
-		r.With(a.requireActiveProject).Get("/public", a.handleProjectPublic)
+		r.With(a.ipLimit.Middleware, a.requireActiveProject).Get("/public", a.handleProjectPublic)
 		r.With(a.requireAuth).Get("/welcome", a.handleWelcome)
 		r.With(a.requireAdmin).Get("/usage", a.handleUsage)
 		r.With(a.requireAdmin).Get("/", a.handleGet)
@@ -173,18 +193,24 @@ func (a *API) handleInstancePublic(w http.ResponseWriter, _ *http.Request) {
 }
 
 // handleProjectPublic writes what the project's registration page must know
-// before anybody has an account: the project's name, to greet with, and
-// whether it takes self-service registrations at all. RequireActiveProject
-// already answered 404 for an unknown or deactivated slug.
+// before anybody has an account: the project's name, to greet with. It answers
+// only while the project takes self-service registrations; a project with
+// registration closed gets the 404 RequireActiveProject already gave an
+// unknown or deactivated slug, word for word, so the answer never tells a
+// stranger that a slug exists (see the package comment).
 func (a *API) handleProjectPublic(w http.ResponseWriter, r *http.Request) {
 	p, ok := auth.PublicProjectFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusNotFound, "project not found")
+		writeError(w, http.StatusNotFound, projectNotFoundMessage)
 		return
 	}
 	current, err := a.store.Get(r.Context(), p.UID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "reading settings failed")
+		return
+	}
+	if !current.RegistrationEnabled {
+		writeError(w, http.StatusNotFound, projectNotFoundMessage)
 		return
 	}
 	writeJSON(w, http.StatusOK, projectPublicResponse{
@@ -315,9 +341,17 @@ type instancePublicResponse struct {
 	MailEnabled     bool `json:"mail_enabled"`
 }
 
+// projectNotFoundMessage is the 404 message of the project's public settings
+// for a project that takes no registrations. It must stay identical to the one
+// auth.RequireActiveProject answers an unknown slug with; the integration test
+// compares the two bodies byte for byte.
+const projectNotFoundMessage = "project not found"
+
 // projectPublicResponse is the project's anonymous wire shape, served to
-// anybody who knows the slug: the name the registration page greets with and
-// whether it offers a form at all. Never the secret, never the welcome text.
+// anybody who knows the slug of a project whose registration is open: the name
+// the registration page greets with, and registration_enabled — always true
+// now that a closed project is a 404, kept so the wire shape did not change
+// under the client. Never the secret, never the welcome text.
 type projectPublicResponse struct {
 	ProjectName         string `json:"project_name"`
 	RegistrationEnabled bool   `json:"registration_enabled"`

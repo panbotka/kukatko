@@ -15,7 +15,8 @@ import (
 // buildAuditAPI assembles the audit-log HTTP API over the shared pool. On the
 // instance, GET /audit lists the whole durable trail with filters (a project's
 // slug among them) and pagination for a maintainer, GET /audit/mine the same
-// listing narrowed to the caller's own actions for any signed-in account; under
+// listing narrowed to the caller's own actions for any signed-in account (its
+// user and project parameters ignored, so it is no username or slug oracle); under
 // a project, the same two routes list only that project's entries, for its
 // admin and for a member. Entries themselves are written within mutation
 // transactions elsewhere, so this API is read-only. The guards are supplied via

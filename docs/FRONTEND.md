@@ -1960,13 +1960,17 @@ here.
   project (`register.introProject`) over the form when it is open, on a **closed** project a plain
   explanation naming it plus the way back to `/login?project=<slug>` (`register.closed`,
   `data-testid="register-closed"`) instead of a form that would refuse every submit after it had been
-  filled in, and for a slug the server does not admit (unknown or deactivated — one 404)
-  `register.projectNotFound` (`register-project-missing`); a probe that **failed** still gets the form,
+  filled in (the server no longer reports a closed project — it is the 404 below — so this branch is
+  defensive), and for a slug the server does not admit (unknown, deactivated or with registration closed —
+  one 404, so the endpoint is no slug oracle) `register.projectNotFound` (`register-project-missing`),
+  whose sentence covers all three; a probe that **failed** still gets the form,
   because "we could not ask" is not "the door is shut" and the server words a refusal better than a failed
   probe could. Whether a mail may be promised is the instance's `useMailEnabled()`.
-  `rejectionFor` maps a refusal onto **the field that caused it**: 409 → the username is taken, a 403 whose
-  message names the secret → „Tohle není správné registrační slovo" **under the secret field** (never a
-  server error — the word is the one thing the reader can fix), a 403 without it → the instance is closed,
+  `rejectionFor` maps a refusal onto **the field that caused it**: 409 → the username is taken, a 403 naming
+  the upload link or the invitation → that, any other 403 → `register.errorRefused` „buď to není správné
+  registrační slovo, nebo je registrace zavřená" **under the secret field** (the server answers a wrong word
+  and a closed door identically on purpose; never a server error — the word is the one thing the reader can
+  fix), or `register.errorClosed` above the form on a door without a secret field (an upload link),
   400 naming email/password/username → that field, 429 → the per-address budget, `NetworkError` → the
   connection, anything else generic. A field rejection is rendered under its own input (`isInvalid` +
   `aria-invalid` + that group's `Form.Control.Feedback`), a refusal about the attempt as a whole in an
@@ -7301,8 +7305,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   anybody has signed in (the full settings record carries the registration secret and stays behind
   `RequireAdmin`); `fetchProjectPublicSettings(slug, signal)` over `GET /api/v1/p/<slug>/settings/public`
   (`instancePath`, naming the slug: its callers are anonymous and have no current project) →
-  `ProjectPublicSettings{project_name, registration_enabled}`, throwing `ApiError` (404 = unknown or
-  deactivated). `passkeys_enabled`
+  `ProjectPublicSettings{project_name, registration_enabled}`, throwing `ApiError` (404 = unknown,
+  deactivated or registration closed; 429 = the per-IP limit). `passkeys_enabled`
   is here **as well as** in `GET /capabilities` for exactly that reason: capabilities are behind `RequireAuth`,
   and the screen that has to decide whether to offer a passkey is the one nobody has signed in on.
   `mail_enabled` (the server's `mail.enabled`; with it off the mailer is the no-op sender and **nothing** is
@@ -7349,7 +7353,7 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   display_name, email, pending_approval}` (the self-service way in: it sends the instance's shared
   registration secret alongside the account, carries **no credentials** — there is no session yet — and
   returns no session either, because registering deliberately does not sign anybody in. Its rejections are
-  what `RegisterPage` reads: 403 closed/wrong secret told apart by the message, 409 taken, 400 validation,
+  what `RegisterPage` reads: 403 closed/wrong secret as one message (link and invite refusals named), 409 taken, 400 validation,
   429 the per-address budget),
   **`fetchPasswordResetStatus(token, signal)`** over `GET /api/v1/auth/password-reset/{token}` →
   `PasswordResetStatus{valid, display_name?, expires_at?}` and **`resetPassword(token, password,

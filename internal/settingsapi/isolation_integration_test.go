@@ -226,6 +226,34 @@ func TestPublicSettings_perProjectAndInactiveIs404(t *testing.T) {
 	}
 }
 
+// TestPublicSettings_closedRegistrationIsLikeNoProject: a project whose
+// registration is closed answers its public settings exactly like a slug
+// nobody has — status, content type and body — so the anonymous endpoint
+// cannot be used to tell existing slugs from missing ones; reopening it
+// brings the name back.
+func TestPublicSettings_closedRegistrationIsLikeNoProject(t *testing.T) {
+	e := newIsolationEnv(t)
+	b := e.f.Tenant(projecttest.SideB).ProjectUID
+	if _, err := e.settings.Set(t.Context(), b, settings.Update{RegistrationSecret: secretB}, "",
+		audit.Entry{Action: audit.ActionSettingsUpdate, TargetType: "settings", ProjectUID: b}); err != nil {
+		t.Fatalf("closing B's registration: %v", err)
+	}
+
+	closed := e.send(t, http.MethodGet, e.f.PathFor(projecttest.SideB, "/settings/public"), nil)
+	unknown := e.send(t, http.MethodGet, "/api/v1/p/neexistuje/settings/public", nil)
+	if closed.StatusCode != http.StatusNotFound {
+		t.Fatalf("closed project's public settings = %d, want 404", closed.StatusCode)
+	}
+	projecttest.AssertSameShape(t, closed, unknown)
+
+	// A, still open, is unaffected.
+	if resp := e.send(t, http.MethodGet, e.f.PathFor(projecttest.SideA, "/settings/public"), nil); resp.StatusCode != http.StatusOK {
+		t.Errorf("open project's public settings = %d, want 200", resp.StatusCode)
+	} else {
+		_ = resp.Body.Close()
+	}
+}
+
 // TestSettings_adminSeesOnlyTheirOwnProject: each project's admin reads their
 // own secret and welcome, never the other's, and a member reads their own
 // project's welcome.

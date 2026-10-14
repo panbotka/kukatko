@@ -467,8 +467,8 @@
     "errorEmailInvalid": "That does not look like an e-mail address.",
     "errorPasswordShort": "That password is too short, it needs at least {{min}} characters.",
     "errorPasswordMismatch": "The passwords do not match. Please type the same one twice.",
-    "errorSecret": "That is not the right registration word. Ask whoever told you about Kukátko for it.",
-    "errorClosed": "Registration is closed on this Kukátko right now.",
+    "errorRefused": "Registration did not go through: either that is not the right registration word, or the project is not taking registrations right now. Ask whoever told you about Kukátko.",
+    "errorClosed": "This project is not taking registrations right now.",
     "errorRateLimited": "Too many registration attempts. Please try again in a moment.",
     "errorOffline": "Kukátko could not reach the server, so nobody judged the registration. Check your connection and try again.",
     "errorGeneric": "Registration failed. Please try again.",
@@ -480,7 +480,7 @@
     "doneApproved": "The account is approved already — you can sign in.",
     "introProject": "You are registering to the project <strong>{{project}}</strong>. Fill in your details and send them. A project administrator still has to approve the account — only then can you sign in.",
     "viaProject": "Registration goes through an invitation or a project's link. Ask whoever is inviting you to Kukátko for the link.",
-    "projectNotFound": "This project does not exist or is no longer active. Check the link you were given."
+    "projectNotFound": "You cannot register for this project right now: it does not exist, is no longer active, or is not taking registrations. Check the link you were given, or ask a project administrator for an invitation."
   },
   "passwordReset": {
     "title": "New password",

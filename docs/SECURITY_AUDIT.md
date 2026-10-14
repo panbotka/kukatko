@@ -37,7 +37,8 @@ and **SEC-020** (a Web Push subscription endpoint made the server POST to intern
 cookie-authenticated write) was confirmed on **2026-10-09** and is open: it is safe only while every host
 under the registrable domain is trusted, and behaviour is unchanged pending a product decision.
 **SEC-024** (a curator of one project could dismiss another project's repeated-marker group) was found
-and fixed on **2026-10-14**.
+and fixed on **2026-10-14**, and so was **SEC-025** (the slug and username oracles of `/audit/mine`, the
+anonymous project settings and the registration refusals).
 Everything else below is open as written.
 
 > **Severity scale:** critical / high / medium / low / info. A weakness that is not
@@ -1011,6 +1012,59 @@ Everything else below is open as written.
 
 ---
 
+### SEC-025 — LOW — **FIXED** — Slug and username oracles: `/audit/mine` parameters, the anonymous project settings, the registration refusals
+
+- **Origin:** found on **2026-10-14** by the tenancy validation. Multi-tenancy promises that a project
+  learns nothing about another one, not even an account's name. Three answers differed by existence.
+- **Where (before the fix):**
+  1. `GET /api/v1/audit/mine` (`RequireSignedIn`) and `GET /api/v1/p/{project}/audit/mine` (`RequireAuth`)
+     validated their `user` and `project` parameters (`internal/auditapi`). `?user=<name>` answered
+     `400 … neither an account uid nor a username` for a name nobody has and `403 this listing only serves
+     your own actions` for one that exists; `?project=<slug>` answered `400 project "x" does not exist`
+     against a 200 — deactivated projects included, since the maintainer's filter resolves them on purpose.
+  2. `GET /api/v1/p/{slug}/settings/public` (anonymous, `internal/settingsapi`) returned `project_name` and
+     `registration_enabled` for every active slug, closed registration included, with no rate limit.
+  3. `POST /api/v1/auth/register` answered `auth: registration is not open` for a closed (or unknown)
+     project and `auth: wrong registration secret` for an open one, so it confirmed which slugs take
+     registrations.
+- **Attack scenario:** any signed-in account — a viewer of one small project — walks a username list against
+  `?user=` and a slug list against `?project=`, and learns every account name and every project slug on
+  the instance. An anonymous visitor does the same for slugs, plus every project's display name, through
+  the public settings, at full speed.
+- **Fix:**
+  1. Both `/audit/mine` mounts drop `user` and `project` before anything reads them (`auditapi.ownOnly`),
+     for every caller. The listing is always the caller's own actions — across every project on the
+     instance mount, in the request's project on a project mount — and an unknown or foreign value gets the
+     byte-identical 200 the bare request gets. A maintainer keeps the full, strictly checked filter on
+     `GET /audit`; the admin's `GET /p/{project}/audit` still refuses a `project` parameter by name (no
+     existence is consulted there).
+  2. The project's public settings answer only while registration is **open**. A closed project gets the
+     404 `{"error":"project not found"}` that `auth.RequireActiveProject` gives an unknown or deactivated
+     slug — same status, `Content-Type` and body. The route sits behind a per-IP limiter with the
+     `ratelimit.invite` settings (a bucket of its own), ahead of the handler.
+  3. Registration answers one 403 for a closed door, an unknown project and a wrong secret:
+     `auth: registration is closed or the secret is wrong`. The form shows one sentence under the
+     registration word; a project's registration page says "does not exist, is no longer active, or is not
+     taking registrations" for every 404.
+- **Trade-off (accepted):** a project whose registration is open still confirms its slug and its name to
+  anybody who guesses the slug — that is the registration page's declared purpose. A closed project's
+  registration page can no longer say "closed" in particular. And `/audit/mine?user=<somebody else>` is
+  now silently served one's own actions instead of a 403; the client never sends either parameter.
+- **Regression tests:** `TestMine_noSlugOrUsernameOracle` (`internal/auditapi`, a viewer of `v` probing
+  both mounts with B's slug, a missing slug, B's admin and a missing name gets the bare answer
+  byte for byte), `TestMineIgnoresTheUserFilter`, `TestOwnOnly`;
+  `TestPublicSettings_closedRegistrationIsLikeNoProject` (`internal/settingsapi`, `AssertSameShape` against
+  an unknown slug), `TestProjectPublicIsRateLimited`; `TestRegister_refusalsAnswerAlike` (`internal/auth`).
+- **Not addressed (accepted):** the uploaded profile picture (`internal/userpic`) is served by the
+  instance-level `GET /users/{uid}/avatar` to **any signed-in account**, member of the same project or
+  not, and a 200 vs 404 there tells whether the uid has a picture. It takes a user uid, which is random and
+  only learned from a shared context (a comment, a member list), and an account's own picture is meant to
+  follow it into every project it joins. `/invite/{code}` and `/u/{code}` naming the project or album to a
+  code holder is by design.
+- **Fixed:** 2026-10-14.
+
+---
+
 ## Multi-tenancy (projects) — the tenant boundary
 
 Reviewed **2026-10-13** at the end of the multi-tenancy programme (the alias removal, step 39 of 40). One
@@ -1041,8 +1095,10 @@ below is open; each is an attack scenario with the mitigation that closes it and
   account exists** and matches a username/e-mail exactly (`internal/memberapi`); an `@`-mention resolves
   only to an approved member of the comment's project (or a maintainer). *Accepted residue:* usernames are instance-wide, so
   registration or a rename can learn that a name is taken somewhere (a 409, as before projects), and the
-  anonymous `GET /p/<slug>/settings/public` confirms an **active** project's slug and name — the registration
-  page needs both; the slug is not a secret.
+  anonymous `GET /p/<slug>/settings/public` confirms the slug and name of a project whose registration is
+  **open** — the registration page needs both. A closed project answers like a missing one, the route is
+  rate-limited per IP, `/audit/mine` ignores its `user`/`project` parameters and registration answers one
+  refusal for "closed" and "wrong secret" (SEC-025).
 - **Hash collision across projects.** *Attack:* upload into A the exact bytes of a photo in B, hoping the
   SHA-256 dedup answers "already have it" (an oracle for B's content) or merges the upload into B's row.
   *Mitigation:* dedup is per project — `UNIQUE (project_id, file_hash)` and `GetByFileHashInProject` — so the

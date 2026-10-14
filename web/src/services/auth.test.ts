@@ -371,16 +371,20 @@ describe('register', () => {
     expect(init.credentials).toBeUndefined()
   })
 
-  it('keeps the backend message on a wrong secret, so the form can word it', async () => {
+  it('keeps the backend message on a refused secret registration', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(jsonResponse({ error: 'auth: wrong registration secret' }, 403)),
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({ error: 'auth: registration is closed or the secret is wrong' }, 403),
+        ),
     )
 
     await expect(register(INPUT)).rejects.toMatchObject({
       name: 'ApiError',
       status: 403,
-      message: 'auth: wrong registration secret',
+      message: 'auth: registration is closed or the secret is wrong',
     })
   })
 

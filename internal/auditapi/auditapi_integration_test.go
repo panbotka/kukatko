@@ -392,25 +392,27 @@ func TestMineListsOnlyOwnEntries(t *testing.T) {
 	}
 }
 
-// TestMineRejectsAnotherUsersFilter verifies the user parameter cannot widen the
-// own-activity listing: naming somebody else is refused with 403 rather than
-// quietly serving one's own rows, while naming oneself changes nothing.
-func TestMineRejectsAnotherUsersFilter(t *testing.T) {
+// TestMineIgnoresTheUserFilter verifies the user parameter cannot widen the
+// own-activity listing — and cannot be used to probe for accounts either: naming
+// somebody else, by UID or by name, naming oneself and naming nobody at all are
+// all served the caller's own rows, 200, the same body.
+func TestMineIgnoresTheUserFilter(t *testing.T) {
 	env := newEnv(t)
 	editor, editorUID := env.loginUser(t, "editor", auth.AccountEditor)
 	otherUID := env.createUser(t, "other", auth.AccountEditor)
 	seed := ownRows(editorUID)
 	env.seed(t, append(seed, ownRows(otherUID)...)...)
 
-	foreign := do(t, editor, http.MethodGet, env.baseURL+"/api/v1/audit/mine?user="+otherUID, nil)
-	defer func() { _ = foreign.Body.Close() }()
-	if foreign.StatusCode != http.StatusForbidden {
-		t.Errorf("mine?user=<other> status = %d, want 403", foreign.StatusCode)
+	base := env.baseURL + "/api/v1/audit/mine"
+	wantStatus, wantBody := rawGet(t, editor, base)
+	for _, ref := range []string{otherUID, "other", editorUID, "editor", "nobody-by-that-name"} {
+		status, body := rawGet(t, editor, base+"?user="+url.QueryEscape(ref))
+		if status != wantStatus || body != wantBody {
+			t.Errorf("mine?user=%s = %d %s, want the unfiltered %d %s", ref, status, body, wantStatus, wantBody)
+		}
 	}
-
-	own := list(t, editor, env.baseURL+"/api/v1/audit/mine?user="+editorUID)
-	if own.Total != 3 {
-		t.Errorf("mine?user=<self> total = %d, want 3", own.Total)
+	if own := list(t, editor, base+"?user="+otherUID); own.Total != 3 {
+		t.Errorf("mine?user=<other> total = %d, want the caller's own 3", own.Total)
 	}
 }
 
@@ -609,32 +611,6 @@ func TestListKeepsEntriesOfVanishedEntities(t *testing.T) {
 	}
 }
 
-// TestMineRejectsAnotherUsersName verifies the own-activity guard survives the
-// user filter learning usernames: asking for somebody else by name is the same
-// 403 as asking by UID, not a 400, while naming oneself either way is accepted.
-func TestMineRejectsAnotherUsersName(t *testing.T) {
-	env := newEnv(t)
-	editor, editorUID := env.loginUser(t, "editor", auth.AccountEditor)
-	otherUID := env.createUser(t, "other", auth.AccountEditor)
-	seed := ownRows(editorUID)
-	env.seed(t, append(seed, ownRows(otherUID)...)...)
-
-	base := env.baseURL + "/api/v1/audit/mine"
-	for _, ref := range []string{"other", otherUID} {
-		resp := do(t, editor, http.MethodGet, base+"?user="+ref, nil)
-		if resp.StatusCode != http.StatusForbidden {
-			t.Errorf("mine?user=%s status = %d, want 403", ref, resp.StatusCode)
-		}
-		_ = resp.Body.Close()
-	}
-	for _, ref := range []string{"editor", editorUID} {
-		own := list(t, editor, base+"?user="+ref)
-		if own.Total != 3 {
-			t.Errorf("mine?user=%s total = %d, want 3", ref, own.Total)
-		}
-	}
-}
-
 // TestListAcceptsTheFrontendFilters verifies both audit pages still work
 // unchanged now that unknown parameters are refused: every key the frontend's
 // buildAuditQuery (web/src/services/audit.ts) can write is sent at once, and the
@@ -671,6 +647,19 @@ func TestListAcceptsTheFrontendFilters(t *testing.T) {
 	if opening := list(t, admin, env.baseURL+"/api/v1/audit?limit=100"); opening.Total != 4 {
 		t.Errorf("opening page total = %d, want 4", opening.Total)
 	}
+}
+
+// rawGet GETs url with client and returns the status and the body verbatim, for
+// a test that compares two answers byte for byte.
+func rawGet(t *testing.T, client *http.Client, url string) (int, string) {
+	t.Helper()
+	resp := do(t, client, http.MethodGet, url, nil)
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading %s: %v", url, err)
+	}
+	return resp.StatusCode, string(body)
 }
 
 // list GETs url as admin and returns the decoded list response.

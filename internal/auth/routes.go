@@ -56,7 +56,7 @@ func (a *API) RegisterInstanceRoutes(r chi.Router) {
 		// A write an anonymous caller may perform (the password-reset pair
 		// below is the other), so it carries the per-address budget as
 		// middleware rather than trusting the handler to remember. It is mounted even when no registration is wired: the
-		// handler then answers "registration is not open", which is the truth,
+		// handler then answers the closed-door 403, which is the truth,
 		// and a client never has to tell a missing route from a closed door.
 		r.With(a.registerLimit.Middleware).Post("/register", a.handleRegister)
 		r.Post("/logout", a.handleLogout)

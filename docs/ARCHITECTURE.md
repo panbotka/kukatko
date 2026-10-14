@@ -472,8 +472,8 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   Admin read: `GET /api/v1/audit` (`internal/auditapi`, user/entity/action/date filters +
   pagination, admin-only); every signed-in user reads **their own** actions through the sibling route
   `GET /api/v1/audit/mine`, whose handler forces the actor filter to the session's user (so the narrowing
-  is the route's shape, not a condition), refuses a `?user=` naming somebody else with 403 and therefore
-  never yields foreign or system rows. The trail is otherwise **append-only**; the only exception is the **maintainer-only
+  is the route's shape, not a condition), ignores `?user=`/`?project=` (validating them was a username/slug
+  oracle) and therefore never yields foreign or system rows. The trail is otherwise **append-only**; the only exception is the **maintainer-only
   retention purge** `POST /api/v1/maintenance/audit/purge` (`audit.Store.PurgeOlderThan`, a single
   `DELETE ... WHERE created_at < cutoff` over `idx_audit_log_created_at`, `older_than_days`), which
   deletes old records and **audits itself** (`audit.purge` with the cutoff and the count — the fresh purge record

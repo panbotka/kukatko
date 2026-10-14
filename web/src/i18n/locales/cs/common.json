@@ -479,8 +479,8 @@
     "errorEmailInvalid": "Tohle nevypadá jako e-mailová adresa.",
     "errorPasswordShort": "Heslo je příliš krátké, musí mít alespoň {{min}} znaků.",
     "errorPasswordMismatch": "Hesla se neshodují. Napište prosím obě stejně.",
-    "errorSecret": "Tohle není správné registrační slovo. Zeptejte se na něj toho, kdo vám o Kukátku řekl.",
-    "errorClosed": "Registrace do tohoto Kukátka je teď zavřená.",
+    "errorRefused": "Registrace se nepovedla: buď to není správné registrační slovo, nebo je registrace do projektu teď zavřená. Zeptejte se toho, kdo vám o Kukátku řekl.",
+    "errorClosed": "Registrace do tohoto projektu je teď zavřená.",
     "errorRateLimited": "Příliš mnoho pokusů o registraci. Zkuste to prosím za chvíli.",
     "errorOffline": "Kukátko se nedovolalo serveru, registraci tedy nikdo neposoudil. Zkontrolujte připojení a zkuste to znovu.",
     "errorGeneric": "Registrace se nezdařila. Zkuste to prosím znovu.",
@@ -492,7 +492,7 @@
     "doneApproved": "Účet je rovnou schválený — můžete se přihlásit.",
     "introProject": "Registrujete se do projektu <strong>{{project}}</strong>. Vyplňte údaje a odešlete. Účet pak ještě musí schválit správce projektu — teprve potom se půjde přihlásit.",
     "viaProject": "Registrace probíhá přes pozvánku nebo odkaz projektu. Požádejte toho, kdo vás do Kukátka zve, o odkaz.",
-    "projectNotFound": "Tenhle projekt neexistuje nebo už není aktivní. Zkontrolujte odkaz, který jste dostali."
+    "projectNotFound": "Do tohoto projektu se teď zaregistrovat nedá: neexistuje, není aktivní, nebo má registraci zavřenou. Zkontrolujte odkaz, který jste dostali, případně požádejte správce projektu o pozvánku."
   },
   "passwordReset": {
     "title": "Nové heslo",

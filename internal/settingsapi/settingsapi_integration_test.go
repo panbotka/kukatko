@@ -307,7 +307,7 @@ func TestOpeningRegistrationNeedsASecret(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	body := decodeBody(t, env.mustDo(t, &http.Client{}, http.MethodGet, projectPath+"/settings/public", nil))
+	body := decodeBody(t, env.mustDo(t, admin, http.MethodGet, projectPath+"/settings", nil))
 	if body["registration_enabled"] != false {
 		t.Fatalf("registration_enabled after the refusal = %v, want false", body["registration_enabled"])
 	}

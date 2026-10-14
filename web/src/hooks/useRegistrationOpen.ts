@@ -9,7 +9,8 @@ import type { ProjectPublicState } from './useProjectPublicSettings'
  * advertising a door that may not open is worse than not mentioning it, while
  * the registration screen still shows its form and lets the server have the
  * final word. `notFound` is a slug that names no project the server will admit
- * (unknown or deactivated); there is no form to show for it.
+ * (unknown, deactivated, or with registration closed — one 404); there is no
+ * form to show for it.
  */
 export type RegistrationState = 'loading' | 'open' | 'closed' | 'unknown' | 'notFound'
 

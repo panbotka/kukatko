@@ -162,11 +162,12 @@ to `## Package map` in `CLAUDE.md`.
   methods on `Service`, because it is the only part of `auth` that consults the instance settings and
   sends mail — both injected as narrow interfaces (`SettingsSource`, satisfied by `*settings.Store`;
   `MailScheduler`, satisfied by `*mailjob.Enqueuer`) — and because an API built without one simply
-  answers "registration is not open" (`ErrRegistrationClosed`), which is what an instance with
+  answers the closed-door 403 (`ErrRegistrationClosed`), which is what an instance with
   registration switched off answers too, so a client never has to tell a missing route from a closed
   door. `checkSecret` reads `settings.Settings`, refuses outright when registration is disabled **or**
   the stored secret is blank (an open door with no lock), and otherwise compares with
-  `crypto/subtle.ConstantTimeCompare` on both trimmed values → `ErrRegistrationSecret`.
+  `crypto/subtle.ConstantTimeCompare` on both trimmed values → `ErrRegistrationSecret` (over HTTP the same
+  403 and message as `ErrRegistrationClosed`, `registrationRefused`, so the answer never tells an open door from a closed one).
   `RegisterWithLink(ctx, in, LinkGrant, entry)` is the other gate: an upload link the handler admitted
   through the optional `UploadLinkGate` (`APIConfig.UploadLinks`, implemented by
   `uploadlinkapi.RegistrationGate`; `RegisterInput.UploadLink` / the body's `upload_link`) replaces the
@@ -4413,11 +4414,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   record filtered per role — a field added to `settings.Settings` then has to be given an audience on purpose
   instead of leaking into whichever payload happens to embed it. The `Store` interface (a subset of
   `settings.Store`) and `UsageSource` (`Usage(ctx,uid)`, satisfied by `*project.Store`) → unit-testable with
-  fakes; `NewAPI(Config{Store,Usage,Passkeys,Mail,RequireActiveProject,RequireAuth,RequireAdmin})`.
+  fakes; `NewAPI(Config{Store,Usage,Passkeys,Mail,IPLimit,RequireActiveProject,RequireAuth,RequireAdmin})`.
   `RegisterRoutes` mounts the **project's** `/settings`, only under `/p/{project}`, every route on the project the guard admitted (`auth.ProjectUIDFromContext`):
-  `GET /settings/public` behind `RequireActiveProject` (anonymous, `auth.PublicProjectFromContext`) →
-  `{project_name,registration_enabled}` only — what the project's registration page needs before there is
-  an account; `GET /settings/welcome` behind `RequireAuth` → `{welcome_markdown}` only (the project's;
+  `GET /settings/public` behind the per-IP `IPLimit` and `RequireActiveProject` (anonymous,
+  `auth.PublicProjectFromContext`) → `{project_name,registration_enabled}` only — what the project's
+  registration page needs before there is an account — and **only while registration is open**: a closed
+  project is the same 404 `project not found` an unknown slug gets from the guard, so the route is no slug
+  oracle (SEC-025); `GET /settings/welcome` behind `RequireAuth` → `{welcome_markdown}` only (the project's;
   `users.welcome_seen_at` stays per account, so a second project does not greet again); `GET /settings` and
   `PUT /settings` behind `RequireAdmin` → the full record, secret included; the PUT body
   `{registration_enabled,registration_secret,welcome_markdown}` with `DisallowUnknownFields` + a 64 KiB limit
@@ -4617,7 +4620,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   behind `RequireMaintainer` (with `project=<slug>` → `Filter.ProjectUID` through `ResolveProject`, unknown →
   400) and `GET /audit/mine` behind `RequireSignedIn`; `RegisterProjectRoutes` (the `projectAPI.audit` group,
   under `/p/{project}` only) mounts the same two behind `RequireAdmin`/`RequireAuth`,
-  wrapped in `inProject`, which refuses a `project` parameter and pins `Filter.ProjectUID` to
+  wrapped in `inProject`, which refuses a `project` parameter (on `/audit/mine` `ownOnly` has already dropped it) and pins `Filter.ProjectUID` to
   `auth.ProjectUIDFromContext`; `parseFilter` from the query `user`/`entity_type`/`entity_uid`/
   `action`/`via`/`decision`/`since`/`until` (RFC3339)/`limit`/`offset` → `audit.Filter` (an invalid
   time/number/`via`/`decision` → 400), returns `{entries,total,limit,offset,next_offset}` newest-first;
@@ -4637,9 +4640,11 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   **`handleListMine`** (the own-activity listing behind `RequireAuth`) parses the very same filters, then
   **overwrites `Filter.ActorUID` with the session user's UID unconditionally** (`auth.UserFromContext`) — so on
   every page, under every filter, the query can only reach the caller's own rows, and the system's actor-less
-  ones (empty `actor_uid`) match nothing; a `user` parameter naming **somebody else → 403** (refusing beats
-  silently rewriting: the caller must not believe they are reading someone else's history) — **by username just
-  as by UID**, since the value is resolved before it is compared — naming oneself is accepted; no principal on the context → 401 (fail closed). It is a **separate route rather than a looser guard
+  ones (empty `actor_uid`) match nothing. Both `/audit/mine` mounts sit behind **`ownOnly`**, which drops the
+  `user` and `project` parameters before anything resolves them, for every caller: validating them was a
+  username/slug oracle (400 for a missing one vs 403/200 for an existing one — SEC-025), so an unknown, foreign
+  or valid value now gets the bare request's 200, byte for byte; a maintainer filters on `/audit`. No principal
+  on the context → 401 (fail closed). It is a **separate route rather than a looser guard
   on `/audit`** so the impossibility of reading foreign rows is a property of the route's shape, not of a branch
   a later edit could weaken; `respond` (list+count+`buildResponse`) is shared by both handlers. The narrowed
   records are returned whole, `ip`/`user_agent` included — the caller's own request metadata; read-only — writes go through

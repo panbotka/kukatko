@@ -62,8 +62,11 @@ export async function fetchPublicSettings(signal?: AbortSignal): Promise<PublicS
 /**
  * What anybody may learn about one project before signing in
  * (`GET /api/v1/p/<slug>/settings/public`): its name, which its registration
- * page greets with, and whether it takes self-service registrations at all.
- * Never the secret, never the welcome text.
+ * page greets with, and whether it takes self-service registrations. The
+ * server answers only while registration is open (so `registration_enabled` is
+ * `true` in practice); a closed project is the same 404 as a slug nobody has,
+ * so the endpoint cannot be used to list projects. Never the secret, never the
+ * welcome text.
  */
 export interface ProjectPublicSettings {
   project_name: string
@@ -82,8 +85,9 @@ export interface ProjectPublicSettings {
  * @param slug the project's URL slug.
  * @param signal optional AbortSignal to cancel the request (e.g. on unmount).
  * @throws ApiError when the response status is not 2xx — a 404 for a slug that
- *   names no project, or a deactivated one (the server does not tell the two
- *   apart).
+ *   names no project, a deactivated one, or one whose registration is closed
+ *   (the server does not tell the three apart); a 429 when this address asked
+ *   too often.
  */
 export async function fetchProjectPublicSettings(
   slug: string,

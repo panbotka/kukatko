@@ -37,9 +37,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `/healthz` outside `/api/v1`.
 - **The one anonymous project route:** `GET /api/v1/p/{project}/settings/public` answers without a
   session (`auth.RequireActiveProject`, which admits an existing, active project and records it for
-  `auth.PublicProjectFromContext` — never as an authorised project). An unknown slug and a deactivated
-  project are the same **404** `{"error":"project not found"}` every other project route gives a
-  stranger.
+  `auth.PublicProjectFromContext` — never as an authorised project). An unknown slug, a deactivated
+  project **and an active project whose registration is closed** are the same **404**
+  `{"error":"project not found"}` every other project route gives a stranger, and the route is
+  rate-limited per client IP — so it is no slug oracle (see the Settings API below).
 - **Unknown or foreign project:** `/api/v1/p/<slug>/…` with a slug nobody uses, a project the caller is
   no member of, or a deactivated one (non-maintainer) answers **404 `{"error":"project not found"}`**,
   byte-for-byte the same in all three cases (see *Project resolution* below).
@@ -261,11 +262,12 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   (`PUT /p/{project}/settings`, see the Settings API) and change without a redeploy — one project's
   secret posted with another project's slug is refused exactly like a made-up one (same status, same
   body). Refusals: **403**
-  `auth: registration is not open` when the project's registration is switched off — and equally when
-  it is on with a **blank** stored secret, an open door with no lock, and for a slug naming no project
-  or a deactivated one; **403** `auth: wrong registration secret` for
-  a secret that does not match (compared in **constant time**, so the answer's latency says nothing
-  about how much of it was right); **409** for a username somebody already holds; **400** for the same
+  `auth: registration is closed or the secret is wrong` — **one answer** (same status, same body) when
+  the project's registration is switched off, when it is on with a **blank** stored secret (an open door
+  with no lock), for a slug naming no project or a deactivated one, **and** for a secret that does not
+  match (compared in **constant time**, so the answer's latency says nothing about how much of it was
+  right). Two messages would confirm which slugs take registrations, which the anonymous project
+  settings take care not to say (SEC-025); the form words both under the registration field; **409** for a username somebody already holds; **400** for the same
   input the admin user API refuses (over-long username, missing/malformed address, weak password —
   identical validation and identical bcrypt hashing, so nothing can be registered that an
   administrator could not have created). Two accounts may share an e-mail address here too.
@@ -2385,9 +2387,17 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   people what it is), which is why the responses are separate payloads rather than one record filtered
   per role. Under **`/api/v1/p/{project}`** (only there; every route acts on the project the guard
   admitted, so one project's admin never reads or writes another's):
-  - `GET /settings/public` **unauthenticated** (`auth.RequireActiveProject`) → `{project_name,
-    registration_enabled}` and nothing else — what the project's registration page must know before
-    anybody has an account. An unknown slug and a deactivated project are the same **404**.
+  - `GET /settings/public` **unauthenticated**, per-IP rate-limited (its own bucket with the
+    `ratelimit.invite` settings, → **429**) ahead of `auth.RequireActiveProject` → `{project_name,
+    registration_enabled: true}` and nothing else — what the project's registration page must know before
+    anybody has an account. It answers **only while the project's registration is open**: an unknown slug,
+    a deactivated project and a project with registration closed are the same **404**
+    `{"error":"project not found"}` (status, `Content-Type` and body identical). **Trade-off:** a project
+    reveals that it exists and its name to anybody who guesses its slug only while its registration is
+    open — which is exactly when its registration page exists to greet strangers; a closed project is
+    indistinguishable from a missing one, so its registration page says "does not exist, is no longer
+    active, or is not taking registrations" rather than "closed". `registration_enabled` stays on the wire
+    (always `true`) so the payload did not change shape under the client.
   - `GET /settings/welcome` behind `RequireAuth` → `{welcome_markdown}` (the project's) and nothing else.
   - `GET /settings` behind `RequireAdmin` (the project's admin; every maintainer) →
     `{registration_enabled, registration_secret, welcome_markdown, updated_at, updated_by_uid?}` — the
@@ -2750,8 +2760,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   its own too). **Under a project:** `GET /p/{project}/audit` (`RequireAdmin` — the project's admins and the
   maintainer) and `GET /p/{project}/audit/mine` (`RequireAuth`, any member) list **only the entries filed under
   that project** (`audit_log.project_id`), never another project's and never the instance's (accounts,
-  sessions, a project's lifecycle); both refuse `?project=` with 400 — the route already names the one project
-  they read, and nothing in the query widens it. The instance `GET /audit` alone takes
+  sessions, a project's lifecycle); the admin's `GET /p/{project}/audit` refuses `?project=` with 400 and
+  `GET /p/{project}/audit/mine` ignores it — the route already names the one project they read, and nothing in
+  the query widens it. The instance `GET /audit` alone takes
   **`?project=<slug>`**, narrowing to that project's entries (an unknown slug → **400** naming it, a deactivated
   project's history still resolves; the slug goes through the `ResolveProject` lookup in `auditapi.Config`).
   Body `{entries,total,limit,offset,next_offset}` (entry =
@@ -2778,13 +2789,16 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   No = reject); another `via`/`decision` value → 400.
   **`GET /audit/mine`** (instance: `RequireSignedIn`; under a project: `RequireAuth`, so viewer and up) answers
   the same body with the same filters and paging,
-  except the actor is **taken from the session** and overwrites whatever the query asked for, on every page —
-  a non-admin therefore never reads somebody else's rows, and never the **system's** either (an entry with an
-  empty `actor_uid` matches no actor filter). `?user=` naming **somebody else → 403**, not a silent narrowing:
-  quietly rewriting the request would leave the caller believing they see something they do not; `?user=` naming
-  **oneself** is accepted and changes nothing. Because `?user=` resolves usernames too, asking for somebody else
-  **by name is the same 403**, not a 400 — the value is resolved first and it is the resolved account that is
-  compared. It is a route of its own rather than a looser guard on `/audit`
+  except the actor is **taken from the session** on every page — a non-admin therefore never reads somebody
+  else's rows, and never the **system's** either (an entry with an empty `actor_uid` matches no actor filter).
+  **`?user=` and `?project=` are ignored** there, for every caller (dropped before anything resolves them,
+  `auditapi.ownOnly`): the listing is always the caller's own actions — across every project on the instance
+  mount, in the request's project under `/p/{project}` — and an unknown, foreign or valid value gets the
+  same **200** with the same body as the bare request. Validating them was an oracle (a 400 for a name or slug
+  nobody has against a 403/200 for one that exists, SEC-025); the price is that `?user=<somebody else>` is
+  served one's own actions rather than refused. The client sends neither; a maintainer filters by user and
+  project on `GET /audit`, which keeps every check. Every other filter is checked as on `/audit`. It is a
+  route of its own rather than a looser guard on `/audit`
   precisely so the narrowing is a property of the route's shape, not of a branch a later edit could weaken.
   The records are served **whole, `ip` and `user_agent` included** — that is the caller's own address and
   browser, and seeing it is how a user recognises (or disowns) an action. For an admin nothing changes:

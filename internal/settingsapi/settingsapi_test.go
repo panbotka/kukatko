@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/ratelimit"
 	"github.com/panbotka/kukatko/internal/settings"
 	"github.com/panbotka/kukatko/internal/settingsapi"
 )
@@ -139,6 +140,35 @@ func TestProjectPublicWithoutAProjectIs404(t *testing.T) {
 	rec := do(t, newServer(&fakeStore{current: full()}), http.MethodGet, "/settings/public", "")
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+// TestProjectPublicIsRateLimited: the project's anonymous endpoint is throttled
+// per client IP ahead of the project guard, so nobody walks a dictionary of
+// slugs against it; the instance one is not (it takes no slug).
+func TestProjectPublicIsRateLimited(t *testing.T) {
+	t.Parallel()
+	api := settingsapi.NewAPI(settingsapi.Config{
+		Store:                &fakeStore{current: full()},
+		IPLimit:              ratelimit.New(0.001, 2),
+		RequireActiveProject: passThrough,
+		RequireAuth:          passThrough,
+		RequireAdmin:         passThrough,
+	})
+	r := chi.NewRouter()
+	api.RegisterRoutes(r)
+
+	for i := range 2 {
+		if rec := do(t, r, http.MethodGet, "/settings/public", ""); rec.Code != http.StatusNotFound {
+			t.Fatalf("request %d = %d, want the guard's 404 within the burst", i+1, rec.Code)
+		}
+	}
+	if rec := do(t, r, http.MethodGet, "/settings/public", ""); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("request past the burst = %d, want 429", rec.Code)
+	}
+	// The limiter guards only the anonymous route.
+	if rec := do(t, r, http.MethodGet, "/settings/welcome", ""); rec.Code == http.StatusTooManyRequests {
+		t.Error("the welcome text was throttled by the public route's limiter")
 	}
 }
 

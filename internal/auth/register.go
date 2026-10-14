@@ -195,7 +195,7 @@ type RegistrationConfig struct {
 // It is a separate type rather than more methods on Service because it is the
 // only part of auth that consults the instance settings and sends mail, and
 // because an instance may run without it — an API built with no Registration
-// simply answers "registration is not open".
+// simply refuses every registration with the closed-door 403.
 type Registration struct {
 	svc      *Service
 	settings SettingsSource
