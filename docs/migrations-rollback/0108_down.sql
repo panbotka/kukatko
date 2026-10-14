@@ -11,9 +11,12 @@
 -- foreign key. Rebuilding over two of them would fail here and leave the chain
 -- half-unwound, so every queued purge that is not the bootstrap project's is
 -- cancelled first, the way 0107_down cancels digests. Nothing is lost: the purge
--- is a retention sweep its startup and daily scheduler queue again.
+-- is a retention sweep its startup and daily scheduler queue again. A running
+-- one is cancelled too: the previous release's stale-lock recovery would put it
+-- back to queued beside the bootstrap project's and fail on the rebuilt index
+-- (one bulk UPDATE, failing every tick).
 DELETE FROM jobs
-WHERE type = 'notification_purge' AND state = 'queued'
+WHERE type = 'notification_purge' AND state IN ('queued', 'running')
   AND payload ->> 'project_uid' IS DISTINCT FROM 'pj0000000000000000veselice';
 DROP INDEX IF EXISTS idx_jobs_notification_purge_dedup;
 CREATE UNIQUE INDEX idx_jobs_notification_purge_dedup ON jobs (type)

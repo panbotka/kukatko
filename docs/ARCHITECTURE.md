@@ -1289,9 +1289,10 @@ request path singles it out (see *The guards* below). The tables are §5.2a; the
   `audit.FromRequest` entries carry `actor_role=maintainer`. `auth.ProjectFromContext` /
   `ProjectUIDFromContext` / `ProjectRoleFromContext` are the only way handlers and stores learn it.
   The frontend reads `instance_role` and the memberships `GET /auth/me` lists (role and "this is me" per
-  project). Only the maintainer-only `/admin/users` endpoints and the account record's `role` field still
-  speak the pre-project five-rung vocabulary (`auth.AccountRole`: maintainer, or the role in the bootstrap
-  project). Bcrypt cost 12.
+  project). The account record — `GET /auth/me`'s `user` and the maintainer-only `/admin/users` endpoints —
+  carries only `instance_role` (user/maintainer); no account read or write speaks the old five-rung
+  vocabulary any more. `auth.AccountRole` keeps it only for seeding an account together with its
+  bootstrap-project membership (the bootstrap admin, the integration-test seeders). Bcrypt cost 12.
   Bootstrap the admin via env (`BOOTSTRAP_ADMIN_*`) on a clean install.
 - **Sessions:** an opaque token in an HttpOnly + SameSite=Strict cookie; a separate `download_token`.
   **Improvements over the previous system:**

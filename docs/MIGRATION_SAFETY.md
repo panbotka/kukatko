@@ -113,7 +113,7 @@ instance, all `200`:
 | Request | Result |
 | --- | --- |
 | `GET /photos` pages 1–3 (`limit=100`, offsets 0/100/200), the timeline, `q=faces:yes type:image dated:yes`, album `GET /albums/{uid}` + its photos (2,733-photo album), a subject gallery (1,048 markers), a task + its photos, `/whats-new` (maintainer and viewer), the viewer's favourites and its `GET /photos` | **byte-identical** (`jq -S`) |
-| `GET /auth/me` (both accounts) | identical modulo the fields the design adds — `instance_role`, `last_project_slug`, `projects`, `user.instance_role` — plus `download_token` (per session) and `user.last_login_at` (the parity login itself). The viewer's `user.role` is still `viewer` (the transition vocabulary), its `projects[0].role` `viewer` |
+| `GET /auth/me` (both accounts) | identical modulo the fields the design adds — `instance_role`, `last_project_slug`, `projects`, `user.instance_role` — plus `download_token` (per session) and `user.last_login_at` (the parity login itself). The viewer's `user.role` is still `viewer` (the transition vocabulary), its `projects[0].role` `viewer` — **true at this step only**: since the account record speaks only the instance role, `user` carries `instance_role` and no `role`, and the per-project role and `subject_uid` live in `projects[]` (round 2, 2026-10-14) |
 
 **New path:** `/api/v1/p/v/…` is **not mounted yet** at this step (it answers the SPA's HTML); parity
 through it is for the final safety gate.
@@ -465,3 +465,161 @@ So the move of `v` would not have looped on today's bucket; the fix (0116: the s
 found and the retry moves or drops exactly those) still matters for whatever lands at the root between now
 and the move — a thumbnail size retired by a later release, an encode published under a rendition the row no
 longer records.
+
+---
+
+## 2026-10-14 — round-2 rehearsal (0099→0115)
+
+**Verdict: the code and the migration chain are GO; the operator runbook as it stood was NO-GO** — three
+blockers, all documentation/process (B1–B3 below), fixed in the runbook the same day. Rehearsed on `main`
+**672357f6** (migrations 0100–0115; 0116 came later and only adds a column to a table this path creates)
+against a **fresh production dump**; production was **0.31.0 / 253fd0b, schema 0099**. The only actions on
+production were one `pg_dump -Fc`, `/healthz`, `docker ps/inspect/logs`, env *names* and file listings; all
+work ran on the box. Full report: `/mnt/nas-botka/kukatko/multitenancy-review-2/migration-review.md`.
+
+### What was rehearsed
+
+- **The dump:** `docker exec pgvector pg_dump -U postgres -Fc kukatko` on the VPS, piped to the box —
+  425,634,450 B in 1 min 55 s (started 10:22:54 UTC). Restored into a throwaway `pgvector/pgvector:pg17` with
+  the pre-0104 `sed` procedure of [`RESTORE.md`](RESTORE.md): exit 0, **3 min 21 s**, 813 MB — 21,151
+  photos, 14 accounts, schema 99. Every working database was a `TEMPLATE` copy of it.
+- **Binaries:** `v0.31.0` and `672357f6`, `CGO_ENABLED=0 linux/amd64`; the staging image built from exactly
+  672357f6.
+
+### Per-migration timing (runner log `migration applied … duration_ms`, box)
+
+| File | `migrate` (cold) | `serve` start | `serve` (2nd instance) | lock-test copy | VPS est. (×4) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 0100_projects | 11 | 5 | 4 | 5 | ~40 ms |
+| 0101_project_members | 12 | 5 | 5 | 5 | ~50 ms |
+| 0102_project_id_root_tables | **324** | 236 | 234 | 241 | **~1–1.3 s** |
+| 0103_users_role_instance | 9 | 3 | 2 | 2 | ~40 ms |
+| 0104_immutable_unaccent_qualified | 10 | 2 | 2 | 2 | ~40 ms |
+| 0105_face_tooling_project_jobs | 39 | 37 | 37 | 36 | ~160 ms |
+| 0106_family_export_per_project | 17 | 15 | 13 | 13 | ~70 ms |
+| 0107_task_digest_per_project | 40 | 13 | 13 | 13 | ~160 ms |
+| 0108_jobs_library_wide_project_dedup | 40 | 38 | 35 | 36 | ~160 ms |
+| 0109_project_invites | 12 | 3 | 3 | 3 | ~50 ms |
+| 0110_users_drop_transitional_columns | 10 | 2 | 2 | 2 | ~40 ms |
+| 0111_photos_project_usage_index | 17 | 13 | 13 | 14 | ~70 ms |
+| 0112_storage_rekey_runs | 55 | 48 | 51 | 51 | ~220 ms |
+| 0113_jobs_storage_rekey_dedup | 17 | 13 | 12 | 13 | ~70 ms |
+| 0114_project_id_drop_defaults | 10 | 2 | 2 | 2 | ~40 ms |
+| 0115_storage_rekey_derived_failures | 10 | 2 | 3 | 2 | ~40 ms |
+| **Total (process wall of `kukatko migrate`)** | **0.65 s** | | | | **~2–3 s** |
+
+**0115's locks** (replayed in `BEGIN … pg_locks … ROLLBACK` on a copy at 0114): `SHARE ROW EXCLUSIVE` on
+`photos` and `projects` (its foreign keys), `ACCESS EXCLUSIVE` on `storage_rekey_runs` and its own table, for
+~2–10 ms — harmless. Gate II's lock table for 0100–0114 still stands (timings within ±30 %).
+
+### Inventory A → B
+
+Inventory A with the new binary on the unmigrated copy: 4.78 s, 48 MB RSS, and **it did not migrate**
+(schema still 99 afterwards).
+
+| Expect list used | Result |
+| --- | --- |
+| The OPERATIONS.md runbook list of the time (the 0100–0104 set step 6 pointed at) | **exit 1**, 44 differences, **8 unexpected**: `column-removed:users.{approved_at,last_seen_at,subject_uid,task_digest_at,visit_reference_at}`, `table-added:project_invites`, `table-added:storage_rekey_runs`, `table-added:storage_rekey_derived_failures` |
+| Gate II's list (its release-day checklist, step 6) | **exit 1**, 44 differences, **1 unexpected**: `table-added:storage_rekey_derived_failures` (0 rows) |
+| Gate II's list + `--expect table-added:storage_rekey_derived_failures` | **exit 0**, 44 differences, 0 unexpected |
+
+- From 0099, `storage_rekey_runs.derived_cursor` never shows: the whole table is `table-added` (the staging
+  0114 → 0115 symptom `column-added:…derived_cursor` does not occur on production).
+- **All content digests equal**, `photos.tsv` identical, no count changed but `schema_migrations` (99 → 115).
+- 11 `user-role` collapses: 10 × viewer → user, 1 × editor → user; the 3 maintainers unchanged.
+- No `project_id` column keeps a default (`information_schema`: 0).
+- **Memberships = accounts:** a `dblink` join of the unmigrated `users` against the migrated
+  `project_members`: `accounts_old 14 | memberships 14 | users_new 14 | mismatch 0`, comparing role
+  (maintainer → admin), `subject_uid`, `approved_at`, `last_seen_at`, `visit_reference_at`, `task_digest_at`.
+  Member roles `admin:3, viewer:10, editor:1`; instance roles `user:11, maintainer:3`.
+
+**Resolved:** the runbook now carries **one** authoritative list for 0099 → newest, the third row with the five
+`users` columns named instead of `column-removed:users.*`
+([`OPERATIONS.md`](OPERATIONS.md), "The release-day expect list"). It is guarded by two tests:
+`TestReleaseExpectList_coversTheNewestMigration` (`make check`: the list's marker must name the newest
+migration) and `TestReleaseExpectList_provenOnTheRealPath` (integration: replays 0099 → newest on a seeded
+schema, judges it with the documented block — 0 unexpected, and every entry must allow something). The
+lists in the sections above are history; use the runbook's.
+
+### Old/new parity
+
+0.31.0 on the 0099 copy and the new binary on a copy it migrated on start, both with fs storage and an
+unreachable sidecar; `panbotka` (maintainer) and `renzik` (viewer, the only account with a favourite) reset to a
+known password.
+
+- Logins: 200 on both sides for both.
+- **Byte-identical** after `jq -S` and normalising `/api/v1/p/v/` → `/api/v1/`: `photos?limit=50&sort=newest`
+  (total 20,421), `albums` (443), `subjects` (143), `labels` (137), `photos?q=year:2019` (123), `places`,
+  renzik's `photos?favorite=true` (1) and that photo's detail.
+- `/auth/me` differs only by the tenancy fields (`instance_role`, `projects[]`, `last_project_slug`); the
+  account's `role`/`subject_uid` moved into the membership.
+- Unprefixed routes on the new binary: `GET /api/v1/photos` → `404 {"error":"not found"}`; `POST /api/v1/mcp`
+  → 404.
+- **Session and token survival:** an API token minted on 0.31.0 gives 200 on `/api/v1/p/v/photos` after the
+  upgrade; a 0.31.0 session cookie too.
+
+### Rollback 0115 → 0099
+
+The [`migrations-rollback/`](migrations-rollback/README.md) scripts, newest first, each `psql -1`:
+
+- **On the migrated copy:** every script exit 0, 63–128 ms each; `max(version)` = 99; `inventory-diff A C`
+  with **no** expectations: **0 differences**. 0.31.0's `migrate`: "database is up to date"; 0.31.0 `serve`:
+  login 200 for both users, `photos` byte-identical to before the deploy, renzik's favourites total 1, 0
+  `ERROR` log lines.
+- **After the new server has run** (it queued `notification_purge` and created 2 sessions): the chain exits 0;
+  0.31.0 then accepts a session created *by the new release* (200) and a fresh login (200).
+- **A dump taken on 0115** restores with plain `pg_restore --single-transaction --no-owner --no-privileges` (no
+  `sed`); the new `migrate` then reports "up to date" and `inventory-diff B R15` gives 0 differences. **A
+  0099-era dump** restored into the new binary works with the `RESTORE.md` `sed` procedure + `migrate`.
+- **On a 0099 copy (nothing applied)** the 0115/0114/0112/0110/0103/0102 down scripts fail (`0115_down:
+  relation "storage_rekey_runs" does not exist`), the rest are no-ops. **Resolved:** the runbook and the
+  README start the loop at `SELECT max(version) FROM schema_migrations`.
+
+### Deploy order and the advisory lock
+
+- Two new instances started at once on one 0099 copy: one logged 16 `migration applied` lines, the other 0;
+  both served `/healthz` 200 — the migration lock works.
+- **The new binary neither detects nor refuses a running 0.31.0 on its own start:** with 0.31.0 serving a
+  copy, starting the new binary on it made 0.31.0's next login **500** while its `/healthz` stayed 200. The
+  protection is the deploy order.
+- **Production's deploy does stop the old container first:** upstream `kozaktomas/vps` deploys on push to
+  `main` (Ansible → `docker compose up -d --remove-orphans` in `/root/apps/vps`); the service has no
+  healthcheck, `restart: always`, `stop_grace_period: 30s`, Compose v5.6.0. On the box (Compose v5.1.1) a tag
+  change + `up -d` gave `create (new)` → `kill/stop/die/destroy (old)` → `rename` → `start (new)`: the old
+  container is dead before the new one starts. A failed pull aborts before anything is stopped.
+
+### Storage move of `v` — estimate (not run)
+
+- Pre-move checks on the copy: 0 rows with a bad size or hash, 0 originals over 5 GiB (largest 607 MB);
+  21,151 photos, 78 GB, 0 already under `projects/`, 7 videos (7 renditions), 51 archived.
+  `storage rekey v --dry-run`: `21151 photo(s), 78.4 GiB … under projects/pj0000000000000000veselice/`, `+9
+  derived key(s)` per photo. `--status` before any run exits non-zero (`rekey: no storage move for this
+  project`).
+- **Duration: plan 6–15 h** (~22 R2 round-trips per photo, sequential; 35 min floor at the 10/s cap) — gate
+  II's 3–9 h lower bound is not promised. **Cost under ~$2.** The **CDN Worker** MACs any path, so prefixed keys
+  validate with no infra change — but it was never exercised end-to-end; the runbook now has a post-move fetch
+  through the CDN.
+- **Backups around it:** a DB dump alone cannot undo the move (the root objects are deleted); the rollback
+  material is that dump **plus** the S3 noncurrent versions (90 days). The first R2 → S3 sync after the move
+  re-copies ~78 GB through the Pi (the initial full sync took 10,617 s), fires `KukatkoBackupSlow` and doubles
+  the backup bucket for 90 days (~$5–6 in total). All in the runbook now.
+
+### Findings and what became of them
+
+| # | Severity | Finding | Resolution |
+| --- | --- | --- | --- |
+| B1 | blocker (runbook) | `kukatko backup` cannot run on production: no `KUKATKO_BACKUP_*` config, no `pg_dump` in the image | Runbook rewritten to the backups that exist: an on-demand `docker exec pgvector pg_dump -Fc` right before the merge (with its restore command), the `backup` container's 8-hourly `.sql.gz` as fallback, the Pi's R2 → S3 sync by hand before the storage move |
+| B2 | blocker (runbook) | Documented expect lists exit 1 on 0115 | One authoritative list for 0099 → newest in OPERATIONS.md, guarded by `make check` and an integration proof |
+| B3 | blocker (process) | The owner's `/release` BLOCKs this chain by its own rules | Runbook's "Owner override for the tenancy release" lists each check that fires and why it is accepted; the vps PR body links the runbook |
+| S1 | should-fix | Overlap guarded only by deploy order | Code change, separate task |
+| S2 | should-fix | Step 5 did not say the vps merge is the deploy; dump window | Runbook: steps 1–4 before the merge, avoid the `backup` container's run, watch for 17 `migration applied` lines |
+| S3 | should-fix | Rollback did not stop the new container or revert the tag | Runbook: stop → down chain → revert |
+| S4 | should-fix | Down scripts fail on never-applied files | Start at `max(version)` (runbook + README) |
+| S5 | should-fix | Inventory `docker run` hit `permission denied` (image runs as `nobody`) | Output directory created owned by 65534 |
+| S6 | should-fix | Clients that break at the switch were unlisted | Listed: fotky (own Botka task `3a05aa5b`), the Pi's ctl contexts, MCP off, the reload in the announcement |
+| S7/S8 | should-fix | Storage-move rollback misdescribed; the big first sync | Runbook's storage-move section rewritten |
+| A3 (code review) | nice | `0106`/`0107`/`0108_down` cancelled only queued jobs | They now cancel running ones too (0.31.0's stale-lock recovery would hit the rebuilt index); covered by `TestRollbackChain_queuedJobsOfAGoneProject` |
+| D5 (code review) | nice | `0115_down`'s comment claimed the older scan re-finds the rows' objects | Comment and README corrected |
+
+**Cleanup:** the box container, the dump, every copy, the worktrees and the binaries were deleted; nothing on
+production was written, migrated or restarted.

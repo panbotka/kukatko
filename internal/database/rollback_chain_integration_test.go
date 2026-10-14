@@ -28,6 +28,12 @@ var rollbackChain = []string{
 // the chain half-unwound. The chain must reach schema 0099 with only the
 // bootstrap project's queued job of each kind left, and keep the face_cluster
 // jobs whose old key was already per project.
+//
+// A job of the gone project that the stopped container left running is
+// cancelled too (task_digest's of any project, since 0107_down cancels every
+// queued digest): the previous release's stale-lock recovery would otherwise
+// requeue it beside the kept queued job and fail on the rebuilt index on every
+// tick. The running face_cluster job stays, its key being per project already.
 func TestRollbackChain_queuedJobsOfAGoneProject(t *testing.T) {
 	db := freshSchemaDB(t)
 	ctx := t.Context()
@@ -41,6 +47,14 @@ func TestRollbackChain_queuedJobsOfAGoneProject(t *testing.T) {
 				typ, fmt.Sprintf(`{"project_uid": %q}`, project)); err != nil {
 				t.Fatalf("queueing %s for %s: %v", typ, project, err)
 			}
+		}
+	}
+	for _, typ := range []string{"family_export", "notification_purge", "task_digest", "face_cluster"} {
+		if _, err := db.Pool().Exec(ctx, `
+			INSERT INTO jobs (type, payload, state, locked_by, locked_at)
+			VALUES ($1, $2, 'running', 'stopped-container', now() - interval '1 hour')`,
+			typ, fmt.Sprintf(`{"project_uid": %q}`, gone)); err != nil {
+			t.Fatalf("leaving %s of %s running: %v", typ, gone, err)
 		}
 	}
 
@@ -63,6 +77,16 @@ func TestRollbackChain_queuedJobsOfAGoneProject(t *testing.T) {
 		got := queuedProjects(t, db, typ)
 		if slices.Sort(want); !slices.Equal(got, want) {
 			t.Errorf("queued %s jobs after the chain name %v, want %v", typ, got, want)
+		}
+	}
+	for typ, want := range map[string][]string{
+		"family_export":      nil,
+		"notification_purge": nil,
+		"task_digest":        nil,
+		"face_cluster":       {gone},
+	} {
+		if got := projectsInState(t, db, typ, "running"); !slices.Equal(got, want) {
+			t.Errorf("running %s jobs after the chain name %v, want %v", typ, got, want)
 		}
 	}
 }
@@ -93,23 +117,30 @@ func runDownScript(t *testing.T, db *database.DB, version string) {
 // order.
 func queuedProjects(t *testing.T, db *database.DB, typ string) []string {
 	t.Helper()
+	return projectsInState(t, db, typ, "queued")
+}
+
+// projectsInState lists the project_uid of every job of typ in state, in byte
+// order.
+func projectsInState(t *testing.T, db *database.DB, typ, state string) []string {
+	t.Helper()
 	rows, err := db.Pool().Query(t.Context(), `
 		SELECT payload ->> 'project_uid' FROM jobs
-		WHERE type = $1 AND state = 'queued'`, typ)
+		WHERE type = $1 AND state = $2`, typ, state)
 	if err != nil {
-		t.Fatalf("listing queued %s jobs: %v", typ, err)
+		t.Fatalf("listing %s %s jobs: %v", state, typ, err)
 	}
 	defer rows.Close()
 	var projects []string
 	for rows.Next() {
 		var project string
 		if err := rows.Scan(&project); err != nil {
-			t.Fatalf("scanning a queued %s job: %v", typ, err)
+			t.Fatalf("scanning a %s %s job: %v", state, typ, err)
 		}
 		projects = append(projects, project)
 	}
 	if err := rows.Err(); err != nil {
-		t.Fatalf("iterating queued %s jobs: %v", typ, err)
+		t.Fatalf("iterating %s %s jobs: %v", state, typ, err)
 	}
 	slices.Sort(projects)
 	return projects
