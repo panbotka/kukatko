@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
@@ -18,13 +20,17 @@ import (
 // the expand service (which votes each of an album's or a label's members' embedding
 // neighbours together) behind its curator endpoints. The media store stamps
 // the candidate photos' URLs; the curator guard is supplied via authAPI so the
-// expandapi package stays decoupled from auth's wiring.
+// expandapi package stays decoupled from auth's wiring. rateLimit is the curator
+// group's vector throttle (newVectorThrottle), shared with the candidate search
+// and the sweep.
 func buildExpandAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
+	rateLimit func(http.Handler) http.Handler,
 ) *expandapi.API {
 	return expandapi.NewAPI(expandapi.Config{
 		Service:        buildExpandService(cfg, db, mediaStore),
 		RequireCurator: authAPI.RequireCurator,
+		RateLimit:      rateLimit,
 	})
 }
 

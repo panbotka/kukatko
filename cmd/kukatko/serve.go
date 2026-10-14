@@ -434,9 +434,13 @@ func discoveryAPIOptions(
 	api *projectAPI, cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
 	matchSvc *facematch.Service,
 ) []server.Option {
-	api.candidates = buildCandidatesAPI(cfg, db, authAPI, mediaStore).RegisterRoutes
-	api.sweep = buildSweepAPI(cfg, db, authAPI, mediaStore).RegisterRoutes
-	api.expand = buildExpandAPI(cfg, db, authAPI, mediaStore).RegisterRoutes
+	// The curator's three vector searches share one pair of buckets (per user,
+	// per project) of their own, so a reader browsing similar photos never eats
+	// the budget of the curator's sweep, nor the other way round.
+	vectorLimit := newVectorThrottle(cfg)
+	api.candidates = buildCandidatesAPI(cfg, db, authAPI, mediaStore, vectorLimit).RegisterRoutes
+	api.sweep = buildSweepAPI(cfg, db, authAPI, mediaStore, vectorLimit).RegisterRoutes
+	api.expand = buildExpandAPI(cfg, db, authAPI, mediaStore, vectorLimit).RegisterRoutes
 	api.review = buildReviewAPI(cfg, db, authAPI, mediaStore, matchSvc).RegisterRoutes
 	// Repeated-marker review shares the same assign state machine, so a marker
 	// detached there is detached exactly as it is on the photo detail.

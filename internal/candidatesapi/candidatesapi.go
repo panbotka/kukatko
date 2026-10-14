@@ -47,6 +47,7 @@ type Service interface {
 type API struct {
 	service        Service
 	requireCurator func(http.Handler) http.Handler
+	rateLimit      func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. A nil Service makes the endpoint
@@ -56,11 +57,19 @@ type Config struct {
 	Service Service
 	// RequireCurator guards the endpoint for curators and above.
 	RequireCurator func(http.Handler) http.Handler
+	// RateLimit throttles the candidate search, mounted inside the curator guard so it
+	// can key on the caller and the project (cmd/kukatko's vector throttle: one
+	// bucket per user, then one per project). Nil leaves the route unthrottled.
+	RateLimit func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{service: cfg.Service, requireCurator: cfg.RequireCurator}
+	limit := cfg.RateLimit
+	if limit == nil {
+		limit = passthrough
+	}
+	return &API{service: cfg.Service, requireCurator: cfg.RequireCurator, rateLimit: limit}
 }
 
 // RegisterRoutes mounts the candidate endpoint onto r, which the caller has scoped
@@ -68,7 +77,7 @@ func NewAPI(cfg Config) *API {
 //
 //	POST /subjects/{uid}/candidates  RequireCurator  untagged-face candidates for a subject
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.requireCurator).Post("/subjects/{uid}/candidates", a.handleFind)
+	r.With(a.requireCurator, a.rateLimit).Post("/subjects/{uid}/candidates", a.handleFind)
 }
 
 // handleFind runs the candidate search for the path subject inside the request's
@@ -136,3 +145,6 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, errorBody{Error: message})
 }
+
+// passthrough is the no-op middleware standing in for an unset rate limit.
+func passthrough(next http.Handler) http.Handler { return next }

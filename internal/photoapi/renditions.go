@@ -155,7 +155,7 @@ func (a *API) handleRegenerateStoryboard(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	uid := photo.UID
-	if err := a.storyboards.Regenerate(r.Context(), uid); err != nil {
+	if err := a.storyboards.Regenerate(r.Context(), auth.ProjectUIDFromContext(r.Context()), uid); err != nil {
 		writeStoryboardRebuildError(w, err)
 		return
 	}

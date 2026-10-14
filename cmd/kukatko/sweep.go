@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
@@ -15,9 +17,12 @@ import (
 // candidate service the per-subject search uses as its finder, so the two never
 // drift. Concurrency and the subject cap come from cfg.Sweep; a nil logger falls back
 // to slog.Default(), which obs.Setup has already pointed at the app's JSON logger.
-// The curator guard is supplied via authAPI so sweepapi stays decoupled from auth.
+// The curator guard is supplied via authAPI so sweepapi stays decoupled from auth;
+// rateLimit is the curator group's vector throttle (newVectorThrottle), shared
+// with the candidate search and the collection expansion.
 func buildSweepAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
+	rateLimit func(http.Handler) http.Handler,
 ) *sweepapi.API {
 	svc := sweep.New(sweep.Config{
 		Subjects:    people.NewStore(db.Pool()),
@@ -28,5 +33,6 @@ func buildSweepAPI(
 	return sweepapi.NewAPI(sweepapi.Config{
 		Service:        svc,
 		RequireCurator: authAPI.RequireCurator,
+		RateLimit:      rateLimit,
 	})
 }

@@ -48,11 +48,17 @@ var ErrNotAVideo = errors.New("storyboardjob: photo has no scrubbable video")
 var ErrCannotRender = errors.New("storyboardjob: nothing here can render a sprite")
 
 // PhotoStore is the subset of the photo catalogue this package needs: loading one
-// photo. It is satisfied by *photos.Store.
+// photo, scoped to a project for the read paths a request drives and unscoped for
+// the job. It is satisfied by *photos.Store.
 type PhotoStore interface {
+	// GetByUIDInProject returns the photo identified by uid when it belongs to
+	// the project, or photos.ErrPhotoNotFound — also for another project's photo.
+	// Status, Open, FileHash and Regenerate load through it, so a caller that
+	// forgot its own project check still cannot reach a foreign clip's sprite.
+	GetByUIDInProject(ctx context.Context, projectUID, uid string) (photos.Photo, error)
 	// GetForJob returns the photo identified by uid in whichever project holds
 	// it (the row carries its ProjectID), or photos.ErrPhotoNotFound. A job has no
-	// request and so no project to scope by.
+	// request and so no project to scope by; only Generate uses it.
 	GetForJob(ctx context.Context, uid string) (photos.Photo, error)
 }
 
@@ -154,9 +160,10 @@ type Status struct {
 // A photo that is not a scrubbable video, or whose duration the catalogue does not
 // know, is StateUnavailable — a permanent answer the client can cache for the
 // session. Anything else is StatePending until the sprite lands, then StateReady
-// with the layout. A missing photo returns photos.ErrPhotoNotFound.
-func (s *Service) Status(ctx context.Context, photoUID string) (Status, error) {
-	photo, err := s.photos.GetForJob(ctx, photoUID)
+// with the layout. A missing photo — or one outside projectUID — returns
+// photos.ErrPhotoNotFound.
+func (s *Service) Status(ctx context.Context, projectUID, photoUID string) (Status, error) {
+	photo, err := s.photos.GetByUIDInProject(ctx, projectUID, photoUID)
 	if err != nil {
 		return Status{}, fmt.Errorf("storyboardjob: loading photo %s: %w", photoUID, err)
 	}
@@ -188,9 +195,12 @@ func (s *Service) Status(ctx context.Context, photoUID string) (Status, error) {
 // layout. The caller owns the reader and must close it. It returns
 // storyboard.ErrNotGenerated when the sprite is not cached (the client then shows
 // no preview), ErrNotAVideo or storyboard.ErrNoDuration when the photo can never
-// have one, and photos.ErrPhotoNotFound for an unknown photo.
-func (s *Service) Open(ctx context.Context, photoUID string) (io.ReadCloser, storyboard.Spec, error) {
-	photo, err := s.photos.GetForJob(ctx, photoUID)
+// have one, and photos.ErrPhotoNotFound for an unknown photo or one outside
+// projectUID.
+func (s *Service) Open(
+	ctx context.Context, projectUID, photoUID string,
+) (io.ReadCloser, storyboard.Spec, error) {
+	photo, err := s.photos.GetByUIDInProject(ctx, projectUID, photoUID)
 	if err != nil {
 		return nil, storyboard.Spec{}, fmt.Errorf("storyboardjob: loading photo %s: %w", photoUID, err)
 	}
@@ -207,9 +217,10 @@ func (s *Service) Open(ctx context.Context, photoUID string) (io.ReadCloser, sto
 
 // FileHash returns the content hash the photo's sprite is keyed by, so a caller
 // that serves the bytes can build a strong ETag without a second catalogue read.
-// It returns photos.ErrPhotoNotFound for an unknown photo.
-func (s *Service) FileHash(ctx context.Context, photoUID string) (string, error) {
-	photo, err := s.photos.GetForJob(ctx, photoUID)
+// It returns photos.ErrPhotoNotFound for an unknown photo or one outside
+// projectUID.
+func (s *Service) FileHash(ctx context.Context, projectUID, photoUID string) (string, error) {
+	photo, err := s.photos.GetByUIDInProject(ctx, projectUID, photoUID)
 	if err != nil {
 		return "", fmt.Errorf("storyboardjob: loading photo %s: %w", photoUID, err)
 	}
@@ -270,10 +281,11 @@ func (s *Service) Generate(ctx context.Context, photoUID string) error {
 //
 // It returns ErrNotAVideo (or a wrapped storyboard.ErrNoDuration) for a photo that
 // can never have a preview, ErrCannotRender on an instance that could not produce
-// one, and photos.ErrPhotoNotFound for an unknown photo. It renders nothing
-// itself: the sprite costs a full decode of its clip and belongs in the queue.
-func (s *Service) Regenerate(ctx context.Context, photoUID string) error {
-	photo, err := s.photos.GetForJob(ctx, photoUID)
+// one, and photos.ErrPhotoNotFound for an unknown photo or one outside
+// projectUID. It renders nothing itself: the sprite costs a full decode of its
+// clip and belongs in the queue.
+func (s *Service) Regenerate(ctx context.Context, projectUID, photoUID string) error {
+	photo, err := s.photos.GetByUIDInProject(ctx, projectUID, photoUID)
 	if err != nil {
 		return fmt.Errorf("storyboardjob: loading photo %s: %w", photoUID, err)
 	}

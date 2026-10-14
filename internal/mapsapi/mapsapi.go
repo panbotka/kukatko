@@ -12,6 +12,12 @@
 // share one monthly budget. That is what makes a second look at an already-browsed
 // area, or a typeahead firing as someone types a place name, cost nothing.
 //
+// The budget is the instance's but the libraries are many, so geocoding is also
+// fair between projects: every project has its own bucket in front of the
+// instance-wide one, and the geocode caches are keyed by project, so neither the
+// credits nor the "somebody already asked about this place" a cache hit implies
+// cross from one project to another.
+//
 // Every upstream outcome is recorded on the mapy.Health tracker, and a rejected
 // API key is relayed as its own status (StatusMapKeyRejected) rather than a
 // generic upstream error, so the map view can say why the tiles are missing
@@ -30,6 +36,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/mapy"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/ratelimit"
 )
 
 // Defaults applied when the corresponding Config field is left zero.
@@ -52,6 +59,15 @@ const (
 	defaultGeocodeRatePerSec = 5
 	// defaultGeocodeRateBurst is the geocode rate limiter's bucket size.
 	defaultGeocodeRateBurst = 10
+	// defaultGeocodeProjectRatePerSec is one project's share of the instance's
+	// geocode rate: enough for a person typing into the place search (the client
+	// debounces), short of the whole instance budget, so a second project's
+	// lookups always find tokens left.
+	defaultGeocodeProjectRatePerSec = 3
+	// defaultGeocodeProjectRateBurst is one project's geocode bucket size. It
+	// matches the instance burst, so on a quiet instance a single project bursts
+	// exactly as far as it did before projects had buckets of their own.
+	defaultGeocodeProjectRateBurst = 10
 	// defaultGeocodeCacheSize bounds the reverse-geocode cache entry count.
 	defaultGeocodeCacheSize = 10000
 	// defaultPlacesCacheSize bounds the place-search cache entry count. A place
@@ -121,8 +137,15 @@ type API struct {
 	geocodeCacheTTL time.Duration
 	geocodeCache    *ttlCache[mapy.GeocodeResult]
 	placesCache     *ttlCache[[]mapy.Place]
-	geocodeLimiter  *rateLimiter
-	maxGeoPhotos    int
+	// geocodeLimiter is the instance-wide geocode bucket (one key), and
+	// projectGeocodeLimiter the per-project one in front of it (see
+	// allowGeocode).
+	geocodeLimiter        *ratelimit.Limiter
+	projectGeocodeLimiter *ratelimit.Limiter
+	// projectOf names the project a request runs in; requestProject in
+	// production, swapped by this package's own tests.
+	projectOf    func(*http.Request) string
+	maxGeoPhotos int
 }
 
 // Config bundles the dependencies of NewAPI. Tiles and Geocoder may be nil (their
@@ -169,6 +192,14 @@ type Config struct {
 	// GeocodeRateBurst is the geocode rate limiter's burst (default
 	// defaultGeocodeRateBurst).
 	GeocodeRateBurst int
+	// GeocodeProjectRatePerSec caps one project's geocode lookups to mapy.com
+	// per second (default defaultGeocodeProjectRatePerSec), checked before the
+	// instance-wide GeocodeRatePerSec. A negative value disables the per-project
+	// share, leaving only the instance cap.
+	GeocodeProjectRatePerSec float64
+	// GeocodeProjectRateBurst is one project's geocode bucket size (default
+	// defaultGeocodeProjectRateBurst).
+	GeocodeProjectRateBurst int
 	// MaxGeoPhotos caps the GeoJSON feature count (default defaultMaxGeoPhotos).
 	MaxGeoPhotos int
 }
@@ -182,14 +213,6 @@ func NewAPI(cfg Config) *API {
 	geoTTL := defaultGeocodeCacheTTL
 	if cfg.GeocodeCacheTTL != 0 {
 		geoTTL = cfg.GeocodeCacheTTL
-	}
-	ratePerSec := float64(defaultGeocodeRatePerSec)
-	if cfg.GeocodeRatePerSec != 0 {
-		ratePerSec = cfg.GeocodeRatePerSec
-	}
-	burst := cfg.GeocodeRateBurst
-	if burst <= 0 {
-		burst = defaultGeocodeRateBurst
 	}
 	maxGeo := cfg.MaxGeoPhotos
 	if maxGeo <= 0 {
@@ -221,9 +244,26 @@ func NewAPI(cfg Config) *API {
 		geocodeCacheTTL: geoTTL,
 		geocodeCache:    newTTLCache[mapy.GeocodeResult](defaultGeocodeCacheSize),
 		placesCache:     newTTLCache[[]mapy.Place](defaultPlacesCacheSize),
-		geocodeLimiter:  newRateLimiter(ratePerSec, burst),
-		maxGeoPhotos:    maxGeo,
+		geocodeLimiter: newGeocodeLimiter(
+			cfg.GeocodeRatePerSec, cfg.GeocodeRateBurst, defaultGeocodeRatePerSec, defaultGeocodeRateBurst),
+		projectGeocodeLimiter: newGeocodeLimiter(cfg.GeocodeProjectRatePerSec, cfg.GeocodeProjectRateBurst,
+			defaultGeocodeProjectRatePerSec, defaultGeocodeProjectRateBurst),
+		projectOf:    requestProject,
+		maxGeoPhotos: maxGeo,
 	}
+}
+
+// newGeocodeLimiter builds one of the geocode limiters from its configured rate
+// and burst, falling back to the given defaults: a zero rate takes defRate (a
+// negative one disables the limiter), a non-positive burst takes defBurst.
+func newGeocodeLimiter(ratePerSec float64, burst int, defRate float64, defBurst int) *ratelimit.Limiter {
+	if ratePerSec == 0 {
+		ratePerSec = defRate
+	}
+	if burst <= 0 {
+		burst = defBurst
+	}
+	return ratelimit.New(ratePerSec, burst)
 }
 
 // passthroughMiddleware is a no-op middleware used when no tile rate limiter is configured.
@@ -233,8 +273,8 @@ func passthroughMiddleware(next http.Handler) http.Handler { return next }
 // under the API base path (for example /api/v1). Every route requires auth:
 //
 //	GET /map/tiles/{mapset}/{z}/{x}/{y} proxied mapy.com tile (key added server-side)
-//	GET /map/rgeocode?lat=&lng=         reverse geocode (cached, rate-limited)
-//	GET /map/geocode?q=&limit=          place search (cached, rate-limited)
+//	GET /map/rgeocode?lat=&lng=         reverse geocode (cached per project, rate-limited)
+//	GET /map/geocode?q=&limit=          place search (cached per project, rate-limited)
 //	GET /map/photos                     GeoJSON FeatureCollection of geotagged photos
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/map", func(r chi.Router) {

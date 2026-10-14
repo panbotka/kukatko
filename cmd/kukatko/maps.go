@@ -32,7 +32,8 @@ func newMapsHealth(cfg *config.Config) *mapy.Health {
 // feed (which needs no key) keeps working. Proxied tiles and geocode answers are
 // cached server-side so a re-browsed area or a repeated place search costs no
 // mapy.com credits, and every upstream outcome is recorded on the shared health
-// tracker.
+// tracker. Geocoding is fair between projects: each has its own bucket in front
+// of the instance-wide one (ratelimit.geocode_project), and its own cache keys.
 func buildMapsAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, health *mapy.Health,
 ) (*mapsapi.API, error) {
@@ -52,6 +53,7 @@ func buildMapsAPI(
 	}
 
 	tileLimit := ratelimit.New(cfg.RateLimit.Tiles.RatePerSec, cfg.RateLimit.Tiles.Burst)
+	projectRate, projectBurst := geocodeProjectRate(cfg.RateLimit.GeocodeProject)
 	return mapsapi.NewAPI(mapsapi.Config{
 		Tiles:          tiles,
 		Geocoder:       geocoder,
@@ -62,5 +64,9 @@ func buildMapsAPI(
 		TileRateLimit:  tileLimit.Middleware,
 		TileCacheBytes: cfg.Maps.TileCacheBytes,
 		TileCacheTTL:   cfg.Maps.TileCacheTTL,
+		// One project's share of the geocode budget, in front of the
+		// instance-wide bucket (see mapsapi.API.allowGeocode).
+		GeocodeProjectRatePerSec: projectRate,
+		GeocodeProjectRateBurst:  projectBurst,
 	}), nil
 }

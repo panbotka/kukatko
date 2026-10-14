@@ -171,6 +171,22 @@ type RateLimitConfig struct {
 	// Tiles caps GET /map/tiles/... (the mapy.com tile proxy). The geocode
 	// proxy has its own credit-protecting limiter under maps.*.
 	Tiles RateLimitRule `mapstructure:"tiles"`
+	// GeocodeProject is one project's share of the geocode proxy's
+	// instance-wide mapy.com budget (GET /map/rgeocode and /map/geocode), keyed
+	// by project and checked before the instance bucket, so one project cannot
+	// starve the others of credits. A non-positive RatePerSec leaves only the
+	// instance-wide cap.
+	GeocodeProject RateLimitRule `mapstructure:"geocode_project"`
+	// Vector caps the routes that run a vector search — GET /search, GET
+	// /photos/{uid}/similar, GET /albums|labels/{uid}/similar, POST
+	// /subjects/{uid}/candidates and GET /faces/sweep — keyed by the acting user.
+	// The browse pair (search, similar) and the curator trio each draw on
+	// buckets of their own under this one rule.
+	Vector RateLimitRule `mapstructure:"vector"`
+	// VectorProject caps the same routes keyed by the request's project, after
+	// the per-user bucket, so the members of one project together cannot hog the
+	// database's vector index and the embedding sidecar every project shares.
+	VectorProject RateLimitRule `mapstructure:"vector_project"`
 	// UploadLink caps the public upload-link routes (GET /u/{code} and its
 	// one-file-per-request upload) per client IP. They are open to anybody who
 	// holds a link, so this is the per-person brake.
@@ -1656,6 +1672,24 @@ func setOpsDefaults(v *viper.Viper) {
 	v.SetDefault("ratelimit.comment.burst", 10)
 	v.SetDefault("ratelimit.tiles.rate_per_sec", 50)
 	v.SetDefault("ratelimit.tiles.burst", 200)
+	setFairnessDefaults(v)
+}
+
+// setFairnessDefaults registers the per-project (and the vector routes'
+// per-user) brakes that keep one project from consuming a resource the whole
+// instance shares. They are sized so a family browsing its own library never
+// meets them: GET /search also serves every page of a filtered listing, so the
+// per-user vector burst covers a long fling through results, and a project's
+// bucket is several people's worth of that.
+func setFairnessDefaults(v *viper.Viper) {
+	// One project's share of the geocode proxy's 5/s instance budget: a person
+	// typing a place name (debounced) fits, two busy projects still leave room.
+	v.SetDefault("ratelimit.geocode_project.rate_per_sec", 3)
+	v.SetDefault("ratelimit.geocode_project.burst", 10)
+	v.SetDefault("ratelimit.vector.rate_per_sec", 5)
+	v.SetDefault("ratelimit.vector.burst", 100)
+	v.SetDefault("ratelimit.vector_project.rate_per_sec", 20)
+	v.SetDefault("ratelimit.vector_project.burst", 400)
 }
 
 // setUploadLinkDefaults registers the upload links' caps and their two request

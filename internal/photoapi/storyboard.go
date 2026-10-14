@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storyboard"
 	"github.com/panbotka/kukatko/internal/storyboardjob"
@@ -20,20 +21,24 @@ const storyboardCacheControl = "private, max-age=31536000, immutable"
 // StoryboardService answers whether a video's scrub-preview sprite exists,
 // schedules its lazy generation, and serves its bytes. It is satisfied by
 // *storyboardjob.Service.
+//
+// Every method takes the request's project and loads the photo inside it, so a
+// foreign uid is photos.ErrPhotoNotFound even if a handler skipped its own
+// photoInProject check — the scoping is the service's, not a caller's courtesy.
 type StoryboardService interface {
 	// Status reports ready/pending/unavailable for the photo's storyboard and
 	// schedules the generation when it is merely not there yet.
-	Status(ctx context.Context, photoUID string) (storyboardjob.Status, error)
+	Status(ctx context.Context, projectUID, photoUID string) (storyboardjob.Status, error)
 	// Open returns a reader over the generated sprite plus its layout, or
 	// storyboard.ErrNotGenerated when it has not been rendered.
-	Open(ctx context.Context, photoUID string) (io.ReadCloser, storyboard.Spec, error)
+	Open(ctx context.Context, projectUID, photoUID string) (io.ReadCloser, storyboard.Spec, error)
 	// FileHash returns the content hash the sprite is keyed by, for the ETag.
-	FileHash(ctx context.Context, photoUID string) (string, error)
+	FileHash(ctx context.Context, projectUID, photoUID string) (string, error)
 	// Regenerate discards the cached sprite and schedules a fresh render. It
 	// returns storyboardjob.ErrNotAVideo or storyboard.ErrNoDuration for a photo
 	// that can never have one, and storyboardjob.ErrCannotRender when nothing on
 	// this instance could produce it.
-	Regenerate(ctx context.Context, photoUID string) error
+	Regenerate(ctx context.Context, projectUID, photoUID string) error
 }
 
 // storyboardResponse is the JSON body of the storyboard status endpoint. Only a
@@ -75,7 +80,7 @@ func (a *API) handleStoryboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := photo.UID
-	status, err := a.storyboards.Status(r.Context(), uid)
+	status, err := a.storyboards.Status(r.Context(), auth.ProjectUIDFromContext(r.Context()), uid)
 	if err != nil {
 		writePhotoError(w, err, "resolving storyboard failed")
 		return
@@ -113,14 +118,15 @@ func (a *API) handleStoryboardSprite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := photo.UID
-	reader, _, err := a.storyboards.Open(r.Context(), uid)
+	projectUID := auth.ProjectUIDFromContext(r.Context())
+	reader, _, err := a.storyboards.Open(r.Context(), projectUID, uid)
 	if err != nil {
 		writeStoryboardError(w, err)
 		return
 	}
 	defer func() { _ = reader.Close() }()
 
-	etag := storyboardETag(r.Context(), a.storyboards, uid)
+	etag := storyboardETag(r.Context(), a.storyboards, projectUID, uid)
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", storyboardCacheControl)
 	streamMedia(w, r, reader, etag, 0)
@@ -130,8 +136,8 @@ func (a *API) handleStoryboardSprite(w http.ResponseWriter, r *http.Request) {
 // falling back to the uid when the hash cannot be read. The sprite is derived from
 // exactly that content, so the hash is the strongest validator available without
 // digesting the sprite itself.
-func storyboardETag(ctx context.Context, svc StoryboardService, uid string) string {
-	hash, err := svc.FileHash(ctx, uid)
+func storyboardETag(ctx context.Context, svc StoryboardService, projectUID, uid string) string {
+	hash, err := svc.FileHash(ctx, projectUID, uid)
 	if err != nil || hash == "" {
 		return strconv.Quote(uid + "-sb")
 	}

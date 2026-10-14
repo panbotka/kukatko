@@ -1866,7 +1866,8 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   `GET`/`POST /photos/{uid}/comments` + `PATCH`/`DELETE /photos/{uid}/comments/{commentUID}`, all four behind
   **`RequireAuth`** — the create deliberately so, a viewer may comment, see docs/API.md — with the per-user
   throttle (`Config.CommentRateLimit`, nil = none, resolved by `commentThrottle`) mounted *inside* the auth
-  guard; the pure predicates `canEditComment` (author only) / `canDeleteComment` (author **or**
+  guard (likewise `Config.VectorRateLimit`, resolved by `vectorThrottle`, on `GET /search` and
+  `GET /photos/{uid}/similar` — the per-user-then-per-project vector buckets); the pure predicates `canEditComment` (author only) / `canDeleteComment` (author **or**
   `Role.IsAdmin()`) hold the authorization decision and are made against the **stored** row —
   `resolveComment` reads it first and answers 404 when it belongs to a different photo than the path names,
   so the route cannot be used to probe which comment UIDs exist; `writeDetail` stamps **`comment_count`** via
@@ -3248,8 +3249,8 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   `FindSimilarUnassignedFaceCandidates`, and the survivors are hydrated through `ListByUIDsInProject`, so no
   candidate ever comes from another project however close its face sits), `internal/candidatesapi/`
   (a curator-and-above HTTP API over the candidate search: the `Service` interface (satisfied by `candidates.Service`),
-  `NewAPI(Config{Service,RequireCurator})`+`RegisterRoutes` mounts `POST /subjects/{uid}/candidates`
-  behind `RequireCurator`; the body `{threshold?,limit?}` is **optional** (empty → defaults),
+  `NewAPI(Config{Service,RequireCurator,RateLimit})`+`RegisterRoutes` mounts `POST /subjects/{uid}/candidates`
+  behind `RequireCurator` and then the vector throttle `RateLimit` (inside the guard; nil = none); the body `{threshold?,limit?}` is **optional** (empty → defaults),
   `DisallowUnknownFields` + 64 KiB, a negative `threshold`/`limit` → 400; 503 without a backend, 404 missing
   subject (`people.ErrSubjectNotFound`) — the same fixed `subject not found` body for a subject of another
   project, searched in the request's project (`auth.ProjectUIDFromContext`); mounted in `serve` (`buildCandidatesAPI` in
@@ -3284,8 +3285,8 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   a sweep walks only the project's people and offers only its faces; `SubjectsTotal` counts the project's
   subjects), `internal/sweepapi/`
   (a curator-and-above HTTP API over the sweep: the `Service` interface (satisfied by `*sweep.Service`),
-  `NewAPI(Config{Service,RequireCurator})` (nil RequireCurator → pass-through) + `RegisterRoutes` mounts
-  `GET /faces/sweep` behind `RequireCurator`; `parseConfidence` (percent-or-distance → distance, floor
+  `NewAPI(Config{Service,RequireCurator,RateLimit})` (nil RequireCurator/RateLimit → pass-through) +
+  `RegisterRoutes` mounts `GET /faces/sweep` behind `RequireCurator` and then the vector throttle; `parseConfidence` (percent-or-distance → distance, floor
   `0.01`, default 75 %) + `parseLimit`, errors → 400; streams **NDJSON** via the `stream` helper, which
   sets the headers (`application/x-ndjson`, `Cache-Control: no-store`) **lazily** at the first line and
   **flushes** after each one (`http.Flusher`, propagated through `internal/metrics` `statusRecorder.Flush`);
@@ -3327,9 +3328,10 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   + a tenant-isolation test: identical vectors in both projects, each side finds only its own look-alike),
   `internal/expandapi/`
   (a curator-and-above HTTP API over collection expansion: the `Service` interface (satisfied by `*expand.Service`)
-  with two methods `Album`/`Label(ctx,projectUID,uid,req)`, `NewAPI(Config{Service,RequireCurator})` +
+  with two methods `Album`/`Label(ctx,projectUID,uid,req)`, `NewAPI(Config{Service,RequireCurator,RateLimit})` +
   `RegisterRoutes` mounts
-  `GET /albums/{uid}/similar` and `GET /labels/{uid}/similar` behind `RequireCurator` (they lead into the
+  `GET /albums/{uid}/similar` and `GET /labels/{uid}/similar` behind `RequireCurator` then the vector
+  throttle `RateLimit` (nil = none; `cmd/kukatko` hands the three curator APIs one shared `newVectorThrottle`) (they lead into the
   album/label curation a curator owns); both share `respond` +
   `finder`, differing only in the not-found sentinel; `parseRequest` reads the query `?threshold=&limit=` (empty →
   default, non-numeric / negative → 400); 503 without a backend, 404 missing album/label
@@ -4942,7 +4944,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `TileFetcher`/`Geocoder`/`PlaceSearcher` (satisfied by `mapy.Client`, nil → 503) and `PhotoLister`
   (`photos.Store.List`+`Count`) →
   unit-testable with fakes; `NewAPI(Config{Tiles,Geocoder,Places,Photos,Health,RequireAuth,TileCacheMaxAge,
-  TileCacheTTL,TileCacheBytes,GeocodeCacheTTL,GeocodeRatePerSec,GeocodeRateBurst,MaxGeoPhotos})`+
+  TileCacheTTL,TileCacheBytes,GeocodeCacheTTL,GeocodeRatePerSec,GeocodeRateBurst,GeocodeProjectRatePerSec,
+  GeocodeProjectRateBurst,MaxGeoPhotos})`+
   `RegisterRoutes` mounts
   `/map` behind `RequireAuth`: `GET /map/tiles/{mapset}/{z}/{x}/{y}` (validates the mapset→400/retina from
   the `@2x` suffix on `{y}` or `?retina=true`, with `Cache-Control: public, max-age, immutable`;
@@ -4957,12 +4960,18 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   why the map is empty; every upstream call records its outcome into `mapy.Health` (→ system status)),
   `GET /map/rgeocode
   ?lat=&lng=` (parses+range-checks the coordinates→400, a **TTL+capacity cache** `ttlCache[GeocodeResult]`
-  keyed by the coordinates to 5 decimals, an uncached lookup goes through the **token-bucket** `rateLimiter`→429 to save credits,
+  keyed by the **project** + the coordinates to 5 decimals, an uncached lookup goes through `allowGeocode`→429 to save credits:
+  the **project's** `ratelimit.Limiter` bucket first (default 3/s, burst 10; negative rate = off), then the
+  **instance-wide** one (5/s, burst 10) — a project over its share is refused without spending the
+  instance's token, so it cannot starve the others (`ratelimit.go`),
   the response simplified + `Cache-Control: private`), `GET /map/geocode?q=&limit=` (`geocode.go`:
   the type-ahead for the location editor; the order of the guards follows cost — an empty/>200-character `q` → 400 **before**
-  the call, then `ttlCache[[]Place]` (key = `limit` + the case-folded query with collapsed spaces,
+  the call, then `ttlCache[[]Place]` (key = the project + `limit` + the case-folded query with collapsed spaces,
   **diacritics are kept** — `veseli`/`veselí` are different queries upstream), and only the rest goes to
-  **the same `rateLimiter` as rgeocode** (one credit budget = one limiter) → 429; the client
+  **the same two buckets as rgeocode** (one credit budget = one limiter, shared fairly) → 429. Both
+  caches are keyed by project (`projectCacheKey`) because a hit answers faster than a miss: a shared entry
+  would tell one project that someone in another had looked the place up — chosen over masking the
+  latency, which would slow every hit; the price is that two projects each pay once for one place; the client
   debounces on top of that, this is the half of the throttle that cannot be bypassed. `limit` is **clamped**
   (`mapy.ClampGeocodeLimit`), not a 400. `mapy.ErrNotFound` (a 404 upstream) is turned into an **empty
   `items` + 200**; otherwise `writeGeocodeError` as with rgeocode. The `ttlCache` cache (`cache.go`,
@@ -5682,16 +5691,19 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `internal/storyboardjob/`
   (the worker handler and read service for storyboards — the **when** to `internal/storyboard`'s *how*.
   Generation is **lazy and per-video**: nothing enqueues the library, because a sprite costs one full decode and
-  most videos are never watched. `Status(ctx,uid)` answers `StateReady` (+ the `Spec`), `StatePending` — and
+  most videos are never watched. Every read path a request drives takes the project —
+  `Status`/`Open`/`FileHash`/`Regenerate(ctx,projectUID,uid)` — and loads the photo through
+  `PhotoStore.GetByUIDInProject`, so a foreign clip is `photos.ErrPhotoNotFound` even for a handler that
+  forgot its own project check; only the job's `Generate(uid)` reads unscoped (`GetForJob`). `Status` answers `StateReady` (+ the `Spec`), `StatePending` — and
   schedules the job, the queue's per-photo dedup absorbing every later ask — or `StateUnavailable`, which is
   permanent and tells the client to stop: a still, a **live photo** (its motion clip is a hover preview with no
   scrubbable timeline, so a storyboard would be a decode spent on a control that is never shown), a clip of
   unknown length, a wiring with no `Enqueuer`, or a host with no ffmpeg (`FFmpegAvailable`, injectable so tests
-  do not depend on the machine). `Open(ctx,uid)` yields the sprite bytes + `Spec`, `FileHash(ctx,uid)` the ETag
+  do not depend on the machine). `Open` yields the sprite bytes + `Spec`, `FileHash` the ETag
   source. `Handle` = `worker.HandlerFunc` (payload `{photo_uid}`, empty → `ErrMissingPhotoUID` dead-letter),
   registered in `serve` on `jobs.TypeStoryboard`; `Generate(uid)` renders one, and a photo that **cannot** have a
   storyboard is a quiet no-op rather than a dead-letter — the job was scheduled from a state that no longer holds.
-  `Regenerate(uid)` is the **forced** rebuild behind `POST /photos/{uid}/regenerate-storyboard`: it removes the
+  `Regenerate` is the **forced** rebuild behind `POST /photos/{uid}/regenerate-storyboard`: it removes the
   cached sprite and *then* enqueues, in that order, because the queue dedups per photo and a job scheduled first
   could claim the work while the stale sprite is still there and take `Generate`'s idempotent skip. It refuses
   rather than deletes when nothing here could render a replacement (`ErrCannotRender`, no enqueuer or no ffmpeg):
@@ -6353,7 +6365,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   no-op — the endpoint is switched off cleanly by config); memory-bounded by an opportunistic cleanup at `maxBuckets`
   (8192), so it needs no external goroutine; mounted on `POST /upload` (ingest), `POST /photos/bulk`
   (bulkapi), `POST /import/*` (importapi) and `GET /map/tiles/...` (mapsapi) — the limits come from the
-  `ratelimit.*` config; login and geocode have their own limiters. `KeyedMiddleware(keyFn)` is the same
+  `ratelimit.*` config; login and geocode have their own limiters (geocode now *uses* this package: a
+  per-project limiter in front of a one-key instance limiter). The vector-search routes (`photoapi`'s
+  search/similar, `candidatesapi`, `expandapi`, `sweepapi`) are throttled by `cmd/kukatko`'s
+  `newVectorThrottle`: a per-user `KeyedMiddlewareExcept` wrapped around a per-project one
+  (`ratelimit.vector`, `ratelimit.vector_project`), so a member over their own share never spends the
+  project's tokens. `KeyedMiddleware(keyFn)` is the same
   middleware with the bucket key chosen by the caller instead of the IP; `Middleware` is now
   `KeyedMiddleware(clientIP)`. It exists for `POST /photos/{uid}/comments`, which is throttled **per user**
   and therefore mounted *inside* the auth guard (the principal is only on the context once auth has run) — a

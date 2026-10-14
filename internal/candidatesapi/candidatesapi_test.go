@@ -30,9 +30,6 @@ func (f *fakeService) Find(_ context.Context, _, uid string, req candidates.Requ
 	return f.result, f.err
 }
 
-// passthrough is a no-op curator guard for tests: it authorises every request.
-func passthrough(next http.Handler) http.Handler { return next }
-
 // newServer mounts an API backed by svc (which may be nil) and returns a test
 // server. A nil svc exercises the 503 path.
 func newServer(t *testing.T, svc Service) *httptest.Server {

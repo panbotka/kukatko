@@ -48,6 +48,7 @@ type finder func(ctx context.Context, projectUID, uid string, req expand.Request
 type API struct {
 	service        Service
 	requireCurator func(http.Handler) http.Handler
+	rateLimit      func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. A nil Service makes the endpoints
@@ -58,11 +59,19 @@ type Config struct {
 	// RequireCurator guards the endpoints for curators and above: they lead
 	// into the album/label curation a curator owns, so they move with it.
 	RequireCurator func(http.Handler) http.Handler
+	// RateLimit throttles the two expansion searches, mounted inside the curator guard so it
+	// can key on the caller and the project (cmd/kukatko's vector throttle: one
+	// bucket per user, then one per project). Nil leaves the route unthrottled.
+	RateLimit func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{service: cfg.Service, requireCurator: cfg.RequireCurator}
+	limit := cfg.RateLimit
+	if limit == nil {
+		limit = passthrough
+	}
+	return &API{service: cfg.Service, requireCurator: cfg.RequireCurator, rateLimit: limit}
 }
 
 // RegisterRoutes mounts the expansion endpoints onto r, which the caller has scoped
@@ -71,8 +80,8 @@ func NewAPI(cfg Config) *API {
 //	GET /albums/{uid}/similar  RequireCurator  photos most like an album's members
 //	GET /labels/{uid}/similar  RequireCurator  photos most like a label's members
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.requireCurator).Get("/albums/{uid}/similar", a.handleAlbum)
-	r.With(a.requireCurator).Get("/labels/{uid}/similar", a.handleLabel)
+	r.With(a.requireCurator, a.rateLimit).Get("/albums/{uid}/similar", a.handleAlbum)
+	r.With(a.requireCurator, a.rateLimit).Get("/labels/{uid}/similar", a.handleLabel)
 }
 
 // handleAlbum expands the path album.
@@ -175,3 +184,6 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, errorBody{Error: message})
 }
+
+// passthrough is the no-op middleware standing in for an unset rate limit.
+func passthrough(next http.Handler) http.Handler { return next }

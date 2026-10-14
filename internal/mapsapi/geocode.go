@@ -30,9 +30,10 @@ type placesBody struct {
 //
 // A typeahead fires on typing, and every uncached lookup is metered mapy.com
 // credits, so the cheap guards come first and in order: a blank or over-long query
-// is a 400 before any upstream call, a repeat of a query already asked is served
-// from the cache, and only what survives both reaches the shared geocode rate
-// limiter (429 when the budget is momentarily exhausted). The client debounces
+// is a 400 before any upstream call, a repeat of a query already asked in this
+// project is served from the cache, and only what survives both reaches the
+// geocode rate limiters — the project's share, then the instance's (429 when
+// either is momentarily exhausted). The client debounces
 // too; this is the half of the throttle that a client cannot skip.
 //
 // A query mapy.com matches nothing for is an empty list and a 200 — "no
@@ -50,12 +51,13 @@ func (a *API) handleGeocode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key := placeKey(query, limit)
+	projectUID := a.projectOf(r)
+	key := projectCacheKey(projectUID, placeKey(query, limit))
 	if cached, ok := a.placesCache.get(key); ok {
 		a.writePlaces(w, cached)
 		return
 	}
-	if !a.geocodeLimiter.allow() {
+	if !a.allowGeocode(projectUID) {
 		writeError(w, http.StatusTooManyRequests, "place-search rate limit exceeded, try again shortly")
 		return
 	}

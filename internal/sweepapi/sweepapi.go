@@ -51,6 +51,7 @@ type Service interface {
 type API struct {
 	service        Service
 	requireCurator func(http.Handler) http.Handler
+	rateLimit      func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. A nil Service makes the endpoint answer
@@ -60,6 +61,11 @@ type Config struct {
 	Service Service
 	// RequireCurator guards the endpoint for curators and above.
 	RequireCurator func(http.Handler) http.Handler
+	// RateLimit throttles the sweep — one request is one whole scan, however
+	// long it streams — mounted inside the curator guard so it can key on the
+	// caller and the project (cmd/kukatko's vector throttle: one bucket per user,
+	// then one per project). Nil leaves the route unthrottled.
+	RateLimit func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg. A nil RequireCurator is replaced with a pass-through,
@@ -67,9 +73,13 @@ type Config struct {
 func NewAPI(cfg Config) *API {
 	guard := cfg.RequireCurator
 	if guard == nil {
-		guard = func(next http.Handler) http.Handler { return next }
+		guard = passthrough
 	}
-	return &API{service: cfg.Service, requireCurator: guard}
+	limit := cfg.RateLimit
+	if limit == nil {
+		limit = passthrough
+	}
+	return &API{service: cfg.Service, requireCurator: guard, rateLimit: limit}
 }
 
 // RegisterRoutes mounts the sweep endpoint onto r, which the caller has scoped under
@@ -77,7 +87,7 @@ func NewAPI(cfg Config) *API {
 //
 //	GET /faces/sweep  RequireCurator  streamed recognition sweep across the project's subjects
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.requireCurator).Get("/faces/sweep", a.handleSweep)
+	r.With(a.requireCurator, a.rateLimit).Get("/faces/sweep", a.handleSweep)
 }
 
 // handleSweep parses the confidence and per-person limit, then streams the sweep of
@@ -224,3 +234,7 @@ func writeError(w http.ResponseWriter, status int, message string) {
 		log.Printf("sweepapi: encoding error response: %v", err)
 	}
 }
+
+// passthrough is the no-op middleware standing in for an unset curator guard or
+// rate limit.
+func passthrough(next http.Handler) http.Handler { return next }

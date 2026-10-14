@@ -2438,8 +2438,9 @@ pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 
   jobs, default 1), `cooldown` (min. spacing between packets, default 5m). `ErrInvalidWake` validation:
   enabled requires a valid MAC + at least one target (`broadcast_addr`/`interface`).
 - **Rate-limit keys (`ratelimit.*`, `internal/ratelimit`):** per-client-IP token-bucket limits on
-  heavy endpoints. Sections `upload`/`bulk`/`comment`/`tiles`/`upload_link`/`upload_link_per_link`/`invite`,
-  each `{rate_per_sec, burst}`; defaults 5/30, 2/10, 0.5/10, 50/200, 2/60, 10/300, 2/60; `rate_per_sec ≤ 0` disables the rule (middleware no-op). Env e.g.
+  heavy endpoints. Sections `upload`/`bulk`/`comment`/`tiles`/`upload_link`/`upload_link_per_link`/`invite`/
+  `geocode_project`/`vector`/`vector_project`, each `{rate_per_sec, burst}`; defaults 5/30, 2/10, 0.5/10,
+  50/200, 2/60, 10/300, 2/60, 3/10, 5/100, 20/400; `rate_per_sec ≤ 0` disables the rule (middleware no-op). Env e.g.
   `KUKATKO_RATELIMIT_UPLOAD_RATE_PER_SEC`. **`comment` (POST `/photos/{uid}/comments`) is keyed by the
   authenticated user**, not by IP (`Limiter.KeyedMiddleware`, mounted *inside* the auth guard so the
   principal is on the context): a household shares one address, and throttling everyone's conversation
@@ -2447,7 +2448,19 @@ pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 
   keyed the same way, also throttle a task's thread, `POST /push/subscriptions` (`internal/notificationapi`)
   and the old-link resolver `GET /resolve/{kind}/{uid}` (`internal/resolveapi`).
   Login has its own limiter (`auth.login_rate_*`), the geocode
-  proxy too (`maps.*`). **`upload_link`** (default 2/60) throttles the public upload-link routes
+  proxy too (`maps.*`). **Per-project fairness:** **`geocode_project`** (default 3/s, burst 10, env e.g.
+  `KUKATKO_RATELIMIT_GEOCODE_PROJECT_RATE_PER_SEC`) is one project's share of the geocode proxy's
+  instance-wide mapy.com budget (`GET /map/rgeocode`, `/map/geocode`; the instance bucket stays 5/s,
+  burst 10), keyed by project and checked **first**, so a project over its share never spends the
+  instance's tokens; `0` leaves only the instance cap. The geocode caches are keyed by project too.
+  **`vector`** (default 5/s, burst 100, keyed by the acting user) and **`vector_project`** (default 20/s,
+  burst 400, keyed by the project, checked after the user's bucket) throttle the routes that run a vector
+  search: `GET /search` and `GET /photos/{uid}/similar` share one pair of buckets, and the curator's
+  `POST /subjects/{uid}/candidates`, `GET /faces/sweep` and `GET /albums|labels/{uid}/similar` share
+  another. `/search` also serves every page of a filtered listing, so the defaults sit far above what a
+  family browsing its library sends (a fling through results is a few requests a second); they exist
+  so one member or one project cannot hog the vector index and the sidecar the whole instance shares.
+  An API token flagged unlimited skips both. **`upload_link`** (default 2/60) throttles the public upload-link routes
   (`GET /u/{code}` and its upload) per client IP, ahead of the code lookup; **`upload_link_per_link`**
   (default 10/300) throttles the uploads through **one link**, keyed by the link whoever sends them — the
   brake on a link that leaked to somebody with many addresses. Both count **requests**, not files: the

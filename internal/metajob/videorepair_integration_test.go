@@ -352,7 +352,7 @@ func TestReextract_repairedVideoRegainsItsScrubPreview(t *testing.T) {
 		FFmpegAvailable: func() bool { return true },
 	})
 
-	status, err := preview.Status(ctx, photo.UID)
+	status, err := preview.Status(ctx, photo.ProjectID, photo.UID)
 	if err != nil {
 		t.Fatalf("Status before the repair: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestReextract_repairedVideoRegainsItsScrubPreview(t *testing.T) {
 		t.Fatalf("Reextract: %v", err)
 	}
 
-	status, err = preview.Status(ctx, photo.UID)
+	status, err = preview.Status(ctx, photo.ProjectID, photo.UID)
 	if err != nil {
 		t.Fatalf("Status after the repair: %v", err)
 	}

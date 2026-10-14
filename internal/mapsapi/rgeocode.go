@@ -17,9 +17,10 @@ const (
 
 // handleReverseGeocode proxies a mapy.com reverse-geocode lookup for the lat/lng
 // query parameters, returning the simplified {name, location, regional_structure}
-// answer. Answers are cached (keyed by rounded coordinate) to conserve the
-// 4-credit geocode cost, and uncached lookups are rate-limited to protect the
-// monthly credit budget (429 when the budget is momentarily exhausted). An
+// answer. Answers are cached (keyed by project and rounded coordinate) to
+// conserve the 4-credit geocode cost, and uncached lookups are rate-limited —
+// per project, then instance-wide — to protect the monthly credit budget (429
+// when the budget is momentarily exhausted). An
 // unconfigured proxy answers 503; a coordinate with no match answers 404.
 func (a *API) handleReverseGeocode(w http.ResponseWriter, r *http.Request) {
 	if a.geocoder == nil {
@@ -32,12 +33,13 @@ func (a *API) handleReverseGeocode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key := geocodeKey(lat, lng)
+	projectUID := a.projectOf(r)
+	key := projectCacheKey(projectUID, geocodeKey(lat, lng))
 	if cached, ok := a.geocodeCache.get(key); ok {
 		a.writeGeocode(w, cached)
 		return
 	}
-	if !a.geocodeLimiter.allow() {
+	if !a.allowGeocode(projectUID) {
 		writeError(w, http.StatusTooManyRequests, "reverse-geocode rate limit exceeded, try again shortly")
 		return
 	}

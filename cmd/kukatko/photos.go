@@ -22,7 +22,6 @@ import (
 	"github.com/panbotka/kukatko/internal/places"
 	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/processing"
-	"github.com/panbotka/kukatko/internal/ratelimit"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/storyboardjob"
 	"github.com/panbotka/kukatko/internal/thumb"
@@ -117,7 +116,6 @@ func buildPhotoAPI(
 		Thumbnailer: thumbnailer,
 		Decoder:     thumbjob.NewStorageDecoder(store, cfg.Thumb.MaxPixels, processDecodeBudget(cfg)),
 	})
-	commentLimit := ratelimit.New(cfg.RateLimit.Comment.RatePerSec, cfg.RateLimit.Comment.Burst)
 
 	return photoapi.NewAPI(photoapi.Config{
 		Store:       photoStore,
@@ -176,11 +174,14 @@ func buildPhotoAPI(
 		// The rebuild endpoints: the job services' forced path, run on demand. The
 		// queue enqueuer is the fallback for when the box (or mapy.com) is asleep —
 		// the request then schedules a forced job instead of failing.
-		Reembedder:        rebuilders.embed,
-		Redetector:        rebuilders.face,
-		Regeocoder:        rebuilders.regeocoderOrNil(),
-		Rebuilds:          enqueuer,
-		CommentRateLimit:  commentLimit.KeyedMiddlewareExcept(commentRateKey, auth.RateLimitExempt),
+		Reembedder:       rebuilders.embed,
+		Redetector:       rebuilders.face,
+		Regeocoder:       rebuilders.regeocoderOrNil(),
+		Rebuilds:         enqueuer,
+		CommentRateLimit: userThrottle(cfg.RateLimit.Comment),
+		// GET /search and GET /photos/{uid}/similar: the browse pair of vector
+		// routes, sharing one pair of buckets (per user, per project).
+		VectorRateLimit:   newVectorThrottle(cfg),
 		Tasks:             phototask.NewStore(db.Pool()),
 		UploadLinks:       uploadlink.NewStore(db.Pool()),
 		RetentionDays:     cfg.Trash.RetentionDays,

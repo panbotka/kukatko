@@ -969,6 +969,23 @@ ratelimit:
   tiles: # GET /map/tiles/... (mapy.com tile proxy)
     rate_per_sec: 50
     burst: 200
+  # One project's share of the geocode proxy's instance-wide mapy.com budget
+  # (GET /map/rgeocode, /map/geocode), keyed by project and checked before the
+  # instance bucket. 0 leaves only the instance-wide cap.
+  geocode_project:
+    rate_per_sec: 3
+    burst: 10
+  # The vector-search routes (GET /search, /photos/{uid}/similar,
+  # /albums|labels/{uid}/similar, POST /subjects/{uid}/candidates, GET
+  # /faces/sweep) — keyed by the acting user, then by the project. /search also
+  # serves every page of a filtered listing, so the bursts are generous; a token
+  # an admin marked unlimited skips both.
+  vector:
+    rate_per_sec: 5
+    burst: 100
+  vector_project:
+    rate_per_sec: 20
+    burst: 400
   # The public upload-link routes (GET /u/{code} and its upload), per client IP.
   # These count requests, not files: the page sends one file per request (the
   # burst covers a camera roll), a script up to 50. max_uploads_per_link bounds files.

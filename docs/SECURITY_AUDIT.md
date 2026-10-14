@@ -1161,6 +1161,12 @@ below is open; each is an attack scenario with the mitigation that closes it and
   **open** — the registration page needs both. A closed project answers like a missing one, the route is
   rate-limited per IP, `/audit/mine` ignores its `user`/`project` parameters and registration answers one
   refusal for "closed" and "wrong secret" (SEC-025).
+  *Accepted by design (multi-tenancy review II §B4, 2026-10-14):* the slug probe that remains is the
+  public settings route's per-IP bucket — `ratelimit.invite`'s settings in a bucket of its own (2/s, burst
+  60), keyed by the trusted-proxy-aware client address — so one address can try about **170 000 slugs a
+  day** (2 × 86 400 + 60), and what it can find is only the slugs of projects whose registration is open,
+  which those projects publish on purpose. A closed project 404s like a missing one, so the rate bounds
+  nothing that is not public anyway; it is not tightened.
 - **Hash collision across projects.** *Attack:* upload into A the exact bytes of a photo in B, hoping the
   SHA-256 dedup answers "already have it" (an oracle for B's content) or merges the upload into B's row.
   *Mitigation:* dedup is per project — `UNIQUE (project_id, file_hash)` and `GetByFileHashInProject` — so the
@@ -1177,8 +1183,33 @@ below is open; each is an attack scenario with the mitigation that closes it and
   share one even for byte-identical photos; the media routes read the photo through the project-scoped store
   before they open anything, and a signed URL is minted per object. A profile picture picked from a library
   photo is refused for a photo of a project the viewer may not see, and the inherited face is the account's
-  person **in the viewer's project** only. *Tests:* `internal/storekeys` and the isolation tests of the
-  photo media routes (`internal/photoapi`) and of `internal/userpic`.
+  person **in the viewer's project** only. The scrub-preview service does not rely on its callers' check
+  either: `storyboardjob.Service`'s `Status`, `Open`, `FileHash` and `Regenerate` take the request's project
+  and load the photo through `GetByUIDInProject`, so a handler that forgot `photoInProject` still gets
+  `ErrPhotoNotFound` for a foreign clip (only the job's `Generate` reads unscoped, via `GetForJob`;
+  review II §J-5). *Tests:* `internal/storekeys` and the isolation tests of the photo media routes
+  (`internal/photoapi`), of `internal/userpic`, and `TestReadPaths_scopedToProject`
+  (`internal/storyboardjob`).
+- **Shared-resource starvation and cache-hit oracles.** *Attack:* a member of A (or a script with A's
+  token) spends the resources every project shares — the instance's mapy.com credits, the vector index and
+  the embedding sidecar — so B's place search and similar-photo routes answer 429 or crawl; or times a
+  geocode lookup to learn that somebody on the instance has already looked that place up (a cache hit
+  answers without the upstream round trip). *Mitigation (review II §D-4, §D-5, 2026-10-14):* the geocode
+  proxy (`GET /map/rgeocode`, `/map/geocode`, `internal/mapsapi`) checks a **per-project bucket**
+  (`ratelimit.geocode_project`, 3/s, burst 10) before the instance-wide one (5/s, burst 10), so a project
+  over its share is refused without spending the instance's tokens; and both geocode caches are **keyed by
+  project**, so a hit only ever reflects a lookup made in the caller's own library (chosen over masking the
+  latency, which would have slowed every hit and defeated the typeahead; the price is that two projects
+  each pay once for the same place). The vector routes — `GET /search`, `GET /photos/{uid}/similar`,
+  `GET /albums|labels/{uid}/similar`, `POST /subjects/{uid}/candidates`, `GET /faces/sweep` — sit behind a
+  **per-user bucket and then a per-project bucket** (`ratelimit.vector` 5/s burst 100,
+  `ratelimit.vector_project` 20/s burst 400), mounted inside the auth guard; the browse pair and the
+  curator trio each have their own pair of buckets. A token an admin marked unlimited skips them, as it
+  skips every per-user limiter. *Residue:* the geocode caches' capacity is shared, so a busy project can
+  evict another's entries (bounded by its geocode bucket — it costs that project credits, not the other's
+  data). *Tests:* `TestGeocode_projectShareLeavesTheInstanceBudget`, `TestGeocode_cacheIsPerProject`
+  (`internal/mapsapi`), `TestNewVectorThrottle_userThenProject` (`cmd/kukatko`), and the
+  `TestRateLimit_mountedInsideTheGuard`/`TestVectorRateLimit_mountedOnTheVectorRoutes` wiring tests.
 - **Invite abuse.** *Attack:* guess or replay an invitation code, stretch one beyond its intent, or use one to
   become a project admin. *Mitigation:* a code is 8 symbols of a 55-symbol alphabet (~46 bits) looked up
   through its SHA-256; the public `GET /invite/{code}` and its accept sit behind a per-IP limiter

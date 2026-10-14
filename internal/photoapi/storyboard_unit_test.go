@@ -32,13 +32,13 @@ type fakeStoryboards struct {
 }
 
 // Status records the uid and returns the configured answer.
-func (f *fakeStoryboards) Status(_ context.Context, uid string) (storyboardjob.Status, error) {
+func (f *fakeStoryboards) Status(_ context.Context, _, uid string) (storyboardjob.Status, error) {
 	f.statusUID = uid
 	return f.status, f.statusErr
 }
 
 // Open returns the configured sprite bytes or failure.
-func (f *fakeStoryboards) Open(context.Context, string) (io.ReadCloser, storyboard.Spec, error) {
+func (f *fakeStoryboards) Open(context.Context, string, string) (io.ReadCloser, storyboard.Spec, error) {
 	f.openCalls++
 	if f.openErr != nil {
 		return nil, storyboard.Spec{}, f.openErr
@@ -47,13 +47,13 @@ func (f *fakeStoryboards) Open(context.Context, string) (io.ReadCloser, storyboa
 }
 
 // FileHash returns the configured ETag source.
-func (f *fakeStoryboards) FileHash(context.Context, string) (string, error) {
+func (f *fakeStoryboards) FileHash(context.Context, string, string) (string, error) {
 	return f.hash, f.hashErr
 }
 
 // Regenerate records the uid it was asked to re-render or reports the configured
 // refusal.
-func (f *fakeStoryboards) Regenerate(_ context.Context, uid string) error {
+func (f *fakeStoryboards) Regenerate(_ context.Context, _, uid string) error {
 	if f.regenErr != nil {
 		return f.regenErr
 	}

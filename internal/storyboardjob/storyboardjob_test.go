@@ -16,6 +16,13 @@ import (
 // testHash is a syntactically valid content hash for the fake catalogue rows.
 const testHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
+// testProject is the project every fake catalogue row belongs to; otherProject
+// is a second one, whose reads must find none of them.
+const (
+	testProject  = "pj-storyboard-test"
+	otherProject = "pj-storyboard-other"
+)
+
 // fakePhotos is an in-memory catalogue keyed by uid.
 type fakePhotos struct {
 	rows map[string]photos.Photo
@@ -29,6 +36,20 @@ func (f *fakePhotos) GetForJob(_ context.Context, uid string) (photos.Photo, err
 	}
 	row, ok := f.rows[uid]
 	if !ok {
+		return photos.Photo{}, photos.ErrPhotoNotFound
+	}
+	return row, nil
+}
+
+// GetByUIDInProject returns the stored row when its ProjectID is projectUID,
+// and ErrPhotoNotFound for a foreign or unknown uid — the scoping the real store
+// does in SQL.
+func (f *fakePhotos) GetByUIDInProject(ctx context.Context, projectUID, uid string) (photos.Photo, error) {
+	row, err := f.GetForJob(ctx, uid)
+	if err != nil {
+		return photos.Photo{}, err
+	}
+	if row.ProjectID != projectUID {
 		return photos.Photo{}, photos.ErrPhotoNotFound
 	}
 	return row, nil
@@ -108,6 +129,7 @@ func (f *fakeEnqueuer) EnqueueStoryboard(_ context.Context, uid string) error {
 func videoPhoto(uid string, durationMs int) photos.Photo {
 	return photos.Photo{
 		UID:        uid,
+		ProjectID:  testProject,
 		FileHash:   testHash,
 		FilePath:   "2026/01/clip.mp4",
 		FileWidth:  1920,
@@ -138,7 +160,7 @@ func TestStatus_pendingSchedulesGeneration(t *testing.T) {
 	enq := &fakeEnqueuer{}
 	svc := newService(store, &fakeGenerator{}, enq)
 
-	status, err := svc.Status(t.Context(), "v1")
+	status, err := svc.Status(t.Context(), testProject, "v1")
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
@@ -162,7 +184,7 @@ func TestStatus_readyCarriesLayout(t *testing.T) {
 	enq := &fakeEnqueuer{}
 	svc := newService(store, &fakeGenerator{ready: true}, enq)
 
-	status, err := svc.Status(t.Context(), "v1")
+	status, err := svc.Status(t.Context(), testProject, "v1")
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
@@ -190,8 +212,8 @@ func TestStatus_unavailable(t *testing.T) {
 	noDuration := videoPhoto("v3", 0)
 	noDuration.DurationMs = nil
 	rows := map[string]photos.Photo{
-		"p1": {UID: "p1", FileHash: testHash, MediaType: photos.MediaImage},
-		"p2": {UID: "p2", FileHash: testHash, MediaType: photos.MediaLive},
+		"p1": {UID: "p1", ProjectID: testProject, FileHash: testHash, MediaType: photos.MediaImage},
+		"p2": {UID: "p2", ProjectID: testProject, FileHash: testHash, MediaType: photos.MediaLive},
 		"v3": noDuration,
 	}
 	for uid := range rows {
@@ -199,7 +221,7 @@ func TestStatus_unavailable(t *testing.T) {
 			t.Parallel()
 			enq := &fakeEnqueuer{}
 			svc := newService(&fakePhotos{rows: rows}, &fakeGenerator{}, enq)
-			status, err := svc.Status(t.Context(), uid)
+			status, err := svc.Status(t.Context(), testProject, uid)
 			if err != nil {
 				t.Fatalf("Status: %v", err)
 			}
@@ -226,7 +248,7 @@ func TestStatus_noFFmpegIsUnavailable(t *testing.T) {
 		FFmpegAvailable: func() bool { return false },
 	})
 
-	status, err := svc.Status(t.Context(), "v1")
+	status, err := svc.Status(t.Context(), testProject, "v1")
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
@@ -249,7 +271,7 @@ func TestStatus_noEnqueuerIsUnavailable(t *testing.T) {
 		FFmpegAvailable: func() bool { return true },
 	})
 
-	status, err := svc.Status(t.Context(), "v1")
+	status, err := svc.Status(t.Context(), testProject, "v1")
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
@@ -264,7 +286,7 @@ func TestStatus_missingPhoto(t *testing.T) {
 	t.Parallel()
 
 	svc := newService(&fakePhotos{rows: map[string]photos.Photo{}}, &fakeGenerator{}, &fakeEnqueuer{})
-	if _, err := svc.Status(t.Context(), "nope"); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if _, err := svc.Status(t.Context(), testProject, "nope"); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("Status error = %v, want ErrPhotoNotFound", err)
 	}
 }
@@ -280,7 +302,7 @@ func TestStatus_enqueueFailurePropagates(t *testing.T) {
 		&fakeGenerator{},
 		&fakeEnqueuer{err: boom},
 	)
-	if _, err := svc.Status(t.Context(), "v1"); !errors.Is(err, boom) {
+	if _, err := svc.Status(t.Context(), testProject, "v1"); !errors.Is(err, boom) {
 		t.Errorf("Status error = %v, want the queue failure", err)
 	}
 }
@@ -295,7 +317,7 @@ func TestOpen_notGenerated(t *testing.T) {
 		&fakeGenerator{},
 		&fakeEnqueuer{},
 	)
-	if _, _, err := svc.Open(t.Context(), "v1"); !errors.Is(err, storyboard.ErrNotGenerated) {
+	if _, _, err := svc.Open(t.Context(), testProject, "v1"); !errors.Is(err, storyboard.ErrNotGenerated) {
 		t.Errorf("Open error = %v, want ErrNotGenerated", err)
 	}
 }
@@ -310,7 +332,7 @@ func TestOpen_readyReturnsBytesAndSpec(t *testing.T) {
 		&fakeGenerator{ready: true},
 		&fakeEnqueuer{},
 	)
-	reader, spec, err := svc.Open(t.Context(), "v1")
+	reader, spec, err := svc.Open(t.Context(), testProject, "v1")
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -334,12 +356,12 @@ func TestOpen_notAVideo(t *testing.T) {
 
 	svc := newService(
 		&fakePhotos{rows: map[string]photos.Photo{
-			"p1": {UID: "p1", FileHash: testHash, MediaType: photos.MediaImage},
+			"p1": {UID: "p1", ProjectID: testProject, FileHash: testHash, MediaType: photos.MediaImage},
 		}},
 		&fakeGenerator{ready: true},
 		&fakeEnqueuer{},
 	)
-	if _, _, err := svc.Open(t.Context(), "p1"); !errors.Is(err, ErrNotAVideo) {
+	if _, _, err := svc.Open(t.Context(), testProject, "p1"); !errors.Is(err, ErrNotAVideo) {
 		t.Errorf("Open error = %v, want ErrNotAVideo", err)
 	}
 }
@@ -354,14 +376,14 @@ func TestFileHash(t *testing.T) {
 		&fakeGenerator{},
 		&fakeEnqueuer{},
 	)
-	hash, err := svc.FileHash(t.Context(), "v1")
+	hash, err := svc.FileHash(t.Context(), testProject, "v1")
 	if err != nil {
 		t.Fatalf("FileHash: %v", err)
 	}
 	if hash != testHash {
 		t.Errorf("FileHash = %q, want %q", hash, testHash)
 	}
-	if _, err := svc.FileHash(t.Context(), "nope"); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if _, err := svc.FileHash(t.Context(), testProject, "nope"); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("FileHash on a missing photo = %v, want ErrPhotoNotFound", err)
 	}
 }
@@ -421,7 +443,7 @@ func TestGenerate_skipsPhotosWithNoPlan(t *testing.T) {
 	gen := &fakeGenerator{}
 	svc := newService(
 		&fakePhotos{rows: map[string]photos.Photo{
-			"p1": {UID: "p1", FileHash: testHash, MediaType: photos.MediaImage},
+			"p1": {UID: "p1", ProjectID: testProject, FileHash: testHash, MediaType: photos.MediaImage},
 		}},
 		gen,
 		&fakeEnqueuer{},
@@ -471,7 +493,7 @@ func TestRegenerate_dropsTheSpriteAndSchedules(t *testing.T) {
 		"pht1": videoPhoto("pht1", 20000),
 	}}, gen, enq)
 
-	if err := svc.Regenerate(context.Background(), "pht1"); err != nil {
+	if err := svc.Regenerate(context.Background(), testProject, "pht1"); err != nil {
 		t.Fatalf("Regenerate: %v", err)
 	}
 	if len(gen.removed) != 1 || gen.removed[0] != testHash {
@@ -507,7 +529,7 @@ func TestRegenerate_dropsTheSpriteUnderThePhotosPrefix(t *testing.T) {
 			video.FilePath = tt.filePath
 			gen := &fakeGenerator{ready: true}
 			svc := newService(&fakePhotos{rows: map[string]photos.Photo{"pht1": video}}, gen, &fakeEnqueuer{})
-			if err := svc.Regenerate(context.Background(), "pht1"); err != nil {
+			if err := svc.Regenerate(context.Background(), testProject, "pht1"); err != nil {
 				t.Fatalf("Regenerate: %v", err)
 			}
 			if len(gen.removed) != 1 || gen.removed[0] != tt.want {
@@ -526,7 +548,7 @@ func TestRegenerate_refusals(t *testing.T) {
 
 	rows := map[string]photos.Photo{
 		"vid": videoPhoto("vid", 20000),
-		"img": {UID: "img", FileHash: testHash, MediaType: photos.MediaImage},
+		"img": {UID: "img", ProjectID: testProject, FileHash: testHash, MediaType: photos.MediaImage},
 	}
 
 	tests := []struct {
@@ -545,7 +567,7 @@ func TestRegenerate_refusals(t *testing.T) {
 			t.Parallel()
 			gen := &fakeGenerator{ready: true}
 			svc := newService(&fakePhotos{rows: rows}, gen, tt.enq)
-			err := svc.Regenerate(context.Background(), tt.uid)
+			err := svc.Regenerate(context.Background(), testProject, tt.uid)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("Regenerate = %v, want %v", err, tt.wantErr)
 			}
@@ -553,5 +575,43 @@ func TestRegenerate_refusals(t *testing.T) {
 				t.Errorf("a refused regeneration removed %v, want nothing", gen.removed)
 			}
 		})
+	}
+}
+
+// TestReadPaths_scopedToProject verifies every read path a request drives loads
+// the photo inside the caller's project: asked from another project, a clip
+// whose sprite is cached answers photos.ErrPhotoNotFound from Status, Open,
+// FileHash and Regenerate alike, schedules nothing and discards nothing — the
+// scoping holds even for a handler that forgot its own project check.
+func TestReadPaths_scopedToProject(t *testing.T) {
+	t.Parallel()
+
+	gen := &fakeGenerator{ready: true}
+	enq := &fakeEnqueuer{}
+	svc := newService(&fakePhotos{rows: map[string]photos.Photo{"v1": videoPhoto("v1", 20000)}}, gen, enq)
+	ctx := t.Context()
+
+	calls := map[string]func() error{
+		"Status": func() error { _, err := svc.Status(ctx, otherProject, "v1"); return err },
+		"Open": func() error {
+			reader, _, err := svc.Open(ctx, otherProject, "v1")
+			if reader != nil {
+				_ = reader.Close()
+			}
+			return err
+		},
+		"FileHash":   func() error { _, err := svc.FileHash(ctx, otherProject, "v1"); return err },
+		"Regenerate": func() error { return svc.Regenerate(ctx, otherProject, "v1") },
+	}
+	for name, call := range calls {
+		if err := call(); !errors.Is(err, photos.ErrPhotoNotFound) {
+			t.Errorf("%s from another project error = %v, want ErrPhotoNotFound", name, err)
+		}
+	}
+	if len(enq.uids) != 0 || len(gen.removed) != 0 {
+		t.Errorf("foreign reads scheduled %v and removed %v, want nothing", enq.uids, gen.removed)
+	}
+	if _, err := svc.Status(ctx, testProject, "v1"); err != nil {
+		t.Errorf("Status from the photo's own project: %v", err)
 	}
 }

@@ -804,7 +804,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   the `?uploader=` filter on `GET /photos` takes a **user UID**, or the reserved value **`none`** for the
   photos with no uploader at all (the imported ones) — the same word the query language's `uploader:none`
   uses, and no UID can collide with it;
-  `GET /search?q=&mode=` (authenticated) — **semantic + hybrid search**, `mode` =
+  `GET /search?q=&mode=` (authenticated; **vector rate limit** — `ratelimit.vector` per user then
+`ratelimit.vector_project` per project, → 429, shared with `GET /photos/{uid}/similar`) — **semantic + hybrid search**, `mode` =
   `fulltext`|`semantic`|`hybrid` (default `hybrid`, unknown → 400): **fulltext** = Czech-aware
   full-text over `fts tsvector` (dictionary `simple` + `unaccent`, ranking `ts_rank`
   title>description>notes>file_name); **semantic** = `q` → SigLIP 2 embedding via sidecar →
@@ -838,7 +839,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `?favorite=true` scopes the list to their favourites, **`?min_rating=n` / `?flag=pick|reject|eye` / `?sort=rating`**
   scoped to them (a photo without a row = rating 0 / flag `none`);
   `GET /photos/{uid}` full detail + `files` + `is_favorite` + `rating`/`flag`;
-  `GET /photos/{uid}/similar` (authenticated) — **visually similar photos** by cosine distance of
+  `GET /photos/{uid}/similar` (authenticated; the same **vector rate limit** as `GET /search`, → 429) — **visually similar photos** by cosine distance of
   embeddings (HNSW over `embeddings`, `SimilarSearcher`/`vectors.Store`), nearest first: response
   `{similar:[{…photo, distance}]}` (`distance` = cosine distance to the source photo, smaller =
   closer), `?limit` (default 24, max 100); the source photo is excluded from the result. A photo without
@@ -1617,10 +1618,14 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   otherwise does not matter (it reads vectors already in the DB). 503 without a backend, 404 missing subject —
   `{"error":"subject not found"}`, the same for a subject of another project; every candidate is an unassigned
   face of the request's project. Mounted by `server.WithAPI` (`buildCandidatesAPI` in `cmd/kukatko/candidates.go`).
+  **Vector rate limit** (→ 429): one bucket per user (`ratelimit.vector`), then one per project
+  (`ratelimit.vector_project`), inside the curator guard — shared by the three curator vector searches
+  (candidates, the sweep, collection expansion), separate from the browse pair (`/search`, `/similar`).
 - **Recognition sweep API (`/api/v1/p/{project}`, `internal/sweepapi`, curator and above via `RequireCurator`):**
   "go through all named people and find certain matches among unlabelled faces" — a server-side
   fan-out via the **candidate search** (`internal/candidates`) over all subjects, not client-side.
-  `GET /faces/sweep?confidence=<percent-or-distance>&limit=<per-person>` — over the request's project only:
+  `GET /faces/sweep?confidence=<percent-or-distance>&limit=<per-person>` (the curator group's **vector rate
+  limit** → 429; one request is one whole scan) — over the request's project only:
   its named subjects, its unassigned faces. `confidence`: a value
   `>1` (max 100) is a **confidence percentage** → mapped to the cosine distance `1 - percent/100`
   (floor `0.01`), a value `≤1` is a **direct distance**, empty = default 75 % (0.25); negative /
@@ -1642,7 +1647,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   (`buildSweepAPI` in `cmd/kukatko/sweep.go`), sharing `candidates.Service` with the candidates endpoint.
 - **Expand-a-collection API (`/api/v1/p/{project}`, `internal/expandapi`, curator and above via `RequireCurator`):**
   "find photos similar to a whole album / label" — filling out a half-tagged collection. `GET /albums/{uid}/similar`
-  and `GET /labels/{uid}/similar` with query `?threshold=&limit=` (`threshold` = max cosine distance,
+  and `GET /labels/{uid}/similar` (the curator group's **vector rate limit** → 429) with query
+  `?threshold=&limit=` (`threshold` = max cosine distance,
   default `expand.max_distance` = 0.20, i.e. 80 % similarity — re-derived for SigLIP 2, it was 0.30 under
   CLIP ViT-L-14 (see [`THRESHOLDS.md`](THRESHOLDS.md)); `limit` default `expand.limit`, cap
   `expand.max_limit`; non-numeric / negative → 400). Membership is resolved **natively** (`internal/organize`),
@@ -2778,15 +2784,18 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   TTL, `maps.tile_cache_bytes`/`maps.tile_cache_ttl`) — a hit pays no mapy.com credit and is reported by
   the `X-Tile-Cache: hit|miss` header; **an error is never cached**. `GET /map/rgeocode?lat=&lng=` —
   reverse geocode → a simplified `{name,location,regional_structure}`, **cached** (key =
-  the rounded coordinate) and **rate-limited** (token-bucket, geocode = 4 credits) → 429 over the
-  limit, 404 for no match. `GET /map/geocode?q=&limit=` — **forward** geocode (name → coordinates)
+  the project + the rounded coordinate) and **rate-limited** (token-bucket, geocode = 4 credits): the
+  project's own bucket (`ratelimit.geocode_project`, default 3/s, burst 10) first, then the instance-wide
+  one (5/s, burst 10) → 429 over either, so one project cannot use up the credits the others need; 404 for
+  no match. `GET /map/geocode?q=&limit=` — **forward** geocode (name → coordinates)
   for the location editor → `{items:[{name,label,type,location,lat,lng}]}` ordered from the best match
   (`label` = the localized place kind „Město“/„Zámek“, `type` = the machine `regional.municipality`/
   `poi`/…, `location` = what the place contains, to distinguish several *Veselí*). An empty/long `q`
   (>200 characters) → 400 **before** the upstream call, `limit` is **clamped** to 1–15 (default 5), not 400.
   **No match = `items: []` and 200**, not 404 (even if mapy.com answers 404) — an unfinished name is
-  a normal autocomplete state, not an error. It shares the cache and rate-limiter with `rgeocode` (one credit
-  budget = one limiter); the cache key = the casefolded query + `limit`, **diacritics are
+  a normal autocomplete state, not an error. It shares the cache and the two buckets with `rgeocode` (one credit
+  budget = one limiter, shared fairly between projects); the cache key = the project + the casefolded query + `limit`
+  (per project, so a fast cached answer never tells one project what another has looked up), **diacritics are
   preserved** (`veseli` and `veselí` are different queries at that level). `GET /map/photos` — a **GeoJSON FeatureCollection** of geotagged photos
   (coordinates `[lng,lat]`), honouring the filters `taken_after`/`taken_before`/`album`/`label`/`archived`,
   a feature carries `uid`/`title`/`taken_at`/`media_type`/a relative `thumb`, the photo's **`blurhash`**

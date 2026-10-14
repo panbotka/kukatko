@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/candidates"
 	"github.com/panbotka/kukatko/internal/candidatesapi"
@@ -18,13 +20,17 @@ import (
 // the shared pool: the candidates service (which votes over each of a subject's
 // exemplars' unassigned-face neighbours) behind its curator endpoint. The media
 // store stamps the candidate photos' URLs; the curator guard is supplied via authAPI
-// so the candidatesapi package stays decoupled from auth's wiring.
+// so the candidatesapi package stays decoupled from auth's wiring. rateLimit is
+// the curator group's vector throttle (newVectorThrottle), shared with the sweep
+// and the collection expansion.
 func buildCandidatesAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
+	rateLimit func(http.Handler) http.Handler,
 ) *candidatesapi.API {
 	return candidatesapi.NewAPI(candidatesapi.Config{
 		Service:        buildCandidatesService(cfg, db, mediaStore),
 		RequireCurator: authAPI.RequireCurator,
+		RateLimit:      rateLimit,
 	})
 }
 

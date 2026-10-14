@@ -1,59 +1,45 @@
 package mapsapi
 
 import (
-	"sync"
-	"time"
+	"net/http"
+
+	"github.com/panbotka/kukatko/internal/auth"
 )
 
-// rateLimiter is a simple concurrency-safe token-bucket limiter used to cap how
-// often reverse-geocode lookups reach mapy.com, protecting the monthly credit
-// budget. A non-positive rate disables limiting (every call is allowed).
-type rateLimiter struct {
-	mu       sync.Mutex
-	tokens   float64
-	max      float64
-	rate     float64 // tokens added per second
-	last     time.Time
-	disabled bool
-}
+// instanceBucket is the one key of the instance-wide geocode limiter: every
+// project draws on the same mapy.com credit budget, so they share one bucket.
+const instanceBucket = "instance"
 
-// newRateLimiter returns a token-bucket limiter that refills at ratePerSec tokens
-// per second up to a burst of burst tokens. A non-positive ratePerSec disables the
-// limiter so it always allows.
-func newRateLimiter(ratePerSec float64, burst int) *rateLimiter {
-	if ratePerSec <= 0 {
-		return &rateLimiter{disabled: true}
-	}
-	if burst < 1 {
-		burst = 1
-	}
-	return &rateLimiter{
-		tokens: float64(burst),
-		max:    float64(burst),
-		rate:   ratePerSec,
-		last:   time.Now(),
-	}
-}
-
-// allow reports whether a request may proceed now, consuming one token when it
-// can. A disabled limiter always allows.
-func (r *rateLimiter) allow() bool {
-	if r.disabled {
-		return true
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	now := time.Now()
-	elapsed := now.Sub(r.last).Seconds()
-	r.last = now
-	r.tokens += elapsed * r.rate
-	if r.tokens > r.max {
-		r.tokens = r.max
-	}
-	if r.tokens < 1 {
+// allowGeocode reports whether a geocode lookup for projectUID may reach
+// mapy.com now, spending one token from the project's own bucket and one from
+// the instance-wide bucket when it can.
+//
+// The project's share is checked first, deliberately: a project that is over its
+// share is refused without touching the instance bucket, so one busy project can
+// never drain the credits every other project's lookups wait on — which is the
+// whole point of having the per-project bucket at all. The instance bucket stays
+// the ceiling on the sum, because the budget it guards is the instance's.
+func (a *API) allowGeocode(projectUID string) bool {
+	if !a.projectGeocodeLimiter.Allow(projectUID) {
 		return false
 	}
-	r.tokens--
-	return true
+	return a.geocodeLimiter.Allow(instanceBucket)
+}
+
+// projectCacheKey prefixes a geocode cache key with the project it was asked
+// in. Both geocode caches are shared memory, and a hit is answered visibly
+// faster than a miss that goes to mapy.com — so a shared entry would tell a
+// member of one project that somebody, somewhere, had looked this place up.
+// Keying the entry by project keeps that signal inside the library it came
+// from, at the cost of each project paying once for a place another project has
+// already asked about; masking the latency instead would cost every hit a
+// deliberate delay, which defeats the typeahead the cache exists for.
+func projectCacheKey(projectUID, key string) string {
+	return projectUID + "|" + key
+}
+
+// requestProject returns the uid of the project the request runs in, as the
+// route guard resolved it. It is the default of API.projectOf.
+func requestProject(r *http.Request) string {
+	return auth.ProjectUIDFromContext(r.Context())
 }

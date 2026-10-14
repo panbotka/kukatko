@@ -91,6 +91,9 @@ type API struct {
 	// commentRateLimit throttles comment creation per user; nil means no throttle
 	// (see commentThrottle).
 	commentRateLimit func(http.Handler) http.Handler
+	// vectorRateLimit throttles the routes that run a vector search (search,
+	// similar photos); nil means no throttle (see vectorThrottle).
+	vectorRateLimit func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. Every field is required.
@@ -220,6 +223,12 @@ type Config struct {
 	// that a request bearing an API token an admin marked unlimited can be let
 	// through it (see auth.RateLimitExempt). A nil value disables throttling.
 	CommentRateLimit func(http.Handler) http.Handler
+	// VectorRateLimit throttles the two routes that embed a query or walk the
+	// HNSW index — GET /search (whose semantic and hybrid modes call the
+	// sidecar and the vector index) and GET /photos/{uid}/similar. Like
+	// CommentRateLimit it is mounted inside the auth guard, so it can key on the
+	// caller and the request's project. A nil value disables throttling.
+	VectorRateLimit func(http.Handler) http.Handler
 	// RetentionDays is the trash retention window reported by the trash-info
 	// endpoint so the UI can show the auto-purge countdown.
 	RetentionDays int
@@ -296,6 +305,7 @@ func NewAPI(cfg Config) *API {
 		requireDownload:   cfg.RequireDownload,
 
 		commentRateLimit: cfg.CommentRateLimit,
+		vectorRateLimit:  cfg.VectorRateLimit,
 	}
 }
 
@@ -309,6 +319,15 @@ func (a *API) commentThrottle() func(http.Handler) http.Handler {
 	return a.commentRateLimit
 }
 
+// vectorThrottle returns the vector-search throttle, or a pass-through when none
+// is configured, for the same reason commentThrottle does.
+func (a *API) vectorThrottle() func(http.Handler) http.Handler {
+	if a.vectorRateLimit == nil {
+		return passthroughMiddleware
+	}
+	return a.vectorRateLimit
+}
+
 // passthroughMiddleware is a no-op middleware used when no rate limiter is
 // configured.
 func passthroughMiddleware(next http.Handler) http.Handler {
@@ -318,13 +337,13 @@ func passthroughMiddleware(next http.Handler) http.Handler {
 // RegisterRoutes mounts the photo endpoints onto r, which the caller has scoped
 // under the API base path (for example /api/v1):
 //
-//	GET    /search                    RequireAuth      full-text search (ranked)
+//	GET    /search                    RequireAuth      full-text search (ranked; + vector rate limit)
 //	GET    /photos                    RequireAuth      list with filters/sort/page
 //	GET    /photos/timeline           RequireAuth      month date buckets (histogram)
 //	GET    /photos/years              RequireAuth      capture years with counts (facet)
 //	GET    /photos/uploaders          RequireAuth      who uploaded, with counts (facet)
 //	GET    /photos/{uid}              RequireAuth      full detail (+ people=true)
-//	GET    /photos/{uid}/similar      RequireAuth      visually similar photos
+//	GET    /photos/{uid}/similar      RequireAuth      visually similar photos (+ vector rate limit)
 //	GET    /photos/{uid}/faces        RequireAuth      faces + assignment + suggestions
 //	POST   /photos/{uid}/faces/assign RequireCurator   create/assign/unassign marker
 //	POST   /photos/{uid}/people       RequireCurator   attach a person by hand
@@ -372,7 +391,7 @@ func passthroughMiddleware(next http.Handler) http.Handler {
 //	POST   /trash/empty               RequireAdmin     permanent delete all (confirm)
 //	POST   /trash/purge-older         RequireAdmin     permanent delete older than N days (confirm)
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.requireAuth).Get("/search", a.handleSearch)
+	r.With(a.requireAuth, a.vectorThrottle()).Get("/search", a.handleSearch)
 	r.With(a.requireAuth).Get("/favorites", a.handleFavorites)
 	r.With(a.requireAuth).Get("/trash/info", a.handleTrashInfo)
 	r.With(a.requireAdmin).Post("/trash/empty", a.handleEmptyTrash)
@@ -385,7 +404,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireAuth).Get("/years", a.handleYears)
 		r.With(a.requireAuth).Get("/uploaders", a.handleUploaders)
 		r.With(a.requireAuth).Get("/{uid}", a.handleDetail)
-		r.With(a.requireAuth).Get("/{uid}/similar", a.handleSimilar)
+		r.With(a.requireAuth, a.vectorThrottle()).Get("/{uid}/similar", a.handleSimilar)
 		r.With(a.requireAuth).Get("/{uid}/faces", a.handleFaces)
 		r.With(a.requireAuth).Put("/{uid}/favorite", a.handleAddFavorite)
 		r.With(a.requireAuth).Delete("/{uid}/favorite", a.handleRemoveFavorite)

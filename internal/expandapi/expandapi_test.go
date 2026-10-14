@@ -34,9 +34,6 @@ func (f *fakeService) Label(_ context.Context, _, uid string, req expand.Request
 	return f.labelResult, f.labelErr
 }
 
-// passthrough is a no-op write guard for tests.
-func passthrough(next http.Handler) http.Handler { return next }
-
 // newRouter mounts an API over svc, scoped under /api/v1 like the real server.
 func newRouter(svc Service) http.Handler {
 	api := NewAPI(Config{Service: svc, RequireCurator: passthrough})
