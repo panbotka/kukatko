@@ -624,3 +624,173 @@ The [`migrations-rollback/`](migrations-rollback/README.md) scripts, newest firs
 
 **Cleanup:** the box container, the dump, every copy, the worktrees and the binaries were deleted; nothing on
 production was written, migrated or restarted.
+
+## 2026-10-14 — safety gate III (after the round-2 fixes, 0099→0119)
+
+**Verdict: GO — no blocker.** The migration chain, the runbook (with four small doc corrections made here)
+and the tenant isolation hold on a fresh production copy; both round-2 UI blockers are closed. Before the vps
+merge the owner still has the runbook's step-4 client actions to do, and should decide on S1 below (the
+pre-release audit history drops out of `v`'s leaderboard and audit page — visible on release day, losslessly
+backfillable at any time). Re-run of the prod-copy rehearsal, the storage move, the isolation probes and
+the staging walk on `main` **2ac8f2f9**, after all sixteen "Multi-tenancy review II" fix tasks (01–16) were
+done. Production was **0.31.0 / 253fd0b, schema 0099** and was only read: one `pg_dump -Fc` (streamed to the
+box, never the Pi), one `SELECT max(version)`, the `backup` container's log and `/healthz`. Reports:
+`/mnt/nas-botka/kukatko/multitenancy-review-3/` (`isolation-gate3.md`, `walk-gate3.md` + `walk/`).
+
+### The runbook, copy-pasted
+
+The release-day checklist and the rollback of [`OPERATIONS.md`](OPERATIONS.md) were run **as written** on a
+stand-in for the VPS on the box, built so that no command needed editing: a throwaway
+`pgvector/pgvector:pg17` container **named `pgvector`** holding the fresh dump as database `kukatko`, a compose
+project **`vps`** (container `vps-kukatko-1`, `restart: always`, 30 s grace, no healthcheck) on a network
+**`traef`**, the real images `ghcr.io/panbotka/kukatko:0.31.0` → **`ghcr.io/panbotka/kukatko:2ac8f2f`** (the
+CI-built image of the release candidate) and every command run as root, with `/root/…` paths. The only
+substitutions were the placeholders (`<ts>`, `<new>`, `<POSTGRES_PASSWORD>`), fs storage instead of R2 (see
+"Not covered"), and the `scp` to the VPS replaced by a local copy into `/root/rollback/`.
+
+| Step | Result |
+| --- | --- |
+| Dump (`pg_dump -Fc` → box) | 425,634,346 B in 1 min 53 s; restored with the pre-0104 `sed` procedure in **204 s**: schema 99, 21,151 photos, 14 accounts |
+| 1 Backup | works as written: 425.7 MB in ~45 s, `pg_restore -l` → 57 `TABLE DATA` entries |
+| 1 Restore on production (last resort) | works as written on a migrated (0119) database: `RENAME TO kukatko_failed`, `createdb`, `pg_restore \| sed \| psql` **3 min 21 s**, schema 99, 21,151 photos; 0.31.0 then serves sign-ins and the parity reads byte-identically. *It left the 425 MB `/tmp/pre.dump` inside `pgvector`* — a `docker exec pgvector rm /tmp/pre.dump` line was added |
+| 2 Long transactions | the query runs, 0 rows |
+| 3 Inventory A (new image, `nobody`-owned `/root/inventory`) | works as written: 5.06 s, **did not migrate** (schema still 99) |
+| Old binary still serving: the new CLI | `maintenance scan`, `storage rekey --dry-run`, `project purge`, `import dir --project v` all **refuse** with `database is at schema 99, this binary expects 119 (20 pending migration(s): 0100_projects.sql … 0119_notifications_params.sql); run kukatko migrate after stopping the old server`, exit 1; `kukatko migrate` **refuses**, naming 0.31.0's two connections (`no application_name — Kukátko 0.31.0 or older`); schema still 99, 0.31.0's session still 200 |
+| 4 Clients | owner actions, still open (below): the fotky task is pending, the Pi's `prod`/`boxstage` ctl contexts name no project |
+| 5 Deploy (`compose up -d` with the new tag) | events `kill → stop → die → destroy (0.31.0)` → `rename` → `start (2ac8f2f)`: the old container is gone before the new one starts; `/healthz` answers ~1 s after `up`; **20** `migration applied` lines, 0 `ERROR`, no `other database client`. *The runbook said "18 lines (0100 … 0117)"* — corrected to one line per file from 0100 to the newest (20 for 0119) |
+| 6 Inventory B + the release-day expect list, verbatim | exit 1 with **one** unexpected difference, `count:jobs 175531 → 175532` — the live drift the runbook says to read and then allow; rerun with `--expect count:jobs` → **exit 0, 47 differences, 0 unexpected**. Digests identical, `photos.tsv` byte-identical |
+| 7 Verify `v` | `/projects`: `v` "Veselice", active, root layout, `members_count` 14, `photos_count` 21,151; a viewer's reads of albums, subjects, tasks, a search, places and what's-new 200; fresh logins 200 |
+| Rollback 1–3 (stop → down chain from `max(version)` → revert) | `scp` of the down scripts creates the target directory; N = 119, the loop runs 0119 … 0100 in **1.9 s**, `max(version)` = 99; inventory C vs A **with no expectations**: 4 differences, all live drift of the new server having run (`count:jobs`, `count:sessions` +2, `digest:users`, `digest:api_tokens`), no catalogue difference. Reverted to 0.31.0: 0 `migration applied`, fresh logins 200, a session minted **by the new release** 200, parity byte-identical. *`digest:api_tokens` (a token's `last_used_at`) was missing from the runbook's live-drift list* — added |
+
+Checks around the runbook:
+
+- **Per-migration timing** (`serve` start, box): 0100 4, 0101 5, **0102 230**, 0103 2, 0104 1, 0105 34, 0106
+  14, 0107 13, 0108 35, 0109 3, 0110 1, 0111 15, 0112 51, 0113 13, 0114 2, 0115 2, 0116 1, 0117 1, 0118 1, 0119
+  1 ms — within ±30 % of round 2; the four files new since round 2 (0116–0119) add a nullable column each,
+  ≤ 1 ms.
+- **Memberships = accounts:** `dblink` against the unmigrated copy: `accounts_old 14 | memberships 14 |
+  users_new 14 | mismatch 0` (role maintainer → admin, `subject_uid`, `approved_at`, `last_seen_at`,
+  `visit_reference_at`, `task_digest_at`). Member roles `admin:3, editor:1, viewer:10`; instance roles
+  `maintainer:3, user:11`; no `project_id` default left.
+- **Old/new parity:** 0.31.0 on the 0099 database vs the new release on the same database after the deploy,
+  read with the **sessions 0.31.0 issued**: `photos?limit=50&sort=newest` (total 20,421), `albums`, `subjects`,
+  `labels`, `photos?q=year:2019`, `places`, renzik's favourites and that photo's detail — **byte-identical**
+  after `jq -S` and `/api/v1/p/v/` → `/api/v1/`. A 0.31.0 API token → 200 on `/api/v1/p/v/photos`;
+  unprefixed `GET /api/v1/photos` → `404 {"error":"not found"}`.
+
+### Staging upgrade
+
+Box staging 4732c58c → 2ac8f2f9 (`./upgrade.sh`): 0118 4 ms, 0119 1 ms. Inventory before/after (`--storage`,
+both `storage-missing.tsv` empty) diffed with `--expect column-added:instance_settings.footer_text --expect
+column-added:notifications.params --expect count:schema_migrations` → exit 1 on `count:jobs 3157 → 3162` only
+(live drift); with it allowed: 4 differences, 0 unexpected, exit 0.
+
+### Storage move
+
+- **A created project** (staging `r2-b`): `storage rekey r2-b --dry-run` and the start both refuse (`project
+  already has its own storage prefix`, exit 1) — by design, only a root-layout project moves.
+- **A copy of `v` in the root layout with stray objects** (throwaway instance of the `2ac8f2f` image on the
+  box, own database, own bucket on the staging MinIO, the box's sidecar, no CDN): 94 real staging originals (90
+  stills, 4 videos, 1.4 GiB) imported into `v`; HLS encoded (77 segments) and sidecars written; the server's
+  752 rendered thumbnails mirrored into the bucket root (`thumb/…`, as R2 holds them on production), then
+  four strays seeded: a still's thumbnail of an unregistered size (`…_fit_600.jpg`), a name the streaming layout
+  cannot hold (`hls/<clip>/1080p/index.m3u8`), a segment of a rendition nobody recorded (`hls/<clip>/480p/
+  00000.m4s`) and a tile whose hash names no photo.
+  - Before: `inventory --storage` → `storage-missing` empty; `scan`: 0 missing, 1 orphan segment (the seeded
+    one). `--dry-run`: 94 photos, 1.4 GiB, +9 derived keys each.
+  - The move: `running` → **`done` in 34 s**, 94/94, 0 errors, `derived_failed` 0 — **no cleanup loop**
+    (round 2's blocker, task 05).
+  - After: every row under `projects/pj0000000000000000veselice/`, the prefix holds the originals, 752
+    thumbnails, 78 HLS objects, 90 sidecars and `families.yaml`; the unregistered size and the bad name were
+    **deleted**, the unrecorded segment **moved**, and the root holds **only the tile of no photo** (`scan`:
+    `legacy layout: 1`, `root derived: 0`, `orphan segments: 0`). `inventory --storage` after:
+    `storage-missing` **empty**; the diff A → B shows each photo with only its `file_path` changed (hash and
+    size equal) plus the move's own rows (`storage_rekey_runs`, 2 audit entries, jobs).
+  - **Thumbnails without a CDN render:** 188/188 `thumb/tile_500` + `fit_720` fetches → 200 `image/jpeg` over
+    the app's own route. `scan` reported `missing thumbnails: 94` right after the move — it checks only the
+    local disk cache, whose entries sit under the old path — and **0** once each photo's `tile_224` had been
+    viewed. Not a loss; the post-move runbook step now says so.
+
+### Isolation probes
+
+**GO — no cross-tenant leak.** 182 foreign-vs-missing probes over 139 routes (168 reach the row lookup, all
+answer identically, 0 failures), foreign uids in write bodies refused like missing ones, nothing a second
+project's account did landed in `v`. Re-verified closed: the leaderboard and streak (task 01), task
+participants, subject and album cover, non-member maintainers (03), the near-duplicate warning (04), the
+`audit ?user=`, member-add and `last_project_slug` oracles (09), featured-album notifications to pending
+members (10), the geocode limiter/cache, the vector-route limits and storyboard reads (16). Details:
+`isolation-gate3.md`.
+
+### Staging walk
+
+**GO.** Box staging at 2ac8f2f9, one browser, desktop 1366×900 and phone (iPhone 14 emulation); the round-2
+walk table re-run row by row (`walk-gate3.md`, screenshots in `walk/`).
+
+- **Project switch (round-2 blocker F2, task 02):** 66 switches on every list page, desktop and phone, both
+  directions, with Back/Forward — each showed exactly what a fresh load of the target project shows, and no
+  request went to the previous project's API after the switch.
+- **Upload across a switch:** a 15-file upload throttled to ~50 KB/s, switched mid-batch: the app asks first
+  („Odejít během nahrávání?"); confirmed, the batch stops; the files finished before the switch are in the
+  source project, nothing reached the other one (API and database). The phone drawer behaves the same.
+- **Leaderboard (F1, task 01):** no foreign rows any more (the positive side — a fresh decision counted — could
+  not be recorded: the staging review queue has no candidates).
+- F3–F12 closed; of the collected F13 items the exact-match member add is reduced (the account's name is now
+  withheld; that a row appears still tells an existing account from a missing one).
+
+### Still open
+
+No blocker. Should-fix:
+
+1. **S1 — pre-release audit history has no project.** 0102 adds `audit_log.project_id` nullable and nothing
+   backfills it: on the production copy **all 23,624 rows stay `NULL`**, so after the release `GET
+   /p/v/audit` → `total 0` (the instance `/audit` → 23,624), and `v`'s review leaderboard and streak start
+   from zero (staging: `via=review` 7/7 `NULL`, `/p/v/review/leaderboard` → `entries: []`). The history then
+   shows in `/system/audit` as instance-level. Not a leak, nothing lost. Fix: a migration setting `project_id`
+   to `v` for the `NULL` rows of project-scoped actions (no pre-release row can belong to another project, so
+   it is safe whenever it ships). Decide before tagging whether it goes in this release.
+2. **S2 — an account's uploaded profile picture is served across projects** (accepted residue SEC-025, grown):
+   `GET /users/{uid}/avatar` (instance and `/p/{project}/` mounts) answers `200 image/jpeg` to any signed-in
+   account for an account of another project, `404` for a missing uid — an existence oracle that also shows
+   the face of an exact-match-added member whose identity is withheld. A library photo picked as the picture
+   does not leak.
+3. **S3 — browser Back during an upload stops the batch silently** (not tenancy, likely pre-existing): the
+   leave guard catches link clicks and tab close, not a history POP — matters for the phone's back gesture. No
+   file reaches a wrong project.
+
+Nice: after a switch, members/settings/audit/trash/duplicates land on the destination's library rather than
+the same page (by design, `routeAfterSwitch`); the `/projects` chooser does not let a maintainer click a
+deactivated project (the URL and `/system/projects` work); a project admin can remove the maintainer's
+membership row (harmless, the project then leaves the maintainer's switcher); the member add still tells an
+existing account by the row it adds (F13, reduced).
+
+**Owner, before the vps merge (runbook step 4, not defects):** the fotky task "Prepare fotky's API clients for
+Kukátko's project URL prefix" (`3a05aa5b`) is still pending; the Pi's `~/.config/kukatko/ctl.yaml` contexts
+`prod` and `boxstage` name no project.
+
+**Fixed in this gate (docs only):** step 5's expected count of `migration applied` lines (said 18 / 0117; is one
+per file to the newest, 20 for 0119); `digest:api_tokens` added to the live-drift list; the last-resort
+restore now removes its `/tmp/pre.dump` from `pgvector`; the post-move `scan`'s `missing thumbnails` explained.
+
+**Staging leftovers** (all deactivated/disabled, projects purge only via the CLI): projects `g3iso-b`,
+`g3walk-a`, `g3walk-b`; accounts `g3iso-bviewer`, `g3iso-beditor`, `g3iso-badmin`, `g3iso-aonly`,
+`g3iso-leaver`, `g3iso-pending`, `g3walk-ed`, `g3walk-view`, `g3walk-inv`, `g3walk-reg`; on `admin`, the
+membership of `g3walk-b` was removed by the test of the last nice item. Round 2's `r2-*`/`r2iso-*` remain.
+
+### Not covered
+
+- **The storage listing of production's R2** (`inventory --storage` with the read-only token, steps 3 and 6):
+  production is read-only for this gate beyond `pg_dump`/`SELECT`/`/healthz`, so steps 3 and 6 ran without
+  `--storage`. Its first real run is release day.
+- **The `backup` container's `.sql.gz` fallback restore** (no access to the S3 prefix here).
+- **The CDN Worker with prefixed keys** — still only the post-move fetch in the runbook.
+- **The storage move at production scale** (21,151 photos on R2): the estimate of round 2 stands (6–15 h,
+  < $2).
+
+### Cleanup
+
+The box's throwaway `pgvector`, `vps-kukatko-1` and `g3-rekey` containers, the `traef` network, the `g3-rekey`
+bucket, the dump, every copy, `/root/kukatko-backup`, `/root/inventory` (its `env` shredded, as step 6 says),
+`/root/rollback`, the `2ac8f2f` image and this run's Postgres volume were deleted. Left on the box: four
+dangling anonymous Docker volumes from earlier gates (created 2026-10-12, 10-13 ×2 and 10-14 12:22 local,
+~27 GB — throwaway Postgres data, most likely production copies; `docker volume ls -f dangling=true`), not
+removed here because this run did not create them. Staging leftovers are listed in "Still open".

@@ -654,8 +654,8 @@ hold (named one by one: `column-removed:users.*` would also hide an unintended d
 this list blindly.**
 
 **On a live instance** the app keeps writing between A and B, so the live tables drift: `count:jobs`,
-`count:audit_log`, `count:sessions`, `count:notifications`, `count:search_history` and `digest:users` (every
-visit stamps `last_seen_at`). Read them, then rerun with `--expect` for exactly those: `users.tsv` must show no
+`count:audit_log`, `count:sessions`, `count:notifications`, `count:search_history`, `digest:users` (every
+visit stamps `last_seen_at`) and `digest:api_tokens` (every token call stamps `last_used_at`). Read them, then rerun with `--expect` for exactly those: `users.tsv` must show no
 change but the role collapse, and every catalogue difference (`digest:photos`, `digest:album_photos`,
 `photo:…`) must match an `audit_log` entry written in the window (`created_at` after A). An unexplained
 catalogue difference stops the rollout.
@@ -737,6 +737,7 @@ the vps PR is merged.**
    docker exec pgvector pg_restore --no-owner --no-privileges -f - /tmp/pre.dump \
      | sed "s/^SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public', false);/" \
      | docker exec -i pgvector psql -U postgres -v ON_ERROR_STOP=1 -d kukatko
+   docker exec pgvector rm /tmp/pre.dump
    ```
 
    then revert the vps PR to 0.31.0 (the restored schema is 0099). Restoring the 0099 dump took 3 min 21 s on
@@ -794,8 +795,8 @@ the vps PR is merged.**
      URL, its share target and mail links all forward to `/p/v/…`.
 5. **Deploy = merge the vps PR** (`ghcr.io/panbotka/kukatko:0.31.0` → the new tag; its body carries the link to
    this runbook — see the `/release` override below). Watch on the VPS: `docker logs -f vps-kukatko-1` must
-   show the new version starting and **18 `migration applied` lines** (0100 … 0117; rehearsed: 0.65 s on the
-   box, ~2–3 s expected on the VPS, 0102 the longest at ~1 s) and no `other database client` line — one means
+   show the new version starting and **one `migration applied` line per file from 0100 to the newest** (20 for
+   0100 … 0119; rehearsed: 0.65 s on the box, ~2–3 s expected on the VPS, 0102 the longest at ~1 s) and no `other database client` line — one means
    something still holds a session on the database (the old container?): find it. The outage is the container
    restart plus that. No `kukatko migrate` beforehand (see above).
 6. **Inventory B** the same way (`--out /inv/B`), then the **diff with the release-day expect list** above; it
@@ -1063,7 +1064,10 @@ while another project still lives there). Then:
    time: about $1.8 a month extra, ~$5–6 in total. If you skip the manual run, the 04:00 cron does the same.
 2. Run `kukatko maintenance scan`: `root derived` should be 0 (if not, `maintenance repair --root-derived`);
    anything else still in the root layout is reported as an orphan or legacy object (an object no row named)
-   — review it before deleting anything.
+   — review it before deleting anything. Its `missing thumbnails` will count **every photo of the project**
+   right after the move: the scan looks only in the server's local disk cache, whose entries sit under the old
+   (root) path; the thumbnails themselves moved with the photos and each cache entry is rebuilt on first view
+   (gate III: 94 → 0 after one view of each photo). Not a loss — nothing to repair.
 
 **What to do with `failed`.** `--status` lists the last errors (`key: message`) and, when photos keep
 derived objects at the root, `derived failed: N`. A run fails when it met more than 100 errors, when its pass
