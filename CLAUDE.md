@@ -245,13 +245,14 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 ## Database
 - The DB is **already provisioned** in shared Postgres (pgvector 0.8.1 + unaccent).
 - Read the DSN from the gitignored **`.secrets/db.env`**: `KUKATKO_DATABASE_URL` (app),
-  `KUKATKO_TEST_DATABASE_URL` (integration tests, DB `kukatko_test`, safe to truncate).
-  `MAPY_API_KEY` is there too.
-- **Never commit secrets.** `.secrets/`, `*.local.yaml`, `.env*` are gitignored.
+  `KUKATKO_TEST_DATABASE_URL` (integration tests, DB `kukatko_test`, safe to truncate). `MAPY_API_KEY` too.
+- **The repo is public — nothing private goes in.** Never commit secrets (`.secrets/`, `*.local.yaml`,
+  `.env*` are gitignored), nor production specifics: hosts/IPs, SSH targets, container/bucket/vault
+  names, private (NAS) paths, live URLs or uids, real people's names or data. Use placeholders
+  (`<instance>`, `<project uid>`); private context stays outside the repo — task specs and commit messages included.
 - Migrations = SQL in `embed.FS` (`internal/database/migrations/NNNN_name.sql`), auto-applied at
   startup in ascending version order, each in its own transaction, idempotently recorded in the
-  `schema_migrations` table. Names like `0001_init.sql`. FKs with `ON DELETE CASCADE`/`SET NULL`
-  (no orphans).
+  `schema_migrations` table. Names like `0001_init.sql`. FKs with `ON DELETE CASCADE`/`SET NULL` (no orphans).
 
 ## Key patterns
 - **The embeddings sidecar is NOT built.** Kukátko is a client of an external service
@@ -287,8 +288,7 @@ commit. Always, at the end of every task, in this order:
 2. **`make check`** must pass (docs-budget + fmt-check + lint + typecheck + tests + frontend).
 3. **`make dev`** (= `./scripts/dev.sh`) must pass — the dev server starts and answers on
    `/healthz`. It catches what `make check` inherently can't see: a missing migration, broken wiring
-   in `cmd/kukatko`, a panic on startup. A failed start (exit 1) = **do not commit**. Details
-   in `docs/DEVELOPMENT.md`.
+   in `cmd/kukatko`, a panic on startup. A failed start (exit 1) = **do not commit**. Details in `docs/DEVELOPMENT.md`.
 4. **Commit** (in English, concise) and **push** — only this step actually ends the task, see the
    rule above. End the commit message with the line:
    `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
