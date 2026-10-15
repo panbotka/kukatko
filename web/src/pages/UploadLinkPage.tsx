@@ -28,21 +28,15 @@ import { canRetryUpload } from '../lib/uploadErrors'
 import { etaPhrase } from '../lib/uploadEta'
 import { progressPercent } from '../lib/uploadProgress'
 import { forgetBatch, readInterruptedBatch, rememberBatch } from '../lib/uploadLinkBatch'
-import { UPLOADER_NAME_KEY, uploadLinkSummary } from '../lib/uploadLinks'
+import { UPLOADER_NAME_KEY, isDeadLinkError, uploadLinkSummary } from '../lib/uploadLinks'
 import { ApiError, type User } from '../services/auth'
-import {
-  fetchPublicUploadLink,
-  linkUploader,
-  type PublicUploadLink,
-  UploadLinkGoneError,
-} from '../services/uploadLinks'
+import { fetchPublicUploadLink, linkUploader, type PublicUploadLink } from '../services/uploadLinks'
 
 /** Where loading the link's public description stands. */
 type LoadState =
   | { status: 'loading' }
   | { status: 'ready'; link: PublicUploadLink }
   | { status: 'notFound' }
-  | { status: 'gone'; state: 'expired' | 'revoked' }
   | { status: 'error' }
 
 /** Reads the remembered uploader name; storage may be unavailable (private mode). */
@@ -77,9 +71,8 @@ function accountName(user: User | null): string {
 
 /** Maps a failed description fetch onto the state the page shows. */
 function failureState(error: unknown): LoadState {
-  if (error instanceof UploadLinkGoneError) {
-    return { status: 'gone', state: error.state }
-  }
+  // An unknown code and an expired or revoked link answer the same 404: the
+  // server never says whether a code once worked.
   if (error instanceof ApiError && error.status === 404) {
     return { status: 'notFound' }
   }
@@ -207,11 +200,10 @@ export function UploadLinkPage() {
     }
   }, [code, phase, summary.total])
 
-  // A link that went dead mid-batch answers 410: say so instead of a wall of
+  // A link that went dead mid-batch refuses the rest as "not valid" (a 404 for
+  // the whole request, a 410 for one file): say so instead of a wall of
   // per-file failures nobody can fix.
-  const linkDied = items.some(
-    (item) => item.status === 'error' && item.error?.includes('no longer'),
-  )
+  const linkDied = items.some((item) => item.status === 'error' && isDeadLinkError(item.error))
   // The project ran out of storage — before the page opened, or during the
   // batch: one plain sentence, no sizes, in place of per-file failures.
   const storageFull =
@@ -608,9 +600,7 @@ function StorageFullNotice() {
 function Unavailable({ load }: { load: Exclude<LoadState, { status: 'loading' | 'ready' }> }) {
   const { t } = useTranslation()
   let message: string
-  if (load.status === 'gone') {
-    message = load.state === 'revoked' ? t('uploadLink.revoked') : t('uploadLink.expired')
-  } else if (load.status === 'notFound') {
+  if (load.status === 'notFound') {
     message = t('uploadLink.notFound')
   } else {
     message = t('uploadLink.loadError')

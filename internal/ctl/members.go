@@ -28,7 +28,7 @@ type Member struct {
 	DisplayName string     `json:"display_name"`
 	Role        string     `json:"role"`
 	ApprovedAt  *time.Time `json:"approved_at"`
-	LastLoginAt *time.Time `json:"last_login_at"`
+	LastSeenAt  *time.Time `json:"last_seen_at"`
 	HasPicture  bool       `json:"has_picture"`
 }
 
@@ -184,10 +184,10 @@ func WriteMembers(w io.Writer, list []Member) error {
 	for _, m := range list {
 		rows = append(rows, []string{
 			m.Username, elide(dash(m.DisplayName), nameWidth), m.Role, approvalLabel(m),
-			formatTime(m.LastLoginAt), m.UserUID,
+			formatTime(m.LastSeenAt), m.UserUID,
 		})
 	}
-	return writeTable(w, []string{"USERNAME", "NAME", "ROLE", "STATE", "LAST LOGIN", "UID"}, rows)
+	return writeTable(w, []string{"USERNAME", "NAME", "ROLE", "STATE", "LAST SEEN", "UID"}, rows)
 }
 
 // WriteMember renders one member as an aligned key/value table.
@@ -199,6 +199,6 @@ func WriteMember(w io.Writer, m Member) error {
 		{"ROLE", m.Role},
 		{"STATE", approvalLabel(m)},
 		{"APPROVED", formatTime(m.ApprovedAt)},
-		{"LAST LOGIN", formatTime(m.LastLoginAt)},
+		{"LAST SEEN", formatTime(m.LastSeenAt)},
 	})
 }

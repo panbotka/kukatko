@@ -526,7 +526,7 @@
     "title": "Můj účet",
     "username": "Uživatelské jméno",
     "displayName": "Zobrazované jméno",
-    "role": "Role",
+    "role": "Role v projektech",
     "changePassword": "Změna hesla",
     "currentPassword": "Současné heslo",
     "newPassword": "Nové heslo",
@@ -792,7 +792,9 @@
       },
       "duplicate": {
         "dismiss": "Označení dvojice jako různých fotek",
-        "undismiss": "Vrácení dvojice mezi duplicity"
+        "undismiss": "Vrácení dvojice mezi duplicity",
+        "confirm": "Potvrzení dvojice jako duplicit",
+        "unconfirm": "Zrušení potvrzení duplicit"
       },
       "duplicate_marker": {
         "dismiss": "Potvrzení dvojího označení osoby",
@@ -842,7 +844,8 @@
         "unarchive": "Obnovení fotky z koše",
         "unhide": "Vrácení fotky do knihovny",
         "update": "Úprava fotky",
-        "date_clear": "Zrušení nemožného data pořízení"
+        "date_clear": "Zrušení nemožného data pořízení",
+        "storyboard": "Přegenerování náhledů videa"
       },
       "photos": {
         "bulk": "Hromadná úprava fotek",
@@ -856,7 +859,11 @@
         "create": "Vytvoření osoby",
         "delete": "Smazání osoby",
         "update": "Úprava osoby",
-        "merge": "Sloučení osob"
+        "merge": "Sloučení osob",
+        "relation": {
+          "add": "Přidání příbuzenského vztahu",
+          "remove": "Odebrání příbuzenského vztahu"
+        }
       },
       "user": {
         "approve": "Schválení uživatele",
@@ -867,7 +874,8 @@
         "password_reset_use": "Obnovení hesla přes odkaz",
         "register": "Registrace uživatele",
         "rename": "Změna uživatelského jména",
-        "update": "Úprava uživatele"
+        "update": "Úprava uživatele",
+        "instance_role": "Změna role v instanci"
       },
       "stack": {
         "set_primary": "Změna hlavní fotky skupiny",
@@ -884,6 +892,58 @@
         "upload": "Nahrání fotky přes odkaz",
         "restore_code": "Obnovení kódu odkazu pro nahrávání",
         "rotate_code": "Nový kód odkazu pro nahrávání"
+      },
+      "comment": {
+        "create": "Přidání komentáře",
+        "update": "Úprava komentáře",
+        "delete": "Smazání komentáře"
+      },
+      "family": {
+        "update": "Úprava rodiny"
+      },
+      "location": {
+        "confirm": "Potvrzení odhadnutého místa",
+        "reject": "Odmítnutí odhadnutého místa"
+      },
+      "notification_prefs": {
+        "update": "Změna nastavení upozornění"
+      },
+      "project": {
+        "create": "Vytvoření projektu",
+        "update": "Úprava projektu",
+        "purge": "Trvalé smazání projektu",
+        "storage_prefix": "Změna úložiště projektu",
+        "invite": {
+          "create": "Vytvoření pozvánky",
+          "revoke": "Zrušení pozvánky",
+          "accept": "Přijetí pozvánky"
+        },
+        "member": {
+          "add": "Přidání člena projektu",
+          "add_request": "Žádost o přidání člena",
+          "add_resolve": "Vyřízení žádosti o přidání člena",
+          "withdraw_request": "Stažení žádosti o přidání člena",
+          "withdraw_resolve": "Vyřízení stažení žádosti",
+          "approve": "Schválení člena projektu",
+          "remove": "Odebrání člena projektu",
+          "role": "Změna role člena projektu",
+          "subject": "Nastavení „Kdo jsem v knihovně“"
+        },
+        "rekey": {
+          "start": "Spuštění přesunu úložiště",
+          "pause": "Pozastavení přesunu úložiště",
+          "resume": "Obnovení přesunu úložiště",
+          "retry": "Opakování přesunu úložiště"
+        }
+      },
+      "task": {
+        "create": "Vytvoření úkolu",
+        "update": "Úprava úkolu",
+        "delete": "Smazání úkolu",
+        "add_photos": "Přidání fotek k úkolu",
+        "remove_photos": "Odebrání fotek z úkolu",
+        "assign": "Přidělení úkolu",
+        "unassign": "Zrušení přidělení úkolu"
       }
     },
     "targets": {
@@ -895,8 +955,16 @@
       "api_tokens": "API token",
       "passkey_credentials": "Přístupový klíč",
       "announcement": "Oznámení",
-      "audit_log": "Auditní log"
-    }
+      "audit_log": "Auditní log",
+      "photo_tasks": "Úkol",
+      "project": "Projekt",
+      "project_member": "Člen projektu",
+      "project_invites": "Pozvánka",
+      "upload_links": "Odkaz pro nahrávání",
+      "families": "Rodina",
+      "library": "Knihovna"
+    },
+    "formerProject": "Projekt, kam už nepatříte"
   },
   "library": {
     "title": "Knihovna",
@@ -3382,6 +3450,11 @@
     "message": "Vaše členství v projektu {{project}} ještě musí schválit správce projektu. Jakmile ho schválí, projekt se vám tady otevře.",
     "projects": "Zpět na projekty"
   },
+  "projectUnavailable": {
+    "title": "Projekt je vypnutý",
+    "message": "Projekt {{project}} správce systému vypnul, takže ho teď nelze otevřít. Vaše ostatní projekty najdete v přehledu.",
+    "projects": "Zpět na projekty"
+  },
   "forbidden": {
     "title": "Sem nemáte přístup",
     "message": {
@@ -3989,8 +4062,8 @@
     },
     "dashboard": {
       "libraryTitle": "Knihovna",
-      "libraryIntro": "Co katalog právě teď obsahuje.",
-      "libraryStatsLink": "Kompletní statistiky",
+      "libraryIntro": "Co katalog celé instance právě teď obsahuje — všechny projekty dohromady.",
+      "libraryStatsLink": "Čísla po projektech",
       "remainingTitle": "Zbývá udělat",
       "remainingIntro": "Co ještě čeká na zpracování. Cílem je nula; zvýrazněné číslo vede na obrazovku, kde se to řeší.",
       "healthTitle": "Zdraví systému",
@@ -4108,7 +4181,7 @@
       "username": "Uživatelské jméno",
       "role": "Role",
       "state": "Stav",
-      "lastLogin": "Poslední přihlášení",
+      "lastSeen": "Naposledy v projektu",
       "actions": "Akce"
     },
     "roleLabel": "Role uživatele {{name}}",
@@ -4632,9 +4705,7 @@
     "registerTitle": "Chcete vidět všechny fotky?",
     "registerBody": "Zaregistrujte se. Přes tenhle odkaz nepotřebujete registrační slovo a fotky, které jste právě nahráli, budou vedené pod vaším účtem. Účet ještě schválí správce.",
     "registerAction": "Zaregistrovat se",
-    "expired": "Platnost tohoto odkazu vypršela. Fotky přes něj už nahrát nejde.",
-    "revoked": "Tento odkaz byl zrušen. Fotky přes něj už nahrát nejde.",
-    "notFound": "Tento odkaz neexistuje. Zkontrolujte, že jste ho zkopírovali celý.",
+    "notFound": "Tento odkaz neplatí: neexistuje, vypršel nebo byl zrušen. Zkontrolujte, že jste ho zkopírovali celý, nebo si řekněte o nový.",
     "loadError": "Odkaz se nepodařilo načíst. Zkuste to prosím za chvíli znovu.",
     "toLogin": "Přihlásit se",
     "uploadingTitle": "Nahrávám fotky…",

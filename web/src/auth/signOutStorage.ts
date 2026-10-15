@@ -4,6 +4,7 @@ import { ANNOUNCEMENT_DISMISSAL_PREFIX } from '../lib/announcementDismissal'
 import { GRID_SCROLL_PREFIX } from '../lib/gridScroll'
 import { PICKED_LOCATION_KEY } from '../lib/pickedLocation'
 import { DAILY_STORAGE_PREFIX } from '../lib/reviewRounds'
+import { UPLOADER_NAME_KEY } from '../lib/uploadLinks'
 import { REVIEW_SNAPSHOT_KEY } from '../lib/reviewSnapshot'
 import { WHATS_NEW_DISMISSAL_PREFIX } from '../lib/whatsNewDismissal'
 
@@ -31,6 +32,7 @@ export const SIGN_OUT_CLEARED = [
   REVIEW_SNAPSHOT_KEY,
   GRID_SCROLL_PREFIX,
   PICKED_LOCATION_KEY,
+  UPLOADER_NAME_KEY,
   LEGACY_LANGUAGE_KEY,
 ] as const
 

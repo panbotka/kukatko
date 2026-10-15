@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useContext, useEffect, useMemo, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
 import { useTranslation } from 'react-i18next'
 
+import { AuthContext } from '../auth/AuthContext'
 import { BackLink } from '../components/BackLink'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
@@ -23,8 +24,9 @@ import {
 import { auditDetailLinks, auditTargetHref } from '../lib/auditView'
 import { formatDateTime } from '../lib/format'
 import { useUrlState } from '../lib/urlState'
+import { ProjectContext } from '../project/ProjectContext'
 import { ProjectLink } from '../project/ProjectLink'
-import { projectPathFor } from '../project/paths'
+import { isEnterable, projectPathFor } from '../project/paths'
 import { type AuditListResponse, type AuditRecord, fetchMyActivity } from '../services/audit'
 
 /** Load state of the own-activity listing. */
@@ -48,6 +50,11 @@ type State =
  * The narrowing to the reader is entirely the server's: the endpoint takes the
  * actor from the session, so this page cannot ask for anyone else's actions. Any
  * signed-in role may open it. See docs/FRONTEND.md.
+ *
+ * The listing keeps the reader's actions in a project they have since left —
+ * they are the reader's own history — but such a row names no project and
+ * links nowhere: "a project you no longer belong to", its target as plain text,
+ * since every page of it would answer "not found".
  */
 export function MyActivityPage() {
   const { t, i18n } = useTranslation()
@@ -56,6 +63,7 @@ export function MyActivityPage() {
   const params = useMemo(() => viewToParams(view), [view])
   const [state, setState] = useState<State>({ status: 'loading' })
   const [reloadKey, reload] = useReloadKey()
+  const projectOf = useActivityProjects()
 
   useEffect(() => {
     const controller = new AbortController()
@@ -100,12 +108,15 @@ export function MyActivityPage() {
     {
       key: 'where',
       header: t('activity.columns.where'),
-      cell: (record) => <ActivityTarget record={record} />,
+      cell: (record) => (
+        <ActivityTarget record={record} linked={projectOf(record.project).enterable} />
+      ),
     },
     {
       key: 'project',
       header: t('activity.columns.project'),
-      cell: (record) => record.project ?? '—',
+      cell: (record) =>
+        record.project === null ? '—' : <ActivityProject name={projectOf(record.project).name} />,
     },
   ]
 
@@ -148,6 +159,52 @@ export function MyActivityPage() {
   )
 }
 
+/** What the page knows about the project an entry belongs to. */
+interface ActivityProjectInfo {
+  /** Its display name; `null` for an instance action and for a project the reader has left. */
+  name: string | null
+  /** Whether a link into it can lead anywhere: an instance action, or a project the reader may enter. */
+  enterable: boolean
+}
+
+/**
+ * Resolves an entry's project slug against the reader's memberships: the name
+ * of a project they may enter, and "left" for one they may not — a membership
+ * removed, or a project deactivated since. The maintainer enters every project,
+ * so a project they are no member of is named by its slug. Outside a provider
+ * (a component test) every slug is taken at its word.
+ */
+function useActivityProjects(): (slug: string | null) => ActivityProjectInfo {
+  const ctx = useContext(ProjectContext)
+  const maintainer = useContext(AuthContext)?.isMaintainer ?? false
+  return useMemo(() => {
+    const bySlug = new Map((ctx?.projects ?? []).map((m) => [m.slug, m]))
+    return (slug: string | null): ActivityProjectInfo => {
+      if (slug === null) {
+        return { name: null, enterable: true }
+      }
+      const membership = bySlug.get(slug)
+      if (ctx === null || maintainer) {
+        return { name: membership?.name ?? slug, enterable: true }
+      }
+      if (membership === undefined || !isEnterable(membership)) {
+        return { name: null, enterable: false }
+      }
+      return { name: membership.name, enterable: true }
+    }
+  }, [ctx, maintainer])
+}
+
+/**
+ * The Project cell: the project's name, a dash for an instance action, and
+ * "a project you no longer belong to" for one the reader has left — neither
+ * its name nor its slug, which may have changed since they left.
+ */
+function ActivityProject({ name }: { name: string | null }) {
+  const { t } = useTranslation()
+  return <>{name ?? t('activity.formerProject')}</>
+}
+
 /**
  * The What cell: the action in words ("Úprava fotky"), falling back to the raw
  * action label for an action this build has no translation for — a new one from
@@ -168,12 +225,16 @@ function ActivityAction({ record }: { record: AuditRecord }) {
  * its photos only in the payload) links the UIDs the payload carries, capped at
  * {@link ACTIVITY_LINK_LIMIT} with a note of how many were left out. An entry
  * whose target has no page at all (a user, an API token, the announcement) names
- * the kind as plain text — there is nowhere honest to send the reader.
+ * the kind as plain text — there is nowhere honest to send the reader — and so
+ * does every entry of a project the reader has left (`linked` false).
  */
-function ActivityTarget({ record }: { record: AuditRecord }) {
+function ActivityTarget({ record, linked }: { record: AuditRecord; linked: boolean }) {
   const { t } = useTranslation()
   const typeKey = activityTargetKey(record.target_type)
   const typeLabel = typeKey === undefined ? record.target_type : t(typeKey)
+  if (!linked) {
+    return <span className="text-secondary">{typeLabel || t('activity.target.unknown')}</span>
+  }
   const href = entryPath(record, auditTargetHref(record))
   if (href !== null) {
     return (

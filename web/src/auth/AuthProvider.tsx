@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import i18n from '../i18n'
 import { useAccountLanguage } from '../i18n/accountLanguage'
@@ -7,6 +7,7 @@ import { dropBrowserSubscription, heldPushSubscription } from '../pwa/push'
 import { setCurrentProjectSlug } from '../services/api'
 import * as authService from '../services/auth'
 import { signInWithPasskey } from '../services/passkeys'
+import { onProjectGone } from '../services/projectGone'
 import { canCurate, canWrite, isAdmin, NetworkError, type AuthSession } from '../services/auth'
 
 import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthContext'
@@ -18,6 +19,9 @@ interface AuthState {
 }
 
 const INITIAL_STATE: AuthState = { status: 'loading', session: null }
+
+/** The least time between two session re-reads a vanished project causes. */
+export const PROJECT_GONE_REFRESH_MS = 5000
 
 /**
  * Provides authentication state to the app. On mount it loads the current
@@ -133,6 +137,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useAccountLanguage(i18n, state.status, state.session?.user.uid)
 
   const refresh = useCallback(() => loadSession(), [loadSession])
+
+  // A request that finds its project gone (deactivated, or the account removed
+  // from it, while the page was open) re-reads the session, so the project gate
+  // shows what became of the project instead of a page of failed loads. A page
+  // fires several requests at once; one re-read per few seconds answers them all.
+  const lastGoneRefresh = useRef(Number.NEGATIVE_INFINITY)
+  useEffect(
+    () =>
+      onProjectGone(() => {
+        const now = Date.now()
+        if (now - lastGoneRefresh.current < PROJECT_GONE_REFRESH_MS) {
+          return
+        }
+        lastGoneRefresh.current = now
+        void loadSession()
+      }),
+    [loadSession],
+  )
 
   // The count of profile-picture changes made in this tab; see
   // AuthContextValue.pictureVersion for why the avatars need one.

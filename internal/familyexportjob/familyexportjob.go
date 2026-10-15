@@ -101,11 +101,11 @@ func New(cfg Config) *Service {
 // project's file is written; another project's is a different key.
 //
 // A payload naming no project — a job queued before the export was per project
-// — is read as the bootstrap project, the only one there was. A project that no
+// — is read as the bootstrap project, the only one there was, and logged. A project that no
 // longer exists is skipped rather than failed: deleting it removed its families
 // with it, and there is nobody left whose tree the file could describe.
 func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
-	projectUID, err := projectOf(job)
+	projectUID, err := s.projectOf(ctx, job)
 	if err != nil {
 		return err
 	}
@@ -118,18 +118,15 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	return err
 }
 
-// projectOf returns the project a family_export job's payload names
-// (jobs.ProjectUIDOf), or the bootstrap project for a job queued before the
-// payload carried one. A payload that is not JSON at all is an error rather
-// than silently the bootstrap project's.
-func projectOf(job jobs.Job) (string, error) {
+// projectOf returns the project a family_export job's payload names, or the
+// bootstrap project — logged — for a job queued before the payload carried one
+// (jobs.ProjectUIDOrLegacy). A payload that is not JSON at all is an error
+// rather than silently the bootstrap project's.
+func (s *Service) projectOf(ctx context.Context, job jobs.Job) (string, error) {
 	if len(job.Payload) > 0 && !json.Valid(job.Payload) {
 		return "", fmt.Errorf("familyexportjob: the payload of job %d is not JSON", job.ID)
 	}
-	if projectUID := jobs.ProjectUIDOf(job); projectUID != "" {
-		return projectUID, nil
-	}
-	return project.BootstrapUID, nil
+	return jobs.ProjectUIDOrLegacy(ctx, s.log, job, project.BootstrapUID), nil
 }
 
 // Export reads the whole genealogy of the project projectUID and writes its

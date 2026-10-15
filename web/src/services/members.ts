@@ -25,8 +25,12 @@ export interface ProjectMemberRow {
   role: ProjectRole
   /** When an admin let the membership in; `null` while it waits for approval. */
   approved_at: string | null
-  /** The account's last sign-in anywhere on the instance; `null` for never. */
-  last_login_at: string | null
+  /**
+   * The member's last visit to this project; `null` for never. Never the
+   * account's last sign-in, which would tell the project when the account was
+   * active in other projects.
+   */
+  last_seen_at: string | null
   /** True when `GET /users/{uid}/avatar` has a picture to answer with. */
   has_picture: boolean
   /**

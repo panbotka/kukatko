@@ -1,13 +1,20 @@
 import { type Coordinates } from './coordinates'
 
 /**
- * sessionStorage key holding the coordinate most recently picked in the location
- * picker. Session storage rather than local: it exists so the *next* photo in a
- * sitting of geotagging opens the map where the last one was set, and a week-old
- * pin is not where anybody wants to start. Cleared at sign-out: where one
- * account was geotagging is not where the next one starts.
+ * sessionStorage key prefix of the coordinate most recently picked in the
+ * location picker; the key is `<prefix>.<project slug>`. Session storage rather
+ * than local: it exists so the *next* photo in a sitting of geotagging opens the
+ * map where the last one was set, and a week-old pin is not where anybody wants
+ * to start. Per project: one library's village says nothing about another's, and
+ * a pin set in one must not leak where somebody worked into the other. Cleared
+ * at sign-out: where one account was geotagging is not where the next one starts.
  */
 export const PICKED_LOCATION_KEY = 'kukatko.lastPickedLocation'
+
+/** The storage key of `project`'s last pick, or null with no project. */
+function pickedLocationKey(project: string | null): string | null {
+  return project === null || project === '' ? null : `${PICKED_LOCATION_KEY}.${project}`
+}
 
 /**
  * Zoom the map opens at when it is centred on a coordinate the user picked
@@ -18,28 +25,38 @@ export const PICKED_LOCATION_KEY = 'kukatko.lastPickedLocation'
 export const NEARBY_ZOOM = 11
 
 /**
- * Remembers a coordinate the user just picked, so the next photo they geotag in
- * the same sitting opens near it. Best-effort: a disabled or full storage costs
- * the next photo its head start and nothing else.
+ * Remembers a coordinate the user just picked in `project`, so the next photo
+ * they geotag there in the same sitting opens near it. Best-effort: a disabled
+ * or full storage costs the next photo its head start and nothing else; with no
+ * project nothing is remembered.
  */
-export function rememberPickedLocation(position: Coordinates): void {
+export function rememberPickedLocation(project: string | null, position: Coordinates): void {
+  const key = pickedLocationKey(project)
+  if (key === null) {
+    return
+  }
   try {
-    window.sessionStorage.setItem(PICKED_LOCATION_KEY, JSON.stringify(position))
+    window.sessionStorage.setItem(key, JSON.stringify(position))
   } catch {
     // Storage unavailable — the picker simply falls back to the library's region.
   }
 }
 
 /**
- * The coordinate picked most recently in this session, or `null` when there is
- * none (or what is stored is not a coordinate this build can read).
+ * The coordinate picked most recently in `project` in this session, or `null`
+ * when there is none — another project's pick included — or what is stored is
+ * not a coordinate this build can read.
  *
  * A family archive is geographically lumpy: a box of scans is almost always one
  * village, so the last pin is by far the best guess for where the next one goes.
  */
-export function lastPickedLocation(): Coordinates | null {
+export function lastPickedLocation(project: string | null): Coordinates | null {
+  const key = pickedLocationKey(project)
+  if (key === null) {
+    return null
+  }
   try {
-    const raw = window.sessionStorage.getItem(PICKED_LOCATION_KEY)
+    const raw = window.sessionStorage.getItem(key)
     if (raw === null) {
       return null
     }

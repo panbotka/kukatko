@@ -126,6 +126,7 @@ const TARGET_ROUTES: Record<string, string | undefined> = {
   albums: '/albums',
   labels: '/labels',
   subjects: '/people',
+  photo_tasks: '/tasks',
 }
 
 /**

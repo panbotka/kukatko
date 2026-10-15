@@ -1,9 +1,11 @@
 package jobs
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 )
 
 // ErrProjectRequired indicates an enqueue of a library-wide job type whose
@@ -54,6 +56,27 @@ func IsLibraryWide(jobType string) bool {
 // global, so two projects' jobs never cross.
 func ProjectUIDOf(job Job) string {
 	return payloadProjectUID(job.Payload)
+}
+
+// ProjectUIDOrLegacy returns the project a library-wide job's payload names
+// (ProjectUIDOf), or legacy for a payload naming none. Since Enqueue refuses a
+// library-wide job without a project (ErrProjectRequired), only a job queued
+// before payloads carried one — a pre-upgrade job still waiting when the new
+// release started — can lack it, and the only project there was then is the
+// bootstrap one, which the caller passes as legacy. The fallback is never
+// silent: it is logged at warn level naming the job, so a job that took it is
+// visible in the log and an unexpected one (a hand-inserted row, a regression
+// in a producer) is noticed rather than quietly run in the wrong library.
+func ProjectUIDOrLegacy(ctx context.Context, log *slog.Logger, job Job, legacy string) string {
+	if projectUID := ProjectUIDOf(job); projectUID != "" {
+		return projectUID
+	}
+	if log != nil {
+		log.WarnContext(ctx, "jobs: a library-wide job names no project; running it as a pre-upgrade job "+
+			"in the bootstrap project", slog.Int64("job_id", job.ID), slog.String("job_type", job.Type),
+			slog.String("project_uid", legacy))
+	}
+	return legacy
 }
 
 // payloadProjectUID decodes the project_uid of raw, or "" when raw is empty, is

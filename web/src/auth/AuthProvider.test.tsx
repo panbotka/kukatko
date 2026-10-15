@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useTranslation } from 'react-i18next'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,6 +8,7 @@ import { writeLanguagePreference } from '../i18n/accountLanguage'
 import { getCurrentProjectSlug, setCurrentProjectSlug } from '../services/api'
 import { ApiError, NetworkError, type AuthSession } from '../services/auth'
 import { PasskeyError } from '../services/passkeys'
+import { PROJECT_NOT_FOUND_MESSAGE, reportApiError } from '../services/projectGone'
 
 import { useAuth } from './AuthContext'
 import { AuthProvider } from './AuthProvider'
@@ -98,6 +99,24 @@ describe('AuthProvider session probe', () => {
     renderProvider()
 
     expect(await screen.findByTestId('status')).toHaveTextContent('authenticated')
+  })
+
+  it('re-reads the session once when requests find their project gone', async () => {
+    fetchMe.mockResolvedValue(SESSION)
+    renderProvider()
+    expect(await screen.findByTestId('status')).toHaveTextContent('authenticated')
+    expect(fetchMe).toHaveBeenCalledTimes(1)
+
+    // A page fires several requests at once into a project just deactivated:
+    // the session is read again, once, and the gate then shows what happened.
+    act(() => {
+      reportApiError(404, PROJECT_NOT_FOUND_MESSAGE)
+      reportApiError(404, PROJECT_NOT_FOUND_MESSAGE)
+    })
+    await waitFor(() => {
+      expect(fetchMe).toHaveBeenCalledTimes(2)
+    })
+    expect(screen.getByTestId('status')).toHaveTextContent('authenticated')
   })
 
   it('reports a 401 (no session) as unauthenticated', async () => {

@@ -174,13 +174,16 @@ func TestMembers_listIsTheProjectsOwn(t *testing.T) {
 		t.Fatalf("A's members = %d %s, want A's member listed", status, raw)
 	}
 	for _, key := range []string{`"username"`, `"display_name"`, `"role":"admin"`, `"approved_at"`,
-		`"last_login_at"`, `"has_picture"`} {
+		`"last_seen_at"`, `"has_picture"`} {
 		if !strings.Contains(raw, key) {
 			t.Errorf("member list %s lacks %s", raw, key)
 		}
 	}
 	if strings.Contains(raw, e.f.B.UserUID) || strings.Contains(raw, "@example.test") {
 		t.Errorf("member list %s names B's member or an address", raw)
+	}
+	if strings.Contains(raw, `"last_login_at"`) {
+		t.Errorf("member list %s carries the account-wide last sign-in", raw)
 	}
 
 	editor := e.f.ClientFor(t, e.server, projecttest.SideB)
@@ -414,9 +417,8 @@ func TestMembers_addWithholdsTheIdentityUntilTheAccountEnters(t *testing.T) {
 		t.Fatalf("jan entering A = %d, want 200", resp.StatusCode)
 	}
 	row := e.memberRow(t, admin, projecttest.SideA, jan)
-	if row["username"] != "jan" || row["display_name"] != "Jan Novák" || row["last_login_at"] == nil ||
-		row["role"] != "viewer" {
-		t.Errorf("member row after jan entered = %v, want its name and last sign-in", row)
+	if row["username"] != "jan" || row["display_name"] != "Jan Novák" || row["role"] != "viewer" {
+		t.Errorf("member row after jan entered = %v, want its name and role", row)
 	}
 	if uids := e.directoryUIDs(t, admin, projecttest.SideA); !slices.Contains(uids, jan) {
 		t.Errorf("directory %v after jan entered lacks it", uids)
@@ -521,6 +523,10 @@ type mailJob struct {
 	Template string            `json:"template"`
 	To       string            `json:"to"`
 	Data     map[string]string `json:"data"`
+	For      *struct {
+		UserUID    string `json:"user_uid"`
+		ProjectUID string `json:"project_uid"`
+	} `json:"for"`
 }
 
 // approvalMails returns the queued approval mails, oldest first.
@@ -577,6 +583,11 @@ func TestMembers_approveLetsInAndMailsTheProject(t *testing.T) {
 	if got.To != "petr@example.test" || got.Data["ProjectName"] != "Projekt "+e.f.B.Slug ||
 		got.Data["ProjectURL"] != wantURL {
 		t.Errorf("approval mail = %+v, want to petr naming B and linking %s", got, wantURL)
+	}
+	// Addressed to the membership, so the send re-checks it: a member removed
+	// before the mail goes out is not told about a project it cannot open.
+	if got.For == nil || got.For.UserUID != petr || got.For.ProjectUID != e.f.B.ProjectUID {
+		t.Errorf("approval mail addressee = %+v, want petr in B", got.For)
 	}
 	status, _, _ := e.call(t, client, http.MethodPost,
 		e.f.PathFor(projecttest.SideB, "members/"+projecttest.MissingUID("us")+"/approve"), nil)
@@ -746,5 +757,40 @@ func TestMembers_blindAddOfAForeignAccountLeavesNoTrace(t *testing.T) {
 	}
 	if after := e.projectView(t, admin, projecttest.SideB); after != before {
 		t.Errorf("after the withdrawals B reads\n%s\nwant\n%s", after, before)
+	}
+}
+
+// TestMembers_lastSeenIsThisProjectsVisit proves the members list tells a
+// project's admin when a member last visited this project, and nothing about
+// the account's activity elsewhere: a member who signed in and worked only in
+// another project reads as never seen here.
+func TestMembers_lastSeenIsThisProjectsVisit(t *testing.T) {
+	e := newEnv(t)
+	admin := e.f.ClientFor(t, e.server, projecttest.SideB)
+	petr := e.seedAccount(t, "petr", "petr@example.test", false)
+	e.addMember(t, e.f.A.ProjectUID, petr, project.RoleViewer, true)
+	e.addMember(t, e.f.B.ProjectUID, petr, project.RoleViewer, true)
+	if _, err := e.pool.Exec(t.Context(), `UPDATE users SET last_login_at = now() WHERE uid = $1`, petr); err != nil {
+		t.Fatalf("signing petr in: %v", err)
+	}
+	if _, err := e.pool.Exec(t.Context(),
+		`UPDATE project_members SET last_seen_at = now() WHERE user_uid = $1 AND project_uid = $2`,
+		petr, e.f.A.ProjectUID); err != nil {
+		t.Fatalf("petr visiting A: %v", err)
+	}
+
+	if row := e.memberRow(t, admin, projecttest.SideB, petr); row["last_seen_at"] != nil {
+		t.Errorf("B's row of petr = %v, want never seen in B (the sign-in and A's visit are not B's)", row)
+	}
+	seen := time.Date(2026, 10, 1, 9, 30, 0, 0, time.UTC)
+	if _, err := e.pool.Exec(t.Context(),
+		`UPDATE project_members SET last_seen_at = $3 WHERE user_uid = $1 AND project_uid = $2`,
+		petr, e.f.B.ProjectUID, seen); err != nil {
+		t.Fatalf("petr visiting B: %v", err)
+	}
+	row := e.memberRow(t, admin, projecttest.SideB, petr)
+	raw, _ := row["last_seen_at"].(string)
+	if got, err := time.Parse(time.RFC3339, raw); err != nil || !got.Equal(seen) {
+		t.Errorf("B's row of petr = %v, want last seen %s", row, seen.Format(time.RFC3339))
 	}
 }

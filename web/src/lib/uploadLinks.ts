@@ -10,11 +10,23 @@ export const UPLOAD_LINKS_PATH = '/upload-links'
 export const ALBUM_PARAM = 'album'
 
 /**
- * The device-level key remembering the "from whom" name an anonymous uploader
- * typed. Deliberately not account-scoped and not cleared at sign-out: it belongs
- * to the phone, not to an account (see "Browser storage" in docs/FRONTEND.md).
+ * The key remembering the "from whom" name an uploader typed on a public link
+ * page. Not account-scoped — nobody is signed in to type it — and not per
+ * project, since the name is who the person is wherever they upload; but it is
+ * a person's name, so sign-out clears it with the rest of the personal state: a
+ * shared device does not go on offering it to whoever comes next (see "Browser
+ * storage" in docs/FRONTEND.md).
  */
 export const UPLOADER_NAME_KEY = 'kukatko.uploadLink.uploaderName'
+
+/**
+ * Whether a failed file's error says the link stopped taking uploads: the one
+ * "not valid" answer of a dead or unknown link, for a whole request (404) and a
+ * single file (410) alike.
+ */
+export function isDeadLinkError(error: string | undefined): boolean {
+  return error?.includes('not valid') ?? false
+}
 
 /** The create-form address with `albumUid` already chosen (the album page's action). */
 export function newLinkForAlbum(albumUid: string): string {

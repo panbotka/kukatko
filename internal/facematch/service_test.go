@@ -81,6 +81,15 @@ func (f *fakePeople) ListMarkersByPhoto(_ context.Context, _, _ string) ([]peopl
 	return f.markers, nil
 }
 
+func (f *fakePeople) GetMarkerByUID(_ context.Context, _, uid string) (people.Marker, error) {
+	for _, m := range f.markers {
+		if m.UID == uid {
+			return m, nil
+		}
+	}
+	return people.Marker{}, people.ErrMarkerNotFound
+}
+
 func (f *fakePeople) CreateMarkerAudited(
 	_ context.Context, _ string, m people.Marker, entry audit.Entry,
 ) (people.Marker, error) {
@@ -322,7 +331,7 @@ func TestApply_findExistingSubjectBySlug(t *testing.T) {
 
 	existing := people.Subject{UID: "su_existing", Name: "Anna", Slug: "anna"}
 	pe := &fakePeople{
-		markers:        []people.Marker{{UID: "mk1", Type: people.MarkerFace}},
+		markers:        []people.Marker{{UID: "mk1", PhotoUID: "p1", Type: people.MarkerFace}},
 		subjectsBySlug: map[string]people.Subject{"anna": existing},
 	}
 	svc := newService(&fakePhotos{}, &fakeFaces{}, pe)
@@ -355,7 +364,7 @@ func TestApply_unassignClearsReviewed(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	pe := &fakePeople{}
+	pe := &fakePeople{markers: []people.Marker{{UID: "mk1", PhotoUID: "p1", Type: people.MarkerFace}}}
 	svc := newService(&fakePhotos{}, &fakeFaces{}, pe)
 
 	res, err := svc.Apply(ctx, testProject, AssignRequest{
@@ -375,6 +384,32 @@ func TestApply_unassignClearsReviewed(t *testing.T) {
 	}
 	if res.Subject != nil {
 		t.Errorf("unassign result subject = %+v, want nil", res.Subject)
+	}
+}
+
+// TestApply_markerOfAnotherPhotoIsMissing checks a marker named through another
+// photo's route is refused as missing and nothing is written: photo Y's route
+// cannot re-tag photo X.
+func TestApply_markerOfAnotherPhotoIsMissing(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	for _, action := range []string{ActionAssignPerson, ActionUnassignPerson} {
+		pe := &fakePeople{
+			markers:       []people.Marker{{UID: "mk_x", PhotoUID: "photo_x", Type: people.MarkerFace}},
+			subjectsByUID: map[string]people.Subject{"su1": {UID: "su1", Name: "Anna"}},
+		}
+		svc := newService(&fakePhotos{}, &fakeFaces{}, pe)
+		_, err := svc.Apply(ctx, testProject, AssignRequest{
+			PhotoUID: "photo_y", Action: action, MarkerUID: "mk_x", SubjectUID: "su1",
+		}, audit.Meta{ActorUID: "usr_actor"})
+		if !errors.Is(err, people.ErrMarkerNotFound) {
+			t.Errorf("%s: err = %v, want ErrMarkerNotFound", action, err)
+		}
+		if pe.assigned != [2]string{} || pe.unassigned != "" || pe.reviewed != nil {
+			t.Errorf("%s: wrote through a foreign photo's route: assigned=%v unassigned=%q reviewed=%v",
+				action, pe.assigned, pe.unassigned, pe.reviewed)
+		}
 	}
 }
 

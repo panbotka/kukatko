@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { type Coordinates, formatCoordinates, parseCoordinates } from '../../lib/coordinates'
 import { NEARBY_ZOOM, lastPickedLocation, rememberPickedLocation } from '../../lib/pickedLocation'
 import { type MapViewport } from '../../lib/mapView'
+import { useProjectSlug } from '../../project/ProjectContext'
 import { type Place } from '../../services/map'
 import { Icon } from '../Icon'
 
@@ -60,7 +61,8 @@ export interface LocationPickerProps {
  *
  * The map starts somewhere useful even for a photo that has no location. First
  * choice is the photo's own coordinate, second the last place picked in this
- * session (a box of scans is almost always one village, see `lib/pickedLocation`)
+ * project this session (a box of scans is almost always one village, see
+ * `lib/pickedLocation`)
  * and last the library's own region — never the Atlantic at 0,0, which is where a
  * map with no opinion puts you and where nobody's photographs were taken.
  *
@@ -78,6 +80,7 @@ export function LocationPicker({
 }: LocationPickerProps) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
+  const projectSlug = useProjectSlug()
 
   const parsed = useMemo(() => parseCoordinates(value), [value])
   const hasText = value.trim() !== ''
@@ -88,7 +91,7 @@ export function LocationPicker({
 
   /** Writes a picked point back as canonical decimal degrees. */
   function pick(lat: number, lng: number) {
-    rememberPickedLocation({ lat, lng })
+    rememberPickedLocation(projectSlug, { lat, lng })
     onChange(formatCoordinates({ lat, lng }))
   }
 
@@ -106,7 +109,7 @@ export function LocationPicker({
     <LeafletMap
       features={[]}
       mapset="basic"
-      viewport={startViewport(position)}
+      viewport={startViewport(position, projectSlug)}
       onViewportChange={() => undefined}
       onSelectPhoto={() => undefined}
       thumbAlt={t('map.thumbAlt')}
@@ -235,15 +238,15 @@ export function LocationPicker({
 
 /**
  * Where the map opens: on the photo's own coordinate when it has one, else on the
- * last place picked this session, else nowhere in particular — `null`, which
- * leaves LeafletMap on its own default view of the library's region rather than
+ * last place picked in `project` this session, else nowhere in particular —
+ * `null`, which leaves LeafletMap on its own default view of the library's region rather than
  * on 0,0 in the ocean.
  */
-function startViewport(position: Coordinates | null): MapViewport | null {
+function startViewport(position: Coordinates | null, project: string | null): MapViewport | null {
   if (position !== null) {
     return { lat: position.lat, lng: position.lng, zoom: PICKED_ZOOM }
   }
-  const recent = lastPickedLocation()
+  const recent = lastPickedLocation(project)
   if (recent !== null) {
     return { lat: recent.lat, lng: recent.lng, zoom: NEARBY_ZOOM }
   }

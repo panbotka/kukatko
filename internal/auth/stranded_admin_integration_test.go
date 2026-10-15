@@ -233,6 +233,56 @@ func TestDisable_serialisedWithTheLastAdminGuard(t *testing.T) {
 	}
 }
 
+// TestDisable_doesNotDeadlockAnInsertByTheAccount races a disable against a
+// write by (or about) the same account into one of its projects — an audit row,
+// a photo — whose foreign keys PostgreSQL checks with a KEY SHARE lock on the
+// account and then on the project. The disable locks the account's projects and
+// then the account. Were the projects locked FOR UPDATE (which KEY SHARE waits
+// for), the two would wait on each other and one of them would be aborted as a
+// deadlock, a 500 for somebody; locked FOR NO KEY UPDATE, the foreign-key check
+// passes and the disable merely waits for the write to commit.
+//
+// The interleaving is forced: the test takes the account's KEY SHARE first,
+// waits for the disable to park on the account row, then asks for the
+// project's.
+func TestDisable_doesNotDeadlockAnInsertByTheAccount(t *testing.T) {
+	env := newTestEnv(t)
+	maint := newMaintainerOutsideProjects(t, env)
+	editor := env.createUser(t, "editor-fk", auth.AccountEditor)
+	pool := env.db.Pool()
+
+	insert, err := pool.Begin(t.Context())
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = insert.Rollback(context.WithoutCancel(t.Context())) }()
+	if _, err := insert.Exec(t.Context(), `SET LOCAL lock_timeout = '5s'`); err != nil {
+		t.Fatalf("lock timeout: %v", err)
+	}
+	if _, err := insert.Exec(t.Context(), `SELECT uid FROM users WHERE uid = $1 FOR KEY SHARE`, editor.UID); err != nil {
+		t.Fatalf("the account's foreign-key lock: %v", err)
+	}
+
+	disabled := make(chan error, 1)
+	go func() {
+		entry := audit.Meta{ActorUID: maint.UID}.Entry(audit.ActionUserDisable, "users", editor.UID, nil)
+		_, err := env.svc.SetUserDisabledAudited(t.Context(), editor.UID, true, maint.Role, entry)
+		disabled <- err
+	}()
+	waitFor(t, "the disable to park on the account row", func() bool { return lockWaiters(t, env) >= 1 })
+
+	if _, err := insert.Exec(t.Context(), `SELECT uid FROM projects WHERE uid = $1 FOR KEY SHARE`,
+		project.BootstrapUID); err != nil {
+		t.Fatalf("the project's foreign-key lock behind a disable: %v", err)
+	}
+	if err := insert.Commit(t.Context()); err != nil {
+		t.Fatalf("committing the write: %v", err)
+	}
+	if err := <-disabled; err != nil {
+		t.Fatalf("disabling the account: %v", err)
+	}
+}
+
 // waitFor polls cond until it holds, failing the test after five seconds.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()

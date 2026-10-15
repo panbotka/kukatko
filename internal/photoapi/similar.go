@@ -76,8 +76,9 @@ func (a *API) handleSimilar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch one extra so removing the source still leaves a full page.
-	matches, err := a.similar.FindSimilar(r.Context(), auth.ProjectUIDFromContext(r.Context()), emb.Vector, limit+1, 0)
+	// Over-fetch so removing the source, archived photos and hidden stack members
+	// still leaves a full page in the common case.
+	matches, err := a.similar.FindSimilar(r.Context(), auth.ProjectUIDFromContext(r.Context()), emb.Vector, 2*limit+1, 0)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "similarity search failed")
 		return
@@ -90,9 +91,10 @@ func (a *API) handleSimilar(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, similarResponse{Similar: result})
 }
 
-// resolveSimilar drops the source uid, truncates to limit, batch-loads the photo
-// records for the surviving matches and returns them in match (distance) order,
-// each annotated with its cosine distance.
+// resolveSimilar drops the source uid, batch-loads the photo records for the
+// remaining matches and returns at most limit of them in match (distance) order,
+// each annotated with its cosine distance. An archived photo — on its way to the
+// trash, gone from every listing — and a non-primary stack member are left out.
 func (a *API) resolveSimilar(
 	ctx context.Context, matches []vectors.Match, sourceUID string, limit int,
 ) ([]similarPhoto, error) {
@@ -104,9 +106,6 @@ func (a *API) resolveSimilar(
 		}
 		kept = append(kept, m)
 		uids = append(uids, m.PhotoUID)
-		if len(kept) >= limit {
-			break
-		}
 	}
 
 	// The vector index spans every project; resolving the candidates inside the
@@ -120,21 +119,30 @@ func (a *API) resolveSimilar(
 		byUID[p.UID] = p
 	}
 
-	out := make([]similarPhoto, 0, len(kept))
+	out := make([]similarPhoto, 0, min(len(kept), limit))
 	for _, m := range kept {
 		photo, ok := byUID[m.PhotoUID]
 		if !ok {
 			continue // raced delete between search and load; skip it
 		}
-		// A non-primary stack member is hidden everywhere else, so keep it out of
-		// the similar strip too — only its stack's primary should surface.
-		if photo.StackUID != nil && !photo.StackPrimary {
+		if !inSimilarStrip(photo) {
 			continue
 		}
 		a.media.DecorateOne(ctx, &photo)
 		out = append(out, similarPhoto{Photo: photo, Distance: m.Distance})
+		if len(out) >= limit {
+			break
+		}
 	}
 	return out, nil
+}
+
+// inSimilarStrip reports whether photo may surface in the similar strip. A
+// non-primary stack member is hidden everywhere else, so it stays out — only its
+// stack's primary surfaces — and an archived photo is out of every listing, so
+// it is out of this one too.
+func inSimilarStrip(photo photos.Photo) bool {
+	return (photo.StackUID == nil || photo.StackPrimary) && photo.ArchivedAt == nil
 }
 
 // parseSimilarLimit parses the ?limit query value, applying defaultSimilarLimit

@@ -13,9 +13,9 @@ import (
 // who signed in, and a member still waiting who never did.
 const membersBody = `[
 	{"user_uid":"us1","username":"anna","display_name":"Anna","role":"admin",
-	 "approved_at":"2026-10-11T10:00:00Z","last_login_at":"2026-10-12T08:30:00Z","has_picture":true},
+	 "approved_at":"2026-10-11T10:00:00Z","last_seen_at":"2026-10-12T08:30:00Z","has_picture":true},
 	{"user_uid":"us2","username":"bob","display_name":"","role":"viewer",
-	 "approved_at":null,"last_login_at":null,"has_picture":false}
+	 "approved_at":null,"last_seen_at":null,"has_picture":false}
 ]`
 
 // TestWriteMembers verifies the table shows role, approval state and last
@@ -30,7 +30,7 @@ func TestWriteMembers(t *testing.T) {
 	if err := WriteMembers(&buf, list); err != nil {
 		t.Fatalf("WriteMembers: %v", err)
 	}
-	for _, want := range []string{"USERNAME", "LAST LOGIN", "anna", "admin", "approved", "pending",
+	for _, want := range []string{"USERNAME", "LAST SEEN", "anna", "admin", "approved", "pending",
 		"2026-10-12 08:30"} {
 		if !strings.Contains(buf.String(), want) {
 			t.Errorf("member table does not contain %q:\n%s", want, buf.String())

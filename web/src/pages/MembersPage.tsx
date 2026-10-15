@@ -336,13 +336,13 @@ export function MembersPage() {
         ),
     },
     {
-      key: 'lastLogin',
-      header: t('members.columns.lastLogin'),
+      key: 'lastSeen',
+      header: t('members.columns.lastSeen'),
       cell: (m) =>
-        m.last_login_at === null ? (
+        m.last_seen_at === null ? (
           <span className="text-secondary">{t('members.never')}</span>
         ) : (
-          formatDateTime(m.last_login_at, i18n.language)
+          formatDateTime(m.last_seen_at, i18n.language)
         ),
     },
     {

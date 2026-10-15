@@ -92,14 +92,12 @@ func New(cfg Config) *Service {
 
 // Handle runs one purge of the project the job's payload names
 // (jobs.ProjectUIDOf). A job queued before the purge was per project names
-// none; it purges the bootstrap project, the only one there was then. A failed
+// none; it purges the bootstrap project, the only one there was then, and the
+// fallback is logged (jobs.ProjectUIDOrLegacy). A failed
 // purge is returned for the queue to retry; an invalid retention fails every
 // attempt the same way, which the dead letter then shows.
 func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
-	projectUID := jobs.ProjectUIDOf(job)
-	if projectUID == "" {
-		projectUID = project.BootstrapUID
-	}
+	projectUID := jobs.ProjectUIDOrLegacy(ctx, s.log, job, project.BootstrapUID)
 	deleted, err := s.notes.Purge(ctx, projectUID, s.clock(), s.retention)
 	if err != nil {
 		return fmt.Errorf("notifypurgejob: purging project %s: %w", projectUID, err)

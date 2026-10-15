@@ -312,6 +312,11 @@ func TestHandleApprove_schedulesTheMail(t *testing.T) {
 	if data, ok := mail.sent[0].Data.(mailer.AccountApprovedData); !ok || data.DisplayName != "Jan" {
 		t.Errorf("mail data = %#v", mail.sent[0].Data)
 	}
+	// Addressed to the membership: a member removed before the mail goes out
+	// is not told about a project it can no longer open.
+	if f := mail.sent[0].For; f == nil || f.UserUID != "us1" {
+		t.Errorf("approval mail addressee = %+v, want the approved membership", f)
+	}
 
 	without := &fakeMembers{}
 	srv = newTestServer(t, without, nil, nil)

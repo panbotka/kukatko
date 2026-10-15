@@ -2,18 +2,12 @@ import Card from 'react-bootstrap/Card'
 import Col from 'react-bootstrap/Col'
 import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 
 import { formatBytes, formatCount } from '../../lib/format'
-import { LIBRARY_PATH } from '../../lib/libraryView'
-import { ProjectLink } from '../../project/ProjectLink'
 import type { LibrarySummary } from '../../services/system'
 
 import { StatTileGrid, type StatTileSpec } from './StatTile'
-
-/** The library narrowed by a query-language filter, e.g. `type:video`. */
-function libraryQuery(query: string): string {
-  return `${LIBRARY_PATH}?q=${encodeURIComponent(query)}`
-}
 
 /**
  * The tiles of the library section, in the order the questions are asked: how
@@ -21,10 +15,11 @@ function libraryQuery(query: string): string {
  * what is deliberately out of the grid (hidden, private), then what it is
  * organised by.
  *
- * Every tile whose number has a matching view links into it — the trash to
- * /trash, the three photo subsets to the library under the query-language filter
- * that selects exactly them, the collections to their catalogues. Faces and
- * embeddings have no listing of their own and stay static.
+ * No tile links anywhere: the numbers are the whole instance's — every
+ * project's library summed — and no one page lists them. A link into "the"
+ * library would open whichever project was visited last under a count that is
+ * not its own; each project's own numbers, with their links, are on its page
+ * under /system/projects.
  */
 function tilesFor(library: LibrarySummary): StatTileSpec[] {
   // Not one of these is a queue state: they are what the library *is*, so they
@@ -35,35 +30,30 @@ function tilesFor(library: LibrarySummary): StatTileSpec[] {
       key: 'photos',
       labelKey: 'system.tiles.photos',
       value: library.photos,
-      to: LIBRARY_PATH,
     },
     {
       key: 'videos',
       labelKey: 'system.tiles.videos',
       value: library.videos,
-      to: libraryQuery('type:video'),
     },
     {
       key: 'trashed',
       labelKey: 'system.tiles.trashed',
       value: library.trashed,
-      to: '/trash',
     },
     {
       key: 'hidden',
       labelKey: 'system.tiles.hidden',
       value: library.hidden,
-      to: libraryQuery('hidden:yes'),
     },
     {
       key: 'private',
       labelKey: 'system.tiles.private',
       value: library.private,
-      to: libraryQuery('private:yes'),
     },
-    { key: 'albums', labelKey: 'system.tiles.albums', value: library.albums, to: '/albums' },
-    { key: 'labels', labelKey: 'system.tiles.labels', value: library.labels, to: '/labels' },
-    { key: 'people', labelKey: 'system.tiles.people', value: library.people, to: '/people' },
+    { key: 'albums', labelKey: 'system.tiles.albums', value: library.albums },
+    { key: 'labels', labelKey: 'system.tiles.labels', value: library.labels },
+    { key: 'people', labelKey: 'system.tiles.people', value: library.people },
     { key: 'faces', labelKey: 'system.tiles.faces', value: library.faces },
     { key: 'embeddings', labelKey: 'system.tiles.embeddings', value: library.embeddings },
   ]
@@ -157,7 +147,7 @@ export function LibraryOverview({ library }: { library: LibrarySummary }) {
       </h2>
       <p className="text-secondary small">
         {t('system.dashboard.libraryIntro')}{' '}
-        <ProjectLink to="/stats">{t('system.dashboard.libraryStatsLink')}</ProjectLink>
+        <Link to="/system/projects">{t('system.dashboard.libraryStatsLink')}</Link>
       </p>
       <StatTileGrid tiles={tilesFor(library)} />
       <Row className="g-3 mt-0" xs={1} md={2}>

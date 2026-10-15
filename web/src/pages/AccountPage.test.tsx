@@ -42,12 +42,28 @@ const editorAuth = {
   logout: vi.fn(),
   refresh: vi.fn(),
   projects: [],
+  isMaintainer: false,
 } as unknown as AuthContextValue
 
-function renderAccount() {
+/** A membership of the account, approved in an active project unless overridden. */
+function membership(slug: string, name: string, role: string, over: Record<string, unknown> = {}) {
+  return {
+    uid: `pj-${slug}`,
+    slug,
+    name,
+    description: '',
+    active: true,
+    role,
+    approved: true,
+    subject_uid: null,
+    ...over,
+  }
+}
+
+function renderAccount(auth: AuthContextValue = editorAuth) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={editorAuth}>
+      <AuthContext.Provider value={auth}>
         <MemoryRouter initialEntries={['/account']}>
           <AccountPage />
         </MemoryRouter>
@@ -69,6 +85,31 @@ afterEach(() => {
 })
 
 describe('AccountPage', () => {
+  it('names the role in every project it may enter, not the last one opened', () => {
+    renderAccount({
+      ...editorAuth,
+      projects: [
+        membership('v', 'Veselice', 'curator'),
+        membership('rodina', 'Rodina', 'admin'),
+        membership('cekam', 'Čekárna', 'viewer', { approved: false }),
+        membership('vypnuty', 'Vypnutý', 'editor', { active: false }),
+      ],
+    } as unknown as AuthContextValue)
+
+    const roles = screen.getByTestId('account-roles')
+    expect(screen.getByText('Roles in projects')).toBeInTheDocument()
+    expect(Array.from(roles.querySelectorAll('li')).map((li) => li.textContent)).toEqual([
+      'Veselice Curator',
+      'Rodina Administrator',
+    ])
+  })
+
+  it('names the instance role of a maintainer', () => {
+    renderAccount({ ...editorAuth, isMaintainer: true })
+
+    expect(screen.getByTestId('account-roles')).toHaveTextContent('Maintainer')
+  })
+
   it('sits in the shared narrow reading column', async () => {
     renderAccount()
 

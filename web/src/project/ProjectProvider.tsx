@@ -19,7 +19,8 @@ import { entryProjectSlug, isEnterable, projectSlugInPath, routeAfterSwitch } fr
  * so a stranger cannot even learn that the project exists — except a membership
  * of an active project still waiting for approval, which is `pending`: the
  * account already knows that project, and "waiting for approval" is the one
- * thing worth telling it. Pages outside a project (`/account`, `/system`, …)
+ * thing worth telling it — and a membership of a deactivated project, which is
+ * `inactive`: the chooser already lists it as unavailable. Pages outside a project (`/account`, `/system`, …)
  * work in the project the entry rule picks.
  *
  * **The maintainer enters every project**, exactly as the API lets it: a
@@ -32,6 +33,15 @@ import { entryProjectSlug, isEnterable, projectSlugInPath, routeAfterSwitch } fr
  * not in an effect: the pages below fetch in their own effects, and React runs
  * a child's effects before its parent's, so an effect here would come too late
  * for the very first request of a freshly opened project.
+ * A layout effect would beat the children's fetches but not their render, and
+ * the media URL builders (`thumbUrl`, `subjectAvatarUrl`, `faceCropUrl`,
+ * `tileLayerUrl`, …) call `apiPath` while rendering: the first commit after a
+ * sign-in would throw (no slug yet) and the first after a switch would point
+ * every `<img>` at the previous project. Moving the assignment out of render
+ * means passing the slug into each of those builders first; until then a render
+ * React discards can leave the slug a step ahead, which the server's scoping
+ * bounds to a 404 or the next project's answer to a request the outlet's
+ * remount aborts anyway.
  */
 export function ProjectProvider({ children }: { children: ReactNode }) {
   const auth = useContext(AuthContext)
@@ -82,6 +92,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     }
     if (membership?.active === true && !membership.approved) {
       return { project: entry, status: 'pending' }
+    }
+    if (membership !== undefined && !membership.active) {
+      return { project: entry, status: 'inactive' }
     }
     return { project: entry, status: 'not-member' }
   }, [authStatus, projects, lastProjectSlug, urlSlug, isMaintainer, lookup])

@@ -356,8 +356,19 @@ func TestSignedInUploadIsAttributed(t *testing.T) {
 	}
 }
 
-// TestRevokedLinkRefusesEverything verifies a revoked link answers 410 to the
-// page and the upload, and refuses a registration.
+// readBody reads and closes resp's body.
+func readBody(t *testing.T, resp *http.Response) string {
+	t.Helper()
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	return string(raw)
+}
+
+// TestRevokedLinkRefusesEverything verifies a revoked link answers the page and
+// the upload exactly like a code that never existed, and refuses a registration.
 func TestRevokedLinkRefusesEverything(t *testing.T) {
 	e := newIntegrationEnv(t)
 	_, curator := e.login(t, "kurator", auth.AccountCurator)
@@ -367,11 +378,15 @@ func TestRevokedLinkRefusesEverything(t *testing.T) {
 	if resp := e.send(t, http.MethodPost, apiV+"/upload-links/"+linkUID+"/revoke", "", nil, curator); resp.StatusCode != http.StatusOK {
 		t.Fatalf("revoke = %d", resp.StatusCode)
 	}
-	if resp := e.send(t, http.MethodGet, "/api/v1/u/"+code, "", nil, nil); resp.StatusCode != http.StatusGone {
-		t.Errorf("page = %d, want 410", resp.StatusCode)
+	page := e.send(t, http.MethodGet, "/api/v1/u/"+code, "", nil, nil)
+	random := e.send(t, http.MethodGet, "/api/v1/u/Zz9Zz9Zz", "", nil, nil)
+	pageBody, randomBody := readBody(t, page), readBody(t, random)
+	if page.StatusCode != http.StatusNotFound || page.StatusCode != random.StatusCode || pageBody != randomBody {
+		t.Errorf("revoked page = %d %s, want the random code's %d %s",
+			page.StatusCode, pageBody, random.StatusCode, randomBody)
 	}
-	if resp := e.uploadFile(t, code, "a.jpg", "", nil); resp.StatusCode != http.StatusGone {
-		t.Errorf("upload = %d, want 410", resp.StatusCode)
+	if resp := e.uploadFile(t, code, "a.jpg", "", nil); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("upload = %d, want 404", resp.StatusCode)
 	}
 	if resp := e.register(t, code, nil); resp.StatusCode != http.StatusForbidden {
 		t.Errorf("register = %d, want 403", resp.StatusCode)
@@ -785,7 +800,7 @@ func TestLinkDyingMidRequestStopsItsFiles(t *testing.T) {
 			if got[0].Outcome != ingest.OutcomeCreated {
 				t.Errorf("first file = %+v, want created", got[0])
 			}
-			if got[1].Status != http.StatusGone || got[1].Error != "upload link is no longer valid" {
+			if got[1].Status != http.StatusGone || got[1].Error != "upload link is not valid" {
 				t.Errorf("second file = %+v, want the dead link's 410", got[1])
 			}
 			if n := e.count(t, "SELECT upload_count FROM upload_links WHERE uid = $1", linkUID); n != 1 {

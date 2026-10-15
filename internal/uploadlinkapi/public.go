@@ -49,9 +49,9 @@ var (
 	// errLinkFull is a file past the link's lifetime upload cap.
 	errLinkFull = errors.New("this link accepts no more uploads")
 	// errLinkGone is a file sent after the link was revoked or expired while its
-	// request was still running; the text is the 410 a dead link answers with,
+	// request was still running; the text is the one a dead link answers with,
 	// which the page recognises.
-	errLinkGone = errors.New(linkGoneMessage)
+	errLinkGone = errors.New(linkInvalidMessage)
 	// errTooManyFiles is a file part past maxFilesPerRequest; the request stops
 	// there.
 	errTooManyFiles = errors.New("too many files in one upload")
@@ -68,9 +68,11 @@ var (
 // the sidecar reschedule — which runs detached from the request (see ingestOne).
 const recordTimeout = time.Minute
 
-// linkGoneMessage is the error of a link that no longer accepts uploads, for the
-// whole request and for a single file alike.
-const linkGoneMessage = "upload link is no longer valid"
+// linkInvalidMessage is the one error of a link that takes no uploads — an
+// unknown code, a revoked or expired link, a link of a gone or deactivated
+// project — for the whole request and for a single file alike. The 404 is the
+// same for all of them, so a code's answer never tells whether it ever existed.
+const linkInvalidMessage = "upload link is not valid"
 
 // publicLink is what anybody holding a link learns: the curator's title and
 // note, the name of the project and the names of the albums and labels the
@@ -103,13 +105,6 @@ type publicLink struct {
 	CreditsAccount bool `json:"credits_account"`
 }
 
-// goneBody is the 410 of a link that exists but no longer accepts uploads. It
-// says which of the two happened, and nothing else about the link.
-type goneBody struct {
-	Error string           `json:"error"`
-	State uploadlink.State `json:"state"`
-}
-
 // uploadResponse mirrors the ingest endpoint's response: one result per file.
 type uploadResponse struct {
 	Results []ingest.FileResult `json:"results"`
@@ -124,8 +119,8 @@ type uploader struct {
 }
 
 // handlePublic describes a live link to whoever holds it: 200 with the title,
-// note, target names and expiry, 410 for an expired or revoked link, 404 for an
-// unknown one.
+// note, target names and expiry, and one identical 404 for an unknown, expired
+// or revoked one.
 //
 // It also starts an anonymous visitor's upload session here, before any upload:
 // the page uploads several files at once, and if the first of them had to mint
@@ -185,8 +180,8 @@ func (a *API) registrationOpen(r *http.Request, projectUID string) bool {
 // handleUpload ingests the files of a multipart upload through a live link and
 // files each resulting photo — new or duplicate — into the link's albums and
 // labels. Like the ingest endpoint it answers 200 with one result per file; it
-// answers 404/410 for a dead link, 429 when the link's budget is spent, 413
-// {"error":"quota_exceeded"} before reading the body when the link's project has
+// answers the one 404 for a dead or unknown link, 429 when the link's budget is
+// spent, 413 {"error":"quota_exceeded"} before reading the body when the link's project has
 // used up its storage quota, and 400 for a body that is not a multipart upload
 // carrying a file.
 func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
@@ -237,13 +232,14 @@ type liveTarget struct {
 
 // liveLink resolves the {code} link — instance-wide, by its code alone — and
 // returns it with its project's storage prefix when it accepts uploads,
-// writing 404 for an unknown code (and for a link whose project is gone or
-// deactivated, which is answered exactly like one), 410 for an expired or
-// revoked link and 500 for a failed lookup otherwise.
+// writing one identical 404 for an unknown code, an expired or revoked link and
+// a link whose project is gone or deactivated — a code that once worked is
+// answered exactly like one that never did — and 500 for a failed lookup
+// otherwise.
 func (a *API) liveLink(w http.ResponseWriter, r *http.Request) (liveTarget, bool) {
 	link, err := a.store.ByCode(r.Context(), chi.URLParam(r, "code"))
 	if errors.Is(err, uploadlink.ErrNotFound) {
-		writeError(w, http.StatusNotFound, uploadlink.ErrNotFound.Error())
+		writeError(w, http.StatusNotFound, linkInvalidMessage)
 		return liveTarget{}, false
 	}
 	if err != nil {
@@ -254,7 +250,7 @@ func (a *API) liveLink(w http.ResponseWriter, r *http.Request) (liveTarget, bool
 	if a.projects != nil {
 		p, err := a.projects.Get(r.Context(), link.ProjectUID)
 		if errors.Is(err, project.ErrNotFound) || (err == nil && !p.Active) {
-			writeError(w, http.StatusNotFound, uploadlink.ErrNotFound.Error())
+			writeError(w, http.StatusNotFound, linkInvalidMessage)
 			return liveTarget{}, false
 		}
 		if err != nil {
@@ -263,8 +259,8 @@ func (a *API) liveLink(w http.ResponseWriter, r *http.Request) (liveTarget, bool
 		}
 		target.project = p
 	}
-	if state := link.StateAt(a.now()); state != uploadlink.StateActive {
-		writeJSON(w, http.StatusGone, goneBody{Error: linkGoneMessage, State: state})
+	if link.StateAt(a.now()) != uploadlink.StateActive {
+		writeError(w, http.StatusNotFound, linkInvalidMessage)
 		return liveTarget{}, false
 	}
 	return target, true
@@ -442,7 +438,7 @@ func (a *API) ingestOne(
 }
 
 // reservationRefused is the per-file result of a file whose cap slot the store
-// refused: 429 for a full link, the dead link's 410 for one revoked, expired or
+// refused: 429 for a full link, a per-file 410 for a link revoked, expired or
 // deleted since the request began, 500 for a failed reservation.
 func (a *API) reservationRefused(r *http.Request, link liveTarget, filename string, err error) ingest.FileResult {
 	switch {

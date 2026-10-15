@@ -14,7 +14,7 @@ import { UPLOAD_BATCH_KEY } from '../lib/uploadLinkBatch'
 import { UPLOADER_NAME_KEY } from '../lib/uploadLinks'
 import { ApiError } from '../services/auth'
 import { type UploadFileOptions, type UploadFileResult } from '../services/upload'
-import { type PublicUploadLink, UploadLinkGoneError } from '../services/uploadLinks'
+import { type PublicUploadLink } from '../services/uploadLinks'
 
 import { UploadLinkPage } from './UploadLinkPage'
 
@@ -184,21 +184,27 @@ describe('UploadLinkPage', () => {
     expect(screen.queryByTestId('upload-link-project')).not.toBeInTheDocument()
   })
 
-  it('says clearly when the link expired, was revoked or does not exist', async () => {
-    linkMock.mockRejectedValueOnce(new UploadLinkGoneError('expired'))
-    const { unmount } = renderPage()
-    expect(await screen.findByText(/has expired/)).toBeInTheDocument()
-    unmount()
-
-    linkMock.mockRejectedValueOnce(new UploadLinkGoneError('revoked'))
-    const second = renderPage()
-    expect(await screen.findByText(/was revoked/)).toBeInTheDocument()
-    second.unmount()
-
-    linkMock.mockRejectedValueOnce(new ApiError(404, 'not found'))
+  it('says one thing for a link that expired, was revoked or never existed', async () => {
+    // The server answers the three with the same 404; the page has nothing to
+    // tell them apart by, and says so in one sentence.
+    linkMock.mockRejectedValueOnce(new ApiError(404, 'upload link is not valid'))
     renderPage()
-    expect(await screen.findByText(/does not exist/)).toBeInTheDocument()
-    expect(screen.queryByLabelText('Who is it from?')).not.toBeInTheDocument()
+    expect(
+      await screen.findByText(/does not exist, has expired or was revoked/),
+    ).toBeInTheDocument()
+  })
+
+  it('says the link died when the rest of the batch is refused as not valid', async () => {
+    uploadMock.mockRejectedValueOnce(new ApiError(404, 'upload link is not valid'))
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByLabelText('Who is it from?')
+
+    await pick(user, [new File(['a'], 'a.jpg', { type: 'image/jpeg' })])
+
+    expect(
+      await screen.findByText('The link stopped being valid meanwhile and accepts no more files.'),
+    ).toBeInTheDocument()
   })
 
   it('uploads through the link with the remembered name and sums the batch up', async () => {

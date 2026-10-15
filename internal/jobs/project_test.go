@@ -1,8 +1,11 @@
 package jobs
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 )
 
@@ -121,5 +124,38 @@ func TestEnqueueNotificationPurge(t *testing.T) {
 	}
 	if fake.calls != calls {
 		t.Fatalf("the refused purge reached the queue")
+	}
+}
+
+// TestProjectUIDOrLegacy verifies a payload naming a project is read as that
+// project without a word, and one naming none — only a pre-upgrade job can —
+// falls back to the legacy project with a warning naming the job.
+func TestProjectUIDOrLegacy(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	named := Job{ID: 1, Type: TypeFaceCluster, Payload: json.RawMessage(`{"project_uid":"pj_b"}`)}
+	if got := ProjectUIDOrLegacy(t.Context(), log, named, "pj_boot"); got != "pj_b" {
+		t.Errorf("named payload = %q, want pj_b", got)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("a named payload logged %q, want nothing", buf.String())
+	}
+
+	legacy := Job{ID: 42, Type: TypeFamilyExport, Payload: json.RawMessage(`{"recluster":true}`)}
+	if got := ProjectUIDOrLegacy(t.Context(), log, legacy, "pj_boot"); got != "pj_boot" {
+		t.Errorf("legacy payload = %q, want pj_boot", got)
+	}
+	out := buf.String()
+	for _, want := range []string{"level=WARN", "job_id=42", "job_type=" + TypeFamilyExport, "project_uid=pj_boot"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("legacy fallback log %q lacks %q", out, want)
+		}
+	}
+
+	if got := ProjectUIDOrLegacy(t.Context(), nil, Job{ID: 3}, "pj_boot"); got != "pj_boot" {
+		t.Errorf("no payload, no logger = %q, want pj_boot", got)
 	}
 }

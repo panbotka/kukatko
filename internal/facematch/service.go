@@ -65,6 +65,9 @@ type FaceStore interface {
 type PeopleStore interface {
 	// ListMarkersByPhoto returns every marker on the photo, oldest first.
 	ListMarkersByPhoto(ctx context.Context, projectUID, photoUID string) ([]people.Marker, error)
+	// GetMarkerByUID returns one of the project's markers, or
+	// people.ErrMarkerNotFound.
+	GetMarkerByUID(ctx context.Context, projectUID, uid string) (people.Marker, error)
 	// CreateMarkerAudited inserts a marker (optionally already naming a subject),
 	// auditing the change.
 	CreateMarkerAudited(

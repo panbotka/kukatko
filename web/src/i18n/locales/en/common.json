@@ -514,7 +514,7 @@
     "title": "My account",
     "username": "Username",
     "displayName": "Display name",
-    "role": "Role",
+    "role": "Roles in projects",
     "changePassword": "Change password",
     "currentPassword": "Current password",
     "newPassword": "New password",
@@ -780,7 +780,9 @@
       },
       "duplicate": {
         "dismiss": "Pair settled as not duplicates",
-        "undismiss": "Pair returned to the duplicates"
+        "undismiss": "Pair returned to the duplicates",
+        "confirm": "Pair confirmed as duplicates",
+        "unconfirm": "Duplicate confirmation taken back"
       },
       "duplicate_marker": {
         "dismiss": "Repeated marker settled as correct",
@@ -830,7 +832,8 @@
         "unarchive": "Photo restored from the trash",
         "unhide": "Photo returned to the library",
         "update": "Photo edited",
-        "date_clear": "Impossible capture date cleared"
+        "date_clear": "Impossible capture date cleared",
+        "storyboard": "Video preview strip regenerated"
       },
       "photos": {
         "bulk": "Bulk photo edit",
@@ -844,7 +847,11 @@
         "create": "Person created",
         "delete": "Person deleted",
         "update": "Person edited",
-        "merge": "People merged"
+        "merge": "People merged",
+        "relation": {
+          "add": "Family relation added",
+          "remove": "Family relation removed"
+        }
       },
       "user": {
         "approve": "User approved",
@@ -855,7 +862,8 @@
         "password_reset_use": "Password reset through a link",
         "register": "User registered",
         "rename": "Username changed",
-        "update": "User edited"
+        "update": "User edited",
+        "instance_role": "Instance role changed"
       },
       "stack": {
         "set_primary": "Stack's primary photo changed",
@@ -872,6 +880,58 @@
         "upload": "Photo uploaded through a link",
         "restore_code": "Upload link code restored",
         "rotate_code": "Upload link given a new code"
+      },
+      "comment": {
+        "create": "Comment added",
+        "update": "Comment edited",
+        "delete": "Comment deleted"
+      },
+      "family": {
+        "update": "Family edited"
+      },
+      "location": {
+        "confirm": "Estimated place confirmed",
+        "reject": "Estimated place rejected"
+      },
+      "notification_prefs": {
+        "update": "Notification settings changed"
+      },
+      "project": {
+        "create": "Project created",
+        "update": "Project edited",
+        "purge": "Project permanently deleted",
+        "storage_prefix": "Project storage changed",
+        "invite": {
+          "create": "Invitation created",
+          "revoke": "Invitation revoked",
+          "accept": "Invitation accepted"
+        },
+        "member": {
+          "add": "Project member added",
+          "add_request": "Member add requested",
+          "add_resolve": "Member add resolved",
+          "withdraw_request": "Member add request withdrawn",
+          "withdraw_resolve": "Member add withdrawal resolved",
+          "approve": "Project member approved",
+          "remove": "Project member removed",
+          "role": "Project member role changed",
+          "subject": "“Who I am in the library” set"
+        },
+        "rekey": {
+          "start": "Storage move started",
+          "pause": "Storage move paused",
+          "resume": "Storage move resumed",
+          "retry": "Storage move retried"
+        }
+      },
+      "task": {
+        "create": "Task created",
+        "update": "Task edited",
+        "delete": "Task deleted",
+        "add_photos": "Photos added to a task",
+        "remove_photos": "Photos removed from a task",
+        "assign": "Task assigned",
+        "unassign": "Task unassigned"
       }
     },
     "targets": {
@@ -883,8 +943,16 @@
       "api_tokens": "API token",
       "passkey_credentials": "Passkey",
       "announcement": "Announcement",
-      "audit_log": "Audit log"
-    }
+      "audit_log": "Audit log",
+      "photo_tasks": "Task",
+      "project": "Project",
+      "project_member": "Project member",
+      "project_invites": "Invitation",
+      "upload_links": "Upload link",
+      "families": "Family",
+      "library": "Library"
+    },
+    "formerProject": "A project you no longer belong to"
   },
   "library": {
     "title": "Library",
@@ -3214,6 +3282,11 @@
     "message": "Your membership of the project {{project}} still has to be approved by the project admin. Once they approve it, the project opens here.",
     "projects": "Back to projects"
   },
+  "projectUnavailable": {
+    "title": "The project is switched off",
+    "message": "The system administrator has switched the project {{project}} off, so it cannot be opened now. Your other projects are in the overview.",
+    "projects": "Back to projects"
+  },
   "forbidden": {
     "title": "You can't open this page",
     "message": {
@@ -3791,8 +3864,8 @@
     },
     "dashboard": {
       "libraryTitle": "Library",
-      "libraryIntro": "What the catalogue holds right now.",
-      "libraryStatsLink": "Full statistics",
+      "libraryIntro": "What the catalogue of the whole instance holds right now — every project together.",
+      "libraryStatsLink": "Numbers by project",
       "remainingTitle": "Remaining work",
       "remainingIntro": "What is still waiting to be worked through. Zero is the goal; a highlighted number leads to the screen it is worked through on.",
       "healthTitle": "Health",
@@ -3910,7 +3983,7 @@
       "username": "Username",
       "role": "Role",
       "state": "State",
-      "lastLogin": "Last sign-in",
+      "lastSeen": "Last visit here",
       "actions": "Actions"
     },
     "roleLabel": "Role of {{name}}",
@@ -4401,9 +4474,7 @@
     "registerTitle": "Want to see all the photos?",
     "registerBody": "Register. Through this link you need no registration word, and the photos you just uploaded will be kept under your account. An administrator still approves the account.",
     "registerAction": "Register",
-    "expired": "This link has expired. Photos can no longer be uploaded through it.",
-    "revoked": "This link was revoked. Photos can no longer be uploaded through it.",
-    "notFound": "This link does not exist. Check that you copied all of it.",
+    "notFound": "This link is not valid: it does not exist, has expired or was revoked. Check that you copied all of it, or ask for a new one.",
     "loadError": "The link could not be loaded. Please try again in a moment.",
     "toLogin": "Sign in",
     "uploadingTitle": "Uploading your photos…",

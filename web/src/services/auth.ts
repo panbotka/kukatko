@@ -1,4 +1,5 @@
 import { apiPath, instancePath, projectApiPath } from './api'
+import { reportApiError } from './projectGone'
 
 /**
  * User roles mirrored from the backend (`internal/auth/role.go`), on a strict
@@ -115,6 +116,9 @@ export class ApiError extends Error {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    // The one place every failed response passes: a project that vanished
+    // under an open page is noticed here (see services/projectGone).
+    reportApiError(status, message)
   }
 }
 

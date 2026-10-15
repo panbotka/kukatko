@@ -1,9 +1,12 @@
 package clusterjob
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/cluster"
@@ -489,7 +492,7 @@ func TestEnsureGrouping_duplicateIsScheduled(t *testing.T) {
 
 // TestHandle_runsInThePayloadsProject works on the project the payload names
 // and hands that project to its successor; a payload from before projects
-// existed works on the bootstrap project.
+// existed works on the bootstrap project, and says so in the log.
 func TestHandle_runsInThePayloadsProject(t *testing.T) {
 	t.Parallel()
 
@@ -508,9 +511,14 @@ func TestHandle_runsInThePayloadsProject(t *testing.T) {
 
 			clusters := &fakeClusterer{runs: []cluster.SummaryRun{{Remaining: 1}}}
 			queue := &fakeQueue{}
-			svc := New(clusters, queue, oneProject, 0, nil)
+			var logged bytes.Buffer
+			svc := New(clusters, queue, oneProject, 0, slog.New(slog.NewTextHandler(&logged, nil)))
 			if err := svc.Handle(t.Context(), jobs.Job{ID: 7, Payload: []byte(tt.payload)}); err != nil {
 				t.Fatalf("Handle: %v", err)
+			}
+			warned := strings.Contains(logged.String(), "level=WARN")
+			if legacy := tt.want == project.BootstrapUID; warned != legacy {
+				t.Errorf("warned = %v, want %v (the legacy fallback is logged, nothing else)", warned, legacy)
 			}
 			for _, got := range clusters.projects {
 				if got != tt.want {

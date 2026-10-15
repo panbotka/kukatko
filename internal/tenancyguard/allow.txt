@@ -83,7 +83,7 @@ internal/mentionnotify/mentionnotify.go:236 runs in the comment's tx on its pare
 
 # internal/notification
 internal/notification/inbox.go:157 UnreadByProject is the switcher's count of the caller's own unread notifications across every project; the injected standing rule (notifystanding.MemberSQL) keeps only projects the caller is an approved, unwithheld member of, active
-internal/notification/store.go:213 Photos first checks the notification with Get(project, owner, uid); this reads its child photo rows
+internal/notification/store.go:223 Photos first checks the notification with Get(project, owner, uid); this reads its child photo rows
 
 # internal/organize
 internal/organize/featured.go:321 listFeatured serves ListFeaturedAlbums (project $4 set) and the worker-only FeaturedAlbumTx (album uid from the job payload); the project filter is optional, under OR

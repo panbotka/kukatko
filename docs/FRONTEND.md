@@ -486,11 +486,13 @@ here.
   what `tone` is applied to; a string is a value that is not a count at all — the duplicates tile's „—" while
   the scan has no answer yet — and is always shown muted),
   `LibraryOverview` (**what is in the library**: ten tiles — fotky, z toho videa, v koši, skryté, soukromé,
-  alba, štítky, osoby, obličeje, fotek k hledání podle obsahu, the first five linking to `/`, `/?q=type%3Avideo`, `/trash`,
-  `/?q=hidden%3Ayes`, `/?q=private%3Ayes` — plus two cards: **Nedávno nahráno** (24 h / 7 / 30 / 365 days,
+  alba, štítky, osoby, obličeje, fotek k hledání podle obsahu — **none of them a link**: the numbers are the
+  whole instance's, every project summed, and a link into "the" library opened whichever project was visited
+  last under a count that was not its own — plus two cards: **Nedávno nahráno** (24 h / 7 / 30 / 365 days,
   counted by when a photo *arrived*, which is why the note says so) and **Velikost podle katalogu**
   (knihovna / koš / odvozená data), the one storage figure that is meaningful when the originals live in an
-  object store; the header links on to `/stats` for the processing statistics),
+  object store; the header links on to **`/system/projects`** („Čísla po projektech"), where each project's
+  own numbers and links are),
   `ProjectBreakdownPanel` (**how those totals divide between the projects** — the snapshot's `projects` rows as a
   `RecordTable` (cards on a phone): the project name linking into its library (`projectPathFor(slug, '/')`) with
   its slug and a „deaktivovaný" badge, live photos, videos, trash, the originals' size, faces, subjects, albums, the
@@ -2032,9 +2034,12 @@ here.
   the pickers** on the pick screen and under the outcome on the done screen; it shows the title, **the
   project the photos go into** („Nahráváte do projektu {{name}}", the server's `project` — its name only),
   the note, **where the photos go** (album/label names as non-clickable chips styled from `ENTITY_STYLE` —
-  an uploader may not open them) and the expiry, and nothing else; an expired/revoked/unknown link gets a
-  clear message instead. An anonymous visitor may type "Od koho?" (remembered per device under
-  `kukatko.uploadLink.uploaderName`, see **Browser storage**); a signed-in **member of the link's
+  an uploader may not open them) and the expiry, and nothing else; an expired/revoked/unknown link gets
+  **one** message for all three („Tento odkaz neplatí: neexistuje, vypršel nebo byl zrušen…",
+  `uploadLink.notFound`) — the server answers them with the same 404 so a code never tells whether it once
+  worked, and a link that dies mid-batch is recognised by the same "not valid" text (`isDeadLinkError` in
+  `lib/uploadLinks`, a whole-request 404 or a per-file 410 alike). An anonymous visitor may type "Od koho?"
+  (remembered under `kukatko.uploadLink.uploaderName` until a sign-out on that browser, see **Browser storage**); a signed-in **member of the link's
   project** (the server's `credits_account`) is greeted by name and uploads as themselves — anybody else
   signed in (another project's member, the maintainer) is not credited by the server, so the page asks
   them "Od koho?" like an anonymous guest. **Foolproof on a phone** — almost everyone opens it there, often someone who
@@ -2132,7 +2137,9 @@ here.
   `PasswordResetPage.test.tsx` covers the check-before-form state, a usable link, a successful change,
   mismatched passwords, a dead link on opening, a link that dies between opening and submitting, a
   server-refused password and an unreachable check,
-  `AccountPage` = identity/role, **the Jazyk section** (`LanguageSwitcher` +
+  `AccountPage` = identity and **the role in every project the account may enter, each named** („Role v
+projektech": `Veselice Kurátor`, `Rodina Správce`; plus „Správce systému" for the maintainer) — the page belongs
+to no project, so a single role would be the last-visited project's, unnamed, **the Jazyk section** (`LanguageSwitcher` +
   a hint, `account.language*`) and changing your own password, **plus the app's technical status**
   (`GET /healthz` badge + version, without the commit hash) in a small muted row at the bottom — status and language
   came here from elsewhere (from the home page and the navbar respectively): they belong where the user looks for them, not
@@ -3257,15 +3264,21 @@ here.
   own history**: the same audit records as `/audit`, but from `GET /audit/mine`, which the server narrows to the
   caller — across **every** project the account acts in. It exists for self-repair, not supervision — *"I know I
   clicked something wrong a minute ago, what was it?"* — and everything follows from that. Four columns through
-  the shared `RecordTable` (a phone gets one card per entry), the last one **Projekt** (the entry's
-  `project` slug, a dash for an instance action), and every link of a row opens **in the entry's own project**
+  the shared `RecordTable` (a phone gets one card per entry), the last one **Projekt** (the project's **name**
+  from the reader's memberships, a dash for an instance action; the maintainer, who enters every project, sees
+  the slug of one it is no member of), and every link of a row opens **in the entry's own project**
   (`entryPath` → `projectPathFor(record.project, …)`), never in whichever project is current: **Kdy** (`formatDateTime`), **Co** (the action in words via `activityActionKey`, e.g. `photo.update`
   → *Úprava fotky*; an unknown action falls back to the raw label) and **Kde** — a `<Link>` to the thing that
   changed, named by its kind (*Fotka* / *Album* / *Štítek* / *Osoba*) rather than by UID, resolved by the very
   same `auditTargetHref` the admin log uses. Two fallbacks in the Kde cell: an entry with no target of its own
   (a bulk edit names its photos only in the payload) links the payload's UIDs (`auditDetailLinks`,
   `data-testid="activity-links"`, capped at `ACTIVITY_LINK_LIMIT` = 5 + `activity.moreLinks`), and a target with
-  no page at all (`users`, `api_tokens`, `announcement`) is plain text. **No “kdo” column** (the answer is always
+  no page at all (`users`, `api_tokens`, `announcement`) is plain text; a task (`photo_tasks`) links to
+  `/tasks/<uid>`, never to the photos in its payload. **A project the reader has left** (no enterable
+  membership — removed, or the project deactivated; `useActivityProjects`) keeps its rows — the server lists
+  the reader's own actions everywhere, see `GET /audit/mine` in API.md — but names no project („Projekt, kam
+  už nepatříte", `activity.formerProject`) and its Kde cell is plain text: every page of it would answer
+  "not found". **No “kdo” column** (the answer is always
   the reader) and **no filter form** (the recent end of a one-user list is where the answer is); prev/next
   pagination over `offset`/`next_offset` with the offset in the URL (`useUrlState` over `ACTIVITY_DEFAULTS`), so
   Back returns to the right page after following a row out. Loading (`ListSkeleton`)/empty/error (retry via
@@ -5200,6 +5213,9 @@ here.
   `PendingApprovalPage` (`/p/<slug>` for a membership still waiting for approval — rendered by
   `ProjectGate`, see "Projects in the address bar": `EmptyState` with `hourglass-split`, the project's name
   from the membership, a link to `/projects`; `pendingApproval.*`; `PendingApprovalPage.test.tsx`),
+  `ProjectUnavailablePage` (`/p/<slug>` for a membership of a **deactivated** project — rendered by
+  `ProjectGate` for `inactive`: `EmptyState` with `slash-circle`, „Projekt je vypnutý — Projekt <name> správce
+  systému vypnul…", a link to `/projects`; `projectUnavailable.*`; `ProjectUnavailablePage.test.tsx`),
   `ForbiddenPage` (**no route of its own** — the route guards render it *in place of* the route the
   current role may not enter, so `/review`, `/duplicates`, `/upload-links`, `/import`, … no longer bounce a
   viewer to the library without a word. Drawn with `EmptyState` (`shield-lock` glyph, `titleAs="h1"`)
@@ -5643,8 +5659,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   field (`lib/coordinates`) with its inline "unrecognised" error and a **Vymazat polohu** button, and the
   `LeafletMap` in picker mode; every way in writes the same text, and a picked point is written canonically
   through `formatCoordinates`. **Where the map opens** is `startViewport`: the photo's own coordinate
-  (zoom 13) → the **last place picked in this session** (`lib/pickedLocation`, a validated coordinate in
-  `sessionStorage`, zoom 11 — a box of scans is almost always one village, so the previous pin is the best
+  (zoom 13) → the **last place picked in this project this session** (`lib/pickedLocation`, a validated
+  coordinate in `sessionStorage` under `kukatko.lastPickedLocation.<slug>`, zoom 11 — a box of scans is almost always one village, so the previous pin is the best
   guess for the next; session, not local, because a week-old pin is not where anyone wants to start) →
   `null`, i.e. `LeafletMap`'s own default view of the Czech lands. Never 0,0 in the Atlantic, which is
   where a map with no opinion puts you. **Mapa na celou obrazovku** opens the same map in a `fullscreen`
@@ -7107,8 +7123,9 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `ActivityView` type (**only** `offset` — a one-user listing read newest-first has nothing else to choose)
   + `ACTIVITY_DEFAULTS` + `ACTIVITY_PAGE_SIZE` (50, smaller than the admin log's 100: this page is read to find
   one recent action) + `ACTIVITY_LINK_LIMIT` (5) + `viewToParams`; plus the two word-catalogues that turn a raw
-  audit row into a sentence — `activityActionKey(action)` (the `internal/audit` action labels →
-  `activity.actions.<domain>.<verb>`) and `activityTargetKey(targetType)` (→ `activity.targets.*`; `markers`
+  audit row into a sentence — `activityActionKey(action)` (**every** `internal/audit` action label →
+  `activity.actions.<domain>.<verb>`; `TestActivityPageNamesEveryAction` in `internal/audit` fails the gate
+  for an action without words, or words for no action) and `activityTargetKey(targetType)` (→ `activity.targets.*`; `markers`
   deliberately maps to the **photo's** label, because that is where its link leads). Both return `undefined` for
   something the catalogue does not know, and the page falls back to the raw label — a missing translation must
   never blank a row. The values are literal `ParseKeys`, not a computed `` `activity.actions.${…}` `` template,
@@ -7636,8 +7653,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   manages and whose code is known)/`createUploadLink(input)` (→ `{link, code, path}`)/
   `extendUploadLink(uid, days)`/`revokeUploadLink(uid)`/`restoreUploadLinkCode(uid, code)` (422 on a
   mismatch)/`newUploadLinkCode(uid)`, `codeFromInput(pasted)` (the bare code out of a code or a whole
-  `/u/<code>` link), public `fetchPublicUploadLink(code)` (throws
-  `UploadLinkGoneError` with `state` `expired|revoked` on a 410, `ApiError(404)` for an unknown code),
+  `/u/<code>` link), public `fetchPublicUploadLink(code)` (throws `ApiError(404)` alike for an unknown code
+  and an expired or revoked link — the server does not tell them apart),
   `linkUploader(code, () => name)` (an `UploadFn` posting to `/api/v1/u/<code>/upload` with the name read
   when each file starts) and `publicLinkURL(path)`; `RegisterInput` in `auth.ts` gained an optional
   `upload_link` that replaces `secret`;
@@ -7921,7 +7938,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `/admin/users` maintainer-only, no page calls into it (`AuditPage` names actors from the project's
   directory); the account actions wait for a home on the system side,
   `members.ts` = the project admin's client of `/api/v1/p/<slug>/members` (`apiPath`): `fetchMembers(signal)` →
-  `ProjectMemberRow[]` (`user_uid`, `username`, `display_name`, `role`, `approved_at`, `last_login_at`,
+  `ProjectMemberRow[]` (`user_uid`, `username`, `display_name`, `role`, `approved_at`, `last_seen_at` — the
+  member's last visit to this project, the column „Naposledy v projektu", never the account's last sign-in,
   `has_picture`, `maintainer`), `setMemberRole(uid,role)` (`PATCH`), `approveMember(uid)` (`POST …/approve`), `removeMember(uid)`
   (`DELETE`), each throwing **`MemberApiError`** with the backend's `code` (`last_admin`, `self`, `not_member`,
   `invalid_role`), and **`addMember(identifier,role)`** (`POST`), which **resolves for any HTTP answer and returns
@@ -8644,13 +8662,15 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
   `kukatko.whatsNew.dismissedSince.<uid>.<slug>` (local, per project), `kukatko.review.daily.<uid>.<slug>` (local,
   per project), `kukatko.gridScroll.<uid>` (session; its key already holds the `/p/<slug>` path), plus
   `kukatko.review.run` (session, user and project recorded inside) and
-  `kukatko.lastPickedLocation` (session — where one account was geotagging is not where the next starts).
+  `kukatko.lastPickedLocation.<slug>` (session, per project — where one account was geotagging is not where the
+  next starts, and one library's village says nothing about another's) and `kukatko.uploadLink.uploaderName`
+  (local — the "from whom" typed on a public upload-link page; no account to scope it to and the same person in
+  every project, but a person's name, so a sign-out on a shared browser clears it with the rest).
   **User-scoped, kept across sign-out:** `kukatko.language.<uid>` (a preference, and signing back in should
   find it) and `kukatko.pushPrompt.answered.<uid>` (the answer is the account's on this browser; signing out drops the
   subscription itself, and the settings page turns it back on — forgetting the answer would only ask again). **Per device by design, never cleared:**
   `kukatko.grid.density`, `kukatko.review.density`, `kukatko.slideshow.settings`, `kukatko.viewer.chromeHintSeen`,
-  `kukatko.uploadLink.uploaderName` (the "from whom" an anonymous uploader typed on the public upload-link
-  page — it belongs to the phone, and there is no account to scope it to), `kukatko.uploadLink.batch` (the
+  `kukatko.uploadLink.batch` (the
   link, file count and start of a batch still running on that page, so a reload can say what was lost —
   the phone's, for the same reason) and `kukatko.video.rate` (session) — they describe the screen, not the person. **Sign-out** = `AuthProvider`
   `logout` first reads this browser's push subscription (`heldPushSubscription`, a failure = none) and sends
@@ -8771,7 +8791,8 @@ for it:
 | --- | --- | --- |
 | `ready` | an approved membership of an active project — or **the maintainer**, who enters every existing project like the API does: a deactivated one, an unapproved membership, no membership at all | the project's pages (`<Outlet key={slug}>`) |
 | `pending` | a membership of an **active** project still waiting for approval (the API's `403 pending_approval`) | `PendingApprovalPage` in the neutral `Layout`: „Čeká na schválení — Vaše členství v projektu <name> ještě musí schválit správce projektu…" + „Zpět na projekty" (`pendingApproval.*`) |
-| `not-member` | no membership, a deactivated project (non-maintainer, pending or not), or no such project | the ordinary `NotFoundPage` in the neutral `Layout` — a stranger cannot tell a foreign project from a missing one |
+| `inactive` | a membership (approved or pending) of a **deactivated** project, not the maintainer | `ProjectUnavailablePage` in the neutral `Layout`: „Projekt je vypnutý" + „Zpět na projekty" — the chooser already shows the project as unavailable, so this reveals nothing |
+| `not-member` | no membership, or no such project | the ordinary `NotFoundPage` in the neutral `Layout` — a stranger cannot tell a foreign project from a missing one |
 | `loading` | the session is not known yet, or the maintainer's lookup is on its way | a spinner |
 
 A project the maintainer is **no member of** is not in `GET /auth/me`, so the provider looks it up in
@@ -8782,12 +8803,23 @@ instance page (`/account`, `/system`), or when not `ready`,
 `project` is the entry-rule project, so the shell's links, the bell and the task badge still point
 somewhere real; it is `null` only for an account with nothing to enter. The provider calls
 `setCurrentProjectSlug` **during render**: pages fetch in their own effects and React runs a child's
-effects before its parent's, so an effect here would be too late for a freshly opened project.
+effects before its parent's, so an effect here would be too late for a freshly opened project — and a
+layout effect, though early enough for the fetches, is too late for the media URL builders (`thumbUrl`,
+`subjectAvatarUrl`, `faceCropUrl`, `tileLayerUrl`, …) that call `apiPath` while rendering. Moving it out of
+render (review III, N5) means passing the slug into each builder first; it is left as a known, bounded risk
+(a discarded render can leave the slug a step ahead; the server's scoping caps that at a 404).
+
+**A project that vanishes under an open page** (deactivated, or the account removed): every failed response
+becomes an `ApiError`, whose constructor hands it to `services/projectGone.reportApiError`; the project guard's
+`404 {"error":"project not found"}` notifies `onProjectGone`'s listeners, and `AuthProvider` re-reads the
+session (at most once per `PROJECT_GONE_REFRESH_MS` = 5 s — a page fires several requests at once). The
+provider then sees the membership deactivated (`inactive`) or gone (`not-member`), and the gate shows that
+instead of a page of „…se nepodařilo načíst".
 `TaskSummaryProvider` and `NotificationInboxProvider` take `useProjectSlug()` into their polling
 effect's dependencies, so a project change aborts, clears and refetches.
 
 **Neutral chrome outside a project** (`useNeutralChrome()` = a provider is mounted and `inAddress` is
-false: an instance page, or a `/p/:slug` that is `pending`/`not-member`). The context's project there is
+false: an instance page, or a `/p/:slug` that is `pending`/`inactive`/`not-member`). The context's project there is
 only the entry rule's fallback, so `Layout` draws nothing of it: no project name (the switcher becomes
 „Moje projekty", below), no library navigation, search palette, bell, waiting badge or tab bar, no
 announcement banner, no welcome or push prompt; the user menu keeps **Můj účet**, the instance's own

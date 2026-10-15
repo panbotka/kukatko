@@ -556,19 +556,23 @@ func TestPublic(t *testing.T) {
 		t.Errorf("non-member's credits_account = %v, want false", got)
 	}
 
-	if rec := h.do(t, http.MethodGet, "/u/Zz9Zz9Zz", "", ""); rec.Code != http.StatusNotFound {
-		t.Errorf("unknown: status = %d, want 404", rec.Code)
+	// An unknown code, an expired link and a revoked one answer byte for byte
+	// the same 404: the answer never tells a code that once worked from one
+	// that never did.
+	unknown := h.do(t, http.MethodGet, "/u/Zz9Zz9Zz", "", "")
+	if unknown.Code != http.StatusNotFound {
+		t.Errorf("unknown: status = %d, want 404", unknown.Code)
 	}
 	h.store.link.ExpiresAt = now.Add(-time.Second)
-	rec = h.do(t, http.MethodGet, "/u/"+testCode, "", "")
-	if rec.Code != http.StatusGone || decode(t, rec)["state"] != "expired" {
-		t.Errorf("expired: %d %s", rec.Code, rec.Body)
-	}
+	expired := h.do(t, http.MethodGet, "/u/"+testCode, "", "")
 	revoked := now.Add(-time.Hour)
 	h.store.link.RevokedAt = &revoked
-	rec = h.do(t, http.MethodGet, "/u/"+testCode, "", "")
-	if rec.Code != http.StatusGone || decode(t, rec)["state"] != "revoked" {
-		t.Errorf("revoked: %d %s", rec.Code, rec.Body)
+	revokedRec := h.do(t, http.MethodGet, "/u/"+testCode, "", "")
+	for name, rec := range map[string]*httptest.ResponseRecorder{"expired": expired, "revoked": revokedRec} {
+		if rec.Code != unknown.Code || rec.Body.String() != unknown.Body.String() {
+			t.Errorf("%s: %d %s, want the unknown code's %d %s",
+				name, rec.Code, rec.Body, unknown.Code, unknown.Body)
+		}
 	}
 }
 
@@ -875,7 +879,7 @@ func TestUpload_refusals(t *testing.T) {
 	for _, died := range []error{uploadlink.ErrRevoked, uploadlink.ErrExpired, uploadlink.ErrNotFound} {
 		h.store.reserveErr = died
 		got = results(t, h.upload(t, "", nil, part{field: "files", filename: "a.jpg", content: "a"}))
-		if got[0].Status != http.StatusGone || got[0].Error != "upload link is no longer valid" {
+		if got[0].Status != http.StatusGone || got[0].Error != "upload link is not valid" {
 			t.Errorf("%v: result = %+v, want the dead link's 410", died, got[0])
 		}
 	}
@@ -889,8 +893,8 @@ func TestUpload_refusals(t *testing.T) {
 	}
 	h.store.reserveErr = nil
 	h.store.link.ExpiresAt = now
-	if rec := h.upload(t, "", nil, part{field: "files", filename: "a.jpg", content: "a"}); rec.Code != http.StatusGone {
-		t.Errorf("expired: status = %d, want 410", rec.Code)
+	if rec := h.upload(t, "", nil, part{field: "files", filename: "a.jpg", content: "a"}); rec.Code != http.StatusNotFound {
+		t.Errorf("expired: status = %d, want the unknown code's 404", rec.Code)
 	}
 }
 

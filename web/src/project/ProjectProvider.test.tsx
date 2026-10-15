@@ -203,7 +203,7 @@ describe('ProjectProvider', () => {
     expect(screen.getByTestId('project')).toHaveTextContent('rodina')
   })
 
-  it('reports a pending membership of a deactivated project as not-member, like any other', () => {
+  it('reports a pending membership of a deactivated project as inactive, as the chooser does', () => {
     renderAt(
       '/p/novy',
       authWith([
@@ -212,10 +212,10 @@ describe('ProjectProvider', () => {
       ]),
     )
 
-    expect(screen.getByTestId('status')).toHaveTextContent('not-member')
+    expect(screen.getByTestId('status')).toHaveTextContent('inactive')
   })
 
-  it('reports an approved membership of a deactivated project as not-member', () => {
+  it('reports an approved membership of a deactivated project as inactive, not as missing', () => {
     renderAt(
       '/p/stary',
       authWith([
@@ -224,7 +224,9 @@ describe('ProjectProvider', () => {
       ]),
     )
 
-    expect(screen.getByTestId('status')).toHaveTextContent('not-member')
+    // The chooser already lists the project as unavailable: saying it is
+    // switched off reveals nothing, and is kinder than "page not found".
+    expect(screen.getByTestId('status')).toHaveTextContent('inactive')
     expect(vi.mocked(fetchAdminProjects)).not.toHaveBeenCalled()
   })
 

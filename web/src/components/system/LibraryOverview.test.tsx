@@ -66,4 +66,12 @@ describe('LibraryOverview', () => {
     expect(empty).toHaveTextContent('0')
     expect(empty).toHaveClass('text-secondary')
   })
+
+  it('counts the whole instance, so it links into no project — only to the per-project numbers', () => {
+    renderOverview(library())
+
+    const links = screen.getAllByRole('link')
+    expect(links.map((link) => link.getAttribute('href'))).toEqual(['/system/projects'])
+    expect(screen.getByRole('link', { name: 'Numbers by project' })).toBeInTheDocument()
+  })
 })

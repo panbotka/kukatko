@@ -11,7 +11,6 @@ import {
   newUploadLinkCode,
   restoreUploadLinkCode,
   revokeUploadLink,
-  UploadLinkGoneError,
 } from './uploadLinks'
 
 vi.mock('./upload', () => ({ uploadFile: vi.fn() }))
@@ -42,15 +41,8 @@ describe('fetchPublicUploadLink', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/u/Ab3dEf7h')
   })
 
-  it('throws UploadLinkGoneError carrying the state for a dead link', async () => {
-    stubFetch(410, { error: 'gone', state: 'revoked' })
-    const err: unknown = await fetchPublicUploadLink('Ab3dEf7h').catch((e: unknown) => e)
-    expect(err).toBeInstanceOf(UploadLinkGoneError)
-    expect((err as UploadLinkGoneError).state).toBe('revoked')
-  })
-
-  it('throws ApiError(404) for an unknown code', async () => {
-    stubFetch(404, { error: 'uploadlink: link not found' })
+  it('throws ApiError(404) for an unknown, expired or revoked code alike', async () => {
+    stubFetch(404, { error: 'upload link is not valid' })
     const err: unknown = await fetchPublicUploadLink('Zz9Zz9Zz').catch((e: unknown) => e)
     expect(err).toBeInstanceOf(ApiError)
     expect((err as ApiError).status).toBe(404)

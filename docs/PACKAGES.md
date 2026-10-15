@@ -379,7 +379,9 @@ to `## Package map` in `CLAUDE.md`.
   write of the **disabled flag** (`SetUserDisabledAudited`, or `UpdateUserProfileAudited` with `Disabled`)
   goes through `updateUserNotingStranded`, which first takes the locks a membership change takes:
   `lockMemberProjects` locks the row of every project the account is a member of (any role, uid order,
-  repeated until no new one appears), then — under `withMaintainerGuard` — the account row (`lockUser`).
+  repeated until no new one appears; `FOR NO KEY UPDATE`, which still excludes `lockProject` but lets a
+  foreign-key check through — a write by the account into its project takes KEY SHARE on the account, then
+  the project, and `FOR UPDATE` turned that into a deadlock with the disable, a 500 for one of them), then — under `withMaintainerGuard` — the account row (`lockUser`).
   Only on the **enabled → disabled transition** does `strandedProjectsQuery` then list the projects the
   account is the last working admin of (approved admin membership, no other approved admin on an enabled
   account); the disable is **allowed**, the list lands on a copy of the entry's details as
@@ -2046,8 +2048,12 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   (`internal/rekeyjob`); `IsLibraryWide(type)`) whose payload must name the project as `project_uid`
   (`ProjectPayload{ProjectUID}`) — **`Enqueue` and `EnqueueOrSkip` refuse one without it with
   `ErrProjectRequired`** before any SQL runs (so a caller's transaction survives), and the handler reads it
-  back with **`ProjectUIDOf(job)`** (`""` for a payload naming none: the handlers read that as the bootstrap
-  project, the only one a job queued before the field existed can mean), never from a global — and
+  back with **`ProjectUIDOf(job)`** (`""` for a payload naming none), never from a global; the four handlers
+  that must still run a pre-upgrade job (`face_cluster`, `family_export`, `notification_purge`, the nameless
+  repair) read it with **`ProjectUIDOrLegacy(ctx, log, job, project.BootstrapUID)`**, which falls back to the
+  bootstrap project — the only one a job queued before the field existed can mean, and since `Enqueue`
+  refuses one without it the only job that can lack it — **logged at warn level** naming the job, so the
+  fallback is never silent and an unexpected one (a hand-inserted row, a regressed producer) is seen — and
   **instance-wide** (`backup`, `mail_send`, `push_send`, `tag_notify` keyed per account and grouping by
   project inside its run). The library-wide dedup indexes key on **(type, `payload->>'project_uid'`)** plus
   the job's further identifier: migration **0108** rebuilds `idx_jobs_notification_purge_dedup` (on the type
@@ -2866,7 +2872,10 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   (linking detected faces to markers/subjects + identity suggestions, all behind the interfaces
   `PhotoStore`/`FaceStore`/`PeopleStore` (unit-testable with fakes without a DB). **Project scope:**
   `Apply`, `PhotoFaces` and `PhotoPeople` take `projectUID` after `ctx`; `Apply` first loads the request's
-  photo with `GetByUIDInProject` (a foreign photo = `photos.ErrPhotoNotFound`, nothing written), every
+  photo with `GetByUIDInProject` (a foreign photo = `photos.ErrPhotoNotFound`, nothing written), then —
+  for `assign_person`/`unassign_person` — checks the named marker sits **on that photo**
+  (`requireMarkerOnPhoto` via `PeopleStore.GetMarkerByUID`; a marker of another photo of the project =
+  `people.ErrMarkerNotFound`, nothing written, so photo Y's route cannot re-tag photo X), every
   marker/subject read and write goes through the project-scoped people store, a subject auto-created by
   name lands in the project, and the suggestion search (`FindSimilarFaceCandidates`) runs inside it — so
   a face is never suggested a person of another project. `ClearSurplusLinks` is the one request-less
@@ -4489,7 +4498,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `{"error":"quota_exceeded"}` with no sizes; `Registration` is a
   `RegistrationSettings`, `*settings.Store`; nil or a failed read = closed): `liveLink` resolves the link by code,
   then its project through `Projects` (`*project.Store`; a missing or deactivated project = the unknown
-  link's 404) into a `liveTarget{Link, project}`, and every file is handed to `IngestFile` with
+  link's 404, and so is an expired or revoked link — one `linkInvalidMessage` body for all four, so no code
+  tells whether it ever worked) into a `liveTarget{Link, project}`, and every file is handed to `IngestFile` with
   **the link's project** (its audit entry names it too); the upload walks the multipart stream once (the `name`
   field must precede the files), refuses an extension `imgconvert.IsSupportedFormat` does not know (415,
   `Code: "unsupported_type"`; content that is not media is the pipeline's own 415 `not_media`),
@@ -4499,7 +4509,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   the project's and the instance's caps (413 `file_too_large`) — strips `limit_bytes`/`used_bytes` off a
   per-file `quota_exceeded` (`withoutUsage`: the link's holder learns no sizes), takes the
   file's slot with `Store.ReserveUpload` **before** the pipeline reads it (`ErrFull` → 429, a link revoked/
-  expired/deleted since the request began → per-file 410 with the dead link's text, SEC-019), runs
+  expired/deleted since the request began → per-file 410 `"upload link is not valid"`, SEC-019), runs
   `ingest.Service.IngestFile`, then `Store.RecordUpload` for every photo — new or duplicate — and
   reschedules its sidecar; a file that errs or is not filed gets `ReleaseUpload` (on a context that
   outlives the request); an anonymous uploader is identified by the
@@ -6712,8 +6722,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     **`Handle` asks the standing question again** (`ServiceConfig.Standing`, a `notifystanding.Checker`,
     required — `NewService` panics without it): an account disabled, a membership removed or never approved,
     or a project deactivated since the mail was queued → the job **completes unsent**, logged and counted
-    (`notifystanding.StageMail`/`ReasonStanding`); a failed standing query is retried. The account's own mails
-    (registration, approval, password reset, rename) carry no addressee and are never held back.
+    (`notifystanding.StageMail`/`ReasonStanding`); a failed standing query is retried. The approval mail is
+    addressed too (no kind — the member rule): it names a project and links into it, so a member removed, a
+    project deactivated or an account disabled before it goes out is not told about a project it can no longer
+    open. The account's own mails (registration, password reset, rename) carry no addressee and are never held back.
   - **Two silent refusals, both logged, both returning nil** (they must not fail the mutation that asked):
     `mail.enabled` is false → nothing is enqueued, because an instance nobody gave an SMTP server to must not
     grow a queue that can only fail (`Enabled()` lets a caller skip minting a reset token for it); and a
@@ -6956,7 +6968,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     keeps its first position). Validation first: an account, a known kind (`ErrUnknownKind`), a non-blank
     title ≤ `MaxTitleLen` (200) characters, a body ≤ `MaxBodyLen` (1000), a `Link` that is empty or an
     in-app path (no absolute URL, no `//host`, no `/\host`; ≤ 2048 bytes) — all `ErrInvalid` — and at most
-    `MaxPhotos` (5000, `ErrTooManyPhotos`). A missing photograph is `ErrPhotoNotFound`, a missing account
+    `MaxPhotos` (5000, `ErrTooManyPhotos`). A missing photograph — **or one of another project**: the set's
+    insert joins `photos` on the notification's project and a short row count refuses the whole record — is
+    `ErrPhotoNotFound`, a missing account
     `ErrUserNotFound`, and either leaves **nothing** written. It does not consult preferences — the caller
     asks `Wants` first. **`New.InApp`** lists the record in the owner's inbox (`notifications.in_app`);
     false writes a record that only backs a push or a mail. **`CreateTx(ctx, tx, New)`**,
@@ -7339,7 +7353,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
 - **Notification retention (`internal/notifypurgejob`):** the `notification_purge` job and its scheduler,
   **one purge per project** (a library-wide job). `New(Config{Notifications, Retention, Clock, Logger})` —
   `Handle` runs `notification.Store.Purge(ctx, projectUID, now, retention)` for the project the payload
-  names (`jobs.ProjectUIDOf`; a legacy payload naming none = the bootstrap project) as of the clock with
+  names (`jobs.ProjectUIDOrLegacy`; a legacy payload naming none = the bootstrap project, logged) as of the clock with
   `notification.DefaultRetention()` (read 30 d, unread 90 d) unless a retention is given; the purge deletes
   only that project's rows (`notifications.project_id`); a failure goes back to the queue.
   `NewScheduler(enqueuer, projects, interval, logger)` enqueues through
@@ -7556,9 +7570,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     administrator's membership — `project.Member.Maintainer`, read through `Members.Membership` — →
     `maintainer`, its project role having no effect; `DELETE` of oneself maps
     the store's `ErrLastAdmin` to `self`). `POST /members` answers the one `202 {"status":"accepted"}`
-    whatever `AddByIdentifier` reports. `approvalMail` builds the `project.ApproveHook` that reads the
+    whatever `AddByIdentifier` reports. The member JSON's time is `last_seen_at`
+    (`project.Member.LastSeenAt`, the membership's own visit clock), never the account's `last_login_at`,
+    which would show the project's admin when the account was active elsewhere. `approvalMail` builds the `project.ApproveHook` that reads the
     account and enqueues `mailjob.AccountApproved` (project name + `/p/<slug>/` link) on the approval's
-    transaction — nil without mail, so an approval then sends nothing. The member JSON carries no address.
+    transaction, **addressed** to the membership (`Mail.Addressed`, so the send re-checks it) — nil without
+    mail, so an approval then sends nothing. The member JSON carries no address.
   - `respond.go` — the error codes and the sentinel → status table; anything else is a logged `500`.
 - **Invitation links (`internal/invite`):** the domain of `project_invites` (migration 0109): a short
   code (the upload links' `uploadlink.NewCode`/`ValidCode`/`HashSecret`, looked up by hash, kept

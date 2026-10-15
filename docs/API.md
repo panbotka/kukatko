@@ -487,8 +487,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   (+ a human `message` where the client should show the rule); every mutation is audited by
   `internal/project` in the change's transaction, with the project.
   - `GET /members` → a bare array by display name: `[{user_uid, username, display_name, role,
-    approved_at, last_login_at, has_picture, maintainer}]` — `approved_at: null` is a membership
-    waiting for approval; `has_picture` says `GET /users/{uid}/avatar` is worth asking (an uploaded/picked
+    approved_at, last_seen_at, has_picture, maintainer}]` — `approved_at: null` is a membership
+    waiting for approval; `last_seen_at` is the member's **last visit to this project** (the membership's
+    clock `GET /whats-new` stamps), `null` for never — never the account's last sign-in, which told a project's
+    admin when the account was active in other projects; `has_picture` says `GET /users/{uid}/avatar` is worth asking (an uploaded/picked
     picture or a linked person; a 404 there still means none) and is always `false` for a pending
     membership, which that route refuses to its readers (SEC-025). **No e-mail address.**
     An exact-match add (below) whose account has **not entered the project yet** (its identity withheld)
@@ -542,7 +544,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     `invalid_body`. Setting the role it has records nothing.
   - `POST /members/{user_uid}/approve` → 200 + the member. Stamps the membership (which is what lets the
     account sign in) and enqueues the `account_approved` mail **in the same transaction** — it names
-    the project and links to `mail.base_url` + `/p/<slug>/`. Approving an approved member is 200 with
+    the project and links to `mail.base_url` + `/p/<slug>/`; it is addressed to the membership, so a member
+    removed (or a project deactivated) before it is sent never gets it. Approving an approved member is 200 with
     nothing changed, mailed or audited; 404 `not_member` (a withheld membership included).
   - `DELETE /members/{user_uid}` → 204; the account itself stays. **409 `last_admin`** for the project's
     last working admin (counted as for `PATCH`); for the **caller themselves 409 `self`** unless another admin remains (then they leave and
@@ -869,7 +872,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `GET /photos/{uid}/similar` (authenticated; the same **vector rate limit** as `GET /search`, → 429) — **visually similar photos** by cosine distance of
   embeddings (HNSW over `embeddings`, `SimilarSearcher`/`vectors.Store`), nearest first: response
   `{similar:[{…photo, distance}]}` (`distance` = cosine distance to the source photo, smaller =
-  closer), `?limit` (default 24, max 100); the source photo is excluded from the result. A photo without
+  closer), `?limit` (default 24, max 100); the source photo is excluded from the result, and so are an
+  **archived** photo (in the trash, out of every listing) and a non-primary stack member — the search over-fetches
+  `2·limit+1` neighbours so the strip still fills up past them. A photo without
   an embedding or without a similar backend → empty `{similar:[]}` (200), 404 for a missing photo;
   **per-user favourites** `PUT`/`DELETE /photos/{uid}/favorite` (any authenticated user, idempotent → 204,
   404 missing photo — the `DELETE` too — 503 without a backend) + `GET /favorites` (the current user's favourites in the shape
@@ -887,7 +892,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `POST /photos/{uid}/faces/assign` (curator and above, `RequireCurator`) — an assignment
   action `{action, face_index?, marker_uid?, subject_uid?, subject_name?, bbox?}`
   (`create_marker`/`assign_person`/`unassign_person`), auto-creates a subject by name, keeps the `faces`
-  cache + `marker.reviewed` consistent (400 validation, 404 missing photo/marker/subject);
+  cache + `marker.reviewed` consistent (400 validation, 404 missing photo/marker/subject — a `marker_uid`
+  of **another photo** of the project is just as missing, so photo Y's route cannot re-tag photo X);
   **attaching a person by hand** (`internal/photoapi/people.go`, the `PeopleAttacher` interface =
   `people.Store`, **nil → both endpoints answer 503 and the detail reports an empty list**): a person is
   otherwise linked to a media item only through a marker cut from a **detected** face, which covers less
@@ -2452,8 +2458,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   whose upload is not credited to an account (anonymous, or signed in but no member of the project —
   `OptionalAuth`) it also **starts the upload
   session** (sets the `kukatko_upload_session` cookie when absent), because the page then uploads several
-  files at once and each would otherwise mint a session of its own; **410** `{error, state:"expired"|"revoked"}` for a dead link, **404**
-  for an unknown one. `POST /u/{code}/upload` (`OptionalAuth`, then the per-link
+  files at once and each would otherwise mint a session of its own; **one identical 404**
+  `{"error":"upload link is not valid"}` for an unknown code, an expired or revoked link and a link of a gone or
+  deactivated project — byte for byte the same, so a code's answer never tells whether it ever worked (until
+  2026-10 a dead link answered 410 with its state, an oracle of which random codes had once been live). `POST /u/{code}/upload` (`OptionalAuth`, then the per-link
   `ratelimit.upload_link_per_link` bucket → 429) — `multipart/form-data`, an optional `name` field
   (the uploader's "from whom", trimmed/cut to 100 characters) **before** the files, one or more files,
   streamed through the ordinary ingest pipeline (`ingest.Service.IngestFile`, SHA256 dedup) → 200
@@ -2470,8 +2478,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   429 `"this link accepts no more uploads"`. The cap is taken **per file, in the database, before the
   pipeline reads it**: one `UPDATE` bumps `upload_count` only while the link is not revoked, not expired and
   under the cap, so concurrent requests cannot overshoot it, and a link revoked or expired **while a request
-  runs** refuses its remaining files with a per-file **410** `"upload link is no longer valid"` (the text
-  of the dead link's whole-request 410). A file that then fails or is not filed gives its slot back. A
+  runs** refuses its remaining files with a per-file **410** `"upload link is not valid"` (the text
+  of the dead link's whole-request 404 — the holder already had a live link, so telling them it died tells
+  them nothing new). A file that then fails or is not filed gives its slot back. A
   request carries at most **50 file parts**, refused ones included: the 51st gets a per-file 413
   `"too many files in one upload"` and nothing after it is read. Every file that resolved to a photo — **new or duplicate** — is filed into all the link's albums
   and labels (manual labels) at once, its provenance recorded in `upload_link_photos` (link, typed name,
@@ -2488,7 +2497,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   it; a failed membership read is a 500, never a guess. An anonymous one is identified by the `kukatko_upload_session` cookie (HttpOnly,
   SameSite=Strict, path `/api/v1`, session-scoped; minted here only if the page's GET did not) whose hash
   marks their photos for `POST /auth/register` with
-  `upload_link`. A dead link answers 404/410 to the upload too. Mounted with the signed-in upload
+  `upload_link`. A dead link answers the same 404 to the upload too. Mounted with the signed-in upload
   (`buildIngest` → `buildUploadLinkAPI` in `cmd/kukatko/ingest.go`).
 - **Search History API (`/api/v1/p/{project}`, `internal/searchhistoryapi` + `internal/searchhistory`, authenticated via
   `RequireAuth`):** each user's **recent searches** — the short ordered list the search box offers back (whole
@@ -2948,7 +2957,11 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   the durable audit trail, mounted twice. **On the instance:** the whole trail for the system administrator
   (`GET /audit`, `RequireMaintainer` — a project admin is 403 here) and one's own actions in every project for
   any signed-in account (`GET /audit/mine`, `RequireSignedIn`, so an account outside the bootstrap project reads
-  its own too). **Under a project:** `GET /p/{project}/audit` (`RequireAdmin` — the project's admins and the
+  its own too). **It keeps the caller's actions in a project they have since left** (removed, or the project
+  deactivated) — decided 2026-10-15: they are the caller's own history, not the project's, and a trail that
+  shrinks behind its subject's back is worse than one that remembers; what the caller learns is only what they
+  did and the project's current slug. The page (`/account/activity`) names such a row's project as "a project
+  you no longer belong to" and links nowhere into it. **Under a project:** `GET /p/{project}/audit` (`RequireAdmin` — the project's admins and the
   maintainer) and `GET /p/{project}/audit/mine` (`RequireAuth`, any member) list **only the entries filed under
   that project** (`audit_log.project_id`), never another project's and never the instance's (accounts,
   sessions, a project's lifecycle); the admin's `GET /p/{project}/audit` refuses `?project=` with 400 and

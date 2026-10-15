@@ -88,3 +88,30 @@ func TestStore_inboxIsScopedByProject(t *testing.T) {
 		t.Errorf("UnreadByProject(no project) = %#v, %v; want an empty, non-nil slice", got, err)
 	}
 }
+
+// TestStore_photoSetStaysInItsProject refuses a notification of A whose frozen
+// set names B's photo, exactly like a photo that does not exist, and writes
+// nothing of it.
+func TestStore_photoSetStaysInItsProject(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	f := projecttest.Seed(t, db.Pool())
+	store := notification.NewStore(db.Pool())
+
+	_, err := store.Create(t.Context(), notification.New{
+		ProjectUID: f.A.ProjectUID, ProjectSlug: f.A.Slug, UserUID: f.A.UserUID, Kind: notification.KindTagged,
+		Title: "Označen", PhotoUIDs: []string{f.A.PhotoUID, f.B.PhotoUID}, InApp: true,
+	})
+	if !errors.Is(err, notification.ErrPhotoNotFound) {
+		t.Fatalf("Create(A naming B's photo) = %v, want ErrPhotoNotFound", err)
+	}
+	var left int
+	if err := db.Pool().QueryRow(t.Context(),
+		`SELECT (SELECT count(*) FROM notifications) + (SELECT count(*) FROM notification_photos)`,
+	).Scan(&left); err != nil {
+		t.Fatalf("counting: %v", err)
+	}
+	if left != 0 {
+		t.Errorf("%d rows left behind, want none", left)
+	}
+}

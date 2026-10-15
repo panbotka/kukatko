@@ -11,11 +11,13 @@ import { projectPathFor } from './paths'
  * project it is no member of has been looked up); `pending` when the account's
  * membership of that active project still waits for its admin's approval — the
  * one refusal worth explaining, since the account already knows the project
- * exists; `not-member` when the address names a project the account may not
- * enter at all (no membership, a deactivated project, or no such project — the
- * three are indistinguishable on purpose); `ready` otherwise.
+ * exists; `inactive` when the account is a member of the project but it has
+ * been deactivated — the chooser already shows it as unavailable, so saying so
+ * here reveals nothing; `not-member` when the address names a project the
+ * account may not enter at all (no membership or no such project — the two are
+ * indistinguishable on purpose); `ready` otherwise.
  */
-export type ProjectStatus = 'loading' | 'ready' | 'pending' | 'not-member'
+export type ProjectStatus = 'loading' | 'ready' | 'pending' | 'inactive' | 'not-member'
 
 /** Value exposed by {@link ProjectProvider} through {@link useProject}. */
 export interface ProjectContextValue {

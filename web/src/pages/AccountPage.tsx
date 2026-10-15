@@ -19,6 +19,7 @@ import { LanguageSwitcher } from '../components/LanguageSwitcher'
 import { NarrowPage } from '../components/NarrowPage'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { ACTIVITY_PATH } from '../lib/activityView'
+import { isEnterable } from '../project/paths'
 import { ApiError, changePassword, MIN_PASSWORD_LENGTH } from '../services/auth'
 import { fetchHealth, type HealthResponse } from '../services/health'
 
@@ -53,7 +54,8 @@ function errorKeyFor(error: unknown): AccountErrorKey {
 }
 
 /**
- * Account page: shows the signed-in identity and role, and lets the user change
+ * Account page: shows the signed-in identity and its role in every project it
+ * may enter (each named — the page belongs to no project), and lets the user change
  * their own password via `POST /auth/password`. Validates that the new password
  * meets the minimum length and matches its confirmation before submitting.
  *
@@ -95,7 +97,11 @@ function errorKeyFor(error: unknown): AccountErrorKey {
 export function AccountPage() {
   const { t } = useTranslation()
   useDocumentTitle(t('account.title'))
-  const { user, role } = useAuth()
+  const { user, projects, isMaintainer } = useAuth()
+  // The role is a fact about one project, and this page belongs to none: it
+  // lists the role in every project the account may enter, each named, rather
+  // than the role in whichever project was opened last.
+  const memberships = projects.filter(isEnterable)
 
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
@@ -161,7 +167,18 @@ export function AccountPage() {
             ) : null}
             <dt className="col-sm-4">{t('account.role')}</dt>
             <dd className="col-sm-8">
-              {role ? <Badge bg="secondary">{t(`roles.${role}`)}</Badge> : null}
+              <ul className="list-unstyled mb-0" data-testid="account-roles">
+                {isMaintainer && (
+                  <li>
+                    <Badge bg="secondary">{t('roles.maintainer')}</Badge>
+                  </li>
+                )}
+                {memberships.map((membership) => (
+                  <li key={membership.uid}>
+                    {membership.name} <Badge bg="secondary">{t(`roles.${membership.role}`)}</Badge>
+                  </li>
+                ))}
+              </ul>
             </dd>
           </dl>
         </Card.Body>

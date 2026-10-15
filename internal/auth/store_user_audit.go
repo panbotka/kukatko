@@ -166,14 +166,21 @@ func (s *Store) updateUserNotingStranded(
 }
 
 // lockMemberProjectsQuery locks the row of every project the account $1 is a
-// member of, in uid order — the lock internal/project's membership changes
-// take before they touch a member (lockProject), in the order two multi-project
-// lockers need so they queue instead of deadlocking. Any role counts, not only
-// admin: an existing member promoted to admin meanwhile is promoted under that
-// same lock.
+// member of, in uid order — conflicting with the lock internal/project's
+// membership changes take before they touch a member (lockProject), in the
+// order two multi-project lockers need so they queue instead of deadlocking.
+// Any role counts, not only admin: an existing member promoted to admin
+// meanwhile is promoted under that same lock.
+//
+// FOR NO KEY UPDATE, not FOR UPDATE: it still excludes lockProject (and every
+// other row lock but KEY SHARE), but it lets a foreign-key check through. A
+// write by or about the account into one of its projects — an audit row, a
+// photo — takes KEY SHARE on the account and then on the project; with the
+// project held FOR UPDATE it would wait for the disable while the disable
+// waits for its account row, and PostgreSQL would abort one of the two.
 const lockMemberProjectsQuery = `SELECT p.uid FROM projects p
 WHERE EXISTS (SELECT 1 FROM project_members m WHERE m.project_uid = p.uid AND m.user_uid = $1)
-ORDER BY p.uid FOR UPDATE OF p`
+ORDER BY p.uid FOR NO KEY UPDATE OF p`
 
 // lockMemberProjects runs lockMemberProjectsQuery on tx until it locks no
 // project it had not locked before. The repeat covers a membership created

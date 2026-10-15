@@ -409,24 +409,19 @@ describe('SystemStatusPage', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('links every library number that has a view behind it', async () => {
+  it('links no instance-wide library number into a project', async () => {
     renderPage()
 
-    expect(await screen.findByRole('link', { name: 'Photos in the library' })).toHaveAttribute(
+    // The numbers are every project's together: none may open whichever
+    // project was visited last. The per-project numbers are a link away.
+    expect(await screen.findByTestId('tile-photos')).toHaveTextContent('20,310')
+    for (const name of ['Photos in the library', 'of which videos', 'In the trash', 'Hidden']) {
+      expect(screen.queryByRole('link', { name })).toBeNull()
+    }
+    expect(screen.getByRole('link', { name: 'Numbers by project' })).toHaveAttribute(
       'href',
-      '/p/v',
+      '/system/projects',
     )
-    expect(screen.getByRole('link', { name: 'of which videos' })).toHaveAttribute(
-      'href',
-      '/p/v?q=type%3Avideo',
-    )
-    expect(screen.getByRole('link', { name: 'In the trash' })).toHaveAttribute('href', '/p/v/trash')
-    expect(screen.getByRole('link', { name: 'Hidden' })).toHaveAttribute(
-      'href',
-      '/p/v?q=hidden%3Ayes',
-    )
-    // A number with nowhere to go is plain text, not a link that lands elsewhere.
-    expect(screen.queryByRole('link', { name: 'Detected faces' })).toBeNull()
   })
 
   it('reports the uploads and what the library weighs per the catalogue', async () => {

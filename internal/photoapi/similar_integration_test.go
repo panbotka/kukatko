@@ -9,6 +9,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -92,6 +93,34 @@ func TestSimilar_ordersAndExcludesSource(t *testing.T) {
 		if got.Similar[i].Distance < got.Similar[i-1].Distance {
 			t.Errorf("distances not ascending: %+v", got.Similar)
 		}
+	}
+}
+
+// TestSimilar_leavesArchivedOut verifies an archived photo — gone from every
+// listing — does not surface in the similar strip either, and that the strip is
+// still filled up to the limit from the next neighbours.
+func TestSimilar_leavesArchivedOut(t *testing.T) {
+	env := newEnv(t)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
+	base := env.server.URL
+
+	src := env.seedPhoto(t, photos.Photo{}, "src", 12, 0, 0)
+	archived := env.seedPhoto(t, photos.Photo{}, "archived", 22, 0, 0)
+	kept := env.seedPhoto(t, photos.Photo{}, "kept", 32, 0, 0)
+	saveVec(t, env, src.UID, imageVecAt(map[int]float32{0: 1}))
+	saveVec(t, env, archived.UID, imageVecAt(map[int]float32{0: 1, 1: 0.01}))
+	saveVec(t, env, kept.UID, imageVecAt(map[int]float32{0: 1, 1: 0.5}))
+	if _, err := env.store.Archive(t.Context(), project.BootstrapUID, archived.UID); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+
+	got := getSimilar(t, client, base, src.UID, "limit=1")
+	if len(got.Similar) != 1 || got.Similar[0].UID != kept.UID {
+		uids := make([]string, len(got.Similar))
+		for i, s := range got.Similar {
+			uids[i] = s.UID
+		}
+		t.Fatalf("similar = %v, want only %s (the archived %s left out)", uids, kept.UID, archived.UID)
 	}
 }
 

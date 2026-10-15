@@ -25,13 +25,18 @@ import (
 // Everything happens inside projectUID: the request's photo, its marker and its
 // subject must belong to it — one of another project is missing (photos.
 // ErrPhotoNotFound, people.ErrMarkerNotFound, people.ErrSubjectNotFound), and
-// nothing is written — and a subject created by name is created there.
+// nothing is written — and a subject created by name is created there. A marker
+// named next to a photo must also sit on that photo: one on another photo of the
+// same project is just as missing, so a route of photo Y cannot re-tag photo X.
 func (s *Service) Apply(
 	ctx context.Context, projectUID string, req AssignRequest, meta audit.Meta,
 ) (AssignResult, error) {
 	if req.PhotoUID != "" {
 		if _, err := s.photos.GetByUIDInProject(ctx, projectUID, req.PhotoUID); err != nil {
 			return AssignResult{}, fmt.Errorf("facematch: loading photo %s: %w", req.PhotoUID, err)
+		}
+		if err := s.requireMarkerOnPhoto(ctx, projectUID, req); err != nil {
+			return AssignResult{}, err
 		}
 	}
 	switch req.Action {
@@ -44,6 +49,25 @@ func (s *Service) Apply(
 	default:
 		return AssignResult{}, fmt.Errorf("%w: %q", ErrInvalidAction, req.Action)
 	}
+}
+
+// requireMarkerOnPhoto refuses a request whose marker is not on its photo with
+// people.ErrMarkerNotFound, the same answer as a marker that does not exist. A
+// request naming no marker (create_marker, or a validation error still to come)
+// passes.
+func (s *Service) requireMarkerOnPhoto(ctx context.Context, projectUID string, req AssignRequest) error {
+	if req.MarkerUID == "" || req.Action == ActionCreateMarker {
+		return nil
+	}
+	marker, err := s.people.GetMarkerByUID(ctx, projectUID, req.MarkerUID)
+	if err != nil {
+		return fmt.Errorf("facematch: loading marker %s: %w", req.MarkerUID, err)
+	}
+	if marker.PhotoUID != req.PhotoUID {
+		return fmt.Errorf("facematch: marker %s is not on photo %s: %w",
+			req.MarkerUID, req.PhotoUID, people.ErrMarkerNotFound)
+	}
+	return nil
 }
 
 // applyCreateMarker creates a face marker for the request's box, assigns it the

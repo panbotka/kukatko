@@ -109,17 +109,6 @@ type payload struct {
 	Recluster  bool   `json:"recluster,omitempty"`
 }
 
-// projectOf returns the project job's payload names (jobs.ProjectUIDOf). A job
-// queued before the payload carried a project (an upgrade with a pass still
-// waiting) names none; the only project that existed when it was queued is the
-// bootstrap one, so that is the project it works on — never "every project".
-func projectOf(job jobs.Job) string {
-	if projectUID := jobs.ProjectUIDOf(job); projectUID != "" {
-		return projectUID
-	}
-	return project.BootstrapUID
-}
-
 // ScheduleRecluster queues a full pass for every active project: regroup the
 // project's currently unassigned faces, then prepare the summaries of its groups
 // that have none. It reports whether at least one job was actually queued —
@@ -275,7 +264,11 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 			return fmt.Errorf("clusterjob: decoding the payload of job %d: %w", job.ID, err)
 		}
 	}
-	projectUID := projectOf(job)
+	// A job queued before the payload carried a project (an upgrade with a pass
+	// still waiting) names none; the only project that existed when it was
+	// queued is the bootstrap one — never "every project" — and the fallback is
+	// logged.
+	projectUID := jobs.ProjectUIDOrLegacy(ctx, s.log, job, project.BootstrapUID)
 	if p.Recluster {
 		created, err := s.clusters.Recluster(ctx, projectUID)
 		if err != nil {

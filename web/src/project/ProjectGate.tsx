@@ -5,6 +5,7 @@ import { Outlet, useParams } from 'react-router-dom'
 import { Layout } from '../components/Layout'
 import { NotFoundPage } from '../pages/NotFoundPage'
 import { PendingApprovalPage } from '../pages/PendingApprovalPage'
+import { ProjectUnavailablePage } from '../pages/ProjectUnavailablePage'
 
 import { useProject } from './ProjectContext'
 
@@ -18,9 +19,14 @@ import { useProject } from './ProjectContext'
  *   {@link PendingApprovalPage} — the account already knows the project (it
  *   registered into it, the chooser lists it), so saying "waiting" reveals
  *   nothing and spares it a puzzling "page not found";
- * - anything else — no membership, a deactivated project, no such project — is
- *   the very same not-found page an unknown address gets: a project the reader
- *   may not enter must look exactly like one that does not exist.
+ * - a membership of a deactivated project gets {@link ProjectUnavailablePage} —
+ *   the chooser already shows that project as unavailable, so "switched off"
+ *   reveals nothing either. It is also where an open page lands when the
+ *   project is deactivated under it: the failed request re-reads the session
+ *   (services/projectGone), and the gate follows;
+ * - anything else — no membership, no such project — is the very same
+ *   not-found page an unknown address gets: a project the reader may not enter
+ *   must look exactly like one that does not exist.
  *
  * While the maintainer's project it is no member of is being looked up the
  * gate shows a spinner instead of guessing either way.
@@ -55,6 +61,13 @@ export function ProjectGate() {
     return (
       <Layout>
         <PendingApprovalPage />
+      </Layout>
+    )
+  }
+  if (status === 'inactive') {
+    return (
+      <Layout>
+        <ProjectUnavailablePage />
       </Layout>
     )
   }

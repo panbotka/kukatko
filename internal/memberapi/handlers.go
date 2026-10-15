@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/mailer"
 	"github.com/panbotka/kukatko/internal/mailjob"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/project"
 )
 
@@ -29,8 +30,11 @@ type memberResponse struct {
 	DisplayName string       `json:"display_name"`
 	Role        project.Role `json:"role"`
 	ApprovedAt  *time.Time   `json:"approved_at"`
-	LastLoginAt *time.Time   `json:"last_login_at"`
-	HasPicture  bool         `json:"has_picture"`
+	// LastSeenAt is the member's last visit to this project — never the
+	// account's last sign-in, which would tell the project's admin when the
+	// account was active in other projects.
+	LastSeenAt *time.Time `json:"last_seen_at"`
+	HasPicture bool       `json:"has_picture"`
 	// Maintainer marks the instance's system administrator: its project role
 	// has no effect (it administers every project), so the page names it
 	// instead of a role and offers no role change (project.Member).
@@ -57,7 +61,7 @@ type acceptedResponse struct {
 func toMemberResponse(m project.Member) memberResponse {
 	return memberResponse{
 		UserUID: m.UserUID, Username: m.Username, DisplayName: m.DisplayName, Role: m.Role,
-		ApprovedAt: m.ApprovedAt, LastLoginAt: m.LastLoginAt, HasPicture: m.HasPicture,
+		ApprovedAt: m.ApprovedAt, LastSeenAt: m.LastSeenAt, HasPicture: m.HasPicture,
 		Maintainer: m.Maintainer,
 	}
 }
@@ -256,7 +260,13 @@ func (a *API) approvalMail(r *http.Request) project.ApproveHook {
 			data.ProjectName = p.Name
 			data.ProjectURL = a.urlOf(p.Slug)
 		}
-		if err := a.mail.Enqueue(ctx, tx, mailjob.AccountApproved(user.Email, data)); err != nil {
+		// Addressed to the membership, so the mail is checked again when it is
+		// sent: a member removed (or a project deactivated, an account disabled)
+		// before then is not told about a project it can no longer open.
+		approved := mailjob.AccountApproved(user.Email, data).Addressed(notifystanding.Addressee{
+			UserUID: member.UserUID, ProjectUID: member.ProjectUID,
+		})
+		if err := a.mail.Enqueue(ctx, tx, approved); err != nil {
 			return fmt.Errorf("scheduling the approval mail: %w", err)
 		}
 		return nil

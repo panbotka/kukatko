@@ -110,24 +110,9 @@ export interface PublicUploadLink {
   credits_account?: boolean
 }
 
-/**
- * The public page's answer for a link that exists but no longer accepts
- * uploads (HTTP 410), saying which of the two happened.
- */
-export class UploadLinkGoneError extends Error {
-  readonly state: Exclude<UploadLinkState, 'active'>
-
-  constructor(state: Exclude<UploadLinkState, 'active'>) {
-    super(`upload link is ${state}`)
-    this.name = 'UploadLinkGoneError'
-    this.state = state
-  }
-}
-
-/** Standard backend error envelope, plus the 410's state. */
+/** Standard backend error envelope. */
 interface ErrorBody {
   error?: string
-  state?: string
 }
 
 /** Reads the backend error message from a failed response, falling back to the status. */
@@ -255,9 +240,9 @@ export function codeFromInput(input: string): string {
 }
 
 /**
- * Reads the public description of the link `code` names. It throws
- * {@link UploadLinkGoneError} for an expired or revoked link and an
- * {@link ApiError} (404 for an unknown code) otherwise.
+ * Reads the public description of the link `code` names. It throws an
+ * {@link ApiError} otherwise — 404 alike for an unknown code and an expired or
+ * revoked link, which the server deliberately does not tell apart.
  */
 export async function fetchPublicUploadLink(
   code: string,
@@ -267,10 +252,6 @@ export async function fetchPublicUploadLink(
     credentials: 'same-origin',
     signal,
   })
-  if (res.status === 410) {
-    const body = await readError(res)
-    throw new UploadLinkGoneError(body.state === 'revoked' ? 'revoked' : 'expired')
-  }
   if (!res.ok) {
     return fail(res)
   }

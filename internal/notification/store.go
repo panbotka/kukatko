@@ -85,11 +85,15 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 
 // insertPhotosSQL writes the frozen set in one statement. WITH ORDINALITY turns
 // the array order into the stored position (zero-based), so the set reads back
-// in exactly the order it was given.
+// in exactly the order it was given. Only the notification's own project's
+// photos are written: a photo of another project is skipped here, and CreateTx
+// refuses the whole notification when the count falls short.
 const insertPhotosSQL = `
 INSERT INTO notification_photos (notification_uid, photo_uid, position)
 SELECT $1, u.photo_uid, u.ord - 1
-FROM unnest($2::text[]) WITH ORDINALITY AS u (photo_uid, ord)`
+FROM unnest($2::text[]) WITH ORDINALITY AS u (photo_uid, ord)
+JOIN photos p ON p.uid = u.photo_uid
+WHERE p.project_id = $3`
 
 // getSQL reads one notification scoped to its owner and its project.
 const getSQL = `SELECT ` + selectColumns + `
@@ -101,8 +105,9 @@ WHERE n.uid = $1 AND n.user_uid = $2 AND n.project_id = $3`
 // notification and every photograph of its set are written, or nothing is. The
 // fields are validated first (ErrNoProject, ErrInvalid, ErrUnknownKind,
 // ErrTooManyPhotos); a
-// photograph that does not exist yields ErrPhotoNotFound and an account that
-// does not exist ErrUserNotFound, and in either case nothing is written. A
+// photograph that does not exist — or belongs to another project, which is the
+// same thing to this one — yields ErrPhotoNotFound and an account that does not
+// exist ErrUserNotFound, and in either case nothing is written. A
 // photograph given twice keeps its first position.
 //
 // Create sends nothing and does not consult the account's preferences — the
@@ -145,8 +150,13 @@ func (s *Store) CreateTx(ctx context.Context, tx pgx.Tx, n New) (Notification, e
 		return Notification{}, mapForeignKey(err)
 	}
 	if len(photos) > 0 {
-		if _, err := tx.Exec(ctx, insertPhotosSQL, uid, photos); err != nil {
+		tag, err := tx.Exec(ctx, insertPhotosSQL, uid, photos, n.ProjectUID)
+		if err != nil {
 			return Notification{}, mapForeignKey(err)
+		}
+		if written := tag.RowsAffected(); written != int64(len(photos)) {
+			return Notification{}, fmt.Errorf("%w: %d of the %d photos are not in project %s",
+				ErrPhotoNotFound, int64(len(photos))-written, len(photos), n.ProjectUID)
 		}
 	}
 	return scanNotification(tx.QueryRow(ctx, getSQL, uid, n.UserUID, n.ProjectUID))

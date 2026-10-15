@@ -58,7 +58,7 @@ function member(overrides: Partial<ProjectMemberRow> = {}): ProjectMemberRow {
     display_name: 'Jana Nováková',
     role: 'curator',
     approved_at: '2026-10-01T10:00:00Z',
-    last_login_at: '2026-10-12T08:30:00Z',
+    last_seen_at: '2026-10-12T08:30:00Z',
     has_picture: false,
     maintainer: false,
     ...overrides,
@@ -72,7 +72,7 @@ const WAITING = member({
   display_name: '',
   role: 'viewer',
   approved_at: null,
-  last_login_at: null,
+  last_seen_at: null,
 })
 
 const toastShow = vi.fn<ToastApi['show']>()
@@ -132,9 +132,12 @@ describe('MembersPage', () => {
     )
     expect(jana.getByText('Schválený')).toBeInTheDocument()
     expect(jana.queryByRole('button', { name: 'Schválit' })).not.toBeInTheDocument()
+    // The last visit to this project, never the account's last sign-in.
+    expect(screen.getByRole('columnheader', { name: 'Naposledy v projektu' })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Poslední přihlášení' })).toBeNull()
 
     // A waiting membership: the badge and the button, named by the username
-    // when the account has no display name, never signed in.
+    // when the account has no display name, never here.
     const novak = within(rowOf('novak'))
     expect(novak.getByRole('combobox', { name: 'Role uživatele novak' })).toHaveValue('viewer')
     expect(novak.getByText('Čeká na schválení')).toBeInTheDocument()

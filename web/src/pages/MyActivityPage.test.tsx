@@ -5,6 +5,8 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ADMIN_ITEMS, BROWSE_GROUP, PRIMARY_ITEMS, TOOLS_GROUP } from '../components/navItems'
+import { ProjectContext, type ProjectContextValue } from '../project/ProjectContext'
+import { type ProjectMembership } from '../services/auth'
 import i18n from '../i18n'
 import { ACTIVITY_PATH } from '../lib/activityView'
 import { type AuditListResponse, type AuditRecord } from '../services/audit'
@@ -58,6 +60,41 @@ function renderPage(initialEntry: string = ACTIVITY_PATH) {
       <MemoryRouter initialEntries={[initialEntry]}>
         <MyActivityPage />
         <LocationProbe />
+      </MemoryRouter>
+    </I18nextProvider>,
+  )
+}
+
+/** A membership of the reader's, approved in an active project unless overridden. */
+function membership(slug: string, name: string, over: Partial<ProjectMembership> = {}) {
+  return {
+    uid: `pj-${slug}`,
+    slug,
+    name,
+    description: '',
+    active: true,
+    role: 'editor',
+    approved: true,
+    subject_uid: null,
+    ...over,
+  } as ProjectMembership
+}
+
+/** Renders the page inside a project context listing the reader's memberships. */
+function renderWithProjects(projects: ProjectMembership[]) {
+  const value = {
+    project: projects[0] ?? null,
+    projects,
+    status: 'ready',
+    inAddress: false,
+    switchProject: () => undefined,
+  } as ProjectContextValue
+  return render(
+    <I18nextProvider i18n={i18n}>
+      <MemoryRouter initialEntries={[ACTIVITY_PATH]}>
+        <ProjectContext.Provider value={value}>
+          <MyActivityPage />
+        </ProjectContext.Provider>
       </MemoryRouter>
     </I18nextProvider>,
   )
@@ -137,6 +174,57 @@ describe('MyActivityPage', () => {
     )
     const links = within(screen.getByTestId('activity-links')).getAllByRole('link')
     expect(links.map((link) => link.getAttribute('href'))).toEqual(['/p/rodina/photos/ph1'])
+  })
+
+  it('names the project by its name, not its slug', async () => {
+    renderWithProjects([membership('v', 'Veselice')])
+
+    expect(await screen.findByRole('cell', { name: 'Veselice' })).toBeInTheDocument()
+    expect(screen.queryByRole('cell', { name: 'v' })).not.toBeInTheDocument()
+  })
+
+  it('names no project and links nowhere for a project the reader has left', async () => {
+    fetchMock.mockResolvedValue(
+      response([
+        record({ project_uid: 'pj2', project: 'rodina' }),
+        record({ id: 2, project_uid: 'pj3', project: 'vypnuty' }),
+      ]),
+    )
+    renderWithProjects([
+      membership('v', 'Veselice'),
+      membership('vypnuty', 'Vypnutý', { active: false }),
+    ])
+
+    expect(
+      await screen.findAllByRole('cell', { name: 'A project you no longer belong to' }),
+    ).toHaveLength(2)
+    expect(screen.queryByRole('cell', { name: 'rodina' })).not.toBeInTheDocument()
+    // The back link to the account is the only link: no row leads into a
+    // project the reader can no longer open.
+    expect(screen.getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([
+      '/account',
+    ])
+  })
+
+  it('reads a task, a comment and a notification setting in words, the task linking to itself', async () => {
+    fetchMock.mockResolvedValue(
+      response([
+        record({
+          action: 'task.create',
+          target_type: 'photo_tasks',
+          target_uid: 'tk1',
+          details: { photo_uids: ['ph1'] },
+        }),
+        record({ id: 2, action: 'comment.create' }),
+        record({ id: 3, action: 'notification_prefs.update', target_type: 'users' }),
+      ]),
+    )
+    renderPage()
+
+    expect(await screen.findByText('Task created')).toBeInTheDocument()
+    expect(screen.getByText('Comment added')).toBeInTheDocument()
+    expect(screen.getByText('Notification settings changed')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Task/ })).toHaveAttribute('href', '/p/v/tasks/tk1')
   })
 
   it('links the photos of a bulk edit from its payload', async () => {

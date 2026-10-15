@@ -10,9 +10,9 @@ import (
 
 // membersListBody is a two-member GET /p/{slug}/members answer.
 const membersListBody = `[{"user_uid":"us1","username":"anna","display_name":"Anna","role":"admin",` +
-	`"approved_at":"2026-10-11T10:00:00Z","last_login_at":null,"has_picture":false},` +
+	`"approved_at":"2026-10-11T10:00:00Z","last_seen_at":null,"has_picture":false},` +
 	`{"user_uid":"us2","username":"bob","display_name":"Bob","role":"viewer","approved_at":null,` +
-	`"last_login_at":null,"has_picture":false}]`
+	`"last_seen_at":null,"has_picture":false}]`
 
 // memberServer starts a fake of the /p/{slug}/members routes, recording every
 // request, and returns the ctl config path and the recorded requests.
@@ -41,7 +41,7 @@ func memberServer(t *testing.T) (string, func() []projectRequest) {
 			_, _ = w.Write([]byte(`{"error":"self","message":"an admin cannot change their own role"}`))
 		default:
 			_, _ = w.Write([]byte(`{"user_uid":"us2","username":"bob","display_name":"Bob","role":"editor",` +
-				`"approved_at":"2026-10-13T10:00:00Z","last_login_at":null,"has_picture":false}`))
+				`"approved_at":"2026-10-13T10:00:00Z","last_seen_at":null,"has_picture":false}`))
 		}
 	})
 	return configPath, func() []projectRequest {

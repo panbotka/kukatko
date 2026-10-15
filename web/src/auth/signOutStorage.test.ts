@@ -22,6 +22,7 @@ const ACCOUNT_STATE = {
     'kukatko.review.daily.u1',
     'kukatko.review.daily.u2',
     'i18nextLng',
+    'kukatko.uploadLink.uploaderName',
   ],
   session: [
     'kukatko.gridScroll',
@@ -29,6 +30,8 @@ const ACCOUNT_STATE = {
     'kukatko.gridScroll.u2',
     'kukatko.review.run',
     'kukatko.lastPickedLocation',
+    'kukatko.lastPickedLocation.v',
+    'kukatko.lastPickedLocation.rodina',
   ],
 }
 
