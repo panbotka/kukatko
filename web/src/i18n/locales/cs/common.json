@@ -4113,11 +4113,6 @@
     "roleFailed": "Roli se nepodařilo změnit.",
     "approveFailed": "Člena se nepodařilo schválit.",
     "removeFailed": "Člena se nepodařilo odebrat.",
-    "withheld": {
-      "name": "Přidaný účet",
-      "hint": "Jméno se ukáže, až účet tento projekt poprvé otevře.",
-      "unknown": "—"
-    },
     "add": {
       "open": "Přidat člena",
       "title": "Přidat člena",
@@ -4127,9 +4122,16 @@
       "roleLabel": "Role",
       "submit": "Přidat",
       "cancel": "Zrušit",
-      "done": "Pokud takový účet existuje, byl přidán.",
+      "done": "Pokud takový účet existuje, byl přidán. V seznamu se objeví, až projekt poprvé otevře.",
       "close": "Zavřít",
       "failed": "Požadavek se nepodařilo odeslat — zkontrolujte připojení a zkuste to znovu."
+    },
+    "withdraw": {
+      "open": "Zrušit přidání",
+      "title": "Zrušit přidání člena",
+      "intro": "Přidali jste omylem jiný účet? Napište přesně totéž uživatelské jméno nebo e-mail. Účet, který projekt ještě neotevřel, o přístup přijde; člena, kterého už vidíte v seznamu, odeberete tlačítkem Odebrat.",
+      "submit": "Zrušit přidání",
+      "done": "Pokud takový účet existuje a projekt ještě neotevřel, už do něj přístup nemá."
     }
   },
   "invites": {

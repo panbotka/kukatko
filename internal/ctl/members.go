@@ -75,6 +75,21 @@ func (c *Client) AddMember(ctx context.Context, identifier, role string) (json.R
 	return c.send(ctx, http.MethodPost, membersPath(""), body)
 }
 
+// WithdrawMember asks the client's project to undo an exact-match add: to
+// remove the membership of the account identifier names while the account has
+// not entered the project yet (its identity still withheld, so the member list
+// does not show it). The server answers the same whatever it found, and so
+// does this: the raw answer is {"status":"accepted"}.
+func (c *Client) WithdrawMember(ctx context.Context, identifier string) (json.RawMessage, error) {
+	if err := c.requireProject(); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(identifier) == "" {
+		return nil, ErrNoIdentifier
+	}
+	return c.send(ctx, http.MethodPost, membersPath("")+"/withdraw", map[string]string{"identifier": identifier})
+}
+
 // SetMemberRole changes the role of the member userUID of the client's project and
 // returns the member as raw JSON.
 func (c *Client) SetMemberRole(ctx context.Context, userUID, role string) (json.RawMessage, error) {

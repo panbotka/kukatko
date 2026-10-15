@@ -43,7 +43,8 @@ import (
 const streakLookback = 400 * 24 * time.Hour
 
 // streakQuery reduces the review-tagged audit rows of one project to the
-// distinct hours each of its approved members was active in there. The project,
+// distinct hours each of its approved members (identity not withheld) was
+// active in there. The project,
 // the membership, the 'review' literal, the action set and the actor filter
 // match leaderboardQuery exactly, so the two numbers on one row can never
 // disagree about what counts as a decision. $1 is the project, $2 the counted
@@ -54,6 +55,7 @@ FROM audit_log a
 JOIN project_members m ON m.project_uid = a.project_id AND m.user_uid = a.actor_uid
 WHERE a.project_id = $1
   AND m.approved_at IS NOT NULL
+  AND NOT m.identity_withheld
   AND a.actor_uid IS NOT NULL
   AND a.details ->> 'via' = 'review'
   AND a.action = ANY($2)

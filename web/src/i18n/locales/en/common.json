@@ -3917,11 +3917,6 @@
     "roleFailed": "Could not change the role.",
     "approveFailed": "Could not approve the member.",
     "removeFailed": "Could not remove the member.",
-    "withheld": {
-      "name": "Added account",
-      "hint": "Its name appears once the account opens this project.",
-      "unknown": "—"
-    },
     "add": {
       "open": "Add member",
       "title": "Add member",
@@ -3931,9 +3926,16 @@
       "roleLabel": "Role",
       "submit": "Add",
       "cancel": "Cancel",
-      "done": "If such an account exists, it has been added.",
+      "done": "If such an account exists, it has been added. It shows up in the list once it opens the project for the first time.",
       "close": "Close",
       "failed": "The request could not be sent — check the connection and try again."
+    },
+    "withdraw": {
+      "open": "Withdraw an add",
+      "title": "Withdraw a member add",
+      "intro": "Added the wrong account by mistake? Type exactly the same username or e-mail. An account that has not opened the project yet loses its access; a member you already see in the list is removed with its Remove button.",
+      "submit": "Withdraw",
+      "done": "If such an account exists and has not opened the project yet, it no longer has access to it."
     }
   },
   "invites": {

@@ -1001,3 +1001,8 @@ ratelimit:
   invite:
     rate_per_sec: 2
     burst: 60
+  # A project admin's blind member add by exact username/e-mail and its
+  # withdrawal (POST /p/{project}/members, .../members/withdraw), per acting user.
+  member_add:
+    rate_per_sec: 0.05
+    burst: 10

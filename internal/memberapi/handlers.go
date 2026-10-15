@@ -21,7 +21,8 @@ const statusAccepted = "accepted"
 
 // memberResponse is one member as the members page shows it. It deliberately
 // carries no e-mail address: a project admin manages memberships, not the
-// accounts behind them.
+// accounts behind them. A membership whose identity is withheld never becomes
+// one (visibleMember), so there is no field telling one apart either.
 type memberResponse struct {
 	UserUID     string       `json:"user_uid"`
 	Username    string       `json:"username"`
@@ -30,10 +31,6 @@ type memberResponse struct {
 	ApprovedAt  *time.Time   `json:"approved_at"`
 	LastLoginAt *time.Time   `json:"last_login_at"`
 	HasPicture  bool         `json:"has_picture"`
-	// IdentityWithheld marks an exact-match add whose account has not entered
-	// the project yet: its username and display name are empty, last_login_at
-	// is null and has_picture false until it does (project.Member).
-	IdentityWithheld bool `json:"identity_withheld"`
 	// Maintainer marks the instance's system administrator: its project role
 	// has no effect (it administers every project), so the page names it
 	// instead of a role and offers no role change (project.Member).
@@ -61,11 +58,14 @@ func toMemberResponse(m project.Member) memberResponse {
 	return memberResponse{
 		UserUID: m.UserUID, Username: m.Username, DisplayName: m.DisplayName, Role: m.Role,
 		ApprovedAt: m.ApprovedAt, LastLoginAt: m.LastLoginAt, HasPicture: m.HasPicture,
-		IdentityWithheld: m.IdentityWithheld, Maintainer: m.Maintainer,
+		Maintainer: m.Maintainer,
 	}
 }
 
-// handleList writes the project's members, by display name.
+// handleList writes the project's members, by display name — those the
+// project may see: a membership whose identity is withheld is not among them
+// (project.Store.Members), so an add that found an account lists exactly what
+// an add that found nobody lists.
 func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	members, err := a.members.Members(r.Context(), auth.ProjectUIDFromContext(r.Context()))
 	if err != nil {
@@ -108,7 +108,53 @@ func (a *API) handleAdd(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, acceptedResponse{Status: statusAccepted})
 }
 
-// handleSetRole changes a member's role. It answers 200 with the member, 409
+// withdrawRequest is the body of POST /members/withdraw.
+type withdrawRequest struct {
+	Identifier string `json:"identifier"`
+}
+
+// handleWithdraw undoes an exact-match add: it removes the membership of the
+// account the body's identifier names while its identity is still withheld
+// (project.WithdrawByIdentifier, which audits the real outcome where only the
+// system administrator reads it). It answers 202 {"status":"accepted"} whether
+// a membership was removed, the account holds none (or one the project already
+// sees, which this never touches) or does not exist — the add's own answer, for
+// the add's own reason; only a malformed request is refused: 400 invalid_body
+// and 422 invalid_identifier (blank).
+func (a *API) handleWithdraw(w http.ResponseWriter, r *http.Request) {
+	var req withdrawRequest
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, codeInvalidBody, err.Error())
+		return
+	}
+	if _, err := a.members.WithdrawByIdentifier(r.Context(), auditMeta(r),
+		auth.ProjectUIDFromContext(r.Context()), req.Identifier); err != nil {
+		writeStoreError(w, err, "withdrawing an add")
+		return
+	}
+	writeJSON(w, http.StatusAccepted, acceptedResponse{Status: statusAccepted})
+}
+
+// visibleMember reads the membership of userUID in the request's project, or
+// project.ErrNotMember when there is none — or when its identity is withheld.
+// Every route addressing a member by uid goes through it first: the project
+// cannot see such a membership, so an admin who knows the account's uid from
+// elsewhere (another project they share) must not learn from a 200 or a 204
+// that the address they typed into the blind add was that account's. Should
+// the account enter between this read and the change, it is visible by then.
+func (a *API) visibleMember(r *http.Request, userUID string) (*project.Member, error) {
+	member, err := a.members.Membership(r.Context(), auth.ProjectUIDFromContext(r.Context()), userUID)
+	if err != nil {
+		return nil, fmt.Errorf("reading member %s: %w", userUID, err)
+	}
+	if member.IdentityWithheld {
+		return nil, project.ErrNotMember
+	}
+	return member, nil
+}
+
+// handleSetRole changes a member's role. It answers 200 with the member, 404
+// not_member for a membership whose identity is withheld (visibleMember), 409
 // self for the caller's own membership (another admin must do it), 409
 // maintainer for a system administrator's membership (its project role has no
 // effect, so a change would only make the list lie), 409 last_admin for
@@ -131,7 +177,7 @@ func (a *API) handleSetRole(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, codeSelf, "an admin cannot change their own role")
 		return
 	}
-	current, err := a.members.Membership(r.Context(), auth.ProjectUIDFromContext(r.Context()), userUID)
+	current, err := a.visibleMember(r, userUID)
 	if err != nil {
 		writeStoreError(w, err, "reading a member")
 		return
@@ -152,9 +198,14 @@ func (a *API) handleSetRole(w http.ResponseWriter, r *http.Request) {
 // handleApprove lets a waiting member in and, in the same transaction, schedules
 // the mail telling them which project they may now open. Approving an approved
 // member is 200 with the member unchanged and no mail. It answers 404
-// not_member for an account that is not a member.
+// not_member for an account that is not a member, or whose identity is
+// withheld (visibleMember).
 func (a *API) handleApprove(w http.ResponseWriter, r *http.Request) {
 	userUID := chi.URLParam(r, "user_uid")
+	if _, err := a.visibleMember(r, userUID); err != nil {
+		writeStoreError(w, err, "reading a member")
+		return
+	}
 	member, err := a.members.ApproveWith(r.Context(), auditMeta(r), auth.ProjectUIDFromContext(r.Context()), userUID,
 		a.approvalMail(r))
 	if err != nil {
@@ -167,9 +218,14 @@ func (a *API) handleApprove(w http.ResponseWriter, r *http.Request) {
 // handleRemove removes a member from the project; the account itself stays.
 // It answers 204, 409 last_admin for the project's only admin — 409 self when
 // that admin is the caller, who may leave only while another admin remains —
-// and 404 not_member.
+// and 404 not_member, for a membership whose identity is withheld too
+// (visibleMember; POST /members/withdraw is its way out).
 func (a *API) handleRemove(w http.ResponseWriter, r *http.Request) {
 	userUID := chi.URLParam(r, "user_uid")
+	if _, err := a.visibleMember(r, userUID); err != nil {
+		writeStoreError(w, err, "reading a member")
+		return
+	}
 	err := a.members.RemoveMember(r.Context(), auditMeta(r), auth.ProjectUIDFromContext(r.Context()), userUID)
 	if err == nil {
 		w.WriteHeader(http.StatusNoContent)

@@ -30,7 +30,8 @@ func memberServer(t *testing.T) (string, func() []projectRequest) {
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/members"):
 			_, _ = w.Write([]byte(membersListBody))
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/members"):
+		case r.Method == http.MethodPost &&
+			(strings.HasSuffix(r.URL.Path, "/members") || strings.HasSuffix(r.URL.Path, "/members/withdraw")):
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(`{"status":"accepted"}`))
 		case r.Method == http.MethodDelete:
@@ -95,6 +96,29 @@ func TestCtlMembers_add(t *testing.T) {
 	}
 	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "members", "add", "jan"); err == nil {
 		t.Error("members add without --role succeeded")
+	}
+}
+
+// TestCtlMembers_withdraw verifies the identifier becomes the body of the
+// withdraw route and the confirmation does not claim anything was removed.
+func TestCtlMembers_withdraw(t *testing.T) {
+	configPath, seen := memberServer(t)
+
+	out, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "members", "withdraw", "jan@example.test",
+		"--project", "club")
+	if err != nil {
+		t.Fatalf("members withdraw: %v", err)
+	}
+	got := lastRequest(t, seen)
+	if got.method != http.MethodPost || got.path != "/api/v1/p/club/members/withdraw" ||
+		got.body != `{"identifier":"jan@example.test"}` {
+		t.Errorf("withdraw request = %+v", got)
+	}
+	if !strings.Contains(out, "if jan@example.test names an account") {
+		t.Errorf("withdraw output = %q, want the neutral confirmation", out)
+	}
+	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "members", "withdraw"); err == nil {
+		t.Error("members withdraw without an identifier succeeded")
 	}
 }
 

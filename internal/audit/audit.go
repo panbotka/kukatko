@@ -493,6 +493,18 @@ const (
 	// requested_by (the admin's uid), the role, the outcome and, when no single
 	// account was found, the identifier as typed.
 	ActionProjectMemberAddResolve = "project.member.add_resolve"
+	// ActionProjectMemberWithdrawRequest records a project admin asking to undo
+	// such an add — to remove, by the same exact username or e-mail address, a
+	// membership whose identity is still withheld. Like the add's request it is
+	// the same entry whatever the withdrawal found: no target, no identifier, no
+	// outcome; the details carry project_uid only.
+	ActionProjectMemberWithdrawRequest = "project.member.withdraw_request"
+	// ActionProjectMemberWithdrawResolve records what such a withdrawal really
+	// did, as an actor-less instance entry only the system administrator's GET
+	// /audit shows. The target is the account when one was found (target type
+	// "project_member"); the details carry project_uid, requested_by, the
+	// outcome and, when no single account was found, the identifier as typed.
+	ActionProjectMemberWithdrawResolve = "project.member.withdraw_resolve"
 	// ActionProjectMemberRole records a member's project role being changed. The
 	// details carry project_uid, the new role and the previous one.
 	ActionProjectMemberRole = "project.member.role"
@@ -579,6 +591,7 @@ var knownActions = map[string]struct{}{
 	ActionLibraryReset: {}, ActionNotificationPrefsUpdate: {}, ActionProjectCreate: {},
 	ActionProjectUpdate: {}, ActionProjectStoragePrefix: {}, ActionProjectPurge: {}, ActionProjectMemberAdd: {},
 	ActionProjectMemberAddRequest: {}, ActionProjectMemberAddResolve: {},
+	ActionProjectMemberWithdrawRequest: {}, ActionProjectMemberWithdrawResolve: {},
 	ActionProjectRekeyStart: {}, ActionProjectRekeyPause: {}, ActionProjectRekeyResume: {},
 	ActionProjectRekeyRetry: {},
 	ActionProjectMemberRole: {}, ActionProjectMemberApprove: {}, ActionProjectMemberRemove: {},
@@ -590,8 +603,9 @@ var knownActions = map[string]struct{}{
 // library: accounts and their credentials, the lifecycle of a project as the
 // system administrator runs it (create, edit, purge, the storage move), the
 // retention purge and the library wipe — and the hidden half of an exact-match
-// member add (ActionProjectMemberAddResolve), which is kept from the project's
-// trail on purpose. Such an entry may carry no project —
+// member add or withdrawal (ActionProjectMemberAddResolve,
+// ActionProjectMemberWithdrawResolve), which is kept from the project's trail on
+// purpose. Such an entry may carry no project —
 // and Meta.Entry never stamps the request's project onto one, so an account
 // renamed is never filed under whatever project its request happened to
 // resolve. Every other known action is about one project's
@@ -606,6 +620,7 @@ var instanceActions = map[string]struct{}{
 	ActionProjectCreate: {}, ActionProjectUpdate: {}, ActionProjectStoragePrefix: {},
 	ActionProjectPurge: {}, ActionProjectRekeyStart: {}, ActionProjectRekeyPause: {},
 	ActionProjectRekeyResume: {}, ActionProjectRekeyRetry: {}, ActionProjectMemberAddResolve: {},
+	ActionProjectMemberWithdrawResolve: {},
 }
 
 // ProjectScoped reports whether action is about one project's library or

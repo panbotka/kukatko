@@ -8,6 +8,11 @@
 //
 //   - it is a member of the project and an administrator has approved that
 //     membership (a pending registration learns nothing about the project);
+//   - the project may see who the member is: a membership made by an
+//     exact-match add the account has not entered yet (identity withheld,
+//     internal/project) is no membership here, so an admin who typed somebody's
+//     address cannot reach — or learn anything about — that account through a
+//     notification of their project;
 //   - the account is enabled;
 //   - the project is active (a deactivated library notifies nobody).
 //
@@ -68,8 +73,8 @@ func ReachesMaintainers(kind string) bool {
 }
 
 // MemberSQL returns the SQL condition that holds when the account userExpr is
-// in standing in the project projectExpr: an approved member of it, enabled,
-// and the project active. userExpr and projectExpr are SQL expressions — a
+// in standing in the project projectExpr: an approved member of it whose
+// identity is not withheld, enabled, and the project active. userExpr and projectExpr are SQL expressions — a
 // placeholder ("$1") or a column ("u.uid", "s.project_id") of the enclosing
 // statement. Producers embed it in the query that chooses their recipients, so
 // the rule is written once.
@@ -78,7 +83,8 @@ func MemberSQL(userExpr, projectExpr string) string {
         JOIN users ns_u ON ns_u.uid = ns_m.user_uid
         JOIN projects ns_p ON ns_p.uid = ns_m.project_uid
         WHERE ns_m.user_uid = ` + userExpr + ` AND ns_m.project_uid = ` + projectExpr + `
-          AND ns_m.approved_at IS NOT NULL AND NOT ns_u.disabled AND ns_p.active)`
+          AND ns_m.approved_at IS NOT NULL AND NOT ns_m.identity_withheld
+          AND NOT ns_u.disabled AND ns_p.active)`
 }
 
 // MaintainerSQL returns the SQL condition that holds when the account userExpr

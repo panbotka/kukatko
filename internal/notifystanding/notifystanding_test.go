@@ -59,7 +59,7 @@ func TestMemberSQL_namesItsArguments(t *testing.T) {
 	got := MemberSQL("u.uid", "s.project_id")
 	for _, want := range []string{
 		"ns_m.user_uid = u.uid", "ns_m.project_uid = s.project_id",
-		"ns_m.approved_at IS NOT NULL", "NOT ns_u.disabled", "ns_p.active",
+		"ns_m.approved_at IS NOT NULL", "NOT ns_m.identity_withheld", "NOT ns_u.disabled", "ns_p.active",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("MemberSQL lacks %q:\n%s", want, got)

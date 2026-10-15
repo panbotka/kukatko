@@ -157,9 +157,11 @@ func TestMembers(t *testing.T) {
 
 // TestAddByIdentifier_withholdsUntilRevealed verifies an exact-match add makes
 // an approved membership that reads without the account's name, last sign-in
-// or picture and sorts after the named members, that a repeated add leaves it
-// as it is, and that RevealIdentity — the account entering the project — turns
-// it into an ordinary membership (and is a no-op on one).
+// or picture and that the project's member list leaves out altogether — so the
+// list after an add that found an account equals the list after one that found
+// nobody —, that a repeated add leaves it as it is, and that RevealIdentity —
+// the account entering the project — turns it into an ordinary, listed
+// membership (and is a no-op on one).
 func TestAddByIdentifier_withholdsUntilRevealed(t *testing.T) {
 	store, db, meta := newStore(t)
 	ctx := context.Background()
@@ -170,12 +172,24 @@ func TestAddByIdentifier_withholdsUntilRevealed(t *testing.T) {
 		t.Fatalf("stamping a sign-in: %v", err)
 	}
 
-	for want, identifier := range map[project.AddOutcome]string{
-		project.OutcomeAdded: "adam", project.OutcomeNoSuchAccount: "nobody",
-	} {
-		got, err := store.AddByIdentifier(ctx, meta, project.BootstrapUID, identifier, project.RoleEditor)
-		if err != nil || got != want {
-			t.Fatalf("AddByIdentifier(%q) = %q, %v; want %q", identifier, got, err, want)
+	before, err := store.Members(ctx, project.BootstrapUID)
+	if err != nil {
+		t.Fatalf("Members: %v", err)
+	}
+	for _, add := range []struct {
+		identifier string
+		want       project.AddOutcome
+	}{{"nobody", project.OutcomeNoSuchAccount}, {"adam", project.OutcomeAdded}} {
+		got, err := store.AddByIdentifier(ctx, meta, project.BootstrapUID, add.identifier, project.RoleEditor)
+		if err != nil || got != add.want {
+			t.Fatalf("AddByIdentifier(%q) = %q, %v; want %q", add.identifier, got, err, add.want)
+		}
+		after, err := store.Members(ctx, project.BootstrapUID)
+		if err != nil {
+			t.Fatalf("Members: %v", err)
+		}
+		if !slices.EqualFunc(before, after, func(a, b project.Member) bool { return a.UserUID == b.UserUID }) {
+			t.Fatalf("Members after adding %q = %+v, want the list as before %+v", add.identifier, after, before)
 		}
 	}
 	if got, err := store.AddByIdentifier(ctx, meta, project.BootstrapUID, "ADAM@example.test",
@@ -183,15 +197,10 @@ func TestAddByIdentifier_withholdsUntilRevealed(t *testing.T) {
 		t.Fatalf("repeated AddByIdentifier = %q, %v; want already_member", got, err)
 	}
 
-	members, err := store.Members(ctx, project.BootstrapUID)
+	adam, err := store.Membership(ctx, project.BootstrapUID, "us_a")
 	if err != nil {
-		t.Fatalf("Members: %v", err)
+		t.Fatalf("Membership(us_a): %v", err)
 	}
-	// Adam would sort first by name; withheld, it comes last.
-	if n := len(members); n < 2 || members[n-1].UserUID != "us_a" {
-		t.Fatalf("Members = %+v, want the withheld us_a last", members)
-	}
-	adam := members[len(members)-1]
 	if !adam.IdentityWithheld || adam.Username != "" || adam.DisplayName != "" || adam.LastLoginAt != nil ||
 		adam.HasPicture || adam.Role != project.RoleEditor || adam.ApprovedAt == nil {
 		t.Errorf("withheld member = %+v, want an approved editor with no name, sign-in or picture", adam)
@@ -209,6 +218,102 @@ func TestAddByIdentifier_withholdsUntilRevealed(t *testing.T) {
 	}
 	if err := store.RevealIdentity(ctx, project.BootstrapUID, "us_nobody"); err != nil {
 		t.Errorf("RevealIdentity(non-member) = %v, want nil", err)
+	}
+	listed, err := store.Members(ctx, project.BootstrapUID)
+	if err != nil || len(listed) != len(before)+1 || listed[0].UserUID != "us_a" {
+		t.Errorf("Members after the reveal = %+v, %v; want adam listed first by name", listed, err)
+	}
+}
+
+// TestWithdrawByIdentifier verifies the blind undo of an exact-match add: it
+// removes a membership whose identity is withheld, never one the project
+// already sees, refuses a blank identifier, and writes the same project entry
+// for every outcome while the instance entry records what really happened.
+func TestWithdrawByIdentifier(t *testing.T) {
+	store, db, meta := newStore(t)
+	ctx := context.Background()
+	seedUser(t, db, "us_a", "adam", "Adam")
+	seedUser(t, db, "us_v", "vera", "Vera")
+	mustAdd(t, store, meta, project.BootstrapUID, "us_v", project.RoleViewer)
+	if _, err := store.AddByIdentifier(ctx, meta, project.BootstrapUID, "adam", project.RoleAdmin); err != nil {
+		t.Fatalf("AddByIdentifier: %v", err)
+	}
+
+	steps := []struct {
+		identifier string
+		want       project.WithdrawOutcome
+	}{
+		{"ADAM@example.test", project.OutcomeWithdrawn},
+		{"adam", project.OutcomeNotWithheld},
+		{"vera", project.OutcomeNotWithheld},
+		{"nobody", project.OutcomeWithdrawNoSuchAccount},
+	}
+	for _, step := range steps {
+		got, err := store.WithdrawByIdentifier(ctx, meta, project.BootstrapUID, step.identifier)
+		if err != nil || got != step.want {
+			t.Errorf("WithdrawByIdentifier(%q) = %q, %v; want %q", step.identifier, got, err, step.want)
+		}
+	}
+	if _, err := store.Membership(ctx, project.BootstrapUID, "us_a"); !errors.Is(err, project.ErrNotMember) {
+		t.Errorf("adam after the withdrawal: %v, want ErrNotMember", err)
+	}
+	if m, err := store.Membership(ctx, project.BootstrapUID, "us_v"); err != nil || m.Role != project.RoleViewer {
+		t.Errorf("vera after a withdrawal naming her = %+v, %v; want her visible membership untouched", m, err)
+	}
+	if _, err := store.WithdrawByIdentifier(ctx, meta, project.BootstrapUID, "  "); !errors.Is(err,
+		project.ErrEmptyIdentifier) {
+		t.Errorf("WithdrawByIdentifier(blank) = %v, want ErrEmptyIdentifier", err)
+	}
+
+	requests := auditRecords(t, db, audit.ActionProjectMemberWithdrawRequest)
+	if len(requests) != len(steps) {
+		t.Fatalf("withdraw requests audited = %d, want %d", len(requests), len(steps))
+	}
+	for _, rec := range requests {
+		if rec.TargetUID != nil && *rec.TargetUID != "" || len(rec.Details) != 1 ||
+			rec.Details["project_uid"] != project.BootstrapUID {
+			t.Errorf("project withdraw entry = %+v, want only the project", rec)
+		}
+	}
+	resolves := auditRecords(t, db, audit.ActionProjectMemberWithdrawResolve)
+	outcomes := make([]string, 0, len(resolves))
+	for _, rec := range resolves {
+		if rec.ActorUID != nil && *rec.ActorUID != "" {
+			t.Errorf("instance withdraw entry %+v has an actor", rec)
+		}
+		outcome, _ := rec.Details["outcome"].(string)
+		outcomes = append(outcomes, outcome)
+	}
+	slices.Sort(outcomes)
+	if want := []string{"no_such_account", "not_withheld", "not_withheld", "withdrawn"}; !slices.Equal(outcomes, want) {
+		t.Errorf("audited outcomes = %v, want %v", outcomes, want)
+	}
+}
+
+// TestLastAdminGuard_ignoresWithheldAdmins verifies an admin membership whose
+// identity is withheld is no working admin, whether its account is enabled or
+// disabled: the sole admin's removal is refused either way, so its answer does
+// not tell the hidden account's state.
+func TestLastAdminGuard_ignoresWithheldAdmins(t *testing.T) {
+	store, db, meta := newStore(t)
+	ctx := context.Background()
+	seedUser(t, db, "us_admin", "admin", "Admin")
+	seedUser(t, db, "us_hidden", "hidden", "Hidden")
+	mustAdd(t, store, meta, project.BootstrapUID, "us_admin", project.RoleAdmin)
+	if _, err := store.AddByIdentifier(ctx, meta, project.BootstrapUID, "hidden", project.RoleAdmin); err != nil {
+		t.Fatalf("AddByIdentifier: %v", err)
+	}
+
+	for _, disabled := range []bool{false, true} {
+		if _, err := db.Pool().Exec(ctx, `UPDATE users SET disabled = $2 WHERE uid = $1`, "us_hidden",
+			disabled); err != nil {
+			t.Fatalf("setting disabled: %v", err)
+		}
+		if err := store.RemoveMember(ctx, meta, project.BootstrapUID, "us_admin"); !errors.Is(err,
+			project.ErrLastAdmin) {
+			t.Errorf("removing the sole admin beside a withheld admin (disabled %v) = %v, want ErrLastAdmin",
+				disabled, err)
+		}
 	}
 }
 

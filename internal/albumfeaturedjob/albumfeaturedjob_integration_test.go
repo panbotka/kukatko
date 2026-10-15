@@ -342,22 +342,29 @@ func TestFeature_nobodyWantsIt(t *testing.T) {
 	}
 }
 
-// TestFeature_onlyMembersInStanding features an album with three more accounts
+// TestFeature_onlyMembersInStanding features an album with four more accounts
 // that want the kind through every channel: a registration still waiting for
-// approval, a maintainer who is no member of the project and a maintainer who
-// is an approved member. Only the member maintainer is told (J-1: a pending
-// member learnt the project's name and the album's title by push and mail);
-// no mail goes to anybody out of standing.
+// approval, an account added blindly by its exact address that has not entered
+// the project (identity withheld), a maintainer who is no member of the
+// project and a maintainer who is an approved member. Only the member
+// maintainer is told (J-1: a pending member learnt the project's name and the
+// album's title by push and mail; round 3 F1: an admin pushed their own album
+// title into the inbox of an account they only knew the address of); no mail
+// goes to anybody out of standing.
 func TestFeature_onlyMembersInStanding(t *testing.T) {
 	f := newFixture(t)
 	const (
 		pendingUID        = "us-pending"
+		withheldUID       = "us-withheld"
 		maintainerUID     = "us-maint"
 		maintainerInUID   = "us-maint-in"
 		pendingAddress    = pendingUID + "@example.test"
+		withheldAddress   = withheldUID + "@example.test"
 		maintainerAddress = maintainerUID + "@example.test"
 	)
-	for uid, role := range map[string]string{pendingUID: "user", maintainerUID: "maintainer", maintainerInUID: "maintainer"} {
+	for uid, role := range map[string]string{
+		pendingUID: "user", withheldUID: "user", maintainerUID: "maintainer", maintainerInUID: "maintainer",
+	} {
 		f.exec(t, `INSERT INTO users (uid, username, email, password_hash, role) VALUES ($1, $2, $3, 'x', $4)`,
 			uid, uid, uid+"@example.test", role)
 		f.exec(t, `INSERT INTO notification_prefs (user_uid, kind, channel, enabled)
@@ -367,6 +374,8 @@ func TestFeature_onlyMembersInStanding(t *testing.T) {
 		project.BootstrapUID, pendingUID)
 	f.exec(t, `INSERT INTO project_members (project_uid, user_uid, role, approved_at) VALUES ($1, $2, 'admin', now())`,
 		project.BootstrapUID, maintainerInUID)
+	f.exec(t, `INSERT INTO project_members (project_uid, user_uid, role, approved_at, identity_withheld)
+		VALUES ($1, $2, 'viewer', now(), true)`, project.BootstrapUID, withheldUID)
 	album := f.album(t, "Pouť 2026", false)
 
 	f.feature(t, album, curatorUID)
@@ -375,7 +384,7 @@ func TestFeature_onlyMembersInStanding(t *testing.T) {
 		t.Fatalf("recipients = %v, want %v", got, want)
 	}
 	if n := f.count(t, `SELECT count(*) FROM jobs WHERE type = $1 AND payload ->> 'to' = ANY($2)`,
-		jobs.TypeMailSend, []string{pendingAddress, maintainerAddress}); n != 0 {
+		jobs.TypeMailSend, []string{pendingAddress, withheldAddress, maintainerAddress}); n != 0 {
 		t.Fatalf("mail_send jobs to accounts out of standing = %d, want 0", n)
 	}
 }

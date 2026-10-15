@@ -15,11 +15,14 @@ var ErrNoProjectPerson = errors.New("audit: no such person in the project")
 
 // projectPersonSQL finds the account $2 names — by uid or by username — among
 // the people of the project $1: its current members and every account that has
-// acted in it (a former member, a system administrator who worked there).
+// acted in it (a former member, a system administrator who worked there). A
+// membership whose identity is withheld does not make its account one of the
+// project's people.
 // A uid match wins over a username match, as on the instance listing.
 const projectPersonSQL = `SELECT u.uid FROM users u
 WHERE (u.uid = $2 OR u.username = $2)
-	AND (EXISTS (SELECT 1 FROM project_members m WHERE m.project_uid = $1 AND m.user_uid = u.uid)
+	AND (EXISTS (SELECT 1 FROM project_members m
+			WHERE m.project_uid = $1 AND m.user_uid = u.uid AND NOT m.identity_withheld)
 		OR EXISTS (SELECT 1 FROM audit_log a WHERE a.project_id = $1 AND a.actor_uid = u.uid))
 ORDER BY u.uid = $2 DESC
 LIMIT 1`

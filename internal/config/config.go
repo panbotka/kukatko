@@ -199,6 +199,12 @@ type RateLimitConfig struct {
 	// accept) per client IP, ahead of the code lookup. Like an upload link's,
 	// the code is the whole credential, so this is the brake on guessing.
 	Invite RateLimitRule `mapstructure:"invite"`
+	// MemberAdd caps a project admin's blind exact-match member add (POST
+	// /p/{project}/members) and its withdrawal (POST .../members/withdraw),
+	// keyed by the acting user. Each answers the same whatever account it
+	// finds, so the brake is on scripting guesses at speed, not on an admin
+	// adding a few people by hand.
+	MemberAdd RateLimitRule `mapstructure:"member_add"`
 }
 
 // RateLimitRule is one per-client-IP token bucket: RatePerSec tokens replenish
@@ -1715,6 +1721,10 @@ func setUploadLinkDefaults(v *viper.Viper) {
 	// opens one invite and accepts it, so the upload link's budget is ample.
 	v.SetDefault("ratelimit.invite.rate_per_sec", 2)
 	v.SetDefault("ratelimit.invite.burst", 60)
+	// An admin adds people one by one, by hand: ten at once, then one every
+	// twenty seconds, never slows that down, and caps a script at 180 an hour.
+	v.SetDefault("ratelimit.member_add.rate_per_sec", 0.05)
+	v.SetDefault("ratelimit.member_add.burst", 10)
 }
 
 // Validate checks that required fields are present and inter-field invariants

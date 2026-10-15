@@ -13,7 +13,15 @@
 // 202 {"status":"accepted"}, byte for byte, whether the account was added, was
 // already a member or does not exist at all, so a project admin cannot use it
 // to learn which accounts the instance holds. What really happened is recorded
-// in the audit trail (internal/project.AddByIdentifier).
+// in the audit trail (internal/project.AddByIdentifier). Nor does anything
+// after it: a membership made that way has its identity withheld until the
+// account enters the project, and until then the project cannot see it at all
+// — it is not listed, and every route addressing a member by uid answers
+// 404 not_member for it exactly as for an account that is no member — so
+// neither its uid, nor its picture, nor whether it exists leaks through the
+// list. The one way back is as blind as the add: POST /members/withdraw names
+// the same identifier and always answers 202. Both are throttled per caller,
+// so the blind guesses cannot be scripted at speed either.
 //
 // Every mutation is audited, with the project, in the same transaction as the
 // change, by internal/project. Errors are a stable machine-readable code —
@@ -48,6 +56,11 @@ type Members interface {
 	AddByIdentifier(
 		ctx context.Context, meta audit.Meta, projectUID, identifier string, role project.Role,
 	) (project.AddOutcome, error)
+	// WithdrawByIdentifier removes the withheld membership of the account an
+	// exact username or e-mail names, and audits the real outcome.
+	WithdrawByIdentifier(
+		ctx context.Context, meta audit.Meta, projectUID, identifier string,
+	) (project.WithdrawOutcome, error)
 	// Membership reads one member, project.ErrNotMember when there is none.
 	Membership(ctx context.Context, projectUID, userUID string) (*project.Member, error)
 	// SetRole changes a member's role, audited; project.ErrLastAdmin guards the
@@ -93,6 +106,10 @@ type Config struct {
 	// RequireAdmin guards every route: the project's admin (or a system
 	// administrator).
 	RequireAdmin func(http.Handler) http.Handler
+	// Throttle limits the blind add and its withdrawal per caller (after
+	// RequireAdmin, so it may key on the signed-in account). Optional: nil
+	// leaves them unthrottled.
+	Throttle func(http.Handler) http.Handler
 }
 
 // API serves a project's member management.
@@ -102,13 +119,14 @@ type API struct {
 	mail         MailScheduler
 	projectURL   func(slug string) string
 	requireAdmin func(http.Handler) http.Handler
+	throttle     func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
 	return &API{
 		members: cfg.Members, accounts: cfg.Accounts, mail: cfg.Mail,
-		projectURL: cfg.ProjectURL, requireAdmin: cfg.RequireAdmin,
+		projectURL: cfg.ProjectURL, requireAdmin: cfg.RequireAdmin, throttle: cfg.Throttle,
 	}
 }
 
@@ -117,20 +135,31 @@ func NewAPI(cfg Config) *API {
 //
 //	GET    /members                      the members with role, approval and last sign-in
 //	POST   /members                      add an account by exact username or e-mail (always 202)
+//	POST   /members/withdraw             undo such an add by the same identifier (always 202)
 //	PATCH  /members/{user_uid}           change a member's role (never one's own)
 //	POST   /members/{user_uid}/approve   approve a waiting member, mailing them
 //	DELETE /members/{user_uid}           remove a member (204)
 //
-// All of them RequireAdmin.
+// All of them RequireAdmin; the two blind ones are throttled per caller too.
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/members", func(r chi.Router) {
 		r.Use(a.requireAdmin)
 		r.Get("/", a.handleList)
-		r.Post("/", a.handleAdd)
+		r.With(a.throttled).Post("/", a.handleAdd)
+		r.With(a.throttled).Post("/withdraw", a.handleWithdraw)
 		r.Patch("/{user_uid}", a.handleSetRole)
 		r.Post("/{user_uid}/approve", a.handleApprove)
 		r.Delete("/{user_uid}", a.handleRemove)
 	})
+}
+
+// throttled wraps next in the configured per-caller throttle, or returns it
+// as it is when there is none.
+func (a *API) throttled(next http.Handler) http.Handler {
+	if a.throttle == nil {
+		return next
+	}
+	return a.throttle(next)
 }
 
 // auditMeta is the audit envelope of a mutation, attributed to the signed-in

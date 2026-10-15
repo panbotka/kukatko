@@ -7,6 +7,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/memberapi"
 	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/ratelimit"
 )
 
 // buildMemberAPI assembles a project admin's management of their project's
@@ -15,13 +16,19 @@ import (
 // the same transaction, and an approval schedules the "you may come in" mail —
 // naming the project and linking to its page — through the queue on that same
 // transaction, so an instance with mail off approves and sends nothing.
+//
+// The blind add by exact username or e-mail and its withdrawal are throttled
+// by ratelimit.member_add, keyed by the acting admin, so the one guess each
+// answers identically cannot be scripted at speed.
 func buildMemberAPI(cfg *config.Config, db *database.DB, authAPI *auth.API) *memberapi.API {
 	baseURL := cfg.Mail.BaseURL
+	limit := ratelimit.New(cfg.RateLimit.MemberAdd.RatePerSec, cfg.RateLimit.MemberAdd.Burst)
 	return memberapi.NewAPI(memberapi.Config{
 		Members:      project.NewStore(db.Pool()),
 		Accounts:     auth.NewStore(db.Pool()),
 		Mail:         mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: cfg.Mail.Enabled}),
 		ProjectURL:   func(slug string) string { return projectURL(baseURL, slug) },
 		RequireAdmin: authAPI.RequireAdmin,
+		Throttle:     limit.KeyedMiddlewareExcept(commentRateKey, auth.RateLimitExempt),
 	})
 }

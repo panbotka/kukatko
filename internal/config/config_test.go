@@ -212,6 +212,8 @@ func TestLoad_defaults(t *testing.T) {
 		{"ratelimit.upload_link_per_link.burst", cfg.RateLimit.UploadLinkPerLink.Burst, 300},
 		{"ratelimit.invite.rate_per_sec", cfg.RateLimit.Invite.RatePerSec, 2.0},
 		{"ratelimit.invite.burst", cfg.RateLimit.Invite.Burst, 60},
+		{"ratelimit.member_add.rate_per_sec", cfg.RateLimit.MemberAdd.RatePerSec, 0.05},
+		{"ratelimit.member_add.burst", cfg.RateLimit.MemberAdd.Burst, 10},
 		{"ratelimit.geocode_project.rate_per_sec", cfg.RateLimit.GeocodeProject.RatePerSec, 3.0},
 		{"ratelimit.geocode_project.burst", cfg.RateLimit.GeocodeProject.Burst, 10},
 		{"ratelimit.vector.rate_per_sec", cfg.RateLimit.Vector.RatePerSec, 5.0},

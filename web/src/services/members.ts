@@ -4,8 +4,9 @@ import { apiPath } from './api'
 /**
  * A project admin's client of the project's members (`internal/memberapi`,
  * `/api/v1/p/<slug>/members`): who belongs to the current project, with what
- * role, whether a membership still waits for approval, and the four changes an
- * admin makes — role, approve, remove, add an existing account.
+ * role, whether a membership still waits for approval, and the changes an
+ * admin makes — role, approve, remove, add an existing account and withdraw
+ * such an add.
  *
  * Every route is project-scoped and admin-only, so every URL is built with
  * {@link apiPath}. A refusal throws {@link MemberApiError}, which carries the
@@ -28,13 +29,6 @@ export interface ProjectMemberRow {
   last_login_at: string | null
   /** True when `GET /users/{uid}/avatar` has a picture to answer with. */
   has_picture: boolean
-  /**
-   * True for an account added by its exact username or e-mail that has not
-   * opened the project yet: until it does, the server sends no username,
-   * display name, last sign-in or picture, so the add tells the admin nothing
-   * about the account.
-   */
-  identity_withheld: boolean
   /**
    * True for the instance's system administrator: it administers every project
    * whatever its membership says, so the page names it instead of a role and
@@ -104,7 +98,12 @@ function memberRoute(userUid: string): string {
   return `/${encodeURIComponent(userUid)}`
 }
 
-/** Every member of the current project, waiting ones included. */
+/**
+ * Every member of the current project, waiting ones included. An account added
+ * by its exact username or e-mail is not among them until it opens the project
+ * itself: the list must not tell an add that found somebody from one that did
+ * not.
+ */
 export async function fetchMembers(signal?: AbortSignal): Promise<ProjectMemberRow[]> {
   const res = await request('GET', '', undefined, signal)
   return (await res.json()) as ProjectMemberRow[]
@@ -153,4 +152,17 @@ export async function removeMember(userUid: string): Promise<void> {
  */
 export async function addMember(identifier: string, role: ProjectRole): Promise<void> {
   await send('POST', '', { identifier, role })
+}
+
+/**
+ * Undoes {@link addMember} (`POST /members/withdraw`): takes the project away
+ * from the account named by its **exact** username or e-mail address, as long
+ * as that account has not opened the project yet — which is also why the list
+ * cannot show it. A member the list already shows is never touched here.
+ *
+ * Blind like the add: it resolves for **any** answer and returns nothing; only
+ * a request that never got an answer (no network) rejects.
+ */
+export async function withdrawMember(identifier: string): Promise<void> {
+  await send('POST', '/withdraw', { identifier })
 }

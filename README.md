@@ -275,6 +275,8 @@ the same way, by its slug in the URL (`/api/v1/p/<project>/…`).
   project away from a member and leaves their account alone. *Přidat člena* adds an existing account by
   its exact username or e-mail — nothing is suggested, and the answer is always "if such an account
   exists, it has been added", so nobody can use the form to find out who else has an account here.
+  Such an account appears in the list only once it opens the project itself; until then *Zrušit
+  přidání* takes a mistyped add back, just as blindly.
   Your own role and your own removal are left to another administrator, and a project never loses
   its last one.
 - **Inviting somebody takes one link.** Under the members, *Pozvánky* creates an invitation: pick the

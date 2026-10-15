@@ -1746,7 +1746,8 @@ anything is sent. Refusals print the server's code: `self` (your own role, or le
 | Command | Meaning |
 | --- | --- |
 | `ctl members list` | `GET /members` — username, name, role, `approved`/`pending`, last login, uid |
-| `ctl members add <username-or-email> --role <role>` | `POST /members` `{identifier, role}` — an **exact** username or e-mail (case-insensitive), approved at once. The server answers the same whether the account was added, already was a member or does not exist, so the CLI only says *accepted: if … names an account, it is a member*; check `members list` |
+| `ctl members add <username-or-email> --role <role>` | `POST /members` `{identifier, role}` — an **exact** username or e-mail (case-insensitive), approved at once. The server answers the same whether the account was added, already was a member or does not exist, so the CLI only says *accepted: if … names an account, it is a member*. Such an account is **not** in `members list` until it opens the project itself |
+| `ctl members withdraw <username-or-email>` | `POST /members/withdraw` `{identifier}` — undoes an add while the account has not opened the project yet (never removes a listed member — use `remove`); answers the same whatever it found |
 | `ctl members role <username> <role>` | `PATCH /members/{uid}` — `viewer`, `curator`, `editor` or `admin`; never your own |
 | `ctl members approve <username>` | `POST /members/{uid}/approve` — lets a waiting member in and mails them the project's link |
 | `ctl members remove <username>` | `DELETE /members/{uid}` — the account stays; the project's only admin cannot be removed |
@@ -2276,8 +2277,8 @@ pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 
   enabled requires a valid MAC + at least one target (`broadcast_addr`/`interface`).
 - **Rate-limit keys (`ratelimit.*`, `internal/ratelimit`):** per-client-IP token-bucket limits on
   heavy endpoints. Sections `upload`/`bulk`/`comment`/`tiles`/`upload_link`/`upload_link_per_link`/`invite`/
-  `geocode_project`/`vector`/`vector_project`, each `{rate_per_sec, burst}`; defaults 5/30, 2/10, 0.5/10,
-  50/200, 2/60, 10/300, 2/60, 3/10, 5/100, 20/400; `rate_per_sec ≤ 0` disables the rule (middleware no-op). Env e.g.
+  `geocode_project`/`vector`/`vector_project`/`member_add`, each `{rate_per_sec, burst}`; defaults 5/30, 2/10,
+  0.5/10, 50/200, 2/60, 10/300, 2/60, 3/10, 5/100, 20/400, 0.05/10; `rate_per_sec ≤ 0` disables the rule (middleware no-op). Env e.g.
   `KUKATKO_RATELIMIT_UPLOAD_RATE_PER_SEC`. **`comment` (POST `/photos/{uid}/comments`) is keyed by the
   authenticated user**, not by IP (`Limiter.KeyedMiddleware`, mounted *inside* the auth guard so the
   principal is on the context): a household shares one address, and throttling everyone's conversation
@@ -2306,6 +2307,11 @@ pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 
   `KUKATKO_RATELIMIT_INVITE_BURST`) throttles the public invitation routes (`GET /invite/{code}` and
   `POST /invite/{code}/accept`, `internal/inviteapi`) per client IP, ahead of the code lookup — the brake
   on guessing invite codes. An invite's URL is built from `mail.base_url` (+ `/invite/<code>`).
+  **`member_add`** (default 0.05/s, burst 10, env e.g. `KUKATKO_RATELIMIT_MEMBER_ADD_RATE_PER_SEC`) throttles
+  a project admin's blind exact-match add `POST /p/{project}/members` and its undo
+  `POST /p/{project}/members/withdraw` (`internal/memberapi`), keyed by the acting user — both answer the
+  same 202 whatever account they find, and the limit keeps that guess from being scripted at speed (an API
+  token flagged unlimited skips it).
 - **Upload-link keys (`upload_links.*`, `internal/uploadlinkapi`):** `max_file_size_mb` (default
   **1024**; a cap of its own on one file sent through a link, on top of `upload.max_file_size_mb` and the
   project's `max_file_bytes` — the smallest wins, see *Upload limits* below; 0 = no cap of its own),

@@ -19,7 +19,8 @@ import (
 const offProjectUID = "pjoff"
 
 // TestInStanding_rule walks the standing rule over real rows: an approved
-// member of an active project is in standing; a pending member, a disabled
+// member of an active project is in standing; a pending member, a member whose
+// identity is withheld (an exact-match add it has not entered), a disabled
 // account, an account of another project only, a member of a deactivated
 // project and a maintainer who is no member are not — except that the
 // registration-waiting kind reaches an enabled maintainer of an active project
@@ -39,8 +40,11 @@ func TestInStanding_rule(t *testing.T) {
 	accounts := []struct {
 		uid, role, project string
 		approved, disabled bool
+		withheld           bool
 	}{
 		{uid: "us-member", role: "user", project: project.BootstrapUID, approved: true},
+		{uid: "us-withheld", role: "user", project: project.BootstrapUID, approved: true, withheld: true},
+		{uid: "us-maint-withheld", role: "maintainer", project: project.BootstrapUID, approved: true, withheld: true},
 		{uid: "us-pending", role: "user", project: project.BootstrapUID},
 		{uid: "us-disabled", role: "user", project: project.BootstrapUID, approved: true, disabled: true},
 		{uid: "us-elsewhere", role: "user", project: offProjectUID, approved: true},
@@ -52,8 +56,10 @@ func TestInStanding_rule(t *testing.T) {
 		seed = append(seed, statement{`INSERT INTO users (uid, username, email, password_hash, role, disabled) VALUES ($1, $2, $3, 'x', $4, $5)`,
 			[]any{a.uid, a.uid, a.uid + "@example.test", a.role, a.disabled}})
 		if a.project != "" {
-			seed = append(seed, statement{`INSERT INTO project_members (project_uid, user_uid, role, approved_at)
-				VALUES ($1, $2, 'viewer', CASE WHEN $3::boolean THEN now() END)`, []any{a.project, a.uid, a.approved}})
+			seed = append(seed, statement{`INSERT INTO project_members
+				(project_uid, user_uid, role, approved_at, identity_withheld)
+				VALUES ($1, $2, 'viewer', CASE WHEN $3::boolean THEN now() END, $4)`,
+				[]any{a.project, a.uid, a.approved, a.withheld}})
 		}
 	}
 	for _, s := range seed {
@@ -69,6 +75,10 @@ func TestInStanding_rule(t *testing.T) {
 	}{
 		{user: "us-member", project: project.BootstrapUID, kind: tagged, want: true},
 		{user: "us-pending", project: project.BootstrapUID, kind: tagged},
+		{user: "us-withheld", project: project.BootstrapUID, kind: tagged},
+		{user: "us-withheld", project: project.BootstrapUID, kind: pending},
+		{user: "us-maint-withheld", project: project.BootstrapUID, kind: tagged},
+		{user: "us-maint-withheld", project: project.BootstrapUID, kind: pending, want: true},
 		{user: "us-disabled", project: project.BootstrapUID, kind: tagged},
 		{user: "us-elsewhere", project: project.BootstrapUID, kind: tagged},
 		{user: "us-elsewhere", project: offProjectUID, kind: tagged},

@@ -24,12 +24,15 @@ import (
 // fakeMembers is a Members whose answers are set per test; err, when set, is
 // what every call returns.
 type fakeMembers struct {
-	members  []project.Member
-	current  *project.Member
-	outcome  project.AddOutcome
-	err      error
-	lastRole project.Role
-	hook     project.ApproveHook
+	members   []project.Member
+	current   *project.Member
+	outcome   project.AddOutcome
+	withdrawn project.WithdrawOutcome
+	err       error
+	lastRole  project.Role
+	hook      project.ApproveHook
+	approved  bool
+	removed   bool
 }
 
 // Members returns the canned list or f.err.
@@ -49,6 +52,19 @@ func (f *fakeMembers) AddByIdentifier(
 		return "", project.ErrEmptyIdentifier
 	}
 	return f.outcome, nil
+}
+
+// WithdrawByIdentifier returns the canned withdrawal outcome or f.err.
+func (f *fakeMembers) WithdrawByIdentifier(
+	_ context.Context, _ audit.Meta, _, identifier string,
+) (project.WithdrawOutcome, error) {
+	if f.err != nil {
+		return "", f.err
+	}
+	if strings.TrimSpace(identifier) == "" {
+		return "", project.ErrEmptyIdentifier
+	}
+	return f.withdrawn, nil
 }
 
 // Membership returns f.current, an ordinary member when unset, or f.err.
@@ -79,6 +95,7 @@ func (f *fakeMembers) ApproveWith(
 	ctx context.Context, _ audit.Meta, projectUID, userUID string, hook project.ApproveHook,
 ) (*project.Member, error) {
 	f.hook = hook
+	f.approved = true
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -93,8 +110,9 @@ func (f *fakeMembers) ApproveWith(
 	return member, nil
 }
 
-// RemoveMember returns f.err.
+// RemoveMember records the call and returns f.err.
 func (f *fakeMembers) RemoveMember(context.Context, audit.Meta, string, string) error {
+	f.removed = true
 	return f.err
 }
 
@@ -329,5 +347,107 @@ func TestHandleListAndRemove(t *testing.T) {
 	if status, body := send(t, srv, http.MethodDelete, "/members/us1", ""); status != http.StatusConflict ||
 		!strings.Contains(body, codeLastAdmin) {
 		t.Errorf("remove of the last admin = %d %s, want 409 last_admin", status, body)
+	}
+}
+
+// TestHandleWithdraw_answersTheSameForEveryOutcome verifies the withdrawal's
+// answer is the add's one neutral body whatever the store says happened, and
+// that only a malformed request is refused.
+func TestHandleWithdraw_answersTheSameForEveryOutcome(t *testing.T) {
+	t.Parallel()
+	for _, outcome := range []project.WithdrawOutcome{project.OutcomeWithdrawn, project.OutcomeNotWithheld,
+		project.OutcomeWithdrawNoSuchAccount, project.OutcomeWithdrawAmbiguous} {
+		srv := newTestServer(t, &fakeMembers{withdrawn: outcome}, nil, nil)
+		status, body := send(t, srv, http.MethodPost, "/members/withdraw", `{"identifier":"jan"}`)
+		if status != http.StatusAccepted || body != `{"status":"accepted"}`+"\n" {
+			t.Errorf("withdraw with outcome %s = %d %q, want 202 and the one neutral body", outcome, status, body)
+		}
+	}
+	tests := []struct {
+		name, body string
+		status     int
+		code       string
+	}{
+		{"not json", `{`, http.StatusBadRequest, codeInvalidBody},
+		{"a role", `{"identifier":"jan","role":"viewer"}`, http.StatusBadRequest, codeInvalidBody},
+		{"blank identifier", `{"identifier":" "}`, http.StatusUnprocessableEntity, codeInvalidIdentifier},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			srv := newTestServer(t, &fakeMembers{withdrawn: project.OutcomeWithdrawn}, nil, nil)
+			status, body := send(t, srv, http.MethodPost, "/members/withdraw", tt.body)
+			if status != tt.status || !strings.Contains(body, `"error":"`+tt.code+`"`) {
+				t.Errorf("withdraw %s = %d %s, want %d %s", tt.body, status, body, tt.status, tt.code)
+			}
+		})
+	}
+}
+
+// TestMemberRoutes_withheldIsNoMember verifies every route addressing a member
+// by uid answers a membership whose identity is withheld exactly like no
+// membership — 404 not_member — without asking the store to change anything,
+// so an admin who knows the uid cannot learn that the address they typed into
+// the blind add was that account's.
+func TestMemberRoutes_withheldIsNoMember(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	withheld := project.Member{UserUID: "us1", Role: project.RoleViewer, ApprovedAt: &now, IdentityWithheld: true}
+	tests := []struct{ method, path, body string }{
+		{http.MethodPatch, "/members/us1", `{"role":"editor"}`},
+		{http.MethodPost, "/members/us1/approve", ""},
+		{http.MethodDelete, "/members/us1", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			t.Parallel()
+			fake := &fakeMembers{current: &withheld}
+			srv := newTestServer(t, fake, nil, nil)
+			status, body := send(t, srv, tt.method, tt.path, tt.body)
+			absent := newTestServer(t, &fakeMembers{err: project.ErrNotMember}, nil, nil)
+			wantStatus, wantBody := send(t, absent, tt.method, tt.path, tt.body)
+			if status != http.StatusNotFound || status != wantStatus || body != wantBody {
+				t.Errorf("%s %s = %d %q, want what no membership gets: %d %q",
+					tt.method, tt.path, status, body, wantStatus, wantBody)
+			}
+			if fake.lastRole != "" || fake.approved || fake.removed {
+				t.Errorf("the store was asked to change a withheld membership: %+v", fake)
+			}
+		})
+	}
+}
+
+// TestRegisterRoutes_throttlesTheBlindRoutes verifies the configured throttle
+// wraps the blind add and its withdrawal, and nothing else.
+func TestRegisterRoutes_throttlesTheBlindRoutes(t *testing.T) {
+	t.Parallel()
+	var throttled []string
+	api := NewAPI(Config{
+		Members:      &fakeMembers{outcome: project.OutcomeAdded, withdrawn: project.OutcomeWithdrawn},
+		RequireAdmin: admit,
+		Throttle: func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				throttled = append(throttled, r.Method+" "+r.URL.Path)
+				w.WriteHeader(http.StatusTooManyRequests)
+			})
+		},
+	})
+	r := chi.NewRouter()
+	api.RegisterRoutes(r)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+
+	for _, path := range []string{"/members", "/members/withdraw"} {
+		if status, _ := send(t, srv, http.MethodPost, path, `{"identifier":"jan","role":"viewer"}`); status !=
+			http.StatusTooManyRequests {
+			t.Errorf("POST %s = %d, want the throttle's 429", path, status)
+		}
+	}
+	if status, _ := send(t, srv, http.MethodGet, "/members", ""); status != http.StatusOK {
+		t.Errorf("GET /members = %d, want 200 unthrottled", status)
+	}
+	if want := []string{"POST /members", "POST /members/withdraw"}; strings.Join(throttled, ",") !=
+		strings.Join(want, ",") {
+		t.Errorf("throttled %v, want %v", throttled, want)
 	}
 }

@@ -486,47 +486,65 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   (+ a human `message` where the client should show the rule); every mutation is audited by
   `internal/project` in the change's transaction, with the project.
   - `GET /members` → a bare array by display name: `[{user_uid, username, display_name, role,
-    approved_at, last_login_at, has_picture, identity_withheld, maintainer}]` — `approved_at: null` is a membership
+    approved_at, last_login_at, has_picture, maintainer}]` — `approved_at: null` is a membership
     waiting for approval; `has_picture` says `GET /users/{uid}/avatar` is worth asking (an uploaded/picked
     picture or a linked person; a 404 there still means none). **No e-mail address.**
-    `identity_withheld: true` is an exact-match add (below) whose account has **not entered the project
-    yet**: `username`/`display_name` are `""`, `last_login_at` is `null` and `has_picture` `false`, and
-    those rows come last, by when they were added (never sorted by the hidden name). The first request
-    the account makes inside the project clears it. `maintainer: true` marks the instance's **system
-    administrator** (false while its identity is withheld): it administers every project whatever its
-    membership's `role` says, so the page shows „Správce systému" instead of the role.
+    An exact-match add (below) whose account has **not entered the project yet** (its identity withheld)
+    is **not listed at all** — not even as a nameless row: a row would appear only when the typed address
+    belonged to an account, and would hand the project the account's uid (and with it its picture). The
+    first request the account makes inside the project ends the withholding, and from then on it is listed
+    like any member. `maintainer: true` marks the instance's **system administrator**: it administers every
+    project whatever its membership's `role` says, so the page shows „Správce systému" instead of the role.
   - `POST /members` `{identifier, role}` — add an **existing** account by its **exact** username (as
     sign-in normalises it: trimmed, lower-cased) or its e-mail address (**case-insensitive**); nothing is
     matched partially and a username wins over an address. The answer is **always `202
     {"status":"accepted"}`**, byte for byte, whether the account was added, already was a member, or does
-    not exist — no enumeration. The membership starts **approved, its identity withheld** from the
-    project until the account enters it (`identity_withheld` above; meanwhile it is also out of the
-    name directory `GET /users`, and cannot be mentioned or put on a task). **The project's own trail is
+    not exist — no enumeration. **Throttled per acting admin** (`ratelimit.member_add`, 429 when spent),
+    so the blind guess cannot be scripted at speed. The membership starts **approved, its identity
+    withheld** from the project until the account enters it, and until then the project cannot see it
+    anywhere: not in `GET /members` (above) or the name directory `GET /users`; every `/members/{user_uid}`
+    route below answers its real uid **404 `not_member`, exactly as for a uid that is no member**; it
+    cannot be mentioned or put on a task; it is **not in standing** for any notification of the project
+    (`internal/notifystanding`), so the project's admin cannot push their own text to it; it counts as
+    **no membership** for the former-member rule (comments, mentions, task participants — a blind re-add
+    of a former member's address does not bring their name back), the review leaderboard and streaks, the
+    project audit's `?user=` filter, and as **no working admin** for `last_admin` (so the sole admin's
+    removal does not depend on whether the hidden account is disabled). **The project's own trail is
     uniform too:** every add writes one `project.member.add_request` entry with only `{project_uid,
     role}` — no target, no identifier, no outcome — so the admin's `GET /p/{project}/audit` cannot tell a
     hit from a miss. What really happened goes to an **instance** entry `project.member.add_resolve`
     (no project, **no actor** — so neither the project's listing nor the admin's own `/audit/mine` shows
     it; only the maintainer's `GET /audit`) with `requested_by`, the role and the `outcome`: `added`,
     `already_member` (the membership is left untouched), `no_such_account` (with the typed
-    `identifier`), or `ambiguous` (an address several accounts share — nobody is added). What remains
-    visible to the admin is the withheld row a hit adds (it knows an account answers to what it typed,
-    nothing more — no name, activity or picture). Only a malformed request is refused: 400
+    `identifier`), or `ambiguous` (an address several accounts share — nobody is added). Nothing a hit
+    leaves is visible to the admin. Only a malformed request is refused: 400
     `invalid_body`, 422 `invalid_role` (`viewer|curator|editor|admin`; `maintainer` is not a project role),
     422 `invalid_identifier` (blank).
+  - `POST /members/withdraw` `{identifier}` — undo such an add, **as blindly**: removes the membership of
+    the account the identifier names (matched exactly as the add matches) **only while its identity is
+    still withheld**; a membership the list already shows is never touched here (`DELETE` it by uid). The
+    answer is the add's own **`202 {"status":"accepted"}`** whatever happened, and it is throttled by the
+    same `ratelimit.member_add` rule in its own bucket. Audited like the add: one uniform project entry
+    `project.member.withdraw_request` (`{project_uid}` only) and an actor-less instance entry
+    `project.member.withdraw_resolve` with the `outcome` — `withdrawn`, `not_withheld` (no membership, or a
+    visible one), `no_such_account` (with the typed `identifier`) or `ambiguous`. Refusals: 400
+    `invalid_body` (a `role` field included), 422 `invalid_identifier` (blank).
   - `PATCH /members/{user_uid}` `{role}` → 200 + the member. **The caller's own membership → 409 `self`**
     (another admin must change it); **a system administrator's membership (`maintainer: true`) → 409
     `maintainer`** — its project role has no effect, and a change would only make the list lie (removing
     the membership stays possible, and `POST /projects/{uid}/members` re-adds it with another role); **409 `last_admin`** when it would demote the project's last
-    **working** admin — an approved membership whose account is not disabled; a pending or disabled
-    "admin" row does not count, and demoting such a row is never refused;
-    404 `not_member`; 422 `invalid_role`; 400 `invalid_body`. Setting the role it has records nothing.
+    **working** admin — an approved membership whose account is not disabled and whose identity is not
+    withheld; a pending, disabled or withheld "admin" row does not count, and demoting such a row is
+    never refused; 404 `not_member` (a withheld membership included); 422 `invalid_role`; 400
+    `invalid_body`. Setting the role it has records nothing.
   - `POST /members/{user_uid}/approve` → 200 + the member. Stamps the membership (which is what lets the
     account sign in) and enqueues the `account_approved` mail **in the same transaction** — it names
     the project and links to `mail.base_url` + `/p/<slug>/`. Approving an approved member is 200 with
-    nothing changed, mailed or audited; 404 `not_member`.
+    nothing changed, mailed or audited; 404 `not_member` (a withheld membership included).
   - `DELETE /members/{user_uid}` → 204; the account itself stays. **409 `last_admin`** for the project's
     last working admin (counted as for `PATCH`); for the **caller themselves 409 `self`** unless another admin remains (then they leave and
-    the project answers them 404 from then on); 404 `not_member`.
+    the project answers them 404 from then on); 404 `not_member` (a withheld membership included —
+    `POST /members/withdraw` is its way out).
 - **Invites (project admin) (`/api/v1/p/{project}/invites`, public `/api/v1/invite/{code}`,
   `internal/inviteapi`):** invitation links into a project. The code (8 symbols, the upload links'
   unambiguous alphabet) is the whole credential: looked up through its SHA-256, kept readable for the

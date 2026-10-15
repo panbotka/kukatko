@@ -4,11 +4,13 @@ package memberapi_test
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -25,6 +27,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mailer"
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/memberapi"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/projecttest"
 )
@@ -369,10 +372,10 @@ func (e *env) memberRow(t *testing.T, client *http.Client, which projecttest.Sid
 }
 
 // TestMembers_addWithholdsTheIdentityUntilTheAccountEnters proves an account
-// added by an exact match is listed without its name, last sign-in or picture
-// and is absent from the project's name directory — the admin learns nothing
-// about it from the add — until it enters the project itself, after which the
-// project sees it like any other member.
+// added by an exact match is absent from the members list and from the
+// project's name directory — the admin learns nothing about it from the add —
+// until it enters the project itself, after which the project sees it like any
+// other member.
 func TestMembers_addWithholdsTheIdentityUntilTheAccountEnters(t *testing.T) {
 	e := newEnv(t)
 	admin := e.f.ClientFor(t, e.server, projecttest.SideA)
@@ -387,10 +390,9 @@ func TestMembers_addWithholdsTheIdentityUntilTheAccountEnters(t *testing.T) {
 		t.Fatalf("add = %d, want 202", status)
 	}
 
-	row := e.memberRow(t, admin, projecttest.SideA, jan)
-	if row["username"] != "" || row["display_name"] != "" || row["last_login_at"] != nil ||
-		row["has_picture"] != false || row["identity_withheld"] != true || row["role"] != "viewer" {
-		t.Errorf("withheld member row = %v, want the role only, no name, sign-in or picture", row)
+	if _, _, raw := e.call(t, admin, http.MethodGet, e.f.PathFor(projecttest.SideA, "members"), nil); strings.Contains(
+		raw, jan) {
+		t.Errorf("members %s list the withheld member", raw)
 	}
 	if uids := e.directoryUIDs(t, admin, projecttest.SideA); slices.Contains(uids, jan) {
 		t.Errorf("directory %v names the withheld member", uids)
@@ -411,9 +413,9 @@ func TestMembers_addWithholdsTheIdentityUntilTheAccountEnters(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("jan entering A = %d, want 200", resp.StatusCode)
 	}
-	row = e.memberRow(t, admin, projecttest.SideA, jan)
+	row := e.memberRow(t, admin, projecttest.SideA, jan)
 	if row["username"] != "jan" || row["display_name"] != "Jan Novák" || row["last_login_at"] == nil ||
-		row["identity_withheld"] != false {
+		row["role"] != "viewer" {
 		t.Errorf("member row after jan entered = %v, want its name and last sign-in", row)
 	}
 	if uids := e.directoryUIDs(t, admin, projecttest.SideA); !slices.Contains(uids, jan) {
@@ -629,5 +631,120 @@ func TestDirectory_listsOnlyTheProjectsApprovedMembers(t *testing.T) {
 	}
 	if uids := e.directoryUIDs(t, client, projecttest.SideA); !slices.Contains(uids, waiting) {
 		t.Errorf("directory %v after the approval lacks the approved member", uids)
+	}
+}
+
+// projectView is everything B's admin can read about B's membership: the
+// members list and the name directory, as raw bodies.
+func (e *env) projectView(t *testing.T, client *http.Client, which projecttest.Side) string {
+	t.Helper()
+	view := ""
+	for _, suffix := range []string{"members", "users"} {
+		status, _, raw := e.call(t, client, http.MethodGet, e.f.PathFor(which, suffix), nil)
+		if status != http.StatusOK {
+			t.Fatalf("GET %s = %d %s", suffix, status, raw)
+		}
+		view += suffix + ": " + raw
+	}
+	return view
+}
+
+// memberRouteAnswers sends every route that addresses a member by uid, for
+// userUID in which's project, and returns the answers in order.
+func (e *env) memberRouteAnswers(t *testing.T, client *http.Client, which projecttest.Side, userUID string) []string {
+	t.Helper()
+	answers := make([]string, 0, 3)
+	for _, route := range []struct {
+		method, suffix string
+		body           any
+	}{
+		{http.MethodPatch, "", map[string]string{"role": "viewer"}},
+		{http.MethodPost, "/approve", nil},
+		{http.MethodDelete, "", nil},
+	} {
+		status, kind, raw := e.call(t, client, route.method, e.f.PathFor(which, "members/"+userUID+route.suffix),
+			route.body)
+		answers = append(answers, route.method+route.suffix+" "+strconv.Itoa(status)+" "+kind+" "+raw)
+	}
+	return answers
+}
+
+// TestMembers_blindAddOfAForeignAccountLeavesNoTrace reproduces round 3's F1:
+// B's admin exact-adds the address of an account that belongs to A only, and
+// an address nobody has. Everything B can read afterwards — the members list,
+// the name directory, the answers of every per-member route for the account's
+// uid (which B could know from elsewhere) — is byte for byte what it was
+// before and what the miss leaves, so B learns neither that the account
+// exists nor its uid, and so has nothing to ask its picture by. The account is
+// not in standing in B either, so no notification of B can reach it, and B's
+// sole admin still cannot leave beside it: a withheld admin is no working one.
+// The blind withdrawal then takes the membership back, answering as the add
+// does.
+func TestMembers_blindAddOfAForeignAccountLeavesNoTrace(t *testing.T) {
+	e := newEnv(t)
+	admin := e.f.ClientFor(t, e.server, projecttest.SideB)
+	foreign := e.f.A.UserUID
+	address := e.f.A.Username + "@example.test"
+	missing := projecttest.MissingUID("us")
+	path := e.f.PathFor(projecttest.SideB, "members")
+
+	before := e.projectView(t, admin, projecttest.SideB)
+	routesForMissing := e.memberRouteAnswers(t, admin, projecttest.SideB, missing)
+	adds := make([]string, 0, 2)
+	for _, identifier := range []string{"nobody@example.test", address} {
+		status, kind, raw := e.call(t, admin, http.MethodPost, path,
+			map[string]string{"identifier": identifier, "role": "admin"})
+		adds = append(adds, strconv.Itoa(status)+" "+kind+" "+raw)
+		if after := e.projectView(t, admin, projecttest.SideB); after != before {
+			t.Errorf("after adding %q B reads\n%s\nwant what it read before\n%s", identifier, after, before)
+		}
+	}
+	if adds[0] != adds[1] {
+		t.Errorf("the add answered %q for a miss and %q for a hit", adds[0], adds[1])
+	}
+	member, err := project.NewStore(e.pool).Membership(t.Context(), e.f.B.ProjectUID, foreign)
+	if err != nil || !member.IdentityWithheld || member.Role != project.RoleAdmin {
+		t.Fatalf("A's account in B = %+v, %v; want a withheld admin membership", member, err)
+	}
+
+	routesForForeign := e.memberRouteAnswers(t, admin, projecttest.SideB, foreign)
+	if !slices.Equal(routesForForeign, routesForMissing) {
+		t.Errorf("per-member routes answer the withheld account\n%v\nunlike a missing uid\n%v",
+			routesForForeign, routesForMissing)
+	}
+	if view := e.projectView(t, admin, projecttest.SideB); strings.Contains(view, foreign) {
+		t.Errorf("B reads A's account uid: %s", view)
+	}
+
+	checker := notifystanding.NewChecker(e.pool)
+	for _, uid := range []string{foreign, missing} {
+		in, err := checker.InStanding(t.Context(), notifystanding.Addressee{
+			UserUID: uid, ProjectUID: e.f.B.ProjectUID, Kind: "album_featured",
+		})
+		if err != nil || in {
+			t.Errorf("%s in standing in B = %v, %v; want false", uid, in, err)
+		}
+	}
+
+	status, _, raw := e.call(t, admin, http.MethodDelete, path+"/"+e.f.B.UserUID, nil)
+	if status != http.StatusConflict || !strings.Contains(raw, `"error":"self"`) {
+		t.Errorf("B's sole admin leaving beside a withheld admin = %d %s, want 409 self", status, raw)
+	}
+
+	withdrawals := make([]string, 0, 2)
+	for _, identifier := range []string{"nobody@example.test", address} {
+		status, kind, raw := e.call(t, admin, http.MethodPost, path+"/withdraw",
+			map[string]string{"identifier": identifier})
+		withdrawals = append(withdrawals, strconv.Itoa(status)+" "+kind+" "+raw)
+	}
+	if withdrawals[0] != withdrawals[1] || withdrawals[0] != adds[0] {
+		t.Errorf("withdrawals answered %v, want the add's own answer %q for both", withdrawals, adds[0])
+	}
+	if _, err := project.NewStore(e.pool).Membership(t.Context(), e.f.B.ProjectUID, foreign); !errors.Is(err,
+		project.ErrNotMember) {
+		t.Errorf("A's account in B after the withdrawal: %v, want ErrNotMember", err)
+	}
+	if after := e.projectView(t, admin, projecttest.SideB); after != before {
+		t.Errorf("after the withdrawals B reads\n%s\nwant\n%s", after, before)
 	}
 }

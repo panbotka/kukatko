@@ -7201,8 +7201,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `internal/notifydeliver` when it records and schedules, and again by the `push_send` and `mail_send`
   handlers when a queued delivery runs (an account can fall out of standing while its notification waits).
   Review II findings J-1, J-3, J-4 and J-6 all came down to a producer or a queue asking a weaker question.
-  - **The rule:** an **approved member** of the project (`project_members.approved_at`), an **enabled**
-    account, an **active** project. A maintainer gets no exception for being a maintainer — only as a
+  - **The rule:** an **approved member** of the project (`project_members.approved_at`) **whose identity
+    is not withheld** (`NOT identity_withheld` — an exact-match add the account has not entered is no
+    membership here; round 3 F1: a project admin who knew only an address pushed their own album title
+    into that account's inbox), an **enabled** account, an **active** project. A maintainer gets no exception for being a maintainer — only as a
     member — except for the one kind addressed to the instance's operators, `registration_pending`
     (`ReachesMaintainers(kind)`): an enabled maintainer of an active project, member or not, because a
     maintainer may approve a registration into any project.
@@ -7356,10 +7358,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `memberColumns`: a `user_pictures` row or the membership's own `subject_uid` — "worth asking for the avatar".
     `Member.IdentityWithheld` (`project_members.identity_withheld`, migration 0117) marks an exact-match add
     the account has not entered yet: `memberColumns` then reads `Username`/`DisplayName` as `""`,
-    `LastLoginAt` nil and `HasPicture` false, for every reader of a membership.
+    `LastLoginAt` nil and `HasPicture` false, for every reader of a membership. A withheld membership is
+    **no membership to the project**: not listed (`Members`), no working admin, not in notification
+    standing (`internal/notifystanding`), not a current member for the former-member rule (comments,
+    mentions, task participants), the review leaderboard/streaks and the project audit's `?user=` filter.
   - `member_store.go` — reads: `Members(projectUID)` (by display name, the username standing in for an empty
-    one, the withheld rows last by `created_at` — never ordered by the name nobody may see; unknown project =
-    `ErrNotFound`, no members = empty slice), `Membership(projectUID, userUID)`
+    one; **withheld memberships are left out**, so the list after an add that found an account equals the
+    list after one that found nobody; unknown project = `ErrNotFound`, no members = empty slice), `Membership(projectUID, userUID)`
     (`ErrNotMember`), `MembershipsOf(userUID)` (by project name, inactive projects included, each with the membership's
     `SubjectUID` — what `GET /auth/me` lists per project). Writes, each
     **audited in its transaction** with the caller's `audit.Meta` (target type `project_member`, target uid =
@@ -7377,8 +7382,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     neither the row nor an audit entry. Every write **locks the project row** first, so concurrent changes
     to one project's members are serialised and the **last-admin guard** cannot be raced: `SetRole` away
     from admin and `RemoveMember` of an admin return `ErrLastAdmin` when the member is the project's last
-    **working** admin — only approved memberships whose account is not disabled count (`workingAdminsSQL`),
-    so a pending or disabled "admin" row neither lets the last working one go nor is itself ever refused
+    **working** admin — only approved memberships whose account is not disabled and whose identity is not
+    withheld count (`workingAdminsSQL`), so a pending, disabled or withheld "admin" row neither lets the
+    last working one go nor is itself ever refused (a withheld row counting only while its hidden account is
+    enabled would make the sole admin's removal an oracle on that account)
     (who may remove whom — themselves included — is the HTTP layer's rule, later). Disabling an account
     is `internal/auth`'s write and is not refused here; it notes the projects it strands instead.
     `TouchLastProject(userUID, projectUID)` writes `users.last_project_uid` (not audited, no membership
@@ -7404,9 +7411,18 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     says an exact-match add makes the account a member ("if that account exists, it has been added"),
     and a consent step would be a second invitation flow beside `internal/invite`. Withholding the
     identity removes what the add leaked — the name, the last sign-in anywhere on the instance, the
-    picture, the trail's outcome — while the admin keeps a row to change or remove. The residue is that a
-    hit still adds a row, so the admin learns *that* some account answers to what it typed (one guess at a
-    time, audited); an admin who wants nothing learnt uses an invitation link instead.
+    picture, the trail's outcome. Round 3 (F1) showed that even a nameless row leaks: it appears only on
+    a hit (an existence oracle), and it carried the real uid, which fetched the account's picture and let
+    the project's notifications reach it. So a withheld membership is not listed at all, and the undo is
+    as blind as the add (`member_withdraw.go`).
+  - `member_withdraw.go` — `WithdrawByIdentifier(meta, projectUID, identifier) (WithdrawOutcome, error)`,
+    the blind undo of an exact-match add: one transaction locks the project, resolves the identifier
+    exactly as the add does (`matchAccount`) and deletes the membership **only while
+    `identity_withheld`** (`withdrawWithheldMemberSQL`; a visible membership is never touched — it is
+    removed by uid). Always two entries (`withdrawEntries`): `project.member.withdraw_request` under the
+    project (`{project_uid}` only, no target) and the actor-less instance entry
+    `project.member.withdraw_resolve` with `details.outcome` (`withdrawn`/`not_withheld`/`no_such_account`/
+    `ambiguous`; the typed `identifier` when nobody was resolved). `ErrEmptyIdentifier` for a blank one.
   - `member_check.go` — **the one rule for naming an account in a project**: `ApprovedMemberSQL(projectExpr,
     userExpr)` is the SQL predicate (an `EXISTS` over `project_members … approved_at IS NOT NULL AND NOT
     identity_withheld` — a withheld member cannot be named until it enters; both
@@ -7451,8 +7467,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   unit-test over fakes: `Members` (the `*project.Store` methods), `Accounts` (`auth.Store.GetUserByUID`,
   for the mail's address) and `MailScheduler` (`mailjob.Enqueuer`).
   - `memberapi.go` — `Config` (+ `ProjectURL func(slug)`, built from `mail.base_url` by `projectURL` in
-    `cmd/kukatko/auth.go`), `NewAPI`, `RegisterRoutes`.
-  - `handlers.go` — the five routes. The project is always `auth.ProjectUIDFromContext`; the self rules
+    `cmd/kukatko/auth.go`; + `Throttle`, the per-caller `ratelimit.member_add` limiter `buildMemberAPI`
+    wraps the two blind routes in, nil = unthrottled), `NewAPI`, `RegisterRoutes`.
+  - `handlers.go` — the six routes. Every route addressing a member by uid reads it through
+    `visibleMember` first, which answers a membership whose identity is withheld with `ErrNotMember` —
+    404 `not_member`, byte-identical to a uid that is no member — so an admin who knows the account's uid
+    from elsewhere cannot confirm whose address the blind add found. `POST /members/withdraw` answers the
+    add's one `202` whatever `WithdrawByIdentifier` reports. The project is always `auth.ProjectUIDFromContext`; the self rules
     are the handler's (`PATCH` of the caller's own uid → `self` before the store; `PATCH` of a system
     administrator's membership — `project.Member.Maintainer`, read through `Members.Membership` — →
     `maintainer`, its project role having no effect; `DELETE` of oneself maps

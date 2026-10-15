@@ -270,6 +270,9 @@ func TestMentions_taskThread(t *testing.T) {
 // TestRead_formerMembers verifies an author and a mentioned account that have
 // left the comment's project read as former members — no name, no person, the
 // flag set — while a maintainer, who belongs to every project, keeps its name.
+// A blind re-add of the two (an exact-match add they have not entered, its
+// identity withheld) changes nothing: their live names coming back would tell
+// the admin who typed the address whose it was.
 func TestRead_formerMembers(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
@@ -291,16 +294,24 @@ func TestRead_formerMembers(t *testing.T) {
 	// All three leave the project; ops becomes the instance's maintainer.
 	f.exec(t, `DELETE FROM project_members WHERE project_uid = $1`, project.BootstrapUID)
 	f.exec(t, `UPDATE users SET role = 'maintainer' WHERE uid = $1`, ops)
-	got, err := f.comments.Get(ctx, project.BootstrapUID, created.UID)
-	if err != nil {
-		t.Fatalf("Get: %v", err)
+	check := func(when string) {
+		t.Helper()
+		got, err := f.comments.Get(ctx, project.BootstrapUID, created.UID)
+		if err != nil {
+			t.Fatalf("Get %s: %v", when, err)
+		}
+		if !got.AuthorFormer || got.AuthorName != "" || got.AuthorUID != alice {
+			t.Errorf("%s: author = %q former=%v uid=%q, want a nameless former member", when, got.AuthorName,
+				got.AuthorFormer, got.AuthorUID)
+		}
+		want := []comments.Mention{{UserUID: bob, Former: true}, {UserUID: ops, Name: "Ops"}}
+		if !reflect.DeepEqual(got.Mentions, want) {
+			t.Errorf("%s: mentions = %+v, want %+v", when, got.Mentions, want)
+		}
 	}
-	if !got.AuthorFormer || got.AuthorName != "" || got.AuthorUID != alice {
-		t.Errorf("author = %q former=%v uid=%q, want a nameless former member", got.AuthorName, got.AuthorFormer,
-			got.AuthorUID)
-	}
-	want := []comments.Mention{{UserUID: bob, Former: true}, {UserUID: ops, Name: "Ops"}}
-	if !reflect.DeepEqual(got.Mentions, want) {
-		t.Errorf("mentions = %+v, want %+v", got.Mentions, want)
-	}
+	check("after leaving")
+
+	f.exec(t, `INSERT INTO project_members (project_uid, user_uid, role, approved_at, identity_withheld)
+		SELECT $1, uid, 'viewer', now(), true FROM users WHERE uid IN ('us_alice', 'us_bob')`, project.BootstrapUID)
+	check("after a blind re-add")
 }

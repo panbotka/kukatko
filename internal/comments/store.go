@@ -49,11 +49,12 @@ func (s *Store) WithMentionObserver(observer MentionObserver) *Store {
 // one of them is ever set, and Comment reports the unset ones as absent. The last
 // column is the comment's mentions as a JSON array (see mentionsColumn).
 //
-// An author who has left the comment's project (no membership there now, and
-// not the instance's maintainer, who belongs everywhere) reads as a former
-// member: no name — the project must not keep seeing a live name, renamed
-// perhaps in another project — and author_former set, so the client says
-// "former member" and draws no picture.
+// An author who has left the comment's project (no membership there now, or
+// only one whose identity is withheld — see authorJoin —, and not the
+// instance's maintainer, who belongs everywhere) reads as a former member: no
+// name — the project must not keep seeing a live name, renamed perhaps in
+// another project — and author_former set, so the client says "former member"
+// and draws no picture.
 const commentColumns = `c.uid, COALESCE(c.photo_uid, ''), COALESCE(c.task_uid, ''), COALESCE(c.album_uid, ''),
 	COALESCE(c.author_uid, ''),
 	CASE WHEN ` + authorFormerSQL + ` THEN '' ELSE COALESCE(NULLIF(u.display_name, ''), u.username, '') END,
@@ -73,7 +74,9 @@ const authorFormerSQL = `(u.uid IS NOT NULL AND um.user_uid IS NULL AND u.role <
 // account deleted since has no row (the cascade took it), so it is simply
 // absent, and the client falls back to the token's name. An account that has
 // left the project (no membership, not a maintainer) is a former member: no
-// name, no person, 'former' true.
+// name, no person, 'former' true. So is one whose only membership is a
+// withheld exact-match add: re-adding a former member's guessed address must
+// not bring their live name back, which would tell the admin whose it was.
 const mentionsColumn = `COALESCE((
 	SELECT jsonb_agg(jsonb_build_object(
 		'user_uid', m.user_uid,
@@ -82,6 +85,7 @@ const mentionsColumn = `COALESCE((
 		'subject_uid', mm.subject_uid) ORDER BY m.position)
 	FROM comment_mentions m JOIN users mu ON mu.uid = m.user_uid
 	LEFT JOIN project_members mm ON mm.user_uid = m.user_uid AND mm.project_uid = ` + commentProjectSQL + `
+		AND NOT mm.identity_withheld
 	WHERE m.comment_uid = c.uid), '[]'::jsonb)`
 
 // mentionFormerSQL is true for a mentioned account with no membership of the
@@ -107,12 +111,15 @@ const mutationColumns = `uid, photo_uid, task_uid, album_uid, author_uid, body, 
 // fact about one project's people). All three are LEFT JOINs, and for
 // different reasons: the user because author_uid is ON DELETE SET NULL (losing
 // the account must not lose the comment), the membership because the author
-// may have left the project (or is a maintainer who never joined it), the
+// may have left the project (or is a maintainer who never joined it, or holds
+// only a membership whose identity is withheld, which counts as none: a blind
+// re-add of a former member's address must not revive their name), the
 // subject because almost no account is linked to one and a linked one usually
 // has no cover photo either. The joins are here rather than in a second query
 // so one statement still yields everything a thread needs to render.
 const authorJoin = ` LEFT JOIN users u ON u.uid = c.author_uid` +
 	` LEFT JOIN project_members um ON um.user_uid = c.author_uid AND um.project_uid = ` + commentProjectSQL +
+	` AND NOT um.identity_withheld` +
 	` LEFT JOIN subjects s ON s.uid = um.subject_uid AND s.project_id = um.project_uid`
 
 // parentTables maps each subject column to the root table its uid names. A

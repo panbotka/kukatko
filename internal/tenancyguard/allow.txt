@@ -21,8 +21,8 @@
 internal/albumfeaturedjob/service.go:145 worker-only: the album_featured_notify job learns its project from the album uid of its payload
 
 # internal/audit
-internal/audit/audit.go:973 List backs both audit listings: the maintainer's instance-wide /audit (the legitimate cross-project read) and the project admin's /p/{project}/audit, whose handler always sets Filter.ProjectUID
-internal/audit/audit.go:1025 Count backs both audit listings: the maintainer's instance-wide /audit (the legitimate cross-project read) and the project admin's /p/{project}/audit, whose handler always sets Filter.ProjectUID
+internal/audit/audit.go:988 List backs both audit listings: the maintainer's instance-wide /audit (the legitimate cross-project read) and the project admin's /p/{project}/audit, whose handler always sets Filter.ProjectUID
+internal/audit/audit.go:1040 Count backs both audit listings: the maintainer's instance-wide /audit (the legitimate cross-project read) and the project admin's /p/{project}/audit, whose handler always sets Filter.ProjectUID
 internal/audit/audittest/audittest.go:42 test support only (Guard): marks the newest audit id instance-wide so it can find unscoped entries written after it
 internal/audit/audittest/audittest.go:68 test support only (Guard): reads the entries written since its mark that name no project (project_id IS NULL), instance-wide by design
 
@@ -31,12 +31,12 @@ internal/bulk/apply.go:297 photo uid is one of the batch that requireBatchInProj
 internal/bulk/apply.go:483 loadCoordinate reads only batch uids that requireBatchInProject proved in the project in the same tx
 
 # internal/comments
-internal/comments/store.go:199 authorJoin/mentionsColumn's commentProjectSQL reads the project of the row's own comment c, which parentInProjectJoin confines to the project $2
-internal/comments/store.go:209 authorJoin/mentionsColumn's commentProjectSQL reads the project of the row's own comment c, which parentInProjectJoin confines to the project $2
-internal/comments/store.go:220 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment just inserted, whose subject the insert's EXISTS proved in the project $5
-internal/comments/store.go:378 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment c, which inProjectSQL(c, $2) confines to the project
-internal/comments/store.go:475 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment just updated, which inProjectSQL(c, $3) confined to the project
-internal/comments/store.go:502 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment just deleted, which inProjectSQL(c, $2) confined to the project
+internal/comments/store.go:206 authorJoin/mentionsColumn's commentProjectSQL reads the project of the row's own comment c, which parentInProjectJoin confines to the project $2
+internal/comments/store.go:216 authorJoin/mentionsColumn's commentProjectSQL reads the project of the row's own comment c, which parentInProjectJoin confines to the project $2
+internal/comments/store.go:227 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment just inserted, whose subject the insert's EXISTS proved in the project $5
+internal/comments/store.go:385 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment c, which inProjectSQL(c, $2) confines to the project
+internal/comments/store.go:482 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment just updated, which inProjectSQL(c, $3) confined to the project
+internal/comments/store.go:509 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment just deleted, which inProjectSQL(c, $2) confined to the project
 internal/comments/store_mentions.go:34 runs in the create/update tx on the comment that statement just wrote inside the project; commentProjectSQL reads that comment's project back
 
 # internal/dupmerge

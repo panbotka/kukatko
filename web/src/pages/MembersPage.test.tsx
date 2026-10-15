@@ -20,6 +20,7 @@ vi.mock('../services/members', async (importOriginal) => {
     approveMember: vi.fn(),
     removeMember: vi.fn(),
     addMember: vi.fn(),
+    withdrawMember: vi.fn(),
   }
 })
 
@@ -33,13 +34,21 @@ vi.mock('../services/invites', async (importOriginal) => {
   }
 })
 
-const { fetchMembers, setMemberRole, approveMember, removeMember, addMember, MemberApiError } =
-  await import('../services/members')
+const {
+  fetchMembers,
+  setMemberRole,
+  approveMember,
+  removeMember,
+  addMember,
+  withdrawMember,
+  MemberApiError,
+} = await import('../services/members')
 const fetchMock = vi.mocked(fetchMembers)
 const roleMock = vi.mocked(setMemberRole)
 const approveMock = vi.mocked(approveMember)
 const removeMock = vi.mocked(removeMember)
 const addMock = vi.mocked(addMember)
+const withdrawMock = vi.mocked(withdrawMember)
 
 /** A member row, overridable. */
 function member(overrides: Partial<ProjectMemberRow> = {}): ProjectMemberRow {
@@ -51,7 +60,6 @@ function member(overrides: Partial<ProjectMemberRow> = {}): ProjectMemberRow {
     approved_at: '2026-10-01T10:00:00Z',
     last_login_at: '2026-10-12T08:30:00Z',
     has_picture: false,
-    identity_withheld: false,
     maintainer: false,
     ...overrides,
   }
@@ -170,37 +178,6 @@ describe('MembersPage', () => {
         variant: 'danger',
       })
     })
-  })
-
-  it('shows an exact-match add without its name until the account opens the project', async () => {
-    fetchMock.mockResolvedValue([
-      ME,
-      member({
-        user_uid: 'u4',
-        username: '',
-        display_name: '',
-        role: 'viewer',
-        last_login_at: null,
-        identity_withheld: true,
-      }),
-    ])
-    renderPage()
-
-    const select = await screen.findByRole('combobox', { name: 'Role uživatele Přidaný účet' })
-    expect(select).toHaveValue('viewer')
-    expect(select).toBeEnabled()
-    const row = select.closest('tr')
-    if (row === null) {
-      throw new Error('no row for the added account')
-    }
-    const added = within(row)
-    expect(added.getByText('Přidaný účet')).toBeInTheDocument()
-    expect(
-      added.getByText('Jméno se ukáže, až účet tento projekt poprvé otevře.'),
-    ).toBeInTheDocument()
-    // Neither a username nor a sign-in: not even "never", which would be a claim.
-    expect(added.getAllByText('—')).toHaveLength(2)
-    expect(added.queryByText('nikdy')).not.toBeInTheDocument()
   })
 
   it('keeps one’s own role and removal off, saying why', async () => {
@@ -346,10 +323,42 @@ describe('MembersPage', () => {
 
     expect(addMock).toHaveBeenCalledWith('petr@example.cz', 'editor')
     expect(
-      await within(dialog).findByText('Pokud takový účet existuje, byl přidán.'),
+      await within(dialog).findByText(
+        'Pokud takový účet existuje, byl přidán. V seznamu se objeví, až projekt poprvé otevře.',
+      ),
     ).toBeInTheDocument()
     expect(within(dialog).queryByText(/nenalezen|neexistuje/i)).not.toBeInTheDocument()
     // And the list is refetched, in case somebody was added.
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  // An added account is not listed until it opens the project, so the way back
+  // is as blind as the add: the same identifier, one neutral sentence.
+  it('withdraws an add by its identifier, without a role, and answers neutrally', async () => {
+    const user = userEvent.setup()
+    withdrawMock.mockResolvedValue()
+    renderPage()
+    await screen.findByText('jana')
+    fetchMock.mockClear()
+
+    await user.click(screen.getByRole('button', { name: 'Zrušit přidání' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Zrušit přidání člena' })
+    expect(within(dialog).queryByLabelText('Role')).not.toBeInTheDocument()
+    await user.type(
+      within(dialog).getByLabelText('Uživatelské jméno nebo e-mail (přesně)'),
+      'petr@example.cz',
+    )
+    await user.click(within(dialog).getByRole('button', { name: 'Zrušit přidání' }))
+
+    expect(withdrawMock).toHaveBeenCalledWith('petr@example.cz')
+    expect(addMock).not.toHaveBeenCalled()
+    expect(
+      await within(dialog).findByText(
+        'Pokud takový účet existuje a projekt ještě neotevřel, už do něj přístup nemá.',
+      ),
+    ).toBeInTheDocument()
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1)
     })

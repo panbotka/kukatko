@@ -81,6 +81,7 @@ export type IconName =
   | 'person-bounding-box'
   | 'person-check'
   | 'person-circle'
+  | 'person-dash'
   | 'person-gear'
   | 'person-hearts'
   | 'person-lines-fill'

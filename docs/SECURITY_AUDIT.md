@@ -40,7 +40,9 @@ under the registrable domain is trusted, and behaviour is unchanged pending a pr
 and fixed on **2026-10-14**, and so was **SEC-025** (the slug and username oracles of `/audit/mine`, the
 anonymous project settings and the registration refusals). **SEC-026** (the face and embedding loaders
 answered for any project and relied on their callers proving the photo first; not reachable, hardening)
-was fixed on **2026-10-14** too.
+was fixed on **2026-10-14** too. **SEC-027** (a project admin's blind member add revealed the account
+behind an address — its existence, uid, uploaded picture — and let the project's notifications reach it)
+was found and fixed on **2026-10-15**.
 Everything else below is open as written.
 
 > **Severity scale:** critical / high / medium / low / info. A weakness that is not
@@ -1073,8 +1075,9 @@ Everything else below is open as written.
   `TestMembers_addWithholdsTheIdentityUntilTheAccountEnters`). Accepted residue: a hit still adds a row,
   so an admin learns that *some* account answers to what it typed, one audited guess at a time. (c)
   `/auth/me` kept naming a project the account could no longer enter (`last_project_slug`); it now
-  answers `""` (`TestProject_meForgetsAProjectItCannotEnter`). A withheld member's uid is visible to the
-  admin, so the avatar residue above applies to it too.
+  answers `""` (`TestProject_meForgetsAProjectItCannotEnter`). The residue accepted in (b) turned out
+  to be worse than one bit and is fixed under **SEC-027**: the withheld row also carried the account's
+  uid, which fetched its picture and let the project's notifications reach it.
 
 ---
 
@@ -1121,6 +1124,72 @@ Everything else below is open as written.
   with `"assigned"`. `TestPhotoPeople_neverCrossesProjects` (`internal/facematch`).
   `TestForJobUse_matchesEveryUnscopedLoader` (`internal/photos`).
 - **Fixed:** 2026-10-14.
+
+---
+
+### SEC-027 — MEDIUM — **FIXED** — A blind member add revealed the account behind an address and let the project reach it
+
+- **Origin:** multi-tenancy review round 3 (2026-10-15, `main` 996ae051), finding F1 of the isolation
+  report, reproduced twice on staging; findings 1, 2 and the first two "nice" bullets of 14 of the fixes
+  report. Rated **medium**: it needs a project admin, but every project admin is one (projects are
+  created for other families), and it crosses the tenant boundary with an address alone.
+- **Scenario (before the fix):** B's admin exact-adds an e-mail address or username with
+  `POST /p/B/members`. The answer is the uniform 202 (SEC-025), but afterwards:
+  1. **Existence and uid oracle.** A row with the account's **real `user_uid`** (name, sign-in and picture
+     blanked, `identity_withheld: true`) appears in `GET /p/B/members` only when the account exists. The
+     route had no rate limit, so the guess could be scripted.
+  2. **Picture.** With that uid, `GET /p/B/users/{uid}/avatar` returned the account's uploaded face
+     (200 image/jpeg) although the row said `has_picture: false`.
+  3. **Notifications.** `notifystanding.MemberSQL` did not exclude withheld memberships, so the account was
+     "in standing" in B: featuring a B album wrote `album_featured` notifications with B's admin's own title
+     into an account that never opened B — with push or mail on, free text from any project admin to any
+     address they know.
+  4. **Former members re-identified.** The former-member rule (comments, mentions, task participants)
+     counted a withheld membership as membership: exact-adding a guessed address of somebody who had left
+     B brought their live (possibly renamed) name back onto old comments and tasks, confirming whose
+     address it was.
+  5. **Smaller leaks:** the review leaderboard/streaks named a blindly re-added former reviewer to every
+     member; the last-admin guard counted a withheld admin only while its hidden account was enabled, so the
+     sole admin's removal (204 vs 409) told whether that account was disabled; a uid known from elsewhere
+     answered `PATCH`/`approve`/`DELETE /members/{uid}` with 200/204 instead of 404, confirming whose
+     address the add had found.
+- **Fix:**
+  1. A withheld membership is **invisible to the project**: `project.Store.Members` leaves it out, so the
+     list after a hit is byte-identical to the list after a miss, and the uid never reaches the project —
+     nothing is keyed by a row the project cannot see. Every `/members/{user_uid}` route reads through
+     `visibleMember`, which answers a withheld membership **404 `not_member`**, byte-identical to a uid
+     that is no member.
+  2. The way back for a mistyped add is as blind as the add: **`POST /p/{project}/members/withdraw`
+     `{identifier}`** removes the account's membership only while it is withheld and always answers the
+     add's 202 (`project.Store.WithdrawByIdentifier`, a uniform `project.member.withdraw_request` project
+     entry and an actor-less `project.member.withdraw_resolve` instance entry, like the add's pair).
+  3. **Standing:** `MemberSQL` (and with it `InStanding`/`Checker`, every producer and the push/mail
+     re-check at send) requires `NOT identity_withheld`. Nothing is recorded or delivered to such an
+     account.
+  4. **Former-member, leaderboard, audit filter:** the comment author and mention joins, the four task
+     participant/asker tests, the leaderboard and streak joins and the project audit's `?user=` resolver
+     (`audit.ProjectPerson`) treat a withheld membership as none. `audit.ActorNames` reads no membership at
+     all (it names whoever acted in the project, former members included), so an add cannot change it.
+  5. **Last admin:** `workingAdminsSQL` does not count a withheld admin, enabled or not.
+  6. **Throttle:** both blind routes sit behind the per-caller `ratelimit.member_add` rule (default
+     0.05/s, burst 10).
+- **Out of scope here:** whether `/users/{uid}/avatar` should serve an uploaded picture to anybody who
+  knows the uid (the SEC-025 residue, a separate task). After this fix the blind add no longer hands the
+  project a uid to ask with.
+- **Regression tests:** `TestMembers_blindAddOfAForeignAccountLeavesNoTrace` (`internal/memberapi`, two
+  projects: B's admin adds A's member's address and a missing one; the members list and the name
+  directory stay byte-identical, the per-member routes answer the account's uid like a missing uid, the
+  account is not in standing in B, B's sole admin still cannot leave, and the withdrawal answers alike and
+  removes the membership), `TestMemberRoutes_withheldIsNoMember` and
+  `TestRegisterRoutes_throttlesTheBlindRoutes` (`internal/memberapi` unit),
+  `TestAddByIdentifier_withholdsUntilRevealed`, `TestWithdrawByIdentifier` and
+  `TestLastAdminGuard_ignoresWithheldAdmins` (`internal/project`), `TestInStanding_rule` and
+  `TestMemberSQL_namesItsArguments` (`internal/notifystanding`), `TestFeature_onlyMembersInStanding`
+  (`internal/albumfeaturedjob`), `TestRead_formerMembers` (`internal/comments`),
+  `TestParticipants_formerMembers` (`internal/phototask`) and
+  `TestLeaderboard_countsOnlyTheProjectsApprovedMembers` (`internal/review`). Each fails on the code before
+  the fix (the withdraw and throttle tests do not even compile against it).
+- **Fixed:** 2026-10-15.
 
 ---
 

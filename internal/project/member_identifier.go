@@ -69,8 +69,9 @@ const emailMatchSQL = `SELECT uid FROM users WHERE lower(email) = lower($1) ORDE
 // ActionProjectMemberAddResolve with the real outcome, without an actor so it
 // reaches neither the project's listing nor the admin's own activity. The
 // project admin who asked therefore learns nothing about which accounts exist
-// from the answer or from the trail; what remains is the withheld member row a
-// hit adds to the members list (see the package's member docs).
+// from the answer or from the trail, nor from the members list, which leaves a
+// withheld membership out (Members). A mistaken add is undone the same blind
+// way, by WithdrawByIdentifier.
 //
 // The outcome is returned for the caller's tests and logs, never for the
 // person who asked. It returns ErrInvalidRole for a bad role,

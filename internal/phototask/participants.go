@@ -235,18 +235,20 @@ ORDER BY p.joined_at, p.user_uid`
 // participant) or au (whoever asked) is no member of the task's project any
 // more and not the instance's maintainer (who belongs everywhere;
 // 'maintainer' is auth.RoleMaintainer). A task's people keep their rows after
-// they leave, and the project must not keep reading their live names. Each is
-// NULL for a missing (LEFT JOINed) account. The Param pair reads the project
+// they leave, and the project must not keep reading their live names. A
+// membership whose identity is withheld counts as none: a blind re-add of a
+// former member's guessed address must not bring the name back. Each is NULL
+// for a missing (LEFT JOINed) account. The Param pair reads the project
 // from $2 (participantsSQL), the Task pair from the task row t (taskJoins).
 const (
 	participantFormerParam = `(pu.role <> 'maintainer' AND NOT EXISTS (SELECT 1 FROM project_members fm
-	WHERE fm.user_uid = pu.uid AND fm.project_uid = $2))`
+	WHERE fm.user_uid = pu.uid AND fm.project_uid = $2 AND NOT fm.identity_withheld))`
 	askerFormerParam = `(au.role <> 'maintainer' AND NOT EXISTS (SELECT 1 FROM project_members fm
-	WHERE fm.user_uid = au.uid AND fm.project_uid = $2))`
+	WHERE fm.user_uid = au.uid AND fm.project_uid = $2 AND NOT fm.identity_withheld))`
 	participantFormerTask = `(pu.role <> 'maintainer' AND NOT EXISTS (SELECT 1 FROM project_members fm
-	WHERE fm.user_uid = pu.uid AND fm.project_uid = t.project_id))`
+	WHERE fm.user_uid = pu.uid AND fm.project_uid = t.project_id AND NOT fm.identity_withheld))`
 	askerFormerTask = `(au.role <> 'maintainer' AND NOT EXISTS (SELECT 1 FROM project_members fm
-	WHERE fm.user_uid = au.uid AND fm.project_uid = t.project_id))`
+	WHERE fm.user_uid = au.uid AND fm.project_uid = t.project_id AND NOT fm.identity_withheld))`
 )
 
 // Participants returns the people on the project's task, oldest membership

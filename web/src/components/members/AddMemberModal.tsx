@@ -6,12 +6,20 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import type { ProjectRole } from '../../services/auth'
-import { addMember, MEMBER_ROLES } from '../../services/members'
+import { addMember, MEMBER_ROLES, withdrawMember } from '../../services/members'
 import Modal from '../Modal'
+
+/**
+ * What the dialog does with the identifier: add the account, or withdraw such
+ * an add before the account opens the project.
+ */
+export type MemberIdentifierMode = 'add' | 'withdraw'
 
 /** Props for {@link AddMemberModal}. */
 export interface AddMemberModalProps {
   show: boolean
+  /** Add (the default) or withdraw an add; withdraw asks for no role. */
+  mode?: MemberIdentifierMode
   /** Closes the dialog. */
   onClose: () => void
   /** Called after every answered request, so the page can refetch its list. */
@@ -31,8 +39,13 @@ type Phase = 'form' | 'done'
  * admin must not be able to probe which accounts exist on the instance; the
  * audit trail records what really happened. Only a request that never got an
  * answer (no network) is reported as a failure, since nothing was asked.
+ *
+ * An added account is not listed until it opens the project, so a mistyped
+ * address cannot be removed from the list; `mode="withdraw"` („Zrušit
+ * přidání") is the way back — the same blind form without a role, answered by
+ * one neutral sentence too.
  */
-export function AddMemberModal({ show, onClose, onSubmitted }: AddMemberModalProps) {
+export function AddMemberModal({ show, mode = 'add', onClose, onSubmitted }: AddMemberModalProps) {
   const { t } = useTranslation()
   const titleId = useId()
   const [identifier, setIdentifier] = useState('')
@@ -64,7 +77,11 @@ export function AddMemberModal({ show, onClose, onSubmitted }: AddMemberModalPro
     setBusy(true)
     setFailed(false)
     try {
-      await addMember(value, role)
+      if (mode === 'withdraw') {
+        await withdrawMember(value)
+      } else {
+        await addMember(value, role)
+      }
       setPhase('done')
       onSubmitted()
     } catch {
@@ -83,13 +100,15 @@ export function AddMemberModal({ show, onClose, onSubmitted }: AddMemberModalPro
       aria-labelledby={titleId}
     >
       <Modal.Header closeButton={!busy}>
-        <Modal.Title id={titleId}>{t('members.add.title')}</Modal.Title>
+        <Modal.Title id={titleId}>
+          {mode === 'withdraw' ? t('members.withdraw.title') : t('members.add.title')}
+        </Modal.Title>
       </Modal.Header>
       {phase === 'done' ? (
         <>
           <Modal.Body>
             <Alert variant="info" className="mb-0" role="status">
-              {t('members.add.done')}
+              {mode === 'withdraw' ? t('members.withdraw.done') : t('members.add.done')}
             </Alert>
           </Modal.Body>
           <Modal.Footer>
@@ -106,6 +125,7 @@ export function AddMemberModal({ show, onClose, onSubmitted }: AddMemberModalPro
                 {t('members.add.failed')}
               </Alert>
             )}
+            {mode === 'withdraw' && <p>{t('members.withdraw.intro')}</p>}
             <Form.Group className="mb-3" controlId="member-identifier">
               <Form.Label>{t('members.add.identifierLabel')}</Form.Label>
               <Form.Control
@@ -129,22 +149,24 @@ export function AddMemberModal({ show, onClose, onSubmitted }: AddMemberModalPro
                 <Form.Text>{t('members.add.identifierHelp')}</Form.Text>
               )}
             </Form.Group>
-            <Form.Group controlId="member-role">
-              <Form.Label>{t('members.add.roleLabel')}</Form.Label>
-              <Form.Select
-                value={role}
-                disabled={busy}
-                onChange={(event) => {
-                  setRole(event.currentTarget.value as ProjectRole)
-                }}
-              >
-                {MEMBER_ROLES.map((value) => (
-                  <option key={value} value={value}>
-                    {t(`roles.${value}`)}
-                  </option>
-                ))}
-              </Form.Select>
-            </Form.Group>
+            {mode === 'add' && (
+              <Form.Group controlId="member-role">
+                <Form.Label>{t('members.add.roleLabel')}</Form.Label>
+                <Form.Select
+                  value={role}
+                  disabled={busy}
+                  onChange={(event) => {
+                    setRole(event.currentTarget.value as ProjectRole)
+                  }}
+                >
+                  {MEMBER_ROLES.map((value) => (
+                    <option key={value} value={value}>
+                      {t(`roles.${value}`)}
+                    </option>
+                  ))}
+                </Form.Select>
+              </Form.Group>
+            )}
           </Modal.Body>
           <Modal.Footer>
             <Button variant="outline-secondary" onClick={onClose} disabled={busy}>
@@ -152,7 +174,7 @@ export function AddMemberModal({ show, onClose, onSubmitted }: AddMemberModalPro
             </Button>
             <Button type="submit" variant="primary" disabled={busy}>
               {busy && <Spinner as="span" animation="border" size="sm" className="me-2" />}
-              {t('members.add.submit')}
+              {mode === 'withdraw' ? t('members.withdraw.submit') : t('members.add.submit')}
             </Button>
           </Modal.Footer>
         </Form>

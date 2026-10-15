@@ -372,7 +372,8 @@ func TestCreate_askedUnknownWritesNothing(t *testing.T) {
 
 // TestParticipants_formerMembers verifies a participant, and whoever asked
 // them, read as former members once they have left the task's project — no
-// name, the flag set — in the participants listing and in the task alike.
+// name, the flag set — in the participants listing and in the task alike, and
+// still do after a blind re-add (a membership whose identity is withheld).
 func TestParticipants_formerMembers(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
@@ -386,25 +387,43 @@ func TestParticipants_formerMembers(t *testing.T) {
 		t.Fatalf("emptying the project: %v", err)
 	}
 
-	people, err := f.tasks.Participants(ctx, project.BootstrapUID, task.UID)
-	if err != nil {
-		t.Fatalf("Participants: %v", err)
+	assertFormerParticipants(t, f, task.UID, asked, "after leaving")
+
+	if _, err := f.db.Pool().Exec(ctx, `INSERT INTO project_members
+		(project_uid, user_uid, role, approved_at, identity_withheld)
+		SELECT $1, uid, 'viewer', now(), true FROM users WHERE uid IN ($2, $3)`,
+		project.BootstrapUID, asked, actor); err != nil {
+		t.Fatalf("re-adding blindly: %v", err)
 	}
-	one, err := f.tasks.Get(ctx, project.BootstrapUID, task.UID, actor)
+	assertFormerParticipants(t, f, task.UID, asked, "after a blind re-add")
+}
+
+// assertFormerParticipants fails t unless the task's two people — its author
+// and asked, whom the author asked — read as nameless former members in the
+// participants listing and in the task alike.
+func assertFormerParticipants(t *testing.T, f *fixture, taskUID, asked, when string) {
+	t.Helper()
+	ctx := context.Background()
+	people, err := f.tasks.Participants(ctx, project.BootstrapUID, taskUID)
 	if err != nil {
-		t.Fatalf("Get: %v", err)
+		t.Fatalf("Participants %s: %v", when, err)
+	}
+	one, err := f.tasks.Get(ctx, project.BootstrapUID, taskUID, actor)
+	if err != nil {
+		t.Fatalf("Get %s: %v", when, err)
 	}
 	for source, list := range map[string][]phototask.Participant{"Participants": people, "Get": one.Participants} {
 		if len(list) != 2 {
-			t.Fatalf("%s = %v, want the author and the asked person", source, names(list))
+			t.Fatalf("%s %s = %v, want the author and the asked person", when, source, names(list))
 		}
 		for _, p := range list {
 			if !p.Former || p.Name != "" {
-				t.Errorf("%s: %s reads %q former=%v, want a nameless former member", source, p.UserUID, p.Name, p.Former)
+				t.Errorf("%s %s: %s reads %q former=%v, want a nameless former member", when, source, p.UserUID,
+					p.Name, p.Former)
 			}
 			if p.UserUID == asked && (!p.AddedByFormer || p.AddedByName != "" || p.AddedByUID != actor) {
-				t.Errorf("%s: asker = %q %q former=%v, want a nameless former member", source, p.AddedByUID,
-					p.AddedByName, p.AddedByFormer)
+				t.Errorf("%s %s: asker = %q %q former=%v, want a nameless former member", when, source,
+					p.AddedByUID, p.AddedByName, p.AddedByFormer)
 			}
 		}
 	}

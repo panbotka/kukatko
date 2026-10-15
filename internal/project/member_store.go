@@ -48,18 +48,20 @@ func scanMember(row pgx.Row) (*Member, error) {
 
 // membersSQL lists one project's members by display name; an account without
 // one sorts by its username, and the uid keeps equal names in a stable order.
-// The memberships whose identity is withheld come last, by when they were made:
-// sorting them by the name nobody may see would place them by it.
+// A membership whose identity is withheld is not listed at all: a row there —
+// even one carrying nothing but its role and a uid — would appear only when the
+// typed address belonged to an account, which is exactly the existence oracle
+// the blind add must not be.
 const membersSQL = `SELECT ` + memberColumns + memberFrom + `
-WHERE m.project_uid = $1
-ORDER BY m.identity_withheld,
-	CASE WHEN m.identity_withheld THEN '' ELSE COALESCE(NULLIF(u.display_name, ''), u.username) END,
-	CASE WHEN m.identity_withheld THEN '' ELSE u.username END,
-	m.created_at, m.user_uid`
+WHERE m.project_uid = $1 AND NOT m.identity_withheld
+ORDER BY COALESCE(NULLIF(u.display_name, ''), u.username), u.username, m.user_uid`
 
-// Members returns every member of the project projectUID ordered by display
-// name (the username standing in for an empty one). It returns ErrNotFound for
-// an unknown project; a project without members yields an empty slice.
+// Members returns the members of the project projectUID the project may see,
+// ordered by display name (the username standing in for an empty one): every
+// membership but those whose identity is withheld (Member.IdentityWithheld),
+// which the project learns of only once the account enters it. It returns
+// ErrNotFound for an unknown project; a project without members yields an
+// empty slice.
 func (s *Store) Members(ctx context.Context, projectUID string) ([]Member, error) {
 	if _, err := s.Get(ctx, projectUID); err != nil {
 		return nil, err
@@ -450,11 +452,15 @@ func lockMember(ctx context.Context, tx pgx.Tx, projectUID, userUID string) (*Me
 // workingAdminsSQL counts the working admins of the project $1 other than the
 // account $2 — approved memberships whose account is not disabled, the only
 // admins who can actually govern the project — and reports whether $2 is one
-// of them. A pending or disabled "admin" row holds the role on paper only.
+// of them. A pending or disabled "admin" row holds the role on paper only, and
+// so does one whose identity is withheld: the account has not come in yet,
+// and counting it would make the answer to a sole admin's removal depend on
+// whether that hidden account is disabled — an oracle on it.
 const workingAdminsSQL = `SELECT count(*) FILTER (WHERE m.user_uid <> $2),
 	COALESCE(bool_or(m.user_uid = $2), false)
 FROM project_members m JOIN users u ON u.uid = m.user_uid
-WHERE m.project_uid = $1 AND m.role = $3 AND m.approved_at IS NOT NULL AND NOT u.disabled`
+WHERE m.project_uid = $1 AND m.role = $3 AND m.approved_at IS NOT NULL
+	AND NOT m.identity_withheld AND NOT u.disabled`
 
 // ensureAnotherAdmin returns ErrLastAdmin when the member userUID is the last
 // working admin of the project (see workingAdminsSQL), so the caller may demote

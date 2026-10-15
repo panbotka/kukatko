@@ -7,6 +7,7 @@ import {
   MemberApiError,
   removeMember,
   setMemberRole,
+  withdrawMember,
 } from './members'
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -74,6 +75,20 @@ describe('members service', () => {
       expect(url).toBe('/api/v1/p/v/members')
       expect(init.method).toBe('POST')
       expect(init.body).toBe(JSON.stringify({ identifier: 'jana@example.cz', role: 'viewer' }))
+    },
+  )
+
+  it.each([202, 404, 409, 422, 500])(
+    'resolves a withdrawal the same way whatever the backend answers (%i)',
+    async (status) => {
+      const fetchMock = answer(jsonResponse({ status: 'accepted', error: 'whatever' }, status))
+
+      await expect(withdrawMember('jana@example.cz')).resolves.toBeUndefined()
+
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+      expect(url).toBe('/api/v1/p/v/members/withdraw')
+      expect(init.method).toBe('POST')
+      expect(init.body).toBe(JSON.stringify({ identifier: 'jana@example.cz' }))
     },
   )
 

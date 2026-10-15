@@ -71,6 +71,8 @@ func TestClient_memberRoutes(t *testing.T) {
 			"GET", "/api/v1/p/fam/members", ""},
 		{func() error { _, err := client.AddMember(ctx, "Jan@Example.test", "editor"); return err },
 			"POST", "/api/v1/p/fam/members", `{"identifier":"Jan@Example.test","role":"editor"}`},
+		{func() error { _, err := client.WithdrawMember(ctx, "Jan@Example.test"); return err },
+			"POST", "/api/v1/p/fam/members/withdraw", `{"identifier":"Jan@Example.test"}`},
 		{func() error { _, err := client.SetMemberRole(ctx, "us2", "curator"); return err },
 			"PATCH", "/api/v1/p/fam/members/us2", `{"role":"curator"}`},
 		{func() error { _, err := client.ApproveMember(ctx, "us2"); return err },
@@ -102,6 +104,9 @@ func TestClient_memberRoutesRefuseBlankInput(t *testing.T) {
 	}
 	if _, err := client.AddMember(ctx, "  ", "viewer"); !errors.Is(err, ErrNoIdentifier) {
 		t.Errorf("AddMember without an identifier = %v, want ErrNoIdentifier", err)
+	}
+	if _, err := client.WithdrawMember(ctx, " "); !errors.Is(err, ErrNoIdentifier) {
+		t.Errorf("WithdrawMember without an identifier = %v, want ErrNoIdentifier", err)
 	}
 	if _, err := client.SetMemberRole(ctx, "", "viewer"); !errors.Is(err, ErrEmptyUID) {
 		t.Errorf("SetMemberRole without a member = %v, want ErrEmptyUID", err)

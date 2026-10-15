@@ -3099,11 +3099,9 @@ here.
   membership (`approved_at === null`) shows the `warning` badge „Čeká na schválení" and a **Schválit** button
   (`approveMember`, one press, no dialog; the backend mails the person the project's link) — the **last
   sign-in** („nikdy" when there is none) and **Odebrat** behind a `ConfirmModal` („Uživatel ztratí přístup k
-  projektu; jeho účet zůstane."). **An exact-match add the account has not opened yet**
-  (`identity_withheld`; the server sends no username, display name, last sign-in or picture) is named
-  „Přidaný účet" (italic, with the hint „Jméno se ukáže, až účet tento projekt poprvé otevře."), its username
-  and last-sign-in cells read „—" (not „nikdy", which would be a claim), and it sorts last; role change and
-  removal work as on any row, and the toasts name it „Přidaný účet" too (`nameOf(member, t)`). **Your own row** keeps the role select natively `disabled` with the reason
+  projektu; jeho účet zůstane."). **An exact-match add the account has not opened yet is not in the list
+  at all** — the server leaves it out, since even a nameless row would appear only on a hit and carry the
+  account's uid; it shows up as an ordinary row once the account opens the project. **Your own row** keeps the role select natively `disabled` with the reason
   („Vlastní roli změnit nemůžete…") as a `title` on a wrapper (a disabled control gets no pointer events) and as
   the select's `aria-describedby`, and its Odebrat is a `ReasonedButton` off with its own reason — another admin
   has to do either. **A system administrator's row** (`maintainer: true`) shows „Správce systému"
@@ -3115,13 +3113,17 @@ here.
   a toast plus a refetch (somebody else removed the member meanwhile), anything else → the action's own failure.
   **„Přidat člena"** opens **`AddMemberModal`** (`components/members/`): one text input „Uživatelské jméno nebo
   e-mail (přesně)" (no autocomplete, nothing suggested), a role select (default viewer), submit → `addMember`
-  → **always** the neutral „Pokud takový účet existuje, byl přidán." and a refetch of the list. The neutrality is
+  → **always** the neutral „Pokud takový účet existuje, byl přidán. V seznamu se objeví, až projekt poprvé
+  otevře." and a refetch of the list. The neutrality is
   enforced in the service: `addMember` resolves for **any** HTTP answer and returns nothing, so no caller can tell
   a hit from a miss; only a request that never got an answer (no network) is reported as a failure. An empty
-  identifier is refused in the dialog. The navigation entry is „Členové" (`MEMBERS_PATH`, admin-gated in
+  identifier is refused in the dialog. **„Zrušit přidání"** (outline, `person-dash`, beside „Přidat člena")
+  opens the same dialog with `mode="withdraw"` — title „Zrušit přidání člena", an explanatory paragraph, no
+  role select — and submits `withdrawMember` → always „Pokud takový účet existuje a projekt ještě neotevřel, už
+  do něj přístup nemá." It is the only way to take back a mistyped add, which the list cannot show. The navigation entry is „Členové" (`MEMBERS_PATH`, admin-gated in
   `ADMIN_ITEMS`); like the old one it carries no count badge. States: spinner, `ErrorState` with retry,
-  `EmptyState`. Tests: `MembersPage.test.tsx`, `services/members.test.ts` (the add resolves alike for 202, 404,
-  409, 422 and 500).
+  `EmptyState`. Tests: `MembersPage.test.tsx`, `services/members.test.ts` (the add and the withdrawal resolve alike for
+  202, 404, 409, 422 and 500).
   Below the list sits **`InvitesSection`** (`components/members/`, heading „Pozvánky") over
   **`services/invites.ts`** (`fetchInvites`/`createInvite`/`revokeInvite` under `apiPath('/invites')`;
   errors are `InviteApiError` with the backend's `code`). A create form: the **role** (`MEMBER_ROLES`, default
@@ -7869,11 +7871,12 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   directory); the account actions wait for a home on the system side,
   `members.ts` = the project admin's client of `/api/v1/p/<slug>/members` (`apiPath`): `fetchMembers(signal)` →
   `ProjectMemberRow[]` (`user_uid`, `username`, `display_name`, `role`, `approved_at`, `last_login_at`,
-  `has_picture`, `identity_withheld`), `setMemberRole(uid,role)` (`PATCH`), `approveMember(uid)` (`POST …/approve`), `removeMember(uid)`
+  `has_picture`, `maintainer`), `setMemberRole(uid,role)` (`PATCH`), `approveMember(uid)` (`POST …/approve`), `removeMember(uid)`
   (`DELETE`), each throwing **`MemberApiError`** with the backend's `code` (`last_admin`, `self`, `not_member`,
   `invalid_role`), and **`addMember(identifier,role)`** (`POST`), which **resolves for any HTTP answer and returns
   nothing** — the backend's 202 is identical for a hit and a miss, and the client keeps it that way; only a
-  request with no answer (network) rejects. `MEMBER_ROLES` = viewer/curator/editor/admin, lowest first,
+  request with no answer (network) rejects. **`withdrawMember(identifier)`** (`POST /members/withdraw`) undoes
+  such an add just as blindly. `MEMBER_ROLES` = viewer/curator/editor/admin, lowest first,
   `audit.ts` = the audit client: `fetchAuditLog(params,signal)` over the current project's
   `GET /api/v1/p/<slug>/audit` (`apiPath`) →
   `AuditListResponse{entries,total,limit,offset,next_offset}`, `buildAuditQuery` serializes the filters

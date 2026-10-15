@@ -257,8 +257,9 @@ func TestLeaderboard_reportsTheCurrentDayStreak(t *testing.T) {
 
 // TestLeaderboard_countsOnlyTheProjectsApprovedMembers proves the store's
 // scoping: a decision recorded in another project counts neither on the board
-// nor in the streak, a pending member and an instance maintainer who is no
-// member of the project are left off the board although they answered there,
+// nor in the streak, a pending member, an instance maintainer who is no member
+// of the project and a former reviewer re-added blindly (a membership whose
+// identity is withheld) are left off the board although they answered there,
 // and the same account is counted per project with what it decided in each.
 func TestLeaderboard_countsOnlyTheProjectsApprovedMembers(t *testing.T) {
 	db := dbtest.New(t)
@@ -277,11 +278,17 @@ func TestLeaderboard_countsOnlyTheProjectsApprovedMembers(t *testing.T) {
 	if _, err := pool.Exec(context.Background(),
 		`INSERT INTO users (uid, username, display_name, email, password_hash, role)
 		 VALUES ('maxim', 'maxim', 'Maxim', 'maxim@example.test', 'x', 'maintainer'),
-		        ('petra', 'petra', 'Petra', 'petra@example.test', 'x', 'user')`); err != nil {
-		t.Fatalf("seeding the maintainer and the pending member: %v", err)
+		        ('petra', 'petra', 'Petra', 'petra@example.test', 'x', 'user'),
+		        ('wanda', 'wanda', 'Wanda', 'wanda@example.test', 'x', 'user')`); err != nil {
+		t.Fatalf("seeding the maintainer, the pending and the withheld member: %v", err)
 	}
 	seedMembership(t, pool, project.BootstrapUID, "petra", false)
-	alice, olga, maxim, petra := new("alice"), new("olga"), new("maxim"), new("petra")
+	if _, err := pool.Exec(context.Background(), `INSERT INTO project_members
+		(project_uid, user_uid, role, approved_at, identity_withheld) VALUES ($1, 'wanda', 'viewer', now(), true)`,
+		project.BootstrapUID); err != nil {
+		t.Fatalf("seeding the withheld membership: %v", err)
+	}
+	alice, olga, maxim, petra, wanda := new("alice"), new("olga"), new("maxim"), new("petra"), new("wanda")
 
 	seedAudit(t, pool, now, alice, "face.assign", true, 0)
 	seedAuditIn(t, pool, other, now, alice, "face.assign", true, 0)
@@ -289,6 +296,7 @@ func TestLeaderboard_countsOnlyTheProjectsApprovedMembers(t *testing.T) {
 	seedAuditIn(t, pool, other, now, olga, "face.assign", true, 0) // olga is no member of other
 	seedAudit(t, pool, now, maxim, "face.assign", true, 0)         // a maintainer, no member
 	seedAudit(t, pool, now, petra, "face.assign", true, 0)         // pending member
+	seedAudit(t, pool, now, wanda, "face.assign", true, 0)         // a former reviewer, re-added blindly
 
 	store := review.NewLeaderboardStore(pool)
 	home, err := store.Leaderboard(context.Background(), project.BootstrapUID, review.WindowAllTime)

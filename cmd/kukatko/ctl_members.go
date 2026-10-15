@@ -22,7 +22,7 @@ func newCtlMembersCmd(opts *ctlOptions) *cobra.Command {
 		Use:   "members",
 		Short: "Manage the members of the project (project admin)",
 	}
-	cmd.AddCommand(newCtlMembersListCmd(opts), newCtlMembersAddCmd(opts),
+	cmd.AddCommand(newCtlMembersListCmd(opts), newCtlMembersAddCmd(opts), newCtlMembersWithdrawCmd(opts),
 		newCtlMembersRoleCmd(opts), newCtlMembersApproveCmd(opts), newCtlMembersRemoveCmd(opts))
 	return cmd
 }
@@ -56,7 +56,9 @@ func newCtlMembersAddCmd(opts *ctlOptions) *cobra.Command {
 		Long: "Add an existing account to the project, approved at once. The account is\n" +
 			"named exactly — its username, or its e-mail address (case-insensitive); nothing\n" +
 			"is matched partially. The server answers the same whether the account was\n" +
-			"added, already was a member or does not exist, so check `members list`.",
+			"added, already was a member or does not exist. An added account is not\n" +
+			"listed by `members list` until it opens the project itself; `members\n" +
+			"withdraw` undoes the add until then.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, out, err := opts.resolve()
@@ -77,6 +79,35 @@ func newCtlMembersAddCmd(opts *ctlOptions) *cobra.Command {
 	cmd.Flags().StringVar(&role, "role", "", "the member's role: "+memberRoleHelp)
 	_ = cmd.MarkFlagRequired("role") // the flag exists; the error only names a missing one
 	return cmd
+}
+
+// newCtlMembersWithdrawCmd builds "ctl members withdraw".
+func newCtlMembersWithdrawCmd(opts *ctlOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "withdraw <username-or-email>",
+		Short: "Undo an add by exact username or e-mail before the account opens the project",
+		Long: "Undo `members add`: remove the membership of the account named exactly as\n" +
+			"the add named it, while that account has not opened the project yet. A member\n" +
+			"the list already shows is never removed here — use `members remove`. The\n" +
+			"server answers the same whatever it found.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, out, err := opts.resolve()
+			if err != nil {
+				return err
+			}
+			raw, err := client.WithdrawMember(cmd.Context(), args[0])
+			if err != nil {
+				return fmt.Errorf("withdrawing %s from %s: %w", args[0], client.Project(), err)
+			}
+			if out.Format == ctl.FormatJSON {
+				return writeRawJSON(cmd.OutOrStdout(), raw)
+			}
+			return renderAck(cmd.OutOrStdout(), out, fmt.Sprintf(
+				"accepted: if %s names an account that has not opened %s yet, it is no member any more",
+				args[0], client.Project()))
+		},
+	}
 }
 
 // newCtlMembersRoleCmd builds "ctl members role".
