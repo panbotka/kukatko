@@ -4771,7 +4771,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   purpose, see `internal/project` `AddByIdentifier`); `FromRequest` reads the
   request's project (`obs.ProjectUID`, stamped by `auth` when it admits the caller) into
   `Meta.ProjectUID`, and `Meta.Entry` files only a project-scoped action under it — an instance action is
-  never attributed to whatever project its request resolved;
+  never attributed to whatever project its request resolved; `ProjectScopedActions()` lists them
+  (byte-ordered, fresh slice) — migration 0120 carries that list literally to file every pre-tenancy entry
+  of those actions (no project, older than the bootstrap project's row) under `v`, so its trail,
+  leaderboard, streaks and person filter keep their history while instance actions stay instance-only;
+  `internal/database`'s `TestAuditProjectBackfill_listIsProjectScoped` keeps the migration's and its down
+  script's list equal to it (a project-scoped action added later goes into that test's
+  `actionsAddedAfter0120`, never into the applied migration);
   **`internal/audit/audittest`** (test helper): `Guard(t, db)` marks the end of the trail and, at
   cleanup, fails the test for every entry written since that is `ProjectScoped` but names no project
   (`Unscoped(ctx, pool, mark)` is the query); the API packages' integration tests call it right after

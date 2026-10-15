@@ -18,9 +18,9 @@ for f in $(seq -f '%04g' "$N" -1 100); do
 done
 ```
 
-Going back from the newest schema to 0099 runs the whole list: `0119`, `0118`, `0117`, `0116`, `0115`,
-`0114`, `0113`, `0112`, `0111`, `0110`, `0109`, `0108`, `0107`, `0106`, `0105`, `0104`, `0103`, `0102`,
-`0101`, `0100`. To go back to an intermediate release instead, replace the loop's lower bound `100` by that release's
+Going back from the newest schema to 0099 runs the whole list: `0120`, `0119`, `0118`, `0117`, `0116`,
+`0115`, `0114`, `0113`, `0112`, `0111`, `0110`, `0109`, `0108`, `0107`, `0106`, `0105`, `0104`, `0103`,
+`0102`, `0101`, `0100`. To go back to an intermediate release instead, replace the loop's lower bound `100` by that release's
 newest migration + 1.
 
 The down script of a file that was never applied fails (e.g. `0115_down` on a 0114 database: `relation
@@ -84,6 +84,9 @@ release then accepts. See [`docs/MIGRATION_SAFETY.md`](../MIGRATION_SAFETY.md).
   them first if they are to come back.
 - **`0119_down.sql`** drops `notifications.params` (the facts a notification's text was rendered from). Safe at
   any time: an older release shows every notification's stored text, as it always did.
+- **`0120_down.sql`** takes the pre-tenancy audit entries of project-scoped actions back out of the bootstrap
+  project (same predicate as 0120: older than its `projects` row, filed under it). Safe at any time: an older
+  release reads them as it always did — missing from `v`'s own trail, leaderboard and streaks.
 
 ## Schema changes since 0099 — the `inventory-diff` expect list
 
@@ -96,7 +99,7 @@ until the new file is classified here (a table, a column, nothing), the marker i
 test `TestReleaseExpectList_provenOnTheRealPath` — which replays 0099 → newest on a seeded schema and judges
 it with exactly this block — passes again.
 
-<!-- release-expect: 0099..0119 -->
+<!-- release-expect: 0099..0120 -->
 ```sh
 kukatko maintenance inventory-diff <inventory A> <inventory B> \
   --expect table-added:projects --expect table-added:project_members \
@@ -130,6 +133,7 @@ What each entry is:
 | 0116, 0117 | nothing from 0099: each adds a column to a table this path creates |
 | 0118 | `column-added:instance_settings.footer_text` (its backfill writes the one `v` row, which no digest covers) |
 | 0119 | `column-added:notifications.params` (nullable, no backfill: older notifications keep only their stored text) |
+| 0120 | nothing (a backfill of `audit_log.project_id`, a column this path adds; no digest covers `audit_log`) |
 | all | `count:schema_migrations` |
 
 No content digest, `photos.tsv` row or other row count may change. **Never allow anything else from this

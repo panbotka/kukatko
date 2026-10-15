@@ -21,8 +21,8 @@
 internal/albumfeaturedjob/service.go:145 worker-only: the album_featured_notify job learns its project from the album uid of its payload
 
 # internal/audit
-internal/audit/audit.go:988 List backs both audit listings: the maintainer's instance-wide /audit (the legitimate cross-project read) and the project admin's /p/{project}/audit, whose handler always sets Filter.ProjectUID
-internal/audit/audit.go:1040 Count backs both audit listings: the maintainer's instance-wide /audit (the legitimate cross-project read) and the project admin's /p/{project}/audit, whose handler always sets Filter.ProjectUID
+internal/audit/audit.go:1004 List backs both audit listings: the maintainer's instance-wide /audit (the legitimate cross-project read) and the project admin's /p/{project}/audit, whose handler always sets Filter.ProjectUID
+internal/audit/audit.go:1056 Count backs both audit listings: the maintainer's instance-wide /audit (the legitimate cross-project read) and the project admin's /p/{project}/audit, whose handler always sets Filter.ProjectUID
 internal/audit/audittest/audittest.go:42 test support only (Guard): marks the newest audit id instance-wide so it can find unscoped entries written after it
 internal/audit/audittest/audittest.go:68 test support only (Guard): reads the entries written since its mark that name no project (project_id IS NULL), instance-wide by design
 

@@ -54,6 +54,7 @@ query). Locks are held for the file's whole wall time; only table locks of `SHAR
 | `0114_project_id_drop_defaults` | 2–10 ms | `ACCESS EXCLUSIVE` on the 17 root tables that had a default (catalogue only, no rewrite) |
 | `0115_storage_rekey_derived_failures` | 2–10 ms | `SHARE ROW EXCLUSIVE` on `photos`, `projects` (foreign keys) |
 | `0116`–`0119` | ≤ 1 ms each | a nullable column each |
+| `0120_audit_log_project_backfill` | not part of this rehearsal | `ROW EXCLUSIVE` on `audit_log` (an `UPDATE` of the pre-tenancy library entries, no DDL: reads go on), `ACCESS SHARE` on `projects` |
 | **Total** (`kukatko migrate`, process wall) | **~0.65 s** | |
 
 **No file is anywhere near 30 s, so none is split.** A server started on the copy answered `/healthz` 0.63 s

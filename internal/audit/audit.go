@@ -634,6 +634,22 @@ func ProjectScoped(action string) bool {
 	return KnownAction(action)
 }
 
+// ProjectScopedActions returns, in a fresh byte-ordered slice, every known
+// action for which ProjectScoped is true. Migration 0120 files the pre-tenancy
+// entries of exactly these actions under the bootstrap project; a SQL file
+// cannot call ProjectScoped, so it carries the list literally and this is what
+// its guard test compares it with.
+func ProjectScopedActions() []string {
+	actions := make([]string, 0, len(knownActions))
+	for action := range knownActions {
+		if ProjectScoped(action) {
+			actions = append(actions, action)
+		}
+	}
+	slices.Sort(actions)
+	return actions
+}
+
 // KnownAction reports whether action is one of the trail's own action labels. An
 // unrecognised value is always a caller's mistake — the set is closed and only
 // this package writes into the action column — so a reader may refuse it rather

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -231,6 +232,30 @@ func TestProjectScoped(t *testing.T) {
 	}
 	if ProjectScoped("nope") {
 		t.Error("ProjectScoped of an unknown label = true")
+	}
+}
+
+// TestProjectScopedActions verifies the listed form of ProjectScoped: byte
+// ordered, every known action that is not an instance action, and a fresh
+// slice on every call.
+func TestProjectScopedActions(t *testing.T) {
+	t.Parallel()
+
+	got := ProjectScopedActions()
+	if !slices.IsSorted(got) {
+		t.Errorf("ProjectScopedActions() is not byte-ordered: %v", got)
+	}
+	if want := len(knownActions) - len(instanceActions); len(got) != want {
+		t.Errorf("ProjectScopedActions() has %d actions, want %d", len(got), want)
+	}
+	for _, action := range got {
+		if !ProjectScoped(action) {
+			t.Errorf("ProjectScopedActions() lists %q, which is not project-scoped", action)
+		}
+	}
+	got[0] = "mutated"
+	if ProjectScopedActions()[0] == "mutated" {
+		t.Error("ProjectScopedActions() returned a shared slice")
 	}
 }
 
