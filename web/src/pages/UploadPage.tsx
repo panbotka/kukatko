@@ -17,6 +17,7 @@ import { usePasteFiles } from '../hooks/usePasteFiles'
 import { useUploadLimitToasts } from '../hooks/useUploadLimitToasts'
 import { useUploadOrganize } from '../hooks/useUploadOrganize'
 import { useUploadQueue } from '../hooks/useUploadQueue'
+import { useProjectName } from '../project/ProjectContext'
 import { SHARE_PARAM } from '../pwa/shareContract'
 import { collectSharedFiles, type SharedFiles } from '../pwa/shareTarget'
 import { projectUploadUrl, uploadFile } from '../services/upload'
@@ -69,6 +70,7 @@ export function UploadPage() {
   const { t } = useTranslation()
   useDocumentTitle(t('upload.title'))
   const { canCurate } = useAuth()
+  const projectName = useProjectName()
   const {
     items,
     summary,
@@ -228,6 +230,14 @@ export function UploadPage() {
           {shared.accepted.length > 0 && (
             <Alert variant="info" aria-live="polite">
               {t('share.notice.staged', { count: shared.accepted.length })}
+              {/* The share sheet knows nothing of projects: say which library
+                  the photos are going into, so a member of several sees it
+                  before the batch lands. */}
+              {projectName !== null && (
+                <div className="fw-semibold mt-1" data-testid="share-project">
+                  {t('share.notice.into', { project: projectName })}
+                </div>
+              )}
             </Alert>
           )}
           {shared.accepted.length === 0 && shared.rejected.length === 0 && (

@@ -70,6 +70,7 @@ import { EntryRedirect, LegacyRedirect } from './project/LegacyRedirect'
 import { ProjectGate } from './project/ProjectGate'
 import { useProjectPath } from './project/ProjectContext'
 import { ProjectProvider } from './project/ProjectProvider'
+import { SHARE_TARGET_PATH } from './pwa/shareContract'
 import { TaskSummaryProvider } from './tasks/TaskSummaryProvider'
 
 /** Forwards the retired `/users` of a project to its members page. */
@@ -150,9 +151,6 @@ const PROJECT_ROUTES = (
       {/* The sorting competition standings: read-only aggregate counts, so
           any signed-in role may watch the game — no write gate. */}
       <Route path="leaderboard" element={<LeaderboardPage />} />
-      {/* Where the phone's share sheet lands: it forwards anybody signed in
-          to /upload with the staged share. */}
-      <Route path="share-target" element={<ShareTargetPage />} />
       {/* Adding photos is open to every signed-in role, viewers included;
           filing them into albums and labels stays curation (the page
           offers its picker only to curators). */}
@@ -261,6 +259,11 @@ export function AppRoutes() {
             chooser when there is no single one to pick. */}
         <Route path="/" element={<EntryRedirect />} />
         <Route path="/projects" element={<ProjectsPage />} />
+        {/* Where the phone's share sheet lands. Instance-level like the chooser
+            above: the share carries no project, so the page names the one
+            the files go into, or asks which when the account has several,
+            before anything is uploaded. */}
+        <Route path={SHARE_TARGET_PATH} element={<ShareTargetPage />} />
         <Route path="/p/:slug" element={<ProjectGate />}>
           {PROJECT_ROUTES}
         </Route>

@@ -1,6 +1,7 @@
 import { type RouteObject, matchRoutes } from 'react-router-dom'
 
 import type { InstanceRole, ProjectMembership, Role } from '../services/auth'
+import { SHARE_TARGET_PATH } from '../pwa/shareContract'
 import type { EntityKind } from '../services/resolve'
 
 /**
@@ -19,8 +20,9 @@ export const PROJECTS_PATH = '/projects'
 /**
  * The instance-level pages, which belong to the account or the instance rather
  * than to a library and so never carry a project: signing in and registering,
- * the reset link and the public upload page, the account, the operations pages
- * and the project chooser. {@link projectPathFor} leaves these untouched, which
+ * the reset link and the public upload page, the account, the operations pages,
+ * the project chooser and the phone's share landing, which asks which project a
+ * share goes into. {@link projectPathFor} leaves these untouched, which
  * is what lets a single nav list mix both kinds of destination.
  */
 export const INSTANCE_PATH_PREFIXES = [
@@ -32,6 +34,7 @@ export const INSTANCE_PATH_PREFIXES = [
   '/system',
   '/maintenance',
   PROJECTS_PATH,
+  SHARE_TARGET_PATH,
 ] as const
 
 /**

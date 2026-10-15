@@ -83,6 +83,15 @@ export function useProjectSlug(): string | null {
 }
 
 /**
+ * The display name of the project the app works in, or `null` for none — and
+ * outside a provider (a component test), where there is no project to name.
+ */
+export function useProjectName(): string | null {
+  const ctx = useContext(ProjectContext)
+  return ctx?.project?.name ?? null
+}
+
+/**
  * The function every in-app link goes through: it turns a page's own path
  * (`/photos/abc`) into its address in the current project
  * (`/p/<slug>/photos/abc`). Instance-level pages, addresses already carrying a

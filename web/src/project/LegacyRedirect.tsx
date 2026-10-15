@@ -36,8 +36,8 @@ export function EntryRedirect() {
 
 /**
  * The fallback for every address outside a project. One that names a project
- * page from before projects existed — `/photos/abc`, `/albums`, `/n/xyz`, the
- * share sheet's `/share-target?share=…` — is forwarded to the same page in a
+ * page from before projects existed — `/photos/abc`, `/albums`, `/n/xyz` — is
+ * forwarded to the same page in a
  * project, query string and hash intact; anything else is simply not found.
  *
  * **Which project depends on the page.** An old link to one entity — a photo,

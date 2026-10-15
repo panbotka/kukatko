@@ -13,12 +13,14 @@
  *     (303) to `GET /share-target?share=<id>`. The POST body itself is consumed
  *     and never cached.
  *  3. That GET is an ordinary navigation, so it resolves to the app shell and
- *     `ShareTargetPage` renders: an editor is forwarded to `/upload?share=<id>`,
- *     a viewer is told their account cannot upload, and an unauthenticated
- *     visitor goes through login first — the files sit in the cache untouched
- *     until they come back, which is what makes them survive the round trip.
- *  4. `UploadPage` collects them (`shareTarget.ts`), stages them in the ordinary
- *     upload queue, and deletes the cache entries.
+ *     `ShareTargetPage` renders. The path carries no project, so the page
+ *     settles one: an account with a single enterable project is forwarded to
+ *     `/p/<slug>/upload?share=<id>`, one with several is asked which, and one
+ *     with none is told the files wait for it. An unauthenticated visitor goes
+ *     through login first — the files sit in the cache untouched until they
+ *     come back, which is what makes them survive the round trip.
+ *  4. The chosen project's `UploadPage` collects them (`shareTarget.ts`), stages
+ *     them in the ordinary upload queue, and deletes the cache entries.
  *
  * This module holds the names and paths both halves have to agree on. It is
  * deliberately free of DOM types: the worker is plain, un-bundled JavaScript and

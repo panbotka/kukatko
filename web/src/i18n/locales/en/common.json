@@ -3001,11 +3001,24 @@
       "staged_one": "1 shared file is ready. Check it and upload.",
       "staged_other": "{{count}} shared files are ready. Check them and upload.",
       "empty": "That share contained no photos or videos.",
-      "rejected": "These files are not photos or videos, so they were left out: {{names}}"
+      "rejected": "These files are not photos or videos, so they were left out: {{names}}",
+      "into": "They go into the library {{project}}."
     },
     "missing": {
       "message": "The shared files did not reach us. Please pick them by hand on the upload page.",
-      "action": "Go to upload"
+      "action": "Go to upload",
+      "choose": "Choose a library"
+    },
+    "choose": {
+      "title": "Where should the shared photos go?",
+      "intro": "You belong to several libraries. Pick the one these photos belong to — nothing is uploaded until you do.",
+      "last": "Last used"
+    },
+    "waiting": {
+      "message": "You are not a member of any library you could add these photos to yet — your membership may still be waiting for approval.",
+      "kept": "The shared photos stay on this device for a day. Once you are let in, check again and they go on to the upload.",
+      "check": "Check again",
+      "projects": "Your projects"
     }
   },
   "sharePhotos": {

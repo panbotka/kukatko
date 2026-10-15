@@ -424,6 +424,29 @@ describe('routing', () => {
     expect(screen.queryByTestId('forbidden-page')).not.toBeInTheDocument()
   })
 
+  it('asks a member of two projects where a share goes instead of using the last one', async () => {
+    // The share sheet posts to the unprefixed /share-target; it used to be
+    // forwarded into the last-used project, which is how family photos ended
+    // up in the other library.
+    const twoProjects = {
+      ...viewerAuth,
+      projects: [
+        memberOfV('viewer'),
+        { uid: 'pr', slug: 'rodina', name: 'Rodina', active: true, role: 'viewer', approved: true },
+      ],
+    } as unknown as AuthContextValue
+    renderRoutes(['/share-target?share=abc'], 0, twoProjects)
+
+    expect(
+      await screen.findByRole('heading', { name: 'Where should the shared photos go?' }),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/share-target')
+    expect(screen.getByRole('link', { name: 'Rodina' })).toHaveAttribute(
+      'href',
+      '/p/rodina/upload?share=abc',
+    )
+  })
+
   it('lets a viewer reach the share landing when nothing was staged', async () => {
     renderRoutes(['/share-target'])
 

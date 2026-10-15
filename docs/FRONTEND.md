@@ -2976,11 +2976,23 @@ here.
   makes the collection one-shot, since StrictMode invokes the effect twice and collecting **consumes**
   the cache entries. It then says what it took (`share.notice.staged`, a Czech plural), what it left out
   by name (`share.notice.rejected`) or that the share held nothing usable (`share.notice.empty`),
-  `ShareTargetPage` = `/share-target`, where the share sheet lands (see the PWA section below): a junction,
-  not a destination — anybody signed in with a staged share (viewers included, since every role may
-  upload) is `Navigate`d (`replace`) to `/upload?share=<id>`, and **no id at all** — a worker that
+  `ShareTargetPage` = `/share-target`, where the share sheet lands (see the PWA section below): an
+  **instance-level** junction (no `/p/<slug>`, no shell, like `/projects` — the share sheet knows nothing
+  of projects), whose one job is to settle **which project** a staged share goes into before anything is
+  uploaded, since the upload page starts the batch the moment it has the files. By the account's
+  enterable projects (`isEnterable`, approved + active; `last_project_slug` is never trusted on its own):
+  **one** → `Navigate` (`replace`) to `/p/<slug>/upload?share=<id>` (viewers included, since every role may
+  upload), and the upload page names the project above the batch (`share.notice.into`, via
+  `useProjectName`); **several** → a chooser (`share.choose.*`, one `ListGroup` link per project, each
+  `replace` to that project's upload page; the last-used one only badged „Naposledy použitá", never
+  preselected); **none** (every membership pending or switched off) → the files are **left in the
+  cache** and `ShareWaiting` says so — they wait on the device for a day (`SHARE_TTL_MS`), „Zkontrolovat
+  znovu" re-reads the session (`refresh`) and an approval landing meanwhile carries the share on from the
+  same URL, „Vaše projekty" leads to `/projects`. The junction never touches the cache itself: only a
+  chosen project's `UploadPage` collects. **No id at all** — a worker that
   could not read the POST, or none installed, so the server answered it with the shell — gets the honest
-  „the files did not come through" plus a link to the picker. It sits inside `RequireAuth`, so an
+  „the files did not come through" plus a link to the one project's picker, or to `/projects`
+  („Vybrat knihovnu") when there is no single one. It sits inside `RequireAuth`, so an
   unauthenticated sharer goes through login and comes back to this exact URL,
   which is what makes a share survive the round trip,
   `ImportPage` = `/import` (maintainer only) the import console, now **read-only**: a `BackgroundWorkLink`
@@ -8499,8 +8511,9 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
   prunes — a deployment landing mid-share must not eat the photos), mints the id as
   `<Date.now()>-<sequence>` (the timestamp **is** the expiry bookkeeping) and answers **303** to
   `GET /share-target?share=<id>`; the POST body itself is consumed once and never cached, and a staging
-  failure still redirects, just without an id. `ShareTargetPage` then triages (see its entry above) and
-  `UploadPage` collects. `src/pwa/shareTarget.ts` is the browser half: `collectSharedFiles(id)` rebuilds
+  failure still redirects, just without an id. `ShareTargetPage` then settles the project — straight on
+  with one, a chooser with several, the files kept with none (see its entry above) — and the chosen
+  project's `UploadPage` collects. `src/pwa/shareTarget.ts` is the browser half: `collectSharedFiles(id)` rebuilds
   the `File`s from the staged responses **in share order**, deletes them as it goes (a share is handed
   over exactly once) and sweeps out any *other* share past the TTL on the way — the only place abandoned
   shares are cleaned up; it never rejects (no Cache Storage, no cache, a foreign entry, a failing quota
@@ -8710,9 +8723,9 @@ relative to the project root, mounted under `<Route path="/p/:slug" element={<Pr
 | Kind | Paths |
 | --- | --- |
 | project (under `/p/:slug`), immersive, no shell | `slideshow`, `photos/:uid`, `review` + `albums/:uid/faces` (curator), `duplicates/compare` (editor) |
-| project, inside `Layout` | index (= `LibraryPage`), `library/*` (`LibraryRedirect` → the project's library), `favorites`, `albums`, `albums/:uid`, `labels`, `labels/:uid`, `tasks`, `tasks/:uid`, `n/:uid`, `notifications`, `search`, `saved`, `map`, `places`, `people`, `people/:uid`, `people/:uid/tree`, `leaderboard`, `share-target`, `upload`, `stats`, `help`; curator: `upload-links`, `people/clusters`, `faces`, `expand`, `recognition`, `outliers`, `duplicate-markers`; editor: `duplicates`, `trash`; `import` (`RequireImport`); admin: `users`, `audit`, `audit/reviews`, `settings`; `*` → `NotFoundPage` |
+| project, inside `Layout` | index (= `LibraryPage`), `library/*` (`LibraryRedirect` → the project's library), `favorites`, `albums`, `albums/:uid`, `labels`, `labels/:uid`, `tasks`, `tasks/:uid`, `n/:uid`, `notifications`, `search`, `saved`, `map`, `places`, `people`, `people/:uid`, `people/:uid/tree`, `leaderboard`, `upload`, `stats`, `help`; curator: `upload-links`, `people/clusters`, `faces`, `expand`, `recognition`, `outliers`, `duplicate-markers`; editor: `duplicates`, `trash`; `import` (`RequireImport`); admin: `users`, `audit`, `audit/reviews`, `settings`; `*` → `NotFoundPage` |
 | instance, public | `/login`, `/register`, `/password-reset/:token`, `/u/:code` |
-| instance, signed in | `/` (`EntryRedirect`), `/projects` (`ProjectsPage`, no shell); inside `Layout`: `/account`, `/account/activity` (`ACTIVITY_PATH` — under the account and reading the instance-wide audit trail, so it carries no project), `/maintenance`, `/system`, `/system/projects`, `/system/projects/:slug`, `/system/users`, `/system/audit` (all maintainer), `*` (`LegacyRedirect`) |
+| instance, signed in | `/` (`EntryRedirect`), `/projects` (`ProjectsPage`, no shell), `/share-target` (`ShareTargetPage`, no shell — asks which project a phone share goes into); inside `Layout`: `/account`, `/account/activity` (`ACTIVITY_PATH` — under the account and reading the instance-wide audit trail, so it carries no project), `/maintenance`, `/system`, `/system/projects`, `/system/projects/:slug`, `/system/users`, `/system/audit` (all maintainer), `*` (`LegacyRedirect`) |
 
 **The entry rule** (`entryProjectSlug` in `project/paths.ts`): the target is `last_project_slug` when
 it is an approved membership of an active project, else the only such membership, else `null` →
@@ -8731,11 +8744,13 @@ depends on the page. **A page about one entity** (`legacyEntityOf` in `paths.ts`
 `GET /api/v1/resolve/{kind}/{uid}`, spinner meanwhile) and goes to **the project holding the entity**
 — an old e-mail's task opens in its project even when the reader last worked in another; the
 resolver's one 404 (nothing the reader may enter) renders `NotFoundPage` in place; a failure to ask
-(429, 5xx, offline) falls back on the entry rule. **Any other page** (`/albums`, `/map`,
-`/share-target`) goes to the entry project, or `/projects` without one.
+(429, 5xx, offline) falls back on the entry rule. **Any other page** (`/albums`, `/map`) goes to the entry project, or
+`/projects` without one.
 This is also what makes the unprefixed deep links the app does not control keep working: the push
-deeplink `/n/<uid>` (`notification.PathPrefix`), the share sheet's `/share-target?share=…` (the
-service worker still redirects there), the manifest shortcut `/upload` and every old bookmark.
+deeplink `/n/<uid>` (`notification.PathPrefix`), the manifest shortcut `/upload` and every old
+bookmark. The share sheet's `/share-target?share=…` is **not** one of them: it is its own
+instance-level route, because guessing the project there (the entry rule's last-used one) is how a
+member of two libraries used to send family photos into the other.
 
 **`ProjectProvider` + `useProject()`** (`project/ProjectProvider.tsx`, `ProjectContext.ts`), directly
 under `AuthProvider`: `{ project, projects, status, inAddress, switchProject(slug) }`. The current

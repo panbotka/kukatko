@@ -589,7 +589,7 @@ on the device so it opens instantly. It caches nothing else, so nothing you see 
 it says exactly that: opening the app with no signal gets you a page explaining that the photos need
 a connection, not a login form that then blames your password. On **Android**, Kukátko is a
 share target: pick shots in the gallery, tap Share, and the upload page opens with them already
-going up.
+going up — into the library it names; a member of several libraries is asked which one first.
 
 **Uploading is one thing on screen at a time, and it starts by itself.** An empty page asks one
 question — which photos — and answering it *is* the start: there is no upload button to find. The

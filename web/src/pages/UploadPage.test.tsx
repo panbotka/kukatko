@@ -9,8 +9,9 @@ import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { ToastContext, type ToastOptions } from '../components/toast/ToastContext'
 import { type UploadQueueItem } from '../hooks/useUploadQueue'
 import i18n from '../i18n'
+import { ProjectContext } from '../project/ProjectContext'
 import { setCurrentProjectSlug } from '../services/api'
-import { ApiError } from '../services/auth'
+import { ApiError, type ProjectMembership } from '../services/auth'
 import { type BulkResult } from '../services/bulk'
 import { type AlbumSummary, type LabelCount } from '../services/organize'
 import { type UploadFileOptions, type UploadFileResult } from '../services/upload'
@@ -884,6 +885,44 @@ describe('UploadPage — shared files', () => {
     expect(await screen.findByText('0 / 1')).toBeInTheDocument()
     expect(collectMock).toHaveBeenCalledTimes(1)
     expect(screen.getByText('1 shared file is ready. Check it and upload.')).toBeInTheDocument()
+  })
+
+  it('names the project the shared photos are going into', async () => {
+    // The share sheet carries no project; a member of several must see which
+    // library the batch lands in, right above it.
+    collectMock.mockResolvedValue({ accepted: [file('a.jpg')], rejected: [] })
+    uploadMock.mockReturnValue(new Promise<UploadFileResult>(() => undefined))
+    const project: ProjectMembership = {
+      uid: 'pr',
+      slug: 'rodina',
+      name: 'Rodina',
+      active: true,
+      role: 'editor',
+      approved: true,
+    }
+    render(
+      <I18nextProvider i18n={i18n}>
+        <AuthContext.Provider value={auth()}>
+          <ProjectContext.Provider
+            value={{
+              project,
+              projects: [project],
+              status: 'ready',
+              inAddress: true,
+              switchProject: vi.fn(),
+            }}
+          >
+            <MemoryRouter initialEntries={['/upload?share=abc']}>
+              <UploadPage />
+            </MemoryRouter>
+          </ProjectContext.Provider>
+        </AuthContext.Provider>
+      </I18nextProvider>,
+    )
+
+    expect(await screen.findByTestId('share-project')).toHaveTextContent(
+      'They go into the library Rodina.',
+    )
   })
 
   it('does not go looking for a share when the page was opened without one', () => {
