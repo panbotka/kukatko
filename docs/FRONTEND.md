@@ -2962,7 +2962,12 @@ here.
   (state „přiřazuji…“ and a **retryable** error live in ③, since the photos are uploaded and only the
   assignment failed). With no selection no call is made.
   Leaving mid-upload loses the queue, which lives only in this tab, so `useLeaveGuard` holds an in-app link
-  back behind a `ConfirmModal` and lets the browser warn on a tab close.
+  and the browser's **Back/Forward** (the phone's back gesture included) behind a `ConfirmModal` that
+  names how many files would be dropped, and lets the browser warn on a tab close or a full-document Back.
+  Asking was chosen over carrying the batch on in the background: the queue, its progress and the album
+  filing live in the page, and Back is held the same way as every other way out. Tests:
+  `App.uploadBack.test.tsx` (Back during a five-file batch asks with the count and aborts nothing; „Zůstat
+  tady" sends all five; confirming goes Back and only then aborts).
   Two more ways in besides the picker: **paste** anywhere on the page (`usePasteFiles`) and
   **`?share=<id>`**, the phone's share sheet — the files are already in the browser's cache by then, so
   the page collects them (`pwa/shareTarget` `collectSharedFiles`) into the ordinary queue, which lands it
@@ -3154,9 +3159,10 @@ here.
   about the project's settings, and it is long enough already. One `Form` over a local `Draft`, so **nothing is written
   until „Uložit nastavení"** — `isDirty(draft, saved)` drives both buttons (save + **Zahodit změny**),
   the „Máš neuložené změny" hint, and `useLeaveGuard(dirty)` + `ConfirmModal`, which holds an in-app
-  link click back (and asks the browser to warn on a tab close) before the draft is lost. The secret is
-  compared **trimmed** against the stored value, because the backend stores it trimmed: typing a
-  trailing space and deleting it again must not leave the page claiming unsaved work forever.
+  link click and the browser's Back/Forward (and asks the browser to warn on a tab close) before the
+  draft is lost. The secret is compared **trimmed** against the stored value, because the backend
+  stores it trimmed: typing a trailing space and deleting it again must not leave the page claiming
+  unsaved work forever.
   **The switch refuses to open registration while the secret is blank**, in the API's own words
   (`settings.registration.secretRequired` ↔ `settings.ErrSecretRequired`); `handleSubmit` repeats the
   check, because the field can be emptied after the switch is already on. **The secret is a readable
@@ -6064,17 +6070,32 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   overwriting a view the reader can step back to. Used by `FilterBar`'s quick filter and `SearchPage`'s
   box. Tests: `FilterBarHistory.test.tsx`, `SearchPage.test.tsx`;
   `useLeaveGuard(active)` = holds a navigation back while a page has unsaved browser-only work, and
-  asks the browser to warn on a tab close. Two mechanisms, because the browser owns only one of them:
+  asks the browser to warn on a tab close. Three mechanisms, because the browser owns only one of them:
   a `beforeunload` listener (bare `preventDefault()` — the deprecated `returnValue` adds nothing and the
-  linter rejects it; the wording is the browser's own) and a **capture-phase `click` listener** that
-  catches an anchor before react-router's handler, `preventDefault()`s it (a `Link` bails on an
-  already-prevented event) and remembers the target so `confirm()` can navigate to it after the fact.
-  The app has no data router, so `useBlocker` is unavailable — and a click listener also catches the
-  plain `<a>`s of the footer and the tab bar, which a router-level blocker would not. Returns
+  linter rejects it; the wording is the browser's own; it also covers a full-document Back), a
+  **capture-phase `click` listener** that catches an anchor before react-router's handler,
+  `preventDefault()`s it (a `Link` bails on an already-prevented event) and remembers the target so
+  `confirm()` can navigate to it after the fact, and **one `popstate` listener on `window`** for
+  Back/Forward (and `navigate(-1)`), installed by `listenForHistoryLeaves()` in `main.tsx` **before the
+  router mounts** and handing the event to whichever guard is active. Order is the whole trick: Chrome
+  runs a window's `popstate` listeners in the order they were added and ignores the capture flag for it
+  (measured on staging — a capture listener added from the hook ran *after* react-router's, which had
+  already rendered the destination; jsdom puts capture first, so the unit tests had passed), so it is a
+  plain listener added first, which jsdom then orders like Chrome. It `stopImmediatePropagation()`s, so
+  the router never sees the step and the page stays mounted; the browser has already moved, so the guard
+  steps back onto the guarded entry with `history.go` by the distance the router's `idx` stamps give
+  (that step's own popstate is swallowed too) and asks; `confirm()` repeats the step for real and lets it
+  through, so Back stays Back and Forward keeps working. An entry without an `idx` (pushed outside the
+  router) has no known distance: the guarded entry is pushed back on top and `confirm()` navigates to the
+  URL the browser went to. The app has no data router, so `useBlocker` is unavailable — and a click
+  listener also catches the plain `<a>`s of the footer and the tab bar, which a router-level blocker
+  would not. Returns
   `{asking, confirm, cancel}`, which `/upload` renders as a `ConfirmModal`. Deliberately *not* held:
   a modified click (new tab), an explicit `target`, a `download`, an external origin, a link back to
-  the page we are on, and any navigation made in code — none of them destroys the queue. Tests:
-  `useLeaveGuard.test.tsx`;
+  the page we are on, and any push/replace made in code — none of them destroys the queue. Tests:
+  `useLeaveGuard.test.tsx` (the history cases under a real `BrowserRouter`, the listener installed first
+  as in `main.tsx`: Back held, confirm goes Back with Forward still there, cancel then a second Back asks
+  again, Forward held, an unstamped entry, nothing held while idle);
   `usePasteFiles(onFiles)` = hands the page every file pasted into it, listening on `window` so the
   gesture works anywhere (not only over the drop zone) and acting **only** when the clipboard actually
   carries files, so pasting text into the album/label pickers stays ordinary pasting. It is the shortest
@@ -8757,9 +8778,10 @@ history on open; no module-level cache holds project data. Browser storage that 
 content is keyed by the project (see *Browser storage*). **The upload queue is cancelled by a switch,
 not carried over:** the page remounts, which aborts the files in flight and drops the queued ones; the
 switcher is a link, so `useLeaveGuard` first asks "Odejít během nahrávání?" exactly as for any other way
-out. Carrying the batch on into the old project behind the reader's back was the alternative; it was
-rejected because the queue, its progress and the album filing all live in the page, which is gone, and
-a silent upload into a project the reader has left is the surprise this fixes. Independently, each file's
+out — Back/Forward included (`App.uploadBack.test.tsx`). Carrying the batch on into the old project
+behind the reader's back was the alternative; it was rejected because the queue, its progress and the
+album filing all live in the page, which is gone, and a silent upload into a project the reader has left
+is the surprise this fixes. Independently, each file's
 URL is fixed at enqueue (`useUploadQueue`'s `endpoint`), so no code path can send a file to a project
 other than the one it was queued in. Tests: `App.projectSwitch.test.tsx` (`/p/a/albums` → `/p/b/albums`
 refetches with b and never shows a's albums; a's answer landing after the switch is ignored and its
