@@ -3016,11 +3016,13 @@ families and never fails the whole scrape.
   reinstalled only when the lockfile changes), `web-build`, `web-fmt`, `web-fmt-check`, `web-lint`,
   `web-typecheck`, `web-test`.
   You inject the version with `make build VERSION=x.y.z`. The frontend needs **Node.js 22+**.
-- **CI/CD and packaging:** `.github/workflows/ci.yml` (push/PR → job `check` = `make check`
+- **CI/CD and packaging:** `.github/workflows/ci.yml` (push to `main`, push of a `v*.*.*` tag, PR →
+  job `check` = `make check`
   + `make test-race` on Go 1.26 + Node 22 + golangci-lint v2.11.4; job `integration` = `make test-integration`
   against the service container `pgvector/pgvector:pg17`, extensions `vector`/`unaccent` in a setup
   step + apt `ffmpeg`/`libimage-exiftool-perl` (video probe/poster), `KUKATKO_TEST_DATABASE_URL`
-  pointing at an ephemeral CI DB). `.github/workflows/release.yml`
+  pointing at an ephemeral CI DB; job `publish` = the container image, **`needs: [check, integration]`**,
+  see *Docker image* below). `.github/workflows/release.yml`
   (tag `v*.*.*`) runs **goreleaser** (`.goreleaser.yaml`): `CGO_ENABLED=0` for arm64+amd64,
   version/commit via ldflags into `internal/version`, frontend build in the before-hook, **.deb**
   via nfpm. **Provenance:** goreleaser validates the git state *before* its before-hooks, so
@@ -3084,7 +3086,7 @@ the same target remotely, streaming the output back.
 
 <!-- BODY DOCKER -->
 Alongside the `.deb` (goreleaser), Kukátko is also packaged as a **container image** for running on an amd64 VPS.
-Sources: `Dockerfile` + `.dockerignore` in the root, the workflow `.github/workflows/docker-publish.yml`
+Sources: `Dockerfile` + `.dockerignore` in the root, the `publish` job of `.github/workflows/ci.yml`
 and an example `.env.example`.
 
 - **`Dockerfile` (root, multi-stage → a small static image):**
@@ -3108,14 +3110,18 @@ and an example `.env.example`.
      unprivileged process cannot write (the first upload fails with a permission error). With them
      pre-created, `-v kukatko-originals:/var/lib/kukatko/originals` just works. A **bind** mount keeps
      the host directory's ownership instead, so `chown -R 65534 ./originals` on the host first.
-- **Publishing (`docker-publish.yml`) to `ghcr.io/panbotka/kukatko`** (image = `${{ github.repository }}`),
+- **Publishing (job `publish` in `ci.yml`) to `ghcr.io/panbotka/kukatko`** (image = `${{ github.repository }}`),
   authentication via the built-in `GITHUB_TOKEN` (permission `packages: write`), **no other secrets**.
   Triggers: push to `main`, a push of a `v*.*.*` tag, and a `pull_request` to `main` (**a PR only builds, never
   pushes** — `push` is true only when `github.event_name != 'pull_request'`).
-  - **Test gate:** the `test` job runs **`make test` + `make test-integration`** (mirroring the setup
-    of the `integration` job from `ci.yml`: Go 1.26, Node 22, service container `pgvector/pgvector:pg17`,
-    extensions `vector`/`unaccent`, apt `ffmpeg`/`exiftool`, `KUKATKO_TEST_DATABASE_URL`). The
-    `build` job has **`needs: test`** → if the tests fail, **no image is pushed**.
+  - **Test gate = the CI gate, one run of it:** `publish` has **`needs: [check, integration]`** in the
+    same workflow run, so an image is pushed exactly when that commit's (or tag's) `make check` +
+    `make test-race` + `make test-integration` are green, and never otherwise. There is deliberately
+    **no second copy of the suite**: until 2026-10 a separate `docker-publish.yml` re-ran `make test` +
+    `make test-integration` on its own, so every commit rolled the dice twice — 996ae051 passed CI and
+    still got no image, because a timing flake hit only the publish run. A red gate on `main` or a
+    release tag therefore means **no image for it**; fix the cause and push (or re-run the failed jobs
+    with `gh run rerun --failed <run-id>` — `publish` re-runs with them).
   - **Tags** (via `docker/metadata-action@v5`, `flavor: latest=false` + explicit control):
     push to `main` → **`latest`** (only on the default branch, `enable={{is_default_branch}}`; on tags
     **not** `latest`); tag `vMAJOR.MINOR.PATCH` → **`{{version}}`** and **`{{major}}.{{minor}}`**; plus

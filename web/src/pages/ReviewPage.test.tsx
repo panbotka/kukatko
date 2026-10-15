@@ -271,6 +271,10 @@ beforeEach(async () => {
   // every test starts on a day whose mix has not been played.
   window.localStorage.removeItem(`${DAILY_STORAGE_PREFIX}.u1.v`)
   window.localStorage.removeItem(`${DAILY_STORAGE_PREFIX}.u2.v`)
+  // So does the run's snapshot in sessionStorage: every signed-in render writes
+  // one, and a test that found a previous test's run would resume it instead of
+  // fetching its own queue — whichever test happens to run next in the file.
+  window.sessionStorage.clear()
   leaderboardMock.mockReset().mockResolvedValue(emptyBoard())
   queueMock.mockReset()
   answerMock.mockReset().mockResolvedValue({ result: 'assigned', answered: 1, remaining: 0 })
@@ -1262,6 +1266,19 @@ function signedIn(uid: string): AuthContextValue {
 }
 
 /** The page under a signed-in user, which is what makes a run resumable. */
+/**
+ * Waits for the run's snapshot to reach sessionStorage. The game writes it from
+ * a passive effect, which React's scheduler runs in a task of its own after the
+ * commit that put the card on screen: a `findBy*` can resolve before that task,
+ * so reading storage straight away races the effect and loses on a loaded
+ * machine.
+ */
+async function waitForStoredSnapshot() {
+  await waitFor(() => {
+    expect(window.sessionStorage.getItem(REVIEW_SNAPSHOT_KEY)).not.toBeNull()
+  })
+}
+
 function renderSignedIn(uid = 'u1', entry = '/p/v/review') {
   return render(
     <I18nextProvider i18n={i18n}>
@@ -1324,10 +1341,6 @@ function fiveQuestions() {
  * A remount is exactly that trip as far as the game can tell.
  */
 describe('ReviewPage resume', () => {
-  beforeEach(() => {
-    window.sessionStorage.clear()
-  })
-
   it('resumes the same card, round position, combo and tallies after a remount', async () => {
     const user = userEvent.setup()
     queueMock.mockResolvedValue(fiveQuestions())
@@ -1366,8 +1379,10 @@ describe('ReviewPage resume', () => {
     expect(within(summary).getByTestId('review-tally-confirmed')).toHaveTextContent('1')
     expect(within(summary).getByTestId('review-tally-rejected')).toHaveTextContent('1')
     expect(within(summary).getByTestId('review-tally-skipped')).toHaveTextContent('1')
-    // ...and an ended session leaves nothing to resume.
-    expect(window.sessionStorage.getItem(REVIEW_SNAPSHOT_KEY)).toBeNull()
+    // ...and an ended session leaves nothing to resume (dropped by an effect, so waited for).
+    await waitFor(() => {
+      expect(window.sessionStorage.getItem(REVIEW_SNAPSHOT_KEY)).toBeNull()
+    })
   })
 
   it('goes to the photo in place and comes back to the same card with the run intact', async () => {
@@ -1553,7 +1568,7 @@ describe('ReviewPage resume', () => {
       )
     const first = renderSignedIn()
     await screen.findByTestId('review-question')
-    expect(window.sessionStorage.getItem(REVIEW_SNAPSHOT_KEY)).not.toBeNull()
+    await waitForStoredSnapshot()
 
     await user.keyboard('{ArrowRight}')
     await user.keyboard('{ArrowRight}')
@@ -1563,7 +1578,9 @@ describe('ReviewPage resume', () => {
     await waitFor(() => {
       expect(queueMock).toHaveBeenCalledTimes(2)
     })
-    expect(window.sessionStorage.getItem(REVIEW_SNAPSHOT_KEY)).toBeNull()
+    await waitFor(() => {
+      expect(window.sessionStorage.getItem(REVIEW_SNAPSHOT_KEY)).toBeNull()
+    })
     first.unmount()
 
     renderSignedIn()
@@ -1577,7 +1594,7 @@ describe('ReviewPage resume', () => {
     queueMock.mockResolvedValue(fiveQuestions())
     renderSignedIn()
     await screen.findByTestId('review-question')
-    expect(window.sessionStorage.getItem(REVIEW_SNAPSHOT_KEY)).not.toBeNull()
+    await waitForStoredSnapshot()
 
     // Nothing answered: "Ukončit hru" leaves straight away, and takes the run along.
     await user.click(screen.getByRole('button', { name: 'Leave the game' }))

@@ -59,7 +59,11 @@ function setVisibility(state: 'hidden' | 'visible') {
 }
 
 beforeEach(() => {
-  vi.useFakeTimers({ shouldAdvanceTime: true })
+  // A clock that moves only when a test advances it. `shouldAdvanceTime` would
+  // let real milliseconds leak in as well, and on a loaded machine they carried
+  // the 15 s poll over the `REKEY_POLL_IDLE_MS - 1` boundary below. Nothing here
+  // waits through Testing Library's `waitFor`, which is what needs that option.
+  vi.useFakeTimers()
   fetchMock.mockReset()
   setVisibility('visible')
 })

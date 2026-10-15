@@ -1,8 +1,19 @@
 name: CI
 
+# One workflow, one run of the gate per commit, and the container image is
+# published from that very run:
+#   - push to main         -> gate, then the image's `latest` + sha tags
+#   - push of a vX.Y.Z tag -> gate, then the semver tags {{version}} and {{major}}.{{minor}}
+#   - pull_request to main -> gate, then build the image only (validates the Dockerfile)
+# The image used to come from a separate workflow that re-ran the tests on its
+# own: two independent runs of one suite per commit, so a single timing flake
+# could pass the merge gate and still fail the publication — leaving main (or a
+# release tag) without an image although its CI was green. Now `publish` needs
+# `check` and `integration`, so the image ships exactly when the gate is green.
 on:
   push:
     branches: ["main"]
+    tags: ["v*.*.*"]
   pull_request:
     branches: ["main"]
 
@@ -15,6 +26,8 @@ env:
   GO_VERSION: "1.26"
   NODE_VERSION: "22"
   GOLANGCI_LINT_VERSION: "v2.11.4"
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   # Full quality gate: docs budget + formatting check + golangci-lint + frontend
@@ -97,3 +110,70 @@ jobs:
 
       - name: Run integration tests
         run: make test-integration
+
+  # Build the container image and push it to the GitHub Container Registry,
+  # only once both gate jobs above are green for this same run.
+  publish:
+    needs: [check, integration]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log into ${{ env.REGISTRY }}
+        # PRs from forks cannot receive a write token, and PR builds never push,
+        # so skip the login entirely on pull_request events.
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # latest=false disables the action's automatic `latest` on tag pushes;
+          # we drive `latest` ourselves so it lands ONLY on the default branch.
+          flavor: |
+            latest=false
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=
+
+      - name: Compute build args
+        id: buildargs
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # Semver build: the tag without its leading "v" (v1.2.3 -> 1.2.3).
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            # Branch/PR build: not a release, so stamp the placeholder version.
+            echo "version=dev" >> "$GITHUB_OUTPUT"
+          fi
+          echo "commit=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          # Push on branch/tag events; on pull_request build only (validation).
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.buildargs.outputs.version }}
+            COMMIT_SHA=${{ steps.buildargs.outputs.commit }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
