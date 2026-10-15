@@ -90,6 +90,10 @@ func TestR2URLSignsObjectKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewR2: %v", err)
 	}
+	// The expiry is stamped from the clock, so two URLs compared for equality
+	// must be signed at the same instant: on the wall clock a second boundary
+	// between the two calls made them differ (and failed a CI run).
+	store.signer.now = func() time.Time { return fixedClock }
 	// A leading slash is not part of the object key, so it must not change the URL.
 	if got, want := store.URL("/"+testKey), store.URL(testKey); got != want {
 		t.Errorf("URL(%q) = %q, want %q", "/"+testKey, got, want)
