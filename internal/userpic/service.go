@@ -41,14 +41,18 @@ type Pictures interface {
 	Clear(ctx context.Context, userUID string) error
 }
 
-// Members answers the two questions the chain asks of a project's
-// memberships: which person the pictured account says it is there, and
-// whether the viewer may see that project's photos at all. It is satisfied by
-// *project.Store.
+// Members answers the three questions the chain asks of the memberships:
+// whether the viewer may see the pictured account at all, which person the
+// account says it is in a project, and whether the viewer may see that
+// project's photos. It is satisfied by *project.Store.
 type Members interface {
 	// Membership returns the account's membership of the project, or
 	// project.ErrNotMember.
 	Membership(ctx context.Context, projectUID, userUID string) (*project.Member, error)
+	// SharesProject reports whether both accounts are approved members, with
+	// their identity not withheld, of one active project — projectUID, or any
+	// project when it is empty (see project.Store.SharesProject).
+	SharesProject(ctx context.Context, projectUID, viewerUID, accountUID string) (bool, error)
 }
 
 // Subjects resolves a subject to the picture that stands for it — the same
@@ -141,7 +145,19 @@ func NewService(cfg Config) *Service {
 // between a chain and a stored decision — the stored decision would serve a
 // photo its owner has since hidden. A picked photo of a project the viewer may
 // not see is not an answer either, for the same reason a private one is not.
+//
+// Before any of that the viewer must be somebody the account is shown to at all
+// (see mayShowAccount); for anybody else every link is ErrNoPicture, the very
+// answer a made-up uid gets, so the route can be neither a picture leak across
+// projects nor an oracle on which accounts exist.
 func (s *Service) Resolve(ctx context.Context, viewer Viewer, userUID string) (Source, Origin, error) {
+	shown, err := s.mayShowAccount(ctx, viewer, userUID)
+	if err != nil {
+		return Source{}, OriginNone, err
+	}
+	if !shown {
+		return Source{}, OriginNone, ErrNoPicture
+	}
 	stored, err := s.pictures.Get(ctx, userUID)
 	switch {
 	case err == nil:
@@ -184,6 +200,38 @@ func (s *Service) resolveStored(ctx context.Context, viewer Viewer, stored Pictu
 		return Source{}, false, err
 	}
 	return Source{PhotoUID: photo.UID, Photo: photo}, true, nil
+}
+
+// mayShowAccount reports whether viewer may see the account userUID's picture
+// at all, whichever link of the chain would answer: the account itself always,
+// a maintainer and anybody who shares an active project with the account where
+// both are approved members and neither identity is withheld
+// (project.ApprovedMemberSQL). A request inside a project (viewer.ProjectUID)
+// narrows that to the project: the account must be such a member of it, and so
+// must the viewer unless it is a maintainer, who enters every project as
+// nobody's member. An uploaded picture holds no photo whose project could be
+// checked, so without this rule it would go to every signed-in account.
+func (s *Service) mayShowAccount(ctx context.Context, viewer Viewer, userUID string) (bool, error) {
+	if viewer.UserUID == "" || userUID == "" {
+		return false, nil
+	}
+	if viewer.UserUID == userUID {
+		return true, nil
+	}
+	if viewer.Maintainer && viewer.ProjectUID == "" {
+		return true, nil
+	}
+	asker := viewer.UserUID
+	if viewer.Maintainer {
+		// Sharing the project with itself is being its member: the account
+		// alone is checked.
+		asker = userUID
+	}
+	shares, err := s.members.SharesProject(ctx, viewer.ProjectUID, asker, userUID)
+	if err != nil {
+		return false, fmt.Errorf("userpic: checking whether %s may see %s: %w", viewer.UserUID, userUID, err)
+	}
+	return shares, nil
 }
 
 // maySee reports whether viewer may see the photos of the project projectUID:

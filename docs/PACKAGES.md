@@ -3836,7 +3836,12 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   see that photo's project), the avatar of the subject the account's membership of the **viewer's
   project** links — the **default**, so a linked account wears that face with no action from anybody; a
   request with no project skips the step — and nothing, which the HTTP layer answers 404 and a client draws
-  as the initial. `Service` =
+  as the initial. **In front of the whole chain** sits `mayShowAccount` (SEC-025): the account is shown
+  only to itself, a maintainer, or a viewer it shares an active project with as approved, not withheld
+  members (`Members.SharesProject` = `project.Store.SharesProject`); with `viewer.ProjectUID` set the
+  account must be such a member of that project (a maintainer asks `SharesProject(project, account,
+  account)`). Anybody else gets `ErrNoPicture` before a row is read — the answer a made-up uid gets —
+  because an upload holds no photo whose project could be checked. `Service` =
   `NewService(Config{Pictures,Members,Subjects,Photos})` with `Resolve(ctx, viewer, userUID)` (→
   `Source{Upload|PhotoUID+Photo,Face}` + `Origin` — `Photo` is the record the chain loaded and authorized, so
   the HTTP layer renders it and never loads a photo by uid itself: a picked photo via
@@ -7433,6 +7438,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     it uses it: task participants (`internal/phototask` `ask`), mention resolution (`internal/comments`
     `resolveMentionsSQL`) and the import's `--uploader` (`cmd/kukatko` `resolveUploader`). A pending member
     and a maintainer outside the project do not pass.
+  - `member_share.go` — **the one rule for showing one account's profile to another** (SEC-025):
+    `SharesProject(ctx, projectUID, viewerUID, accountUID)` holds when both accounts pass
+    `ApprovedMemberSQL` in one **active** project — `projectUID`, or any project when it is `""`. Asking
+    with the same uid twice answers "is this account such a member of the project". `internal/userpic`
+    gates the whole picture chain on it, and the membership read's `has_picture` (`memberColumns`) is
+    `false` for a pending membership to match.
   - `internal/reset` keeps `projects` and `project_members` among the **preserved** tables (account-side,
     like `users`); `project_members.subject_uid` points into the wiped `subjects`, so the reset lifts,
     nulls and restores `project_members_subject_uid_fkey` (`subjectLinks` in `reset.go`; the

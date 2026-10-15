@@ -155,7 +155,9 @@ Should-fix, not blockers:
    backfills it, so after the upgrade the bootstrap project's audit page and review leaderboard start empty and
    the history shows only in the instance audit. Not a leak, nothing lost; a migration can set the project of
    the `NULL` rows of project-scoped actions at any time.
-2. **An uploaded profile picture is served across projects** (`GET /users/{uid}/avatar` answers any signed-in
-   account; SEC-025) — an existence oracle. A library photo picked as the picture does not leak.
+2. ~~**An uploaded profile picture is served across projects** (`GET /users/{uid}/avatar` answers any signed-in
+   account; SEC-025) — an existence oracle. A library photo picked as the picture does not leak.~~
+   **Closed 2026-10-15** (multi-tenancy review III): an account's picture is served only to itself, a
+   maintainer, or a viewer it shares an active project with; everybody else gets the made-up uid's 404.
 3. **Browser Back during an upload stops the batch silently** (the leave guard catches link clicks and tab
    close, not a history pop); no file reaches a wrong project.

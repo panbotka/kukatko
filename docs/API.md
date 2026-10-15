@@ -488,7 +488,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   - `GET /members` → a bare array by display name: `[{user_uid, username, display_name, role,
     approved_at, last_login_at, has_picture, maintainer}]` — `approved_at: null` is a membership
     waiting for approval; `has_picture` says `GET /users/{uid}/avatar` is worth asking (an uploaded/picked
-    picture or a linked person; a 404 there still means none). **No e-mail address.**
+    picture or a linked person; a 404 there still means none) and is always `false` for a pending
+    membership, which that route refuses to its readers (SEC-025). **No e-mail address.**
     An exact-match add (below) whose account has **not entered the project yet** (its identity withheld)
     is **not listed at all** — not even as a nameless row: a row would appear only when the typed address
     belonged to an account, and would hand the project the account's uid (and with it its picture). The
@@ -2068,6 +2069,15 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   account falls down the chain instead of erroring — and so does a picked photo of a project the **caller**
   may not see (no approved membership there, not a maintainer): it is refused exactly as a private one is,
   ending in the same 404 when nothing below it answers, never a 403.
+  **Who may see an account's picture at all (SEC-025):** before any link of the chain is read, the caller
+  must be the account itself, a maintainer, or somebody who **shares an active project** with the account
+  where both are approved members and neither identity is withheld (`project.Store.SharesProject`). On the
+  `/api/v1/p/{project}` route the account must additionally be such a member of **that** project (a
+  maintainer included; the caller's own picture excepted). Everybody else — a member of another project
+  only, an account in no project, a pending or withheld member — gets **exactly** the 404 a made-up uid gets
+  (status, body, headers; no `ETag`, no `Cache-Control`), so the route is neither a picture leak across
+  projects nor an oracle on which uids are accounts. An uploaded picture holds no photo whose project could
+  be checked, which is why the rule sits in front of the whole chain.
   `GET /auth/picture` (`RequireSignedIn`; also under the project prefix, `RequireAuth`, where `subject`
   can answer) → `{origin: "upload"|"photo"|"subject"|"none", photo_uid?, subject_uid?}`
   — for the account page, which has to label the picture it shows and say what clearing it falls back to; it

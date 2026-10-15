@@ -42,7 +42,8 @@ anonymous project settings and the registration refusals). **SEC-026** (the face
 answered for any project and relied on their callers proving the photo first; not reachable, hardening)
 was fixed on **2026-10-14** too. **SEC-027** (a project admin's blind member add revealed the account
 behind an address — its existence, uid, uploaded picture — and let the project's notifications reach it)
-was found and fixed on **2026-10-15**.
+was found and fixed on **2026-10-15**, and so was SEC-025's accepted residue (an uploaded profile picture
+served to any signed-in account by uid, and its 200/404 existence oracle).
 Everything else below is open as written.
 
 > **Severity scale:** critical / high / medium / low / info. A weakness that is not
@@ -1057,7 +1058,8 @@ Everything else below is open as written.
   byte for byte), `TestMineIgnoresTheUserFilter`, `TestOwnOnly`;
   `TestPublicSettings_closedRegistrationIsLikeNoProject` (`internal/settingsapi`, `AssertSameShape` against
   an unknown slug), `TestProjectPublicIsRateLimited`; `TestRegister_refusalsAnswerAlike` (`internal/auth`).
-- **Not addressed (accepted):** the uploaded profile picture (`internal/userpic`) is served by the
+- **Not addressed (accepted at the time, closed 2026-10-15 — see the review III follow-up below):** the
+  uploaded profile picture (`internal/userpic`) is served by the
   instance-level `GET /users/{uid}/avatar` to **any signed-in account**, member of the same project or
   not, and a 200 vs 404 there tells whether the uid has a picture. It takes a user uid, which is random and
   only learned from a shared context (a comment, a member list), and an account's own picture is meant to
@@ -1078,6 +1080,24 @@ Everything else below is open as written.
   answers `""` (`TestProject_meForgetsAProjectItCannotEnter`). The residue accepted in (b) turned out
   to be worse than one bit and is fixed under **SEC-027**: the withheld row also carried the account's
   uid, which fetched its picture and let the project's notifications reach it.
+- **Follow-up (multi-tenancy review III, 2026-10-15 — round 3 F2/W2, a BLOCKER):** the accepted picture
+  residue above was reproduced on staging (two accounts × both routes: `GET /api/v1/users/{uid}/avatar` and
+  `/api/v1/p/{x}/users/{uid}/avatar` answered 200 `image/jpeg` with another project's account's upload, to an
+  account of another project and to one in no project at all). Cause: `userpic.Service.resolveStored`
+  returned a stored upload with no viewer check, while a picked photo and an inherited face did check the
+  project. **Fix:** `Resolve` now asks `mayShowAccount` before any link of the chain is read — the account
+  itself, a maintainer, or a viewer who shares an **active** project with the account where both are
+  approved members and neither identity is withheld (`project.Store.SharesProject` over
+  `ApprovedMemberSQL`); on the project route the account must also be such a member of that project.
+  Everybody else gets `ErrNoPicture` → the very 404 a made-up uid gets (status, body, headers). The members
+  list's `has_picture` is now `false` for a pending membership, which the route refuses. The other places
+  that name a user (the directory `GET /p/{project}/users`, comments, notifications, audit) carry only a uid
+  and send the client to this route, so the one rule covers them. **Regression tests:**
+  `TestPicture_isServedOnlyToWhoSharesAProjectWithTheAccount` (`internal/userpicapi`, two projects: a member
+  of A only, an account in no project, a pending and a withheld member of B and a member of both asking
+  through A's route all match a made-up uid byte for byte; a member of B, the account and a maintainer get
+  200), `TestResolve_isShownOnlyToWhoSharesAProjectWithTheAccount` (`internal/userpic`), `TestSharesProject`
+  and `TestMembership_aPendingMemberPromisesNoPicture` (`internal/project`).
 
 ---
 
@@ -1174,8 +1194,8 @@ Everything else below is open as written.
   6. **Throttle:** both blind routes sit behind the per-caller `ratelimit.member_add` rule (default
      0.05/s, burst 10).
 - **Out of scope here:** whether `/users/{uid}/avatar` should serve an uploaded picture to anybody who
-  knows the uid (the SEC-025 residue, a separate task). After this fix the blind add no longer hands the
-  project a uid to ask with.
+  knows the uid (the SEC-025 residue, a separate task — closed 2026-10-15, see SEC-025's review III
+  follow-up). After this fix the blind add no longer hands the project a uid to ask with.
 - **Regression tests:** `TestMembers_blindAddOfAForeignAccountLeavesNoTrace` (`internal/memberapi`, two
   projects: B's admin adds A's member's address and a missing one; the members list and the name
   directory stay byte-identical, the per-member routes answer the account's uid like a missing uid, the
@@ -1249,7 +1269,8 @@ below is open; each is an attack scenario with the mitigation that closes it and
   share one even for byte-identical photos; the media routes read the photo through the project-scoped store
   before they open anything, and a signed URL is minted per object. A profile picture picked from a library
   photo is refused for a photo of a project the viewer may not see, and the inherited face is the account's
-  person **in the viewer's project** only. The scrub-preview service does not rely on its callers' check
+  person **in the viewer's project** only; and no picture of an account — upload, pick or face — reaches a
+  viewer who shares no active project with it (SEC-025). The scrub-preview service does not rely on its callers' check
   either: `storyboardjob.Service`'s `Status`, `Open`, `FileHash` and `Regenerate` take the request's project
   and load the photo through `GetByUIDInProject`, so a handler that forgot `photoInProject` still gets
   `ErrPhotoNotFound` for a foreign clip (only the job's `Generate` reads unscoped, via `GetForJob`;

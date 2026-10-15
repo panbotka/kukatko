@@ -131,7 +131,8 @@ type Member struct {
 	// GET /users/{uid}/avatar for: an uploaded or picked one, or a person this
 	// membership links, whose face stands in. A linked person without a usable
 	// face still answers 404 there, so a client keeps its initial as the
-	// fallback.
+	// fallback. A pending membership is always false: until it is approved
+	// the account shares no project with its readers, so the route refuses it.
 	HasPicture bool `json:"has_picture"`
 	// IdentityWithheld reports a membership made by an exact-match add
 	// (AddByIdentifier) whose account has not entered the project yet. Until it

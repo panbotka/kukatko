@@ -10,10 +10,12 @@ import (
 	"image/color"
 	"image/jpeg"
 	"io"
+	"maps"
 	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -130,9 +132,16 @@ func newEnv(t *testing.T) *env {
 // be able to set one.
 func (e *env) login(t *testing.T, username string) (string, *http.Client) {
 	t.Helper()
+	return e.loginAs(t, username, auth.AccountViewer)
+}
+
+// loginAs creates an account seeded with role (see auth.AccountRole) and
+// returns its uid and a cookie-bearing client.
+func (e *env) loginAs(t *testing.T, username string, role auth.AccountRole) (string, *http.Client) {
+	t.Helper()
 	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test",
-		Password: testPassword, Role: auth.AccountViewer,
+		Password: testPassword, Role: role,
 	})
 	if err != nil {
 		t.Fatalf("CreateUser(%s): %v", username, err)
@@ -667,5 +676,125 @@ func TestPicture_pickRefusesAPhotoOfAProjectTheCallerIsNotIn(t *testing.T) {
 	}
 	if state := env.describe(t, client); state.Origin != userpic.OriginNone {
 		t.Errorf("a refused pick was stored anyway: %+v", state)
+	}
+}
+
+// leave removes userUID's membership of projectUID.
+func (e *env) leave(t *testing.T, projectUID, userUID string) {
+	t.Helper()
+	if err := e.projects.RemoveMember(t.Context(), audit.Meta{}, projectUID, userUID); err != nil {
+		t.Fatalf("removing %s from %s: %v", userUID, projectUID, err)
+	}
+}
+
+// avatarAnswer is everything a client can observe of one avatar response: the
+// status, the body and every header but Date, which only says when.
+type avatarAnswer struct {
+	status int
+	header http.Header
+	body   string
+}
+
+// answerAt fetches uid's avatar through base and records the whole answer.
+func (e *env) answerAt(t *testing.T, client *http.Client, base, uid string) avatarAnswer {
+	t.Helper()
+	resp := e.avatarAt(t, client, base, uid, "")
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading the avatar body: %v", err)
+	}
+	header := resp.Header.Clone()
+	header.Del("Date")
+	return avatarAnswer{status: resp.StatusCode, header: header, body: string(body)}
+}
+
+// TestPicture_isServedOnlyToWhoSharesAProjectWithTheAccount is SEC-025: an
+// uploaded picture — which holds no photo whose project could be checked — went
+// to every signed-in account by uid, on both routes, and 200 against 404 told
+// which uids were accounts. Now an account of project B only is shown to a
+// member of B (and a maintainer, and itself); a member of A only, an account in
+// no project, a pending or withheld member of B, and a member of both asking
+// through A's route all get exactly the answer a made-up uid gets.
+func TestPicture_isServedOnlyToWhoSharesAProjectWithTheAccount(t *testing.T) {
+	env := newEnv(t)
+	b := env.projectB(t)
+	inB := "/api/v1/p/" + b.Slug
+	const madeUp = "us00000000000000000madeup"
+
+	owner, ownerClient := env.login(t, "owner")
+	env.leave(t, project.BootstrapUID, owner)
+	env.join(t, b.UID, owner)
+	withheld, withheldClient := env.login(t, "withheld")
+	env.leave(t, project.BootstrapUID, withheld)
+	for _, c := range []*http.Client{ownerClient, withheldClient} {
+		if status := env.upload(t, c, "picture", squareJPEG(t, 300)); status != http.StatusNoContent {
+			t.Fatalf("upload status = %d, want 204", status)
+		}
+	}
+
+	_, onlyA := env.login(t, "onlya")
+	loner, lonerClient := env.login(t, "loner")
+	env.leave(t, project.BootstrapUID, loner)
+	shared, sharedClient := env.login(t, "shared")
+	env.join(t, b.UID, shared)
+
+	pending, pendingClient := env.login(t, "pending")
+	env.leave(t, project.BootstrapUID, pending)
+	if _, err := env.projects.AddMember(t.Context(), audit.Meta{}, b.UID, pending, project.RoleViewer, false); err != nil {
+		t.Fatalf("adding the pending member: %v", err)
+	}
+	outcome, err := env.projects.AddByIdentifier(t.Context(), audit.Meta{}, b.UID, "withheld", project.RoleViewer)
+	if err != nil || outcome != project.OutcomeAdded {
+		t.Fatalf("adding the withheld member: %q, %v", outcome, err)
+	}
+	_, maintainer := env.loginAs(t, "root", auth.AccountMaintainer)
+
+	refused := []struct {
+		name    string
+		client  *http.Client
+		base    string
+		account string
+	}{
+		{"a member of A only, instance route", onlyA, "/api/v1", owner},
+		{"a member of A only, A's route", onlyA, apiV, owner},
+		{"an account in no project", lonerClient, "/api/v1", owner},
+		{"a pending member of B", pendingClient, "/api/v1", owner},
+		{"a member of both, A's route", sharedClient, apiV, owner},
+		{"a member of B asking for a withheld member", sharedClient, inB, withheld},
+		{"a maintainer, A's route", maintainer, apiV, owner},
+	}
+	for _, tc := range refused {
+		want := env.answerAt(t, tc.client, tc.base, madeUp)
+		if want.status != http.StatusNotFound {
+			t.Fatalf("%s: a made-up uid answered %d, want 404", tc.name, want.status)
+		}
+		got := env.answerAt(t, tc.client, tc.base, tc.account)
+		if got.status != want.status || got.body != want.body {
+			t.Errorf("%s: answered %d with %d bytes, want the made-up uid's %d %q",
+				tc.name, got.status, len(got.body), want.status, want.body)
+		}
+		if !maps.EqualFunc(got.header, want.header, slices.Equal) {
+			t.Errorf("%s: headers %v, want the made-up uid's %v", tc.name, got.header, want.header)
+		}
+	}
+
+	served := []struct {
+		name    string
+		client  *http.Client
+		base    string
+		account string
+	}{
+		{"the account itself", ownerClient, "/api/v1", owner},
+		{"a member of B, instance route", sharedClient, "/api/v1", owner},
+		{"a member of B, B's route", sharedClient, inB, owner},
+		{"a maintainer, instance route", maintainer, "/api/v1", owner},
+		{"a maintainer, B's route", maintainer, inB, owner},
+	}
+	for _, tc := range served {
+		got := env.answerAt(t, tc.client, tc.base, tc.account)
+		if got.status != http.StatusOK || got.header.Get("Content-Type") != "image/jpeg" {
+			t.Errorf("%s: answered %d %q, want 200 image/jpeg", tc.name, got.status, got.header.Get("Content-Type"))
+		}
 	}
 }

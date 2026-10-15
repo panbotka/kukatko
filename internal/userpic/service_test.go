@@ -71,6 +71,25 @@ func (f fakeMembers) Membership(_ context.Context, projectUID, userUID string) (
 	return m, nil
 }
 
+// SharesProject answers from the same memberships: both accounts approved and
+// not withheld in projectUID, or in any project when it is empty. Every fake
+// project is active.
+func (f fakeMembers) SharesProject(_ context.Context, projectUID, viewerUID, accountUID string) (bool, error) {
+	if f.err != nil {
+		return false, f.err
+	}
+	named := func(m *project.Member) bool { return m != nil && m.ApprovedAt != nil && !m.IdentityWithheld }
+	for p, members := range f.byProject {
+		if projectUID != "" && p != projectUID {
+			continue
+		}
+		if named(members[viewerUID]) && named(members[accountUID]) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // with returns f plus an approved membership of userUID in projectUID linked to
 // subjectUID ("" = linked to nobody).
 func (f fakeMembers) with(projectUID, userUID, subjectUID string) fakeMembers {
@@ -574,7 +593,6 @@ func TestResolve_aPickedPhotoIsShownOnlyToWhoMaySeeItsProject(t *testing.T) {
 		{"a member of both", userpic.Viewer{UserUID: "both", ProjectUID: projectA}, userpic.OriginPhoto},
 		{"a pending member of B", userpic.Viewer{UserUID: "waiting", ProjectUID: projectA}, userpic.OriginSubject},
 		{"a maintainer", userpic.Viewer{UserUID: "root", Maintainer: true, ProjectUID: projectA}, userpic.OriginPhoto},
-		{"nobody", userpic.Viewer{ProjectUID: projectA}, userpic.OriginSubject},
 	} {
 		_, origin, err := svc.Resolve(t.Context(), tc.viewer, "u1")
 		if err != nil {
@@ -631,5 +649,64 @@ func TestResolve_aMembershipReadFailureIsAnError(t *testing.T) {
 	}
 	if _, err := svc.Describe(t.Context(), self); !errors.Is(err, boom) {
 		t.Errorf("Describe error = %v, want the membership failure", err)
+	}
+}
+
+// TestResolve_isShownOnlyToWhoSharesAProjectWithTheAccount verifies the gate
+// in front of the whole chain (SEC-025): an account's picture — here an upload,
+// which holds no photo whose project could be checked — answers only for the
+// account itself, a maintainer, and an approved, not withheld member of a
+// project the account is such a member of; a project route additionally needs
+// the account in that project. Everybody else gets ErrNoPicture, the answer a
+// made-up uid gets.
+func TestResolve_isShownOnlyToWhoSharesAProjectWithTheAccount(t *testing.T) {
+	t.Parallel()
+
+	pendingB := &project.Member{ProjectUID: projectB, UserUID: "waiting"}
+	approved := time.Now()
+	withheldB := &project.Member{ProjectUID: projectB, UserUID: "hidden", ApprovedAt: &approved, IdentityWithheld: true}
+	withheldAccount := &project.Member{ProjectUID: projectB, UserUID: "u2", ApprovedAt: &approved, IdentityWithheld: true}
+	members := fakeMembers{}.
+		with(projectB, "u1", "").with(projectA, "onlyA", "").
+		with(projectA, "both", "").with(projectB, "both", "").
+		withMember(pendingB).withMember(withheldB).
+		with(projectB, "inB", "").withMember(withheldAccount)
+	pictures := newFakePictures()
+	for _, uid := range []string{"u1", "u2"} {
+		if err := pictures.SetUpload(t.Context(), uid, []byte("jpeg-"+uid)); err != nil {
+			t.Fatalf("seeding the upload of %s: %v", uid, err)
+		}
+	}
+	svc := newService(pictures, members, fakeSubjects{}, nil)
+
+	for _, tc := range []struct {
+		name    string
+		viewer  userpic.Viewer
+		account string
+		shown   bool
+	}{
+		{"the account itself", userpic.Viewer{UserUID: "u1"}, "u1", true},
+		{"a member of B, instance route", userpic.Viewer{UserUID: "both"}, "u1", true},
+		{"a member of B, B's route", userpic.Viewer{UserUID: "both", ProjectUID: projectB}, "u1", true},
+		{"a maintainer, instance route", userpic.Viewer{UserUID: "root", Maintainer: true}, "u1", true},
+		{"a maintainer, B's route", userpic.Viewer{UserUID: "root", Maintainer: true, ProjectUID: projectB}, "u1", true},
+		{"a member of A only, instance route", userpic.Viewer{UserUID: "onlyA"}, "u1", false},
+		{"a member of A only, A's route", userpic.Viewer{UserUID: "onlyA", ProjectUID: projectA}, "u1", false},
+		{"a member of both, A's route", userpic.Viewer{UserUID: "both", ProjectUID: projectA}, "u1", false},
+		{"a maintainer, A's route", userpic.Viewer{UserUID: "root", Maintainer: true, ProjectUID: projectA}, "u1", false},
+		{"a pending member of B", userpic.Viewer{UserUID: "waiting"}, "u1", false},
+		{"a withheld member of B", userpic.Viewer{UserUID: "hidden"}, "u1", false},
+		{"a withheld account", userpic.Viewer{UserUID: "inB", ProjectUID: projectB}, "u2", false},
+		{"nobody", userpic.Viewer{ProjectUID: projectB}, "u1", false},
+	} {
+		source, _, err := svc.Resolve(t.Context(), tc.viewer, tc.account)
+		switch {
+		case tc.shown && err != nil:
+			t.Errorf("%s: Resolve: %v, want the upload", tc.name, err)
+		case tc.shown && string(source.Upload) != "jpeg-"+tc.account:
+			t.Errorf("%s: upload = %q, want the stored bytes", tc.name, source.Upload)
+		case !tc.shown && !errors.Is(err, userpic.ErrNoPicture):
+			t.Errorf("%s: error = %v, want ErrNoPicture", tc.name, err)
+		}
 	}
 }

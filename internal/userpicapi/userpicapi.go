@@ -168,7 +168,10 @@ func (a *API) RegisterProjectRoutes(r chi.Router) {
 // handleAvatar streams the account's picture as a JPEG. An account that does not
 // exist, has no picture from any source, or whose picked photo has since gone
 // all answer 404 — every client draws the coloured initial for all three, so
-// they are one answer to it. A caller presenting the current ETag gets 304.
+// they are one answer to it. So does an account the caller shares no project
+// with (userpic.Service.Resolve): the same 404, with no validators, so the
+// route tells a stranger neither the picture nor that the uid is an account. A
+// caller presenting the current ETag gets 304.
 func (a *API) handleAvatar(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
 	source, _, err := a.pictures.Resolve(r.Context(), viewerOf(r), uid)

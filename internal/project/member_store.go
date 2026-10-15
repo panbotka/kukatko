@@ -20,14 +20,17 @@ const foreignKeyViolation = "23503"
 // whose identity is withheld (an exact-match add the account has not entered
 // yet, see AddByIdentifier) reads with an empty username and display name, no
 // last sign-in, no picture and not as a maintainer: the project learns who the
-// account is only once it comes in. 'maintainer' is the instance role
+// account is only once it comes in. A pending membership reads with no picture
+// either: GET /users/{uid}/avatar shows an account only to those it shares a
+// project with as an approved member (SharesProject), so a pending one would
+// promise a picture its reader is refused. 'maintainer' is the instance role
 // (auth.RoleMaintainer), spelled out because this package does not import auth.
 const memberColumns = `m.project_uid, m.user_uid, m.role, m.approved_at, m.subject_uid,
 	m.last_seen_at, m.visit_reference_at, m.task_digest_at, m.created_at,
 	CASE WHEN m.identity_withheld THEN '' ELSE u.username END,
 	CASE WHEN m.identity_withheld THEN '' ELSE u.display_name END,
 	CASE WHEN m.identity_withheld THEN NULL ELSE u.last_login_at END,
-	(NOT m.identity_withheld AND (m.subject_uid IS NOT NULL
+	(NOT m.identity_withheld AND m.approved_at IS NOT NULL AND (m.subject_uid IS NOT NULL
 		OR EXISTS (SELECT 1 FROM user_pictures up WHERE up.user_uid = u.uid))),
 	m.identity_withheld,
 	(NOT m.identity_withheld AND u.role = 'maintainer')`
