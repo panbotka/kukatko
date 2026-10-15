@@ -201,6 +201,19 @@ func TestParseSegmentKey(t *testing.T) {
 			key:       "hls/abc//00000.m4s",
 			wantGroup: "hls/abc//00000.m4s",
 		},
+		{
+			name:          "under a project prefix",
+			key:           "projects/pj0000000000000000veselice/hls/abc/1080p/init.mp4",
+			wantHash:      "abc",
+			wantRendition: "1080p",
+			wantGroup:     "projects/pj0000000000000000veselice/hls/abc/1080p/",
+			shaped:        true,
+		},
+		{
+			name:      "a project's tree outside its streaming prefix",
+			key:       "projects/pj0000000000000000veselice/2023/06/photo.jpg",
+			wantGroup: "projects/pj0000000000000000veselice/2023/06/photo.jpg",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -169,8 +169,8 @@ configuration key both here **and** into `config.example.yaml`.
   `impossible dates cleared=N`, and a re-run is a no-op.
   `--missing-renditions` and `--delete-orphan-segments` are the two **streaming** repairs, and the scan grew the
   two lines that are their dry run: `missing renditions` (rows of `photo_hls_renditions` whose objects are not in
-  the store, sampled as `<photo_uid>/<rendition>`) and `orphan segments` (objects under `hls/` that no recorded
-  rendition claims, counted with the storage they occupy and sampled by the `hls/<file_hash>/<rendition>/` prefix
+  the store, sampled as `<photo_uid>/<rendition>`) and `orphan segments` (objects under `hls/` — the root's and
+  every project's `projects/<uid>/hls/` — that no recorded rendition claims, counted with the storage they occupy and sampled by the `hls/<file_hash>/<rendition>/` prefix
   they sit under — one abandoned encode is thousands of segments under a single prefix). A missing rendition is
   what a storage migration that moved the originals but not the segments leaves behind: the photo still
   advertises itself as streamable and every segment request answers 404. Presence is judged by the rendition's
@@ -179,7 +179,9 @@ configuration key both here **and** into `config.example.yaml`.
   rather than an object. `--missing-renditions` **drops the row** (`renditions dropped=N`): the clip stops
   claiming it streams and lands in exactly the state `POST /api/v1/p/<slug>/process/hls` looks for, so recovery is one
   background job. It removes no media — not the original, and not the stray segments of a partly-surviving
-  rendition, which simply become orphans the next scan reports.
+  rendition, which simply become orphans the next scan reports. It is **refused while any storage move is
+  `running` or `paused`**, and a video a move put under its project's prefix whose init segment is still at
+  the root is not missing (see the storage-move runbook).
   `--delete-orphan-segments` is the **only repair that deletes anything from the store**, which is why the scan
   never sweeps on its own and the flag has to be asked for by name. It skips every object belonging to a video
   with an unfinished `hls_transcode` job (`orphan segments deleted=N kept=M`): the encode publishes a rendition's
@@ -193,8 +195,9 @@ configuration key both here **and** into `config.example.yaml`.
   produced again.
   **Cost of the streaming check:** with streaming off, or with no video in the catalogue (archived ones counted —
   archiving removes neither rows nor segments), it makes **no query and no store call at all**. Otherwise it adds
-  **one `Stat` per recorded rendition** — one per video with the default single-quality plan — plus **one prefix
-  listing of `hls/`** for the whole library, and one further `Stat` per orphan object found. A healthy library
+  **one `Stat` per recorded rendition** — one per video with the default single-quality plan, one more for a moved
+  video whose init segment is not under its prefix — plus **one prefix listing of `hls/` per storage layout in
+  use** (the root and each project prefix), and one further `Stat` per orphan object found. A healthy library
   therefore pays one listing and one object check per video, and only a library with rot pays in proportion to
   how much of it there is;
   a no-op without any flag;
@@ -767,6 +770,19 @@ only the first time it is recorded, so a stray whose move keeps failing ends the
 (`derived_failed`) for a `--retry` instead of another round. A root object whose hash names **no** photo of
 the project is never matched: it stays at the root for `maintenance scan` to report as an orphan.
 
+**Uploads in flight at the start.** An upload that read the project's prefix just before the start stores at
+the root and commits its row after the pass may already be past its key (the pass walks `file_path` order).
+When the pass ended without recording a single error, the photos `Finish` still finds in the old layout can
+only be such uploads: it **rewinds the pass** instead of failing the run, and the next steps take them — the
+run still ends `done` without a `--retry`. After a pass that did record errors the run fails as below, and
+the `--retry` takes the unseen upload together with the failed photos. (An upload still in flight when the
+run closes — minutes against a move of hours — would stay at the root; `maintenance scan` reports it.)
+
+**`families.yaml` at the close.** `Finish` copies the root `families.yaml` under the prefix when no export
+has landed there yet, and only **then** queues the project's family export. A job writing the fresh file
+between `Finish`'s listing and its copy would otherwise have it overwritten by the pre-move root file with
+nothing left to rewrite it; queued after the copy, the export always writes last.
+
 **Jobs during a move.** The `thumbnail`, `hls_transcode` and `sidecar` jobs publish a photo's derived objects
 under the prefix of its original, and the move snapshots those objects when it steps the photo. So while a
 project's move is `running`, a job for one of its photos still in the old layout is **deferred** (requeued
@@ -798,17 +814,30 @@ retention) deletes each photo **under the same lock**, shared, **waiting** while
 it then deletes the objects of the key the row has by then. A move that copied a photo's original but finds
 the photo purged before it could commit deletes its copy again, so nothing of a purged photo survives under
 the new prefix. A photo a crashed move committed and has yet to finish is not purged (single purge: **503**
-with `Retry-After`; a batch counts it as failed and the next run takes it).
+with `Retry-After`; a batch counts it as failed and the next run takes it). A purge removes the photo's
+derived objects **from the store**, not only from the local cache: every thumbnail object named after its
+hash (one listing of `<prefix>thumb/aa/bb/cc/<hash>_`, a retired size included) and every segment under
+`<prefix>hls/<hash>/`. For a photo the move has committed under the prefix it also removes the ones still
+at the **root** — a derived copy that failed, waiting for the retry — once no project is left in the root
+layout (true from the move's start, which switches the prefix). Before, those root leftovers lost their
+`storage_rekey_derived_failures` row with the photo and nothing ever removed them, so the root never ended
+empty (the 312 orphan thumbnails prod reports fit that pattern).
 
 **Repairs during a move.** `maintenance repair --delete-orphan-segments` and `--root-derived` delete at the
 store root, which is exactly what a move is emptying: a photo it has committed but not finished has its row
 under the prefix and its segments still at the root, where the sweep would take them for orphans.
-`--import-orphans` is the mirror case: mid-move, a copied-but-uncommitted original has no row and looks like
-an orphan, and importing it could bring back a photo the user purged. All three are **refused while any
-storage move is `running` or `paused`** — the CLI exits non-zero with
+`--missing-renditions` judges a rendition by its init segment under the row's prefix, so the same video
+would read as missing and lose its rendition row (it stops streaming). `--import-orphans` is the mirror
+case: mid-move, a copied-but-uncommitted original has no row and looks like an orphan, and importing it
+could bring back a photo the user purged. All four are **refused while any storage move is `running` or
+`paused`** — the CLI exits non-zero with
 `a storage move is under way: … is refused while the storage move of project <uid> is <state>`, the API
-answers **409** — and nothing is deleted or imported. Run them again once the move is `done` (or `failed`:
-the root segments of moved photos are then kept by the sweep, and `--root-derived` moves them).
+answers **409** — and nothing is deleted, withdrawn or imported. Run them again once the move is `done` (or
+`failed`: the root segments of moved photos are then kept by the sweep, `--root-derived` moves them, and a
+moved video whose init segment is still at the root is not "missing" — the scan does not report it and
+`--missing-renditions` keeps its row). The streaming scan and the orphan sweep list the `hls/` tree of
+**every layout in use** — the root's `hls/` and each project's `projects/<uid>/hls/` — so an orphan under a
+moved project's prefix is reported and swept too.
 
 **Another project in the root layout.** Thumbnail and segment keys are named after a content hash, which is
 unique only within a project. While any project other than the moved ones is still in the root layout (none

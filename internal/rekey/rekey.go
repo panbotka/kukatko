@@ -104,12 +104,15 @@ var (
 	// the run over MaxErrors and the run is now failed.
 	ErrRunFailed = errors.New("rekey: the storage move failed")
 	// ErrPhotosRemain is returned by Finish when photos are still in the old
-	// layout — the ones the pass could not move. The run is failed; Retry
-	// starts another pass over them.
+	// layout after a pass that recorded errors — the ones it could not move,
+	// and any it never saw. The run is failed; Retry starts another pass over
+	// them.
 	ErrPhotosRemain = errors.New("rekey: photos are still in the old layout")
-	// ErrPendingCleanup is returned by Finish while a photo's old objects still
-	// await deletion — a crashed step's pending photo, or derived objects its
-	// root sweep just found and recorded; Step finishes that first.
+	// ErrPendingCleanup is returned by Finish while work for Step is left — a
+	// crashed step's pending photo, derived objects its root sweep just found
+	// and recorded, or photos in the old layout an error-free pass never saw
+	// (uploads in flight at Start), for which it rewound the pass; Step
+	// finishes that first.
 	ErrPendingCleanup = errors.New("rekey: a moved photo's old objects are not deleted yet")
 	// ErrDerivedRemain is returned by Finish when moved photos still have
 	// thumbnails or streaming segments at the root that the pass could not move

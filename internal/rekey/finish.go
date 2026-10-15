@@ -13,19 +13,25 @@ import (
 )
 
 // Finish closes run once no photo of its project is left in the old layout. It
-// schedules a rewrite of the project's families.yaml and of the sidecar of
-// every photo of the project — so both are written afresh under the new prefix
-// with the new keys inside — then removes what the root layout still holds of
-// the project's: the root families.yaml and the root sidecars, each only once a
-// listing shows its replacement under the new prefix (the genealogy export is
-// copied there first when no export has been written since Start). Last, the run
-// is marked done.
+// schedules a rewrite of the sidecar of every photo of the project — so each is
+// written afresh under the new prefix with the new keys inside — then removes
+// what the root layout still holds of the project's: the root families.yaml and
+// the root sidecars, each only once a listing shows its replacement under the
+// new prefix (the genealogy export is copied there first when no export has
+// been written since Start). Only then is the rewrite of the project's
+// families.yaml scheduled: a family export job that wrote the fresh file between
+// the listing and that copy has it overwritten by the pre-move root one, and the
+// export scheduled after the copy writes it afresh again. Last, the run is
+// marked done.
 //
 // A run already done is returned as it is. It returns ErrNotRunning for a run
 // that is paused or failed and ErrPendingCleanup while a moved photo's old
-// objects await deletion. When photos are still in the old layout — the ones the
-// pass recorded errors for — the run is failed and ErrPhotosRemain returned;
-// Retry starts another pass over them.
+// objects await deletion. When photos are still in the old layout and the pass
+// recorded no error at all, they are photos the pass never saw — an upload
+// already in flight at Start stores at the root, and its key may sort below the
+// cursor — so the cursor is rewound and ErrPendingCleanup returned: the next
+// steps take them. When the pass did record errors, the run is failed and
+// ErrPhotosRemain returned; Retry starts another pass over every photo left.
 //
 // Before anything is rewritten it sweeps the root for thumbnails and streaming
 // segments of the project's moved photos (a bucket listing): a photo found there
@@ -56,18 +62,29 @@ func (s *Service) Finish(ctx context.Context, run Run) (Run, error) {
 	if run, err = s.settleDerived(ctx, run); err != nil {
 		return run, err
 	}
-	if err := s.enqueueRewrites(ctx, run.ProjectUID); err != nil {
+	if err := s.enqueueSidecars(ctx, run.ProjectUID); err != nil {
 		return run, err
 	}
 	if err := s.cleanRoot(ctx, run); err != nil {
 		return run, err
 	}
+	if err := s.jobs.EnqueueFamilyExport(ctx, run.ProjectUID); err != nil {
+		return run, fmt.Errorf("rekey: scheduling the family export: %w", err)
+	}
 	return queryRun(ctx, s.pool, ErrNoRun, setStateSQL, run.UID, string(StateDone))
 }
 
-// checkNoneRemain fails the run, and returns it failed with ErrPhotosRemain,
-// when photos of its project are still in the old layout; otherwise it returns
-// the run as it is.
+// rewindSQL restarts the pass of a running run that has recorded no error, so
+// its steps reach photos the pass never saw. It returns nothing for a run that
+// has errors or is no longer running.
+const rewindSQL = `UPDATE storage_rekey_runs SET last_key = '', updated_at = now()
+WHERE uid = $1 AND state = 'running' AND error_count = 0 RETURNING uid`
+
+// checkNoneRemain returns the run as it is when no photo of its project is left
+// in the old layout. Otherwise, when the pass recorded no error, it rewinds the
+// pass and returns ErrPendingCleanup (the photos left are ones the pass never
+// saw: uploads in flight at Start, stored at the root below the cursor); when
+// it did, it fails the run and returns it failed with ErrPhotosRemain.
 func (s *Service) checkNoneRemain(ctx context.Context, run Run) (Run, error) {
 	var remaining int64
 	if err := s.pool.QueryRow(ctx, remainingSQL, run.ProjectUID, run.TargetPrefix).Scan(&remaining); err != nil {
@@ -75,6 +92,16 @@ func (s *Service) checkNoneRemain(ctx context.Context, run Run) (Run, error) {
 	}
 	if remaining == 0 {
 		return run, nil
+	}
+	var rewound string
+	err := s.pool.QueryRow(ctx, rewindSQL, run.UID).Scan(&rewound)
+	switch {
+	case err == nil:
+		s.log.InfoContext(ctx, "rekey: photos the pass never saw; another pass takes them",
+			"run", run.UID, "photos", remaining)
+		return run, ErrPendingCleanup
+	case !errors.Is(err, pgx.ErrNoRows):
+		return run, fmt.Errorf("rekey: rewinding the pass: %w", err)
 	}
 	cause := fmt.Errorf("%w: %d photo(s) could not be moved", ErrPhotosRemain, remaining)
 	if _, err := s.recordError(ctx, run.UID, "", "", cause); err != nil {
@@ -123,12 +150,8 @@ func (s *Service) checkNoDerivedRemain(ctx context.Context, run Run) (Run, error
 	return failed, cause
 }
 
-// enqueueRewrites schedules the family export of the project and the sidecar of
-// every one of its photos.
-func (s *Service) enqueueRewrites(ctx context.Context, projectUID string) error {
-	if err := s.jobs.EnqueueFamilyExport(ctx, projectUID); err != nil {
-		return fmt.Errorf("rekey: scheduling the family export: %w", err)
-	}
+// enqueueSidecars schedules the sidecar rewrite of every photo of the project.
+func (s *Service) enqueueSidecars(ctx context.Context, projectUID string) error {
 	rows, err := s.pool.Query(ctx, photoUIDsSQL, projectUID)
 	if err != nil {
 		return fmt.Errorf("rekey: listing photos for their sidecars: %w", err)
@@ -175,7 +198,9 @@ func (s *Service) cleanRoot(ctx context.Context, run Run) error {
 
 // moveFamilies makes sure the project's genealogy export is under prefix and
 // then removes the root one: copied there first when no export has landed there
-// yet, deleted only once a listing shows it.
+// yet, deleted only once a listing shows it. The copy may overwrite a fresh
+// export a job wrote after the listing; Finish schedules the export only after
+// this, so the file is rewritten afresh either way.
 func (s *Service) moveFamilies(ctx context.Context, prefix string) error {
 	root := storekeys.FamiliesKey
 	target := storekeys.Join(prefix, root)
@@ -189,10 +214,7 @@ func (s *Service) moveFamilies(ctx context.Context, prefix string) error {
 		return err
 	}
 	if !listed[target] {
-		if err := s.store.Copy(ctx, root, target); err != nil {
-			return fmt.Errorf("rekey: copying %s: %w", root, err)
-		}
-		if listed, err = s.listed(ctx, target); err != nil {
+		if listed, err = s.copyFamilies(ctx, root, target); err != nil {
 			return err
 		}
 	}
@@ -203,6 +225,18 @@ func (s *Service) moveFamilies(ctx context.Context, prefix string) error {
 		return fmt.Errorf("rekey: deleting %s: %w", root, err)
 	}
 	return nil
+}
+
+// copyFamilies copies the root genealogy export to target, which a listing
+// just showed absent, and returns a fresh listing of target.
+func (s *Service) copyFamilies(ctx context.Context, root, target string) (map[string]bool, error) {
+	if err := s.at(stageFamiliesListed); err != nil {
+		return nil, err
+	}
+	if err := s.store.Copy(ctx, root, target); err != nil {
+		return nil, fmt.Errorf("rekey: copying %s: %w", root, err)
+	}
+	return s.listed(ctx, target)
 }
 
 // removeRootSidecars deletes every root sidecar whose replacement — the same

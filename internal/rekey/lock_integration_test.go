@@ -9,9 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/thumb"
+	"github.com/panbotka/kukatko/internal/trash"
 )
 
 // freshTile is what a thumbnail rebuilt after an edit holds.
@@ -149,27 +152,73 @@ func (h *harness) photoObjects(photo seeded) []string {
 	return found
 }
 
-// purge does what a trash purge does under the gate: it deletes, under the
-// photo's lock, the original, the sidecar and the derived objects at the key the
-// row has then, and the row.
+// noThumbCache is the trash purge's local thumbnail cache in these tests: the
+// harness has none, every thumbnail lives in the fake store.
+type noThumbCache struct{}
+
+// Remove has no cache to remove from.
+func (noThumbCache) Remove(string, string) error { return nil }
+
+// purge moves photo to the trash and purges it with the real trash service over
+// the fake store, under the gate: everything it deletes — the original, the
+// sidecar and every derived object, under whichever layout holds it — it finds
+// itself, from the photo's rows and the store's listing.
 func (h *harness) purge(gate *Gate, photo seeded) error {
-	return gate.Purge(context.Background(), project.BootstrapUID, photo.uid, func() error {
-		var key string
-		err := h.db.Pool().QueryRow(context.Background(),
-			`SELECT file_path FROM photos WHERE uid = $1 AND project_id = $2`, photo.uid, project.BootstrapUID).Scan(&key)
-		if err != nil {
-			return err //nolint:wrapcheck // test helper.
-		}
-		prefix := storekeys.PrefixOf(key)
-		for _, rel := range append([]string{photo.filePath}, photo.derived...) {
-			if err := h.mem.Delete(context.Background(), prefix+rel); err != nil {
-				h.t.Logf("deleting %s: %v", prefix+rel, err)
-			}
-		}
-		_, err = h.db.Pool().Exec(context.Background(),
-			`DELETE FROM photos WHERE uid = $1 AND project_id = $2`, photo.uid, project.BootstrapUID)
+	ctx := context.Background()
+	pool := h.db.Pool()
+	if _, err := pool.Exec(ctx, `UPDATE photos SET archived_at = now() WHERE uid = $1 AND project_id = $2`,
+		photo.uid, project.BootstrapUID); err != nil {
 		return err //nolint:wrapcheck // test helper.
+	}
+	svc := trash.New(trash.Config{
+		Photos: photos.NewStore(pool), Projects: project.NewStore(pool), Storage: h.mem,
+		Thumbnailer: noThumbCache{}, Moves: gate,
 	})
+	return svc.PurgePhoto(ctx, project.BootstrapUID, photo.uid, audit.Meta{}) //nolint:wrapcheck // test helper.
+}
+
+// assertRootEmpty fails the test for every key the fake store still holds
+// outside the bootstrap project's new prefix.
+func (h *harness) assertRootEmpty() {
+	h.t.Helper()
+	for _, key := range h.mem.keys() {
+		if !strings.HasPrefix(key, bootstrapTarget) {
+			h.t.Errorf("%s is left at the root", key)
+		}
+	}
+}
+
+// TestService_purgeOfAPhotoWithDerivedAtTheRootLeavesNothing verifies a purge of
+// a photo the move committed but whose streaming segments it could not copy —
+// recorded as a derived failure, the segments still at the root — removes them
+// from the root as well: the failure record goes with the photo, so nothing
+// else would ever remove them, and the move then finishes with the root empty.
+func TestService_purgeOfAPhotoWithDerivedAtTheRootLeavesNothing(t *testing.T) {
+	h := newHarness(t)
+	clip := h.seedPhoto("ph1", "2023/01/clip.mp4", true)
+	kept := h.seedPhoto("ph2", "2023/02/b.jpg", false)
+	segment := trackedDerived(clip)[len(trackedDerived(clip))-1]
+	h.mem.failCopy[bootstrapTarget+segment] = errTransient
+	run := h.start()
+	if err := h.stepToEnd(run, 5); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !h.mem.has(segment) {
+		t.Fatalf("the failed copy left no segment at the root to purge: %v", h.mem.keys())
+	}
+
+	if err := h.purge(NewGate(h.db.Pool()), clip); err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+	if left := h.photoObjects(clip); len(left) != 0 {
+		t.Errorf("objects of the purged photo survived: %v", left)
+	}
+	done, err := h.svc.Finish(t.Context(), run)
+	if err != nil || done.State != StateDone {
+		t.Fatalf("Finish = %+v, %v; want done", done, err)
+	}
+	h.assertMoved(kept)
+	h.assertRootEmpty()
 }
 
 // TestService_purgeBeforeTheCommitLeavesNothing verifies a trash purge that

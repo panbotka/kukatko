@@ -16,6 +16,7 @@ import (
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/storekeys"
+	"github.com/panbotka/kukatko/internal/thumb"
 )
 
 // fakePhotoStore is an in-memory PhotoStore for the purge tests. It tracks which
@@ -530,7 +531,7 @@ func TestPurgePhoto_removesHLSObjects(t *testing.T) {
 		"hls/"+purged+"/1080p/00001.m4s",
 		"hls/"+purged+"/720p/init.mp4",
 		"hls/"+kept+"/1080p/init.mp4",
-		"thumb/aa/bb/cc/"+purged+"_tile_500.jpg",
+		"thumb/ff/ee/dd/"+kept+"_tile_500.jpg",
 	)
 	// The purge asserts its storage for the listing interface, so the fake it is
 	// wired with is the listing one.
@@ -552,8 +553,8 @@ func TestPurgePhoto_removesHLSObjects(t *testing.T) {
 	if fs.deleted["hls/"+kept+"/1080p/init.mp4"] {
 		t.Error("another video's HLS objects were deleted")
 	}
-	if fs.deleted["thumb/aa/bb/cc/"+purged+"_tile_500.jpg"] {
-		t.Error("the prefix listing reached outside the hls/ prefix")
+	if fs.deleted["thumb/ff/ee/dd/"+kept+"_tile_500.jpg"] {
+		t.Error("another video's thumbnail object was deleted")
 	}
 }
 
@@ -849,5 +850,138 @@ func TestPurge_underTheMoveLock(t *testing.T) {
 	}
 	if want := []string{testProject + "|ph_free"}; !slices.Equal(lock.held, want) {
 		t.Errorf("purged under the lock: %v, want %v", lock.held, want)
+	}
+}
+
+// purgedHash and keptHash are two valid content hashes: the purged file's and
+// another file's sharing nothing with it.
+const (
+	purgedHash = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+	keptHash   = "ffeeddccbbaa00112233445566778899aabbccddeeff00112233445566778899"
+)
+
+// thumbKey returns the store key of hash's thumbnail of the named size under
+// prefix, failing the test on a layout error.
+func thumbKey(t *testing.T, prefix, hash, size string) string {
+	t.Helper()
+	key, err := thumb.RelPath(prefix, hash, size)
+	if err != nil {
+		t.Fatalf("thumb.RelPath: %v", err)
+	}
+	return key
+}
+
+// seedStoredAt adds an archived photo of the test project whose only file is
+// stored at filePath with the given content hash.
+func (f *fakePhotoStore) seedStoredAt(uid, filePath, hash string, archivedAt *time.Time) {
+	f.photos[uid] = photos.Photo{
+		UID: uid, ProjectID: testProject, FileHash: hash, FilePath: filePath, ArchivedAt: archivedAt,
+	}
+	f.files[uid] = []photos.PhotoFile{{PhotoUID: uid, FilePath: filePath, FileHash: hash}}
+}
+
+// TestPurgePhoto_removesStoredThumbnails verifies a purge deletes the thumbnail
+// objects the store holds for the purged file — every size the listing finds, a
+// size no longer registered included — and not only the local cache, while
+// another file's thumbnail objects stay.
+func TestPurgePhoto_removesStoredThumbnails(t *testing.T) {
+	t.Parallel()
+	old := time.Now().Add(-48 * time.Hour)
+	store := newFakePhotoStore()
+	store.seedStoredAt("ph_pic", "2023/01/pic.jpg", purgedHash, &old)
+	sizes := thumb.SizeNames()
+	purged := []string{
+		thumbKey(t, "", purgedHash, sizes[0]),
+		thumbKey(t, "", purgedHash, sizes[1]),
+		"thumb/aa/bb/cc/" + purgedHash + "_retired_size.jpg",
+	}
+	kept := thumbKey(t, "", keptHash, sizes[0])
+	fs := newFakeListingStorage(append(slices.Clone(purged), kept)...)
+	svc := newService(t, store, fs, newFakeThumb(), nil)
+
+	if err := svc.PurgePhoto(context.Background(), testProject, "ph_pic", audit.Meta{}); err != nil {
+		t.Fatalf("PurgePhoto: %v", err)
+	}
+	for _, key := range purged {
+		if !fs.deleted[key] {
+			t.Errorf("thumbnail object %s survives the purge", key)
+		}
+	}
+	if fs.deleted[kept] {
+		t.Errorf("another file's thumbnail object %s was deleted", kept)
+	}
+}
+
+// TestPurgePhoto_storedThumbnailsWithoutListing verifies a store that cannot
+// list by prefix still loses every registered size's thumbnail object.
+func TestPurgePhoto_storedThumbnailsWithoutListing(t *testing.T) {
+	t.Parallel()
+	old := time.Now().Add(-48 * time.Hour)
+	store := newFakePhotoStore()
+	store.seedStoredAt("ph_pic", "2023/01/pic.jpg", purgedHash, &old)
+	fs := newFakeStorage()
+	svc := newService(t, store, fs, newFakeThumb(), nil)
+
+	if err := svc.PurgePhoto(context.Background(), testProject, "ph_pic", audit.Meta{}); err != nil {
+		t.Fatalf("PurgePhoto: %v", err)
+	}
+	for _, size := range thumb.SizeNames() {
+		if key := thumbKey(t, "", purgedHash, size); !fs.deleted[key] {
+			t.Errorf("thumbnail object %s was not deleted", key)
+		}
+	}
+}
+
+// TestPurgePhoto_movedPhotoRootLeftovers verifies a photo a storage move has
+// committed under its project's prefix loses its derived objects under both
+// layouts — the root ones a failed derived copy left behind included — once no
+// project is left in the root layout, and only its prefixed ones while another
+// project still uses the root (a root key named after its hash may be that
+// project's).
+func TestPurgePhoto_movedPhotoRootLeftovers(t *testing.T) {
+	t.Parallel()
+	old := time.Now().Add(-48 * time.Hour)
+	// The fake project's uid is not one a prefix is built from; any valid
+	// project prefix stands for its storage prefix.
+	prefix := project.StoragePrefixFor(project.BootstrapUID)
+	size := thumb.SizeNames()[0]
+	prefixed := []string{thumbKey(t, prefix, purgedHash, size), prefix + "hls/" + purgedHash + "/1080p/init.mp4"}
+	root := []string{thumbKey(t, "", purgedHash, size), "hls/" + purgedHash + "/1080p/init.mp4"}
+
+	for _, tc := range []struct {
+		name     string
+		projects fakeProjects
+		rootGone bool
+	}{
+		{"root vacated", fakeProjects{{UID: testProject, Active: true, StoragePrefix: prefix}}, true},
+		{"root still in use", fakeProjects{
+			{UID: testProject, Active: true, StoragePrefix: prefix}, active(otherProject),
+		}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			store := newFakePhotoStore()
+			store.seedStoredAt("ph_moved", prefix+"2023/01/moved.mp4", purgedHash, &old)
+			fs := newFakeListingStorage(append(slices.Clone(prefixed), root...)...)
+			th := newFakeThumb()
+			svc := New(Config{Photos: store, Projects: tc.projects, Storage: fs, Thumbnailer: th})
+
+			if err := svc.PurgePhoto(context.Background(), testProject, "ph_moved", audit.Meta{}); err != nil {
+				t.Fatalf("PurgePhoto: %v", err)
+			}
+			for _, key := range prefixed {
+				if !fs.deleted[key] {
+					t.Errorf("prefixed object %s survives the purge", key)
+				}
+			}
+			for _, key := range root {
+				if fs.deleted[key] != tc.rootGone {
+					t.Errorf("root object %s deleted = %v, want %v", key, fs.deleted[key], tc.rootGone)
+				}
+			}
+			if th.removed[purgedHash] != tc.rootGone {
+				t.Errorf("root thumbnail cache removed = %v, want %v", th.removed[purgedHash], tc.rootGone)
+			}
+		})
 	}
 }

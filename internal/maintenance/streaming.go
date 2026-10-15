@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -103,16 +104,20 @@ type segmentRef struct {
 	shaped bool
 }
 
-// parseSegmentKey splits an object key under the streaming prefix into the video
-// and rendition it belongs to.
+// parseSegmentKey splits an object key under a streaming prefix — the root
+// layout's hls/ or a project's projects/<uid>/hls/ — into the video and
+// rendition it belongs to. The group keeps the key's storage prefix, so it is
+// exactly the prefix a recorded rendition of that layout spells.
 //
-// A key that is not shaped like hls/<file_hash>/<rendition>/<name> is reported
-// unshaped and grouped under itself: it belongs to no rendition that could exist,
-// so folding it into a neighbouring prefix would let a real rendition excuse it —
-// and would let an in-flight encode excuse an object it is not writing.
+// A key that is not shaped like [<storage prefix>]hls/<file_hash>/<rendition>/<name>
+// is reported unshaped and grouped under itself: it belongs to no rendition that
+// could exist, so folding it into a neighbouring prefix would let a real
+// rendition excuse it — and would let an in-flight encode excuse an object it is
+// not writing.
 func parseSegmentKey(key string) segmentRef {
-	rest, ok := strings.CutPrefix(key, hls.Prefix+"/")
-	if !ok {
+	prefix, inLayout := storekeys.Strip(key)
+	rest, ok := strings.CutPrefix(inLayout, hls.Prefix+"/")
+	if !ok || storekeys.Join(prefix, inLayout) != key {
 		return segmentRef{group: key}
 	}
 	parts := strings.SplitN(rest, "/", 3)
@@ -122,9 +127,45 @@ func parseSegmentKey(key string) segmentRef {
 	return segmentRef{
 		fileHash:  parts[0],
 		rendition: parts[1],
-		group:     hls.Prefix + "/" + parts[0] + "/" + parts[1] + "/",
+		group:     prefix + hls.Prefix + "/" + parts[0] + "/" + parts[1] + "/",
 		shaped:    true,
 	}
+}
+
+// streamingPrefixes returns the streaming prefix of every storage layout in use:
+// the root layout's hls/ and each project prefix's projects/<uid>/hls/, sorted
+// and without duplicates. The root is always among them — it holds the
+// segments of a project still in the root layout and those a storage move left
+// behind — so a library whose projects all moved still has its root checked.
+func (s *Service) streamingPrefixes(ctx context.Context) ([]string, error) {
+	projects, err := s.listProjects(ctx)
+	if err != nil {
+		return nil, err
+	}
+	prefixes := []string{hls.Prefix + "/"}
+	for _, p := range projects {
+		if p.StoragePrefix == "" || storekeys.ValidatePrefix(p.StoragePrefix) != nil {
+			continue
+		}
+		prefixes = append(prefixes, storekeys.Join(p.StoragePrefix, hls.Prefix+"/"))
+	}
+	sort.Strings(prefixes)
+	return slices.Compact(prefixes), nil
+}
+
+// walkSegments calls yield once for every object under the streaming prefix of
+// every storage layout in use (streamingPrefixes), one listing per layout.
+func (s *Service) walkSegments(ctx context.Context, yield func(key string) error) error {
+	prefixes, err := s.streamingPrefixes(ctx)
+	if err != nil {
+		return err
+	}
+	for _, prefix := range prefixes {
+		if err := s.streaming.Segments.KeysWithPrefix(ctx, prefix, yield); err != nil {
+			return fmt.Errorf("listing %s: %w", prefix, err)
+		}
+	}
+	return nil
 }
 
 // renditionID names one rendition in a finding sample as <photo_uid>/<rendition>
@@ -231,8 +272,10 @@ func emptyOrphans() SegmentOrphans {
 // no query and no store listing — because both are libraries where the answer is
 // known in advance and the check would only be a bucket listing charged for
 // nothing. Otherwise it costs one Stat per recorded rendition (one per video
-// under the default single-quality plan), one prefix listing of hls/ for the
-// whole library, and one further Stat per orphan object found.
+// under the default single-quality plan, one more for a moved video whose
+// segments are not under its prefix), one prefix listing of the streaming
+// prefix per storage layout in use (the root's hls/ and every project's
+// projects/<uid>/hls/), and one further Stat per orphan object found.
 func (s *Service) scanStreaming(ctx context.Context, report *Report) error {
 	report.MissingRenditions = Finding{Samples: []string{}}
 	report.OrphanSegments = emptyOrphans()
@@ -296,22 +339,46 @@ func (s *Service) scanRenditions(ctx context.Context, recorded []hlsjob.Recorded
 // A row whose hash or rendition name cannot even spell an object key is gone by
 // definition: no object the layout can hold corresponds to it, so nothing it
 // describes was ever fetchable.
+//
+// A video a storage move has committed under its project's prefix is not gone
+// while its initialisation segment is still at the root: the move has not
+// copied its segments yet — it is doing so right now, or it failed and recorded
+// them for its retry — and they are the move's (or the root-derived repair's)
+// to bring under the prefix. Withdrawing the row then would stop a video
+// streaming whose segments are all there and turn them into orphans.
 func (s *Service) renditionGone(ctx context.Context, rec hlsjob.Recorded) (bool, error) {
 	key, ok := renditionKey(rec)
 	if !ok {
 		return true, nil
 	}
+	there, err := s.segmentExists(ctx, key)
+	if err != nil || there {
+		return false, err
+	}
+	if storekeys.PrefixOf(rec.FilePath) == "" {
+		return true, nil
+	}
+	rootKey, err := hls.Key("", rec.FileHash, rec.Rendition, hls.InitName)
+	if err != nil {
+		return true, nil //nolint:nilerr // renditionKey spelled the same parts under a prefix; unreachable
+	}
+	there, err = s.segmentExists(ctx, rootKey)
+	return !there, err
+}
+
+// segmentExists reports whether the store holds the streaming object at key.
+func (s *Service) segmentExists(ctx context.Context, key string) (bool, error) {
 	if _, err := s.streaming.Segments.Stat(ctx, key); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return true, nil
+			return false, nil
 		}
 		return false, fmt.Errorf("maintenance: statting streaming object %s: %w", key, err)
 	}
-	return false, nil
+	return true, nil
 }
 
-// scanOrphanSegments walks the streaming prefix and reports the objects that
-// belong to neither a recorded rendition (live) nor a video the queue is
+// scanOrphanSegments walks the streaming prefix of every storage layout and
+// reports the objects that belong to neither a recorded rendition (live) nor a video the queue is
 // encoding right now, together with how much storage they occupy.
 //
 // The size costs one Stat per orphan and nothing at all otherwise, which is the
@@ -323,7 +390,7 @@ func (s *Service) scanOrphanSegments(ctx context.Context, live map[string]struct
 		return SegmentOrphans{}, err
 	}
 	sweep := newOrphanSweep(s.sampleLimit)
-	walkErr := s.streaming.Segments.KeysWithPrefix(ctx, hls.Prefix+"/", func(key string) error {
+	walkErr := s.walkSegments(ctx, func(key string) error {
 		return s.sweepOne(ctx, key, live, encoding, sweep)
 	})
 	if walkErr != nil {
@@ -383,12 +450,22 @@ func (s *Service) encodingHashes(ctx context.Context) (map[string]struct{}, erro
 // Stray segments of a partly-surviving rendition are deliberately left where they
 // are: once the row is gone they become orphans, which the scan reports and only
 // an explicit sweep removes.
+//
+// It is refused (ErrStorageMoveActive) while a storage move is running or
+// paused: the move commits a video under its project's prefix before it copies
+// the segments, and a row it is about to make true must not be withdrawn in
+// between. After a move — done, or failed with segments left at the root for
+// its retry — a video whose initialisation segment is at the root is not gone
+// either (renditionGone).
 func (s *Service) repairMissingRenditions(ctx context.Context, opts RepairOptions, res *RepairResult) error {
 	if !opts.MissingRenditions {
 		return nil
 	}
 	if !s.streaming.enabled() {
 		return ErrStreamingUnavailable
+	}
+	if err := s.refuseDuringMove(ctx, "dropping renditions whose segments are missing"); err != nil {
+		return err
 	}
 	recorded, err := s.streaming.Renditions.ListRecorded(ctx)
 	if err != nil {
@@ -500,7 +577,7 @@ func (s *Service) collectOrphanSegments(ctx context.Context) (doomed []string, k
 	live := recordedPrefixes(recorded)
 	movedRoot := movedRootPrefixes(recorded)
 	doomed = make([]string, 0)
-	walkErr := s.streaming.Segments.KeysWithPrefix(ctx, hls.Prefix+"/", func(key string) error {
+	walkErr := s.walkSegments(ctx, func(key string) error {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return fmt.Errorf("maintenance: orphan segment sweep interrupted: %w", ctxErr)
 		}

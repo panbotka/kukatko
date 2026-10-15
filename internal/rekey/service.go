@@ -82,6 +82,9 @@ const (
 	stageCopied = "copied"
 	// stageCommitted is after the row moved, before anything is deleted.
 	stageCommitted = "committed"
+	// stageFamiliesListed is in Finish, after the listing found no genealogy
+	// export under the new prefix and before the root one is copied there.
+	stageFamiliesListed = "families-listed"
 )
 
 // New returns a Service from cfg. It panics when a required dependency is

@@ -29,13 +29,20 @@ type fakeJobs struct {
 	mu       sync.Mutex
 	families []string
 	sidecars []string
+	// onFamilies, when set, is called (outside the lock) after a family export
+	// is recorded: a test's stand-in for the queue holding the job.
+	onFamilies func()
 }
 
 // EnqueueFamilyExport records the project.
 func (f *fakeJobs) EnqueueFamilyExport(_ context.Context, projectUID string) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.families = append(f.families, projectUID)
+	onFamilies := f.onFamilies
+	f.mu.Unlock()
+	if onFamilies != nil {
+		onFamilies()
+	}
 	return nil
 }
 

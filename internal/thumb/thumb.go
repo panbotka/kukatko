@@ -723,7 +723,7 @@ func (t *Thumbnailer) dropPublished(ctx context.Context, prefix, hash string, ne
 func (t *Thumbnailer) publishedKeys(
 	ctx context.Context, lister storage.PrefixLister, prefix, hash string,
 ) (map[string]bool, error) {
-	listed, err := objectPrefix(prefix, hash)
+	listed, err := ObjectPrefix(prefix, hash)
 	if err != nil {
 		return nil, err
 	}
@@ -737,12 +737,15 @@ func (t *Thumbnailer) publishedKeys(
 	return keys, nil
 }
 
-// objectPrefix returns the key prefix every cached size of the given file hash
+// ObjectPrefix returns the key prefix every cached size of the given file hash
 // shares under the storage prefix — <prefix>thumb/<aa>/<bb>/<cc>/<hash>_ — for a
-// validated prefix and hash, or the error of cacheDirRel.
+// validated prefix and hash, or the error of cacheDirRel (ErrInvalidHash,
+// storekeys.ErrInvalidPrefix).
 // It is a literal string prefix, not a directory: the shard directory also holds
-// the sizes of every other hash sharing those three byte-pairs.
-func objectPrefix(prefix, hash string) (string, error) {
+// the sizes of every other hash sharing those three byte-pairs. A listing of it
+// finds every thumbnail object of the hash, a size no longer registered
+// included — which is how a purge removes them all from the store.
+func ObjectPrefix(prefix, hash string) (string, error) {
 	dir, err := cacheDirRel(prefix, hash)
 	if err != nil {
 		return "", err

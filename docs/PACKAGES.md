@@ -1002,17 +1002,22 @@ to `## Package map` in `CLAUDE.md`.
   when it does not verify — before deleting anything. A per-photo failure goes into the `errors` ring (last
   50 `{key, message, at}`) and is skipped; `error_count > 100` fails the run (`ErrRunFailed`); a cancelled
   context or `storage.IsSystemic` error returns without recording. **`Finish(ctx, run)`**: no photo left in
-  the old layout (else the run fails with `ErrPhotosRemain`; `ErrPendingCleanup` while one is pending) →
+  the old layout (`ErrPendingCleanup` while one is pending; photos left after a pass with **no** recorded
+  error can only be uploads in flight at `Start`, stored at the root below the cursor, so the cursor is
+  rewound — `rewindSQL`, guarded by `error_count = 0` — and `ErrPendingCleanup` returned for the job to step
+  them; after a pass with errors the run fails with `ErrPhotosRemain` for a `Retry`) →
   **sweep** the bucket's root `thumb/` and `hls/` trees — each listed **once per `Finish`** — for objects of
   moved photos (matched by the content hash in the key) and record every key found with its photo
   (`root_keys`, merged into an existing record); a photo recorded **only now** resets the derived cursor and
   returns `ErrPendingCleanup` so the job steps it, while one already recorded (its retry failed) only gains
   the keys — so the sweep and the retry own the same objects and a stray no plan knows can never loop the
   close → no recorded derived failure left (else the run fails with `ErrDerivedRemain`) →
-  enqueue `family_export` for the project and a `sidecar` rewrite for **every** photo → copy the root
-  `families.yaml` under the prefix when no export landed there yet, then delete the root one and every root
-  `sidecars/` key **only once a listing shows its prefixed replacement** (nothing at the root is touched while
-  any project is still in the root layout) → `done`. The local thumbnail cache is not moved: it is a
+  enqueue a `sidecar` rewrite for **every** photo → copy the root `families.yaml` under the prefix when no
+  export landed there yet, then delete the root one and every root `sidecars/` key **only once a listing shows
+  its prefixed replacement** (nothing at the root is touched while any project is still in the root layout) →
+  only then enqueue `family_export` for the project, so an export job that wrote the fresh file between the
+  listing and the copy (which overwrites it with the pre-move root file) is followed by one that writes it
+  again → `done`. The local thumbnail cache is not moved: it is a
   regenerable cache, and the published objects are. **`FindRootDerived(ctx)`** /
   **`MoveRootDerived(ctx, found)`** are the same root sweep and retry for every project a move touched,
   read-only and repairing respectively (`RootDerivedPhoto{UID, ProjectUID, Moves}`,
@@ -1059,9 +1064,13 @@ to `## Package map` in `CLAUDE.md`.
   invariant — every `photos.file_path` names an existing object of the right size — checked after **every**
   step), `lock_integration_test.go` (the photo lock: a thumbnail published between the commit and the
   derived copy is refused and its deferred re-run is what the prefix serves; a publish in flight holds the
-  move off and its fresh root tile is taken along; a purge before the commit leaves nothing of the photo, one
-  during the copy waits and leaves nothing either; a crashed step's pending photo refuses both purge and
-  publish until the next step finishes it),
+  move off and its fresh root tile is taken along; a purge — the real `trash.Service` over the fake store,
+  finding every object itself — before the commit leaves nothing of the photo, one during the copy waits and
+  leaves nothing either, one of a photo whose segment copy failed takes its root leftovers too and the run
+  then ends `done` with the root empty; a crashed step's pending photo refuses both purge and publish until
+  the next step finishes it), `finish_race_integration_test.go` (the family export queued only after
+  `Finish`'s copy writes last; an upload committed at the root below the cursor after an error-free pass is
+  taken by the rewound pass with no `Retry`; after a pass with errors the `Retry` takes it),
   `internal/rekeyjob/`
   (**the `storage_rekey` job**: the scheduled half of `internal/rekey`. `New(Config{Mover, PerSecond, Clock,
   Logger})`, `Mover` = `Status`/`Step`/`Finish`, satisfied by `*rekey.Service`; `PerSecond` is
@@ -1982,12 +1991,21 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   photo's own file rows (`file_path` for the original and its sidecar, `file_hash` for the derived media),
   never recomputed from the project, so a photo is cleaned up wherever its rows say it lives;
   **purgeOne** deletes a photo's artifacts (the original via `Storage.Delete`, the cached thumbnails via
-  `Thumbnailer.Remove`, the scrub-preview sprite via `StoryboardStore.Remove`, the **HLS segments** —
-  everything the store holds under `hls.PrefixFor(storekeys.PrefixOf(file_path), file_hash)` — every derived
-  object is looked for under the prefix of the file's own original — found by listing that prefix when the backend
-  is a `storage.PrefixLister`, because their keys are not derivable from the catalogue; a backend that cannot
-  list and a hash the layout cannot address leave them behind rather than failing the purge, while a failed
-  listing or deletion is reported — optionally the S3 object via `RemoteRemover`) **and then** the DB row via
+  `Thumbnailer.Remove`, the **thumbnail objects the store holds** — everything under
+  `thumb.ObjectPrefix(prefix, file_hash)` (`<prefix>thumb/aa/bb/cc/<hash>_`, a retired size included) when the
+  backend is a `storage.PrefixLister`, else each registered size's `thumb.RelPath` key; a publishing backend
+  (R2) keeps every size there, and the cache removal never reached them —, the scrub-preview sprite via
+  `StoryboardStore.Remove` (cache-only, never stored), the **HLS segments** — everything the store holds
+  under `hls.PrefixFor(prefix, file_hash)` — found by listing that prefix when the backend is a
+  `storage.PrefixLister`, because their keys are not derivable from the catalogue; a backend that cannot list
+  and a hash the layout cannot address leave them behind rather than failing the purge, while a failed
+  listing or deletion is reported — optionally the S3 object via `RemoteRemover`; `prefix` is that of the
+  file's own original, `storekeys.PrefixOf(file_path)`, and for a file under a prefix the derived media are
+  looked for **under the root too** (`derivedLayouts`) once `ProjectLister.List` shows no project left in the
+  root layout (`rootVacatedFor`): the root keys named after its hash are then the leftovers of a storage
+  move's failed derived copy, which would otherwise outlive the photo, its `storage_rekey_derived_failures`
+  row cascading away; while another project still uses the root they may be that project's and are kept)
+  **and then** the DB row via
   `photos.DeleteAudited(projectUID,uid,entry)` — deletes the row (cascading embeddings/faces/markers/album_photos/
   photo_labels/phashes/edits/favorites via `ON DELETE CASCADE`) **and writes a `photo.purge` audit row
   in the same transaction** (durable-audit; rollback ⇒ no audit row); artifacts first, so an
@@ -5306,13 +5324,16 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   kept, root copies deleted only once all exist; `RootDerivedMoved`/`RootDerivedObjects`/`RootDerivedFailed`).
   Unwired → an empty finding and `ErrRootDerivedUnavailable` for the repair.
   **`Moves`** (`moves.go`): the optional `Config.Moves` (`MoveWatcher` = `ActiveRuns`, satisfied by
-  `*rekey.Service`). The two repairs that delete at the root — `DeleteOrphanSegments` and `RootDerived` —
+  `*rekey.Service`). The repairs that delete at the root or judge derived media by the row's prefix —
+  `DeleteOrphanSegments`, `RootDerived`, `MissingRenditions` (and `ImportOrphans`, the mirror case) —
   refuse with **`ErrStorageMoveActive`** (naming the oldest active move's project and state; 409 over HTTP)
-  while any move is running or paused, deleting nothing: a photo a move committed but has not finished has its
-  row under the prefix and its segments still at the root. Any move counts, since the root is what every move
-  empties. The sweep additionally keeps (`OrphanSegmentsKept`) the root segments of a recorded rendition whose
+  while any move is running or paused, touching nothing: a photo a move committed but has not finished has its
+  row under the prefix and its segments still at the root, so they would read as orphans and its rendition as
+  missing. Any move counts, since the root is what every move empties. The sweep additionally keeps (`OrphanSegmentsKept`) the root segments of a recorded rendition whose
   video already lives under a prefix (`movedRootPrefixes`) — the move's leftovers, `RootDerived`'s to move.
-  Unwired → no refusal (`moves_integration_test.go`).
+  Unwired → no refusal (`moves_integration_test.go`; `moves_streaming_integration_test.go` over the filesystem
+  and the MinIO bucket: `MissingRenditions` refused mid-move, a failed move's root segments keep the row, an
+  orphan rendition under `projects/<uid>/hls/` reported and swept).
   **`Places`** is the reverse-geocode backfill: `MissingPlaces` is its dry run (`MissingPlaces` finding —
   live photos carrying coordinates with no `photo_places` row, the same predicate as
   `system.LibrarySummary.PhotosPendingGeocode` and the dashboard's `PhotosWithoutPlace`) and the repair calls
@@ -5374,8 +5395,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   segment alone** (`hls.InitName`): a player fetches it before any media segment, so a rendition without it
   cannot be played whatever else survives, and asking about every segment of every clip would be tens of
   thousands of round trips per scan. The stored playlist is no help — it is never written to the store, it is a
-  column. `OrphanSegments` is the other direction: objects under `hls/` (`hls.Prefix`) that no recorded rendition
-  claims, what a failed or re-run encode leaves, counted per object with their total `Bytes` and **sampled by the
+  column. A video under a project prefix whose init segment is absent there but present at the root (a storage
+  move committed it and has not — or, failed, could not — copy its segments) is **not** missing: the segments are
+  the move's retry's or `RootDerived`'s to bring under the prefix, and dropping the row would stop a video
+  whose segments all exist. `OrphanSegments` is the other direction: objects under the streaming prefix of
+  **every storage layout in use** (`streamingPrefixes`: the root's `hls/` plus each project's
+  `projects/<uid>/hls/`, from `ProjectLister`; `parseSegmentKey` keeps the key's storage prefix in its group) that
+  no recorded rendition claims, what a failed or re-run encode leaves, counted per object with their total `Bytes` and **sampled by the
   `hls/<file_hash>/<rendition>/` prefix** they sit under, because one abandoned encode is thousands of segments
   under a single prefix and the prefix is what names the video and the quality. Objects belonging to a video with
   an **unfinished `hls_transcode` job** (`hlsjob.EncodingHashes`: `queued`/`running`/`failed`) are excluded from
@@ -5383,8 +5409,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   the length of a transcode a healthy job's uploads are indistinguishable from abandoned ones.
   **Cost**: nothing at all with streaming off or with no video in the catalogue (`photos.CountVideos`, archived
   included — archiving removes neither rows nor segments, only a purge does), otherwise **one `Stat` per recorded
-  rendition** (one per video under the default single-quality plan), **one prefix listing of `hls/`** for the
-  whole library, and one further `Stat` per orphan object found — so a healthy library pays only the listing.
+  rendition** (one per video under the default single-quality plan, one more for a moved video whose init
+  segment is not under its prefix), **one prefix listing of `hls/` per storage layout in use**, and one further
+  `Stat` per orphan object found — so a healthy library pays only the listings.
   The repairs are asymmetric on purpose. `MissingRenditions` drops the row (`hlsjob.Store.Delete` →
   `RenditionsDropped`): the clip stops claiming it streams and lands in exactly the state the ordinary encode
   backfill (`POST /process/hls`) looks for, so recovery is one background job; the original is never touched and

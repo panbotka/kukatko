@@ -23,6 +23,21 @@
 // storage prefix of that file's own original (storekeys.PrefixOf(file_path)) —
 // never recomputed from the project, so a photo is cleaned up where it actually
 // lives, even in a project half-way through its storage move.
+//
+// # Derived objects in the store
+//
+// The derived media a purge removes are both the local caches (the thumbnail
+// and storyboard cache directories) and the objects the store holds: every
+// thumbnail object named after the file hash (<prefix>thumb/<aa>/<bb>/<cc>/<hash>_*,
+// published there by a backend that serves thumbnails from object URLs) and
+// every streaming object under <prefix>hls/<hash>/. A photo a storage move has
+// already committed under its project's prefix may still have some of them at
+// the root — a derived copy that failed, waiting for the move's retry. Once no
+// project is left in the root layout, a root key named after the photo's hash
+// can be nobody else's (hashes are unique within a project, and the root is the
+// moved project's alone), so the purge removes those root leftovers too; while
+// another project still uses the root it leaves them, exactly as the storage
+// move itself does.
 package trash
 
 import (
@@ -96,8 +111,10 @@ type PhotoStore interface {
 	ListArchivedUIDs(ctx context.Context, projectUID string, before *time.Time, limit, offset int) ([]string, error)
 }
 
-// ProjectLister enumerates the projects the scheduled retention purge sweeps.
-// *project.Store satisfies it; deactivated projects are skipped by the purge.
+// ProjectLister enumerates the projects the scheduled retention purge sweeps,
+// and tells a purge whether any project is still in the root layout (its
+// storage prefix empty). *project.Store satisfies it; deactivated projects are
+// skipped by the purge.
 type ProjectLister interface {
 	// List returns every project of the instance.
 	List(ctx context.Context) ([]project.Project, error)
@@ -391,8 +408,12 @@ func (s *Service) purgeUnlocked(ctx context.Context, projectUID, uid string, met
 	if err != nil {
 		return fmt.Errorf("listing files: %w", err)
 	}
+	vacated, err := s.rootVacatedFor(ctx, files)
+	if err != nil {
+		return err
+	}
 	for _, file := range files {
-		if err := s.deleteArtifacts(ctx, file); err != nil {
+		if err := s.deleteArtifacts(ctx, file, vacated); err != nil {
 			return err
 		}
 	}
@@ -403,13 +424,52 @@ func (s *Service) purgeUnlocked(ctx context.Context, projectUID, uid string, met
 	return nil
 }
 
-// deleteArtifacts removes the on-disk original, its metadata sidecar, the cached
-// thumbnails, the storyboard sprite, the HLS segments and (when configured) the
-// remote backup object for a single stored file. A missing original is ignored;
-// a malformed sidecar hash skips thumbnail removal rather than failing the purge.
-// Every derived object is looked for under the storage prefix of the file's own
-// original.
-func (s *Service) deleteArtifacts(ctx context.Context, file photos.PhotoFile) error {
+// rootVacatedFor reports whether the root layout may hold leftovers of files —
+// true only when one of them is stored under a prefix (a photo a storage move
+// committed) and no project of the instance is in the root layout any more, so
+// a root derived key named after its hash can be nobody else's. A photo whose
+// files are all at the root costs no query.
+func (s *Service) rootVacatedFor(ctx context.Context, files []photos.PhotoFile) (bool, error) {
+	prefixed := false
+	for _, file := range files {
+		if storekeys.PrefixOf(file.FilePath) != "" {
+			prefixed = true
+			break
+		}
+	}
+	if !prefixed {
+		return false, nil
+	}
+	list, err := s.projects.List(ctx)
+	if err != nil {
+		return false, fmt.Errorf("listing projects for the root layout: %w", err)
+	}
+	for _, p := range list {
+		if p.StoragePrefix == "" {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// derivedLayouts returns the storage prefixes a file's derived media are looked
+// for under: that of the file's own original, and — for a file under a prefix
+// once the root is vacated (rootVacatedFor) — the root as well, where a storage
+// move may have left them.
+func derivedLayouts(prefix string, rootVacated bool) []string {
+	if prefix != "" && rootVacated {
+		return []string{prefix, ""}
+	}
+	return []string{prefix}
+}
+
+// deleteArtifacts removes the on-disk original, its metadata sidecar, the
+// derived media (deleteDerived) and (when configured) the remote backup object
+// for a single stored file. A missing original is ignored; a malformed hash
+// skips the derived media rather than failing the purge. The derived media are
+// looked for under the storage prefix of the file's own original and, with
+// rootVacated, under the root as well (derivedLayouts).
+func (s *Service) deleteArtifacts(ctx context.Context, file photos.PhotoFile, rootVacated bool) error {
 	prefix := storekeys.PrefixOf(file.FilePath)
 	if err := s.storage.Delete(ctx, file.FilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("deleting original %s: %w", file.FilePath, err)
@@ -417,18 +477,82 @@ func (s *Service) deleteArtifacts(ctx context.Context, file photos.PhotoFile) er
 	if err := s.deleteSidecar(ctx, file.FilePath); err != nil {
 		return err
 	}
-	if err := s.thumbnailer.Remove(prefix, file.FileHash); err != nil && !errors.Is(err, thumb.ErrInvalidHash) {
-		return fmt.Errorf("removing thumbnails for %s: %w", file.FileHash, err)
-	}
-	if err := s.deleteStoryboard(prefix, file.FileHash); err != nil {
-		return err
-	}
-	if err := s.deleteHLS(ctx, prefix, file.FileHash); err != nil {
-		return err
+	for _, layout := range derivedLayouts(prefix, rootVacated) {
+		if err := s.deleteDerived(ctx, layout, file.FileHash); err != nil {
+			return err
+		}
 	}
 	if s.remote != nil {
 		if err := s.remote.Remove(ctx, file.FilePath); err != nil {
 			return fmt.Errorf("removing remote object %s: %w", file.FilePath, err)
+		}
+	}
+	return nil
+}
+
+// deleteDerived removes every derived medium of the file hash under one storage
+// prefix: the cached thumbnails, the thumbnail objects the store holds, the
+// storyboard sprite and the streaming objects.
+func (s *Service) deleteDerived(ctx context.Context, prefix, fileHash string) error {
+	if err := s.thumbnailer.Remove(prefix, fileHash); err != nil && !errors.Is(err, thumb.ErrInvalidHash) {
+		return fmt.Errorf("removing thumbnails for %s: %w", fileHash, err)
+	}
+	if err := s.deleteStoredThumbs(ctx, prefix, fileHash); err != nil {
+		return err
+	}
+	if err := s.deleteStoryboard(prefix, fileHash); err != nil {
+		return err
+	}
+	return s.deleteHLS(ctx, prefix, fileHash)
+}
+
+// deleteStoredThumbs removes the thumbnail objects the store holds for the file
+// hash under storagePrefix. A backend that serves thumbnails from object URLs
+// publishes every size there (thumb.Thumbnailer), and the local cache removal
+// never reaches them; left behind they are objects of a photo that no longer
+// exists, under a prefix the storage move's last sweep must find empty.
+//
+// On a store that lists by prefix one listing of thumb.ObjectPrefix finds every
+// size the hash has — a size no longer registered included; otherwise each
+// registered size's key is deleted. A malformed hash addresses no thumbnail and
+// is skipped, like the cache removal.
+func (s *Service) deleteStoredThumbs(ctx context.Context, storagePrefix, fileHash string) error {
+	keyPrefix, err := thumb.ObjectPrefix(storagePrefix, fileHash)
+	if err != nil {
+		// A malformed hash addresses no thumbnail; there is nothing to clean up.
+		return nil //nolint:nilerr // an unusable hash is not a purge failure
+	}
+	if lister, ok := s.storage.(storage.PrefixLister); ok {
+		return s.deleteListed(ctx, lister, keyPrefix, "thumbnail")
+	}
+	for _, size := range thumb.SizeNames() {
+		key, err := thumb.RelPath(storagePrefix, fileHash, size)
+		if err != nil {
+			return fmt.Errorf("thumbnail key of %s: %w", fileHash, err)
+		}
+		if err := s.storage.Delete(ctx, key); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("deleting thumbnail object %s: %w", key, err)
+		}
+	}
+	return nil
+}
+
+// deleteListed deletes every object of the store whose key starts with prefix,
+// naming the objects what in its errors. The keys are collected before anything
+// is deleted rather than deleted inside the listing callback: the filesystem
+// backend lists by walking the directory tree it would be deleting from
+// underneath itself.
+func (s *Service) deleteListed(ctx context.Context, lister storage.PrefixLister, prefix, what string) error {
+	var keys []string
+	if listErr := lister.KeysWithPrefix(ctx, prefix, func(key string) error {
+		keys = append(keys, key)
+		return nil
+	}); listErr != nil {
+		return fmt.Errorf("listing %s objects under %s: %w", what, prefix, listErr)
+	}
+	for _, key := range keys {
+		if delErr := s.storage.Delete(ctx, key); delErr != nil && !errors.Is(delErr, os.ErrNotExist) {
+			return fmt.Errorf("deleting %s object %s: %w", what, key, delErr)
 		}
 	}
 	return nil
@@ -451,12 +575,12 @@ func (s *Service) deleteStoryboard(prefix, fileHash string) error {
 
 // deleteHLS removes every HLS object of the purged file: the initialisation and
 // media segments of each rendition, all of them under the
-// <storagePrefix>hls/<file_hash>/ prefix (see internal/hls), storagePrefix being
-// that of the file's own original. They are derived media like the thumbnails, but they live
-// in the object store rather than a local cache, and unlike a thumbnail their
-// keys cannot be enumerated from the catalogue — how many segments a video was
-// cut into, and in which renditions, is known only to the store. So they are
-// found by listing the prefix that holds them.
+// <storagePrefix>hls/<file_hash>/ prefix (see internal/hls). They are derived
+// media like the thumbnails, but they live in the object store rather than a
+// local cache, and unlike a thumbnail their keys cannot be enumerated from the
+// catalogue — how many segments a video was cut into, and in which renditions,
+// is known only to the store. So they are found by listing the prefix that
+// holds them (deleteListed).
 //
 // A backend that cannot list by prefix, and a malformed hash (the same condition
 // that skips thumbnail removal), leave the segments behind rather than failing
@@ -464,10 +588,6 @@ func (s *Service) deleteStoryboard(prefix, fileHash string) error {
 // limitation must not strand a row the user asked to delete permanently. A
 // listing or a deletion that does fail is reported, because that is the store
 // refusing work it can do.
-//
-// The keys are collected before anything is deleted rather than deleted inside
-// the listing callback: the filesystem backend lists by walking the directory
-// tree it would be deleting from underneath itself.
 func (s *Service) deleteHLS(ctx context.Context, storagePrefix, fileHash string) error {
 	lister, ok := s.storage.(storage.PrefixLister)
 	if !ok {
@@ -478,19 +598,7 @@ func (s *Service) deleteHLS(ctx context.Context, storagePrefix, fileHash string)
 		// A malformed hash addresses no segments; there is nothing to clean up.
 		return nil //nolint:nilerr // an unusable hash is not a purge failure
 	}
-	var keys []string
-	if listErr := lister.KeysWithPrefix(ctx, prefix, func(key string) error {
-		keys = append(keys, key)
-		return nil
-	}); listErr != nil {
-		return fmt.Errorf("listing HLS objects under %s: %w", prefix, listErr)
-	}
-	for _, key := range keys {
-		if delErr := s.storage.Delete(ctx, key); delErr != nil && !errors.Is(delErr, os.ErrNotExist) {
-			return fmt.Errorf("deleting HLS object %s: %w", key, delErr)
-		}
-	}
-	return nil
+	return s.deleteListed(ctx, lister, prefix, "HLS")
 }
 
 // deleteSidecar removes the purged original's metadata sidecar — the YAML file
