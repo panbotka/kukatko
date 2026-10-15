@@ -3,6 +3,7 @@ package tenancyguard_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -100,6 +101,47 @@ func TestRootTables_matchMigrations(t *testing.T) {
 	for _, table := range listed {
 		if _, ok := inSchema[table]; !ok {
 			t.Errorf("%s is listed in tables.go but has no project column in the migrations", table)
+		}
+	}
+}
+
+// TestKeyedChildTables_matchMigrations derives the child tables from the
+// schema — every table without a project column that has a foreign key into a
+// root table, or into another such child — and requires KeyedChildTables to
+// list exactly them, each keyed by exactly its foreign keys into those tables
+// (plus, optionally, its own uid). A new child table, or a new parent key of
+// an old one, cannot be forgotten.
+func TestKeyedChildTables_matchMigrations(t *testing.T) {
+	t.Parallel()
+	fsys := os.DirFS(repoRoot(t))
+	const dir = "internal/database/migrations"
+	fks, err := tenancyguard.ForeignKeys(fsys, dir)
+	if err != nil {
+		t.Fatalf("ForeignKeys: %v", err)
+	}
+	projectCols, err := tenancyguard.ProjectColumnTables(fsys, dir)
+	if err != nil {
+		t.Fatalf("ProjectColumnTables: %v", err)
+	}
+	derived := tenancyguard.ChildTables(fks, projectCols)
+	for table, keys := range derived {
+		listed, ok := tenancyguard.KeyedChildTables[table]
+		if !ok {
+			t.Errorf("table %s has no project column but foreign keys %v into the catalogue; add it to "+
+				"KeyedChildTables (internal/tenancyguard/tables.go)", table, keys)
+			continue
+		}
+		got := slices.DeleteFunc(slices.Clone(listed), func(k string) bool { return k == "uid" })
+		slices.Sort(got)
+		if !slices.Equal(got, keys) {
+			t.Errorf("KeyedChildTables[%s] = %v, want its foreign keys into the catalogue %v (plus uid)",
+				table, listed, keys)
+		}
+	}
+	for table := range tenancyguard.KeyedChildTables {
+		if _, ok := derived[table]; !ok {
+			t.Errorf("%s is listed in KeyedChildTables but the migrations give it no foreign key into "+
+				"the catalogue (or a project column)", table)
 		}
 	}
 }

@@ -13,9 +13,8 @@ const (
 	// tokString is a quoted '…' literal.
 	tokString
 	// tokOp is an operator run (`=`, `<>`, `::`) or one punctuation byte (`.`, `,`).
+	// The stand-in for a piece the scan cannot read, `?`, is one too.
 	tokOp
-	// tokMark is projectMark: an opaque piece named after the project.
-	tokMark
 	// tokGroup is a parenthesised group; its tokens are in inner.
 	tokGroup
 )
@@ -72,6 +71,27 @@ func blankComments(stmt string) string {
 	return string(b)
 }
 
+// splitStatements splits text at every `;` outside a quoted '…' literal and
+// returns the statements with the offset each starts at.
+func splitStatements(text string) (stmts []string, starts []int) {
+	start := 0
+	for i := 0; i < len(text); i++ {
+		switch text[i] {
+		case '\'':
+			end := strings.IndexByte(text[i+1:], '\'')
+			if end < 0 {
+				i = len(text)
+				continue
+			}
+			i += end + 1
+		case ';':
+			stmts, starts = append(stmts, text[start:i]), append(starts, start)
+			start = i + 1
+		}
+	}
+	return append(stmts, text[start:]), append(starts, start)
+}
+
 // commentEnd returns the offset past the comment that starts at i: the end of
 // its line for `--`, past the closing `*/` (or the end) for `/*`.
 func commentEnd(stmt string, i int) int {
@@ -95,9 +115,6 @@ func tokenize(stmt string, i int, nested bool) ([]sqlToken, int) {
 	for i < len(stmt) {
 		c := stmt[i]
 		switch {
-		case strings.HasPrefix(stmt[i:], projectMark):
-			toks = append(toks, sqlToken{kind: tokMark, start: i, end: i + len(projectMark)})
-			i += len(projectMark)
 		case isSpace(c):
 			i++
 		case c == '(':

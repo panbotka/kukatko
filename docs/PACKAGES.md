@@ -7629,29 +7629,51 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     column inside `CREATE TABLE`, `DROP COLUMN`/`DROP TABLE`) and `TestRootTables_matchMigrations` requires
     the schema's project tables to be exactly `RootTables` ∪ `ReadScopedTables` ∪ `ExemptTables` — a new
     root table cannot be forgotten in the list.
-  - `KeyedChildTables` lists the child tables of a root table that carry **no** project column
-    (`photo_phashes`, `photo_files`, `photo_edits`, `photo_places`, `photo_hls_renditions`,
-    `face_detections`, `markers`, `photo_labels`, `album_photos`), each with the keys that tie a row to a
-    parent the caller resolves inside a project (`photo_uid`; `markers` also `subject_uid`/`uid`, the two
-    membership tables their album/label). A **read** of one (`FROM`/`JOIN`, never a `DELETE`'s own `FROM`)
-    must be constrained by a top-level conjunct naming one of those keys (qualified by its alias, or bare) — a
-    `NULL` test keys nothing. What it catches is the **whole-table scan** — the upload's near-duplicate lookup
-    (`SELECT … FROM photo_phashes ORDER BY dist LIMIT 1`) searched every project's pHashes and named the
-    match to the uploader until 2026-10-14. Limits: a key is trusted however the caller built it
-    (`photo_uid = ANY($1)`), a `JOIN` to the parent on the key counts as keyed (the parent root table is then
-    judged on its own), writes are not judged, and a child table missing from the list is not checked at
-    all — add a new photo-keyed table there.
+  - `KeyedChildTables` lists the child tables of a root table that carry **no** project column — today 29:
+    the per-photo tables (`photo_phashes`, `photo_files`, `face_detections`, …), `markers`, the membership
+    tables, the feedback and review tables (`face_rejections`, `review_skips`, `duplicate_*`, …), per-user
+    `user_ratings`/`user_favorites`, `comments` and `comment_mentions`, the task, notification and upload-link
+    children, `tag_notices`, `import_failures`, `subject_family_children` — each with the keys that tie a row
+    to a parent the caller resolves inside a project (`photo_uid`, `subject_uid`, `task_uid`, …; `markers` and
+    `comments` also their own `uid`). **The list is the schema's:** `ForeignKeys` replays the migrations'
+    foreign keys (a column's inline `REFERENCES`, a `[CONSTRAINT n] FOREIGN KEY (…) REFERENCES` table
+    constraint, `ADD COLUMN`/`ADD`, `DROP COLUMN`, `RENAME [COLUMN]`, `DROP TABLE`), `ChildTables` derives
+    every table without a project column that has a foreign key into a root table (or into another such
+    child, so `comment_mentions` → `comments`), and `TestKeyedChildTables_matchMigrations` requires the map
+    to list exactly those tables, each keyed by exactly those foreign-key columns (plus `uid`). A key into
+    `users` or `projects` makes no child. A **read** of one (`FROM`/`JOIN`, never a `DELETE`'s own `FROM`)
+    must be **keyed** by a top-level `AND` term `<key> = <value>` (`= ANY(…)` included), `<key> IN (<values
+    or a subquery>)`, or `<key> = <a column of another item>` once that item is scoped — a root table by
+    its project, a child by its own key — or is none of the guard's tables (a CTE, a derived table,
+    `unnest`, an account table); `JOIN … USING (<key>)` is the same equality. Any other comparison keys
+    nothing (`<>`, `LIKE`, `NOT IN`, a `NULL` test, `ph.photo_uid = ph.photo_uid`), and two children keyed
+    only to each other stay unkeyed. A qualifier the statement never defines is the outer item of a
+    correlated fragment built apart from its statement (`EXISTS (SELECT 1 FROM user_ratings ur WHERE
+    ur.photo_uid = photos.uid …)` appended to a photo listing) and keys the child: that outer item is
+    judged where the statement is assembled. What it catches is the **whole-table scan** — the upload's
+    near-duplicate lookup (`SELECT … FROM photo_phashes ORDER BY dist LIMIT 1`) searched every project's
+    pHashes and named the match to the uploader until 2026-10-14. Limits: a key value is trusted however
+    the caller built it (`photo_uid = ANY($1)`), and writes are not judged.
   - `Scan(root, dirs...)` parses every non-test `.go` file under `internal/` and `cmd/` (`go/parser`, one
     goroutine per package; ~0.2 s on the Pi) and **folds** each string expression into a statement text:
     literals, `+` chains, package-level `const`/`var` values (a value folded in at a use site is judged
     there, not on its own), a function's locals accumulated across `:=`/`=`/`+=` (`q := "SELECT …";
     q += " WHERE …"` is one statement), `fmt.Sprintf` (each verb replaced by its argument, `%[n]s`
-    included) and `strings.Join` over a literal slice. A piece it cannot read is unknown — unless its
-    expression names the project (an identifier containing `project`: `projectClause("$1")`,
-    `buildWhere(projectUID, …)`, `env.project`) or carries a literal with a project column, which stands in
-    for the project (`projectMark`). SQL comments (`-- …`, `/* … */`) are blanked first (same length, so
-    offsets still locate the source), then the text is split on `;` and each statement is judged by
-    `unscopedRefs` (below). **One finding per statement**, anchored at its **use site**: the line of its
+    included), `strings.Join` over a literal slice and a call of the package's own **SQL helper** — a
+    function returning `string` whose body is one `return <string expression>`, such as
+    `projectClause(ph)` or `inProjectSQL(alias, ph)`: it is read **in place**, each parameter standing for
+    the argument the call passes, its own literals anchored at the call (and its body judged on its own
+    only when nothing calls it). A piece it cannot read — a parameter, a call into another package, a
+    slice built by `append` — folds to the stand-in `?`, **whatever it is called**: the round-3 review
+    showed the old "name contains `project`" stand-in let `p.project_id IS NOT NULL`, `(… OR TRUE)` and
+    `filter(projectUID)` pass, so it was removed (2026-10-15) and the statements it had covered were scoped
+    through the helper reading or allow-listed (`buildWhere` callers, whose first clause is always
+    `projectClause`). A piece appended to a local **under a branch or loop** the statement's start is not
+    under (`q := …; if x { q += " AND p.project_id = $2" }`) is conditional: the statement is judged twice,
+    whole and without its conditional pieces, since it may run either way. SQL comments (`-- …`, `/* … */`)
+    are blanked first (same length, so offsets still locate the source), then the text is split on every
+    `;` outside a quoted literal and each statement is judged by `unscopedRefs` (below). **One finding per
+    statement**, anchored at its **use site**: the line of its
     first unscoped table name when the SQL is written in the expression itself (a raw string's own line,
     not the literal's first), or the line **naming the package-level constant** that holds it (the
     outermost name when one constant folds another). `Finding.Origin` keeps the table name's own
@@ -7661,29 +7683,37 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     uses, each with its own reason).
   - **The predicate rule** (`clause.go`, `sqlwalk.go`, `sqltoken.go`; `unscopedRefs`): a small pragmatic
     parser, not a SQL grammar. It tokenizes the statement (words, `$n`, `'…'`, operator runs — so `<=` is
-    never an `=` —, parenthesised groups, `projectMark`), splits each query on `UNION`/`INTERSECT`/`EXCEPT`
-    into **levels** (a subquery, a CTE body and each set-operation arm is a level of its own, whose
-    correlated aliases resolve outward), and records per level every item named after **upper-case**
-    `FROM`, `JOIN` (comma joins included), a `DELETE`'s `USING`, `UPDATE` or `INSERT INTO`, with its alias
-    (lower-case is error-message prose), plus the condition segments: the `WHERE` and every `JOIN … ON`/
-    `USING (…)`. Each segment is split into **top-level `AND` terms** (a bracketed condition is split in
-    turn, `BETWEEN`'s own `AND` is not a split); a term containing a top-level `OR`, or starting with `NOT`,
-    scopes nothing. An item is **scoped** by a term `<alias>.<project column> = <value>` (either side; the
-    column bare binds to the items of its own level that carry it) where the value is a parameter, a
-    literal, a cast, a function call, a subquery or `projectMark` — never `NULL`, never `ANY/ALL/SOME`, never
-    a plain column —, or by `<alias>.<project column> = <other alias>.<project column>` once the other item
-    is scoped (equalities spread to a fixpoint; `projects.uid` counts as the project column of `projects`, an
-    unknown table such as `project_members` or a CTE carries any project column name but is scoped only by
-    its own predicate). `projectMark` in a level's `FROM` list or as a top-level term scopes that level. An
+    never an `=` —, parenthesised groups), splits each query on `UNION`/`INTERSECT`/`EXCEPT` into
+    **levels** (a subquery, a CTE body and each set-operation arm is a level of its own, whose correlated
+    aliases resolve outward), and records per level every item named after `FROM`, `JOIN` (comma joins
+    included), a `DELETE`'s `USING`, `UPDATE` or `INSERT INTO`, with its alias, plus the condition
+    segments: the `WHERE` and every `JOIN … ON`. Keywords count in **any case** when the statement is
+    shaped like SQL (`sqlShaped`: it opens with `SELECT … FROM`, `WITH x AS`, `INSERT INTO`, `UPDATE x
+    [alias] SET` or `DELETE FROM`); otherwise only upper-case ones do, so an error message's "update
+    photo: %w" is prose. Each segment is split into **top-level `AND` terms** (a bracketed condition is
+    split in turn, `BETWEEN`'s own `AND` is not a split, nothing inside `CASE … END` is). **`OR` binds
+    looser than `AND`**: a segment (or bracketed condition) with a top-level `OR` has no term every row
+    satisfies and yields none — `p.project_id = $1 AND p.uid = $2 OR p.uid = $3` scopes nothing. A term
+    holding `NOT`, `CASE` or an `IS` test states nothing. An item is **scoped** by a term
+    `<alias>.<project column> = <value>` (either side; the column bare binds to the items of its own level
+    that carry it) where the value is built only of parameters, literals, casts (`$1::text`, `CAST($1 AS
+    text)`), calls over such values, subqueries and `?` — **no column anywhere** (`COALESCE(NULLIF($1,
+    ''), p.project_id)` is a tautology), never `NULL`, never `ANY/ALL/SOME` —, or by `<alias>.<project
+    column> = <other alias>.<project column>` once the other item is scoped (equalities spread to a
+    fixpoint; `projects.uid` counts as the project column of `projects`, an unknown table such as
+    `project_members` or a CTE carries any project column name but is scoped only by its own predicate). An
     `INSERT`'s target is scoped by its project column in its **own** column list or `ON CONFLICT` target;
     an `INSERT … SELECT` (or a `VALUES` subquery) is judged on the tables it reads like any read.
     Nothing else scopes: a project column in a select list, `SET` list, `FILTER (WHERE …)`, `GROUP BY`/
     `ORDER BY`, `RETURNING`, a comment or `IS [NOT] NULL` test; a predicate on one alias (the "wrong
     alias"), a join to a scoped row by a foreign key (`s.uid = m.subject_uid` — say `AND s.project_id =
     p.project_id`) or a project filter inside a subquery says nothing about an outer table.
-    `TestUnscopedRefs_unscoped` pins every bypass the earlier per-statement rule let through (`OR
-    project_id = $2`, `project_id IS NOT NULL`, the wrong alias, `project_id` in a comment, an `INSERT …
-    SELECT … FROM photos p WHERE p.uid = $2`), `TestUnscopedRefs_scoped` the forms it accepts.
+    `TestUnscopedRefs_unscoped` pins every bypass the earlier rules let through (`OR project_id = $2`,
+    `project_id IS NOT NULL`, the wrong alias, `project_id` in a comment, an `INSERT … SELECT … FROM photos p
+    WHERE p.uid = $2`; since 2026-10-15 the `AND … OR` precedence, the column tautologies, a key compared
+    by `<>`/`LIKE`/`NOT IN`, lower-case SQL and the 20 child tables the list used to miss),
+    `TestUnscopedRefs_scoped` the forms it accepts, and `TestScanFiles` the folding ones (a helper read in
+    place, a project-named piece that scopes nothing, a conditional append, a `;` inside a literal).
   - `allow.txt` + `ParseAllowList`/`Judge`: `path:line reason` per line (`#` comments; a missing reason, a
     malformed key or a repeated one is `ErrAllowList`), keyed by the finding's use site.
     `TestRepository_rootStatementsNameTheirProject` fails on every finding without an entry and on every
@@ -7696,10 +7726,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     tightening deleted the unscoped helpers nothing in production called (with their entries) and scoped
     the two `INSERT … SELECT` writers it had trusted callers for (`insertFamilySQL`, `insertFaceSQL`).
   - Deliberately textual, so it has blind spots: a table name built at run time (`FROM %s` with a variable),
-    a project-named piece that is not actually a predicate (it scopes its whole level), a value that is a
-    project but not *the* project (a subquery returning another project's id is a value like any other),
-    and a key of a keyed child table trusted however it was built. It is a tripwire for the common mistake,
-    not a proof; the isolation tests stay the proof.
+    an unreadable piece in a value position (`p.project_id = ?` is trusted to be a placeholder), a value that
+    is a project but not *the* project (a subquery returning another project's id is a value like any
+    other), a key of a keyed child table trusted however it was built, a correlated fragment's outer item,
+    a `LEFT JOIN`'s `ON` term about its *left* table (it filters nothing), an exported SQL constant used
+    from another package (a selector folds to `?`), a lower-case fragment that does not open a statement,
+    and `if`/`else` branches that each add the predicate (judged without either, so allow-listed). It is a
+    tripwire for the common mistake, not a proof; the isolation tests stay the proof.
   - `BootstrapReferences(root, patterns...)` (`bootstrap.go`) is the request-path half of "there is no
     default project": it parses the non-test `.go` files directly inside every directory matching a
     pattern and reports each `project.BootstrapUID` / `project.BootstrapSlug` (under the package's import

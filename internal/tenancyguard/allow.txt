@@ -32,6 +32,7 @@ internal/bulk/apply.go:483 loadCoordinate reads only batch uids that requireBatc
 
 # internal/comments
 internal/comments/store.go:206 authorJoin/mentionsColumn's commentProjectSQL reads the project of the row's own comment c, which parentInProjectJoin confines to the project $2
+internal/comments/store.go:212 countsAmong keys comments by c.<column> = ANY($1), a column the scan cannot read (buildStatements' parameter); parentInProjectJoin's px.project_id = $2 confines the parent joined on that column
 internal/comments/store.go:216 authorJoin/mentionsColumn's commentProjectSQL reads the project of the row's own comment c, which parentInProjectJoin confines to the project $2
 internal/comments/store.go:227 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment just inserted, whose subject the insert's EXISTS proved in the project $5
 internal/comments/store.go:385 authorJoin/mentionsColumn's commentProjectSQL reads the project of the comment c, which inProjectSQL(c, $2) confines to the project
@@ -58,6 +59,7 @@ internal/hlsjob/inventory.go:43 ListRecorded serves only the instance-wide maint
 internal/hlsjob/inventory.go:90 EncodingHashes serves only the instance-wide maintenance scan (jobs-queue join, no request project)
 
 # internal/importer
+internal/importer/failures.go:213 buildListFailuresQuery's WHERE is strings.Join over a slice the scan cannot read; its first clause is always run_id IN (SELECT id FROM import_runs WHERE project_id = $1)
 internal/importer/importer.go:222 updates the run by the id Start(projectUID) returned to the same CLI caller (dirimport)
 internal/importer/importer.go:250 finishes the run by the id Start(projectUID) returned to the same CLI caller (dirimport Complete/Fail)
 
@@ -118,7 +120,12 @@ internal/photos/store_geometry.go:123 maintenance repair of a row its own instan
 internal/photos/store_hls.go:125 CountVideos is an instance-wide maintenance streaming-check gate (maintenance/streaming.go), maintainer-only
 internal/photos/store_impossibledate.go:59 instance-wide maintenance scan/repair (maintenance/repair.go, maintenance.go), maintainer-only
 internal/photos/store_impossibledate.go:117 maintenance repair of a uid its own instance-wide ListImpossibleTakenAt found; maintainer-only
-internal/photos/store_maintenance.go:37 ListPrimaryFiles feeds the instance-wide maintenance integrity scan, which groups rows by project itself
+internal/photos/store_list.go:322 ListByUIDs: WHERE comes from buildWhere — strings.Join over a slice the scan cannot read — whose first clause is always projectClause(<the project's placeholder>), bound first
+internal/photos/store_list.go:767 buildListQuery: WHERE comes from buildWhere — strings.Join over a slice the scan cannot read — whose first clause is always projectClause(<the project's placeholder>), bound first
+internal/photos/store_list.go:789 buildCountQuery: WHERE comes from buildWhere — strings.Join over a slice the scan cannot read — whose first clause is always projectClause(<the project's placeholder>), bound first
+internal/photos/store_list.go:805 buildMediaCountQuery: WHERE comes from buildWhere — strings.Join over a slice the scan cannot read — whose first clause is always projectClause(<the project's placeholder>), bound first
+internal/photos/store_list.go:830 buildSearchQuery: WHERE comes from buildWhere — strings.Join over a slice the scan cannot read — whose first clause is always projectClause(<the project's placeholder>), bound first
+internal/photos/store_maintenance.go:36 ListPrimaryFiles feeds the instance-wide maintenance integrity scan, which groups rows by project itself
 internal/photos/store_ocr.go:48 ocrjob Recognize is worker-only (job Handle); the uid comes from the payload via GetForJob
 internal/photos/store_query.go:840 correlated subquery on photos.uid; the outer photos query is already scoped by project
 internal/photos/store_sidecar.go:72 sidecarjob Export is a worker-only job handler; the uid comes from the job payload
@@ -136,12 +143,16 @@ internal/photos/store_stacks.go:498 affectedStacksTx is called from applyNewStac
 internal/photos/store_stacks.go:525 repairStackTx gets a stack_uid read from a member proved in the project; stacks never span projects
 internal/photos/store_stacks.go:535 repairStackTx gets a stack_uid read from a member proved in the project; stacks never span projects
 internal/photos/store_stacks.go:539 repairStackTx gets a stack_uid read from a member proved in the project; stacks never span projects
+internal/photos/store_timeline.go:115 buildTimelineQuery: WHERE comes from buildWhere — strings.Join over a slice the scan cannot read — whose first clause is always projectClause(<the project's placeholder>), bound first
+internal/photos/store_uploaders.go:130 buildUploadersQuery: WHERE comes from buildWhere — strings.Join over a slice the scan cannot read — whose first clause is always projectClause(<the project's placeholder>), bound first
 internal/photos/store_verify.go:13 instance-wide integrity count, used by backup restore verification and the maintenance scan
 internal/photos/store_verify.go:25 ListFilePaths feeds the post-restore integrity check, which reconciles the whole bucket (every project) against the catalogue
-internal/photos/store_verify.go:63 ListCataloguedFiles feeds the instance-wide maintenance scan, which reconciles storage per project itself
+internal/photos/store_verify.go:62 ListCataloguedFiles feeds the instance-wide maintenance scan, which reconciles storage per project itself
 internal/photos/store_videometa.go:131 metajob reprobeVideo is worker-only; the photo is loaded from the job payload via GetForJob
+internal/photos/store_years.go:88 buildYearsQuery: WHERE comes from buildWhere — strings.Join over a slice the scan cannot read — whose first clause is always projectClause(<the project's placeholder>), bound first
 
 # internal/phototask
+internal/phototask/digest.go:155 the daily task digest reads every project by design (one mail per project and person): its project filter `$2 = '' OR t.project_id = $2` is optional on purpose (the scheduler passes '', the per-pair job its project), and each row carries its own t.project_id into the membership and standing check
 internal/phototask/store.go:327 the taskJoins fragment; its count and list queries take WHERE from Filter.conditions, which always adds t.project_id
 internal/phototask/store.go:333 the taskJoins fragment; its count and list queries take WHERE from Filter.conditions, which always adds t.project_id
 internal/phototask/store_write.go:194 updateIn first locks the row in the same tx with currentSQL (uid AND project_id = $2 FOR UPDATE)
@@ -170,6 +181,9 @@ internal/resolveapi/store.go:74 the old-link resolver finds which project holds 
 internal/resolveapi/store.go:75 the old-link resolver finds which project holds a uid, so it spans every project; the caller's access to the found project (maintainer, or approved member of an active one) is its scope
 internal/resolveapi/store.go:76 the old-link resolver finds which project holds a uid, so it spans every project; the caller's access to the found project (maintainer, or approved member of an active one) is its scope
 
+# internal/review
+internal/review/skipstore.go:71 one player's own skip history, read whole by user_uid across their projects by design: it only filters that player's own project-scoped review candidates, so a foreign uid in it matches nothing and nothing of it leaves the player
+
 # internal/storagemigrate
 internal/storagemigrate/store.go:70 instance-wide storage migration progress, used only by the `kukatko storage` CLI
 internal/storagemigrate/store.go:98 instance-wide storage migration work list, used only by the `kukatko storage` CLI
@@ -181,6 +195,8 @@ internal/system/store_dashboard.go:141 instance-wide counts of the maintainer-on
 
 # internal/tagnotifyjob
 internal/tagnotifyjob/recorder.go:148 tag observer runs in the people store's tx after requirePhotoInProject/requireLinkable proved photo+subject in-project
+internal/tagnotifyjob/recorder.go:250 recipientsSQL: the tag observer's subject uid comes from the assignment being made in its project's transaction; the membership join (pm.project_uid = s.project_id) reads only that subject's own project's accounts
+internal/tagnotifyjob/service.go:163 consumeSQL closes one account's notice window, which spans every project the account belongs to by design; every photo is re-checked against the account's membership and standing in the photo's own project (p.project_id)
 
 # internal/taskassignnotify
 internal/taskassignnotify/taskassignnotify.go:180 assign observer runs in the phototask store's tx on a task it proved in the project; reads that project back

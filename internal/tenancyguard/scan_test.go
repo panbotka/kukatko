@@ -157,13 +157,82 @@ func TestScanFiles(t *testing.T) {
 			want: []string{"6:photos"},
 		},
 		{
-			name: "a where slice built by a project-named call scopes the statement",
+			name: "a where slice built by a project-named call scopes nothing",
 			body: "func f(projectUID string) {\nwhere, args := buildWhere(projectUID)\n" +
 				"q(\"SELECT uid FROM photos WHERE \" + strings.Join(where, \" AND \"), args)\n}",
+			want: []string{"5:photos"},
 		},
 		{
-			name: "a project-named piece scopes the statement",
-			body: "func f() { q(\"SELECT uid FROM photos WHERE \" + projectClause(\"$1\")) }",
+			name: "a project-named piece the scan cannot read scopes nothing",
+			body: "func f(projectFilter string) { q(\"SELECT uid FROM photos WHERE \" + projectFilter + \" AND uid = $2\") }",
+			want: []string{"3:photos"},
+		},
+		{
+			name: "a project-named call the scan cannot read scopes nothing",
+			body: "func f(projectUID string) { q(\"SELECT uid FROM photos WHERE \" + filter(projectUID)) }",
+			want: []string{"3:photos"},
+		},
+		{
+			name: "a package helper is read in place",
+			body: "func projectClause(ph string) string { return \"photos.project_id = \" + ph }\n" +
+				"func f() {\nq(\"SELECT uid FROM photos WHERE \" + projectClause(\"$1\"))\n" +
+				"q(\"SELECT uid FROM photos WHERE uid = $1 OR \" + projectClause(\"$2\"))\n}",
+			want: []string{"6:photos"},
+		},
+		{
+			name: "a package helper that only names the project is no scope",
+			body: "func projectClause(ph string) string { return \"photos.project_id IS NOT NULL\" }\n" +
+				"func f() { q(\"SELECT uid FROM photos WHERE \" + projectClause(\"$1\")) }",
+			want: []string{"4:photos"},
+		},
+		{
+			name: "a table inside a helper is reported at the call",
+			body: "func scan(ph string) string { return \"(SELECT 1 FROM photo_phashes WHERE phash = \" + ph + \")\" }\n" +
+				"func f() {\nq(\"SELECT \" + scan(\"$1\"))\n}",
+			want: []string{"5:photo_phashes"},
+		},
+		{
+			name: "an uncalled helper is judged on its own",
+			body: "func all() string { return \"SELECT uid FROM albums\" }",
+			want: []string{"3:albums"},
+		},
+		{
+			name: "a conditionally appended predicate scopes nothing",
+			body: "func f(x bool) {\nq := \"SELECT uid FROM photos p WHERE p.uid = $1\"\n" +
+				"if x {\nq += \" AND p.project_id = $2\"\n}\nrun(q)\n}",
+			want: []string{"4:photos"},
+		},
+		{
+			name: "a predicate appended in a loop scopes nothing",
+			body: "func f(xs []string) {\nq := \"SELECT uid FROM photos p WHERE p.uid = $1\"\n" +
+				"for range xs {\nq += \" AND p.project_id = $2\"\n}\nrun(q)\n}",
+			want: []string{"4:photos"},
+		},
+		{
+			name: "an unconditional append still scopes",
+			body: "func f(x bool) {\nq := \"SELECT uid FROM photos p WHERE p.uid = $1\"\n" +
+				"q += \" AND p.project_id = $2\"\nif x {\nq += \" AND p.title = $3\"\n}\nrun(q)\n}",
+		},
+		{
+			name: "a statement started in the branch may extend it there",
+			body: "func f(x bool) {\nif x {\nq := \"SELECT uid FROM photos p WHERE p.uid = $1\"\n" +
+				"q += \" AND p.project_id = $2\"\nrun(q)\n}\n}",
+		},
+		{
+			name: "a conditional value of a local folded elsewhere scopes nothing",
+			body: "func f(x bool) {\nw := \"p.uid = $1\"\nif x {\nw = w + \" AND p.project_id = $2\"\n}\n" +
+				"run(\"SELECT uid FROM photos p WHERE \" + w)\n}",
+			want: []string{"8:photos"},
+		},
+		{
+			name: "a semicolon inside a quoted literal splits nothing",
+			body: "func f() { q(\"SELECT uid FROM photos p WHERE p.title = ';' OR TRUE AND p.project_id = $1\") }",
+			want: []string{"3:photos"},
+		},
+		{
+			name: "lower-case SQL is judged",
+			body: "func f() {\nq(\"select uid from photos where uid = $1\")\nerr(\"update photos: %w\")\n}",
+			want: []string{"4:photos"},
 		},
 		{
 			name: "an unknown piece does not scope the statement",
@@ -208,9 +277,9 @@ func TestScanFiles(t *testing.T) {
 				"WHERE p.project_id = $1\")\n}",
 		},
 		{
-			name: "a join to the parent on its key leaves the parent judged on its own",
+			name: "a join to an unscoped parent on its key keys nothing",
 			body: "func f() { q(\"SELECT ph.photo_uid FROM photo_phashes ph JOIN photos p ON p.uid = ph.photo_uid\") }",
-			want: []string{"3:photos"},
+			want: []string{"3:photo_phashes,photos"},
 		},
 		{
 			name: "writes to a keyed child table are not judged",
@@ -224,8 +293,9 @@ func TestScanFiles(t *testing.T) {
 			want: []string{"4:project_invites"},
 		},
 		{
-			name: "a project-named piece in a FROM list may be the join condition",
+			name: "a project-named piece in a FROM list is no join condition",
 			body: "func f() { q(\"SELECT 1 FROM photos p\" + projectJoin(\"p\")) }",
+			want: []string{"3:photos"},
 		},
 		{
 			name: "a project-named piece in a select list scopes nothing",

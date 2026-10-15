@@ -212,8 +212,20 @@ func mergeTables(a, b []string) []string {
 
 // evaluate blanks the SQL comments of one folded expression, splits it into
 // statements and returns those with an item no predicate ties to one project
-// (unscopedRefs), each anchored at its first unscoped item.
+// (unscopedRefs), each anchored at its first unscoped item. An expression
+// with conditionally appended pieces is judged twice — whole, and without
+// them — since the statement may run either way.
 func (p *pkgScan) evaluate(pieces []piece) []unscopedStmt {
+	out := p.evaluateText(pieces)
+	if slices.ContainsFunc(pieces, func(pc piece) bool { return pc.cond }) {
+		bare := slices.DeleteFunc(slices.Clone(pieces), func(pc piece) bool { return pc.cond })
+		out = append(out, p.evaluateText(bare)...)
+	}
+	return out
+}
+
+// evaluateText judges the statements of one folded text.
+func (p *pkgScan) evaluateText(pieces []piece) []unscopedStmt {
 	var text strings.Builder
 	starts := make([]int, len(pieces))
 	for i, pc := range pieces {
@@ -221,12 +233,11 @@ func (p *pkgScan) evaluate(pieces []piece) []unscopedStmt {
 		text.WriteString(pc.text)
 	}
 	var out []unscopedStmt
-	offset := 0
-	for stmt := range strings.SplitSeq(blankComments(text.String()), ";") {
-		if u, ok := p.judge(stmt, offset, pieces, starts); ok {
+	stmts, offsets := splitStatements(blankComments(text.String()))
+	for i, stmt := range stmts {
+		if u, ok := p.judge(stmt, offsets[i], pieces, starts); ok {
 			out = append(out, u)
 		}
-		offset += len(stmt) + 1
 	}
 	return out
 }

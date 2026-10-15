@@ -29,24 +29,48 @@ type pkgScan struct {
 	resolving int
 	// scopes counts the function bodies walked, to name their locals uniquely.
 	scopes int
+	// helpers are the package's SQL helpers by name (isHelper).
+	helpers map[string]*ast.FuncDecl
+	// args are the folded arguments of the helper call being inlined, by
+	// parameter name; nil outside one.
+	args map[string][]piece
 }
 
 // funcScope is what the walk knows about one function body's local variables:
 // every value assigned to each, and the appearance its current value is being
-// accumulated in (`q := "SELECT …"; q += " WHERE …"` is one statement).
+// accumulated in (`q := "SELECT …"; q += " WHERE …"` is one statement), with
+// the branch depth that statement started at.
 type funcScope struct {
 	id      int
-	values  map[string][]ast.Expr
+	values  map[string][]localValue
 	current map[string]int
+	started map[string]int
+	// depth is the branch depth (depthOf) of every assignment and declaration.
+	depth map[ast.Node]int
+}
+
+// localValue is one value assigned to a local; cond when it is assigned under
+// a branch or loop the local's first value is not under.
+type localValue struct {
+	expr ast.Expr
+	cond bool
 }
 
 // newPkgScan indexes the package-level constants and variables of files.
 func newPkgScan(fset *token.FileSet, files []*ast.File) *pkgScan {
-	p := &pkgScan{fset: fset, decls: make(map[string]ast.Expr), used: make(map[string]bool)}
+	p := &pkgScan{fset: fset, decls: make(map[string]ast.Expr), used: make(map[string]bool),
+		helpers: make(map[string]*ast.FuncDecl)}
 	for _, file := range files {
 		for _, decl := range file.Decls {
-			if gen, ok := decl.(*ast.GenDecl); ok && (gen.Tok == token.CONST || gen.Tok == token.VAR) {
-				eachValue(gen.Specs, func(name *ast.Ident, value ast.Expr) { p.decls[name.Name] = value })
+			switch d := decl.(type) {
+			case *ast.GenDecl:
+				if d.Tok == token.CONST || d.Tok == token.VAR {
+					eachValue(d.Specs, func(name *ast.Ident, value ast.Expr) { p.decls[name.Name] = value })
+				}
+			case *ast.FuncDecl:
+				if isHelper(d) {
+					p.helpers[d.Name.Name] = d
+				}
 			}
 		}
 	}
@@ -75,7 +99,9 @@ func (p *pkgScan) scanFile(file *ast.File) {
 				p.scanGenDecl(d)
 			}
 		case *ast.FuncDecl:
-			if d.Body != nil {
+			if p.helpers[d.Name.Name] == d {
+				p.scanHelper(d)
+			} else if d.Body != nil {
 				p.scanBody(d.Body)
 			}
 		}
@@ -101,39 +127,111 @@ func (p *pkgScan) scanGenDecl(d *ast.GenDecl) {
 	}
 }
 
+// scanHelper records a SQL helper's returned expression as an appearance owned
+// by the helper, so it is judged at each call that inlines it — and on its own
+// only when nothing calls it.
+func (p *pkgScan) scanHelper(fn *ast.FuncDecl) {
+	p.record(helperReturn(fn), "func "+fn.Name.Name)
+}
+
 // scanBody walks one function body with a fresh scope of its locals. Function
 // literals inside it share the scope: a closure sees the same variables.
 func (p *pkgScan) scanBody(body *ast.BlockStmt) {
 	p.scopes++
-	p.scope = &funcScope{id: p.scopes, values: localValues(body), current: make(map[string]int)}
+	depth := depthOf(body)
+	p.scope = &funcScope{id: p.scopes, values: localValues(body, depth), current: make(map[string]int),
+		started: make(map[string]int), depth: depth}
 	ast.Inspect(body, p.visit)
 	p.scope = nil
 }
 
+// depthOf returns the branch depth of every assignment and declaration in
+// body: the number of blocks, case clauses and select clauses around it.
+// A statement deeper than another one's start may not run with it.
+func depthOf(body *ast.BlockStmt) map[ast.Node]int {
+	depth := make(map[ast.Node]int)
+	var stack []ast.Node
+	level := 0
+	ast.Inspect(body, func(n ast.Node) bool {
+		if n == nil {
+			top := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if opensBranch(top) {
+				level--
+			}
+			return true
+		}
+		stack = append(stack, n)
+		if opensBranch(n) {
+			level++
+		}
+		switch n.(type) {
+		case *ast.AssignStmt, *ast.ValueSpec:
+			depth[n] = level
+		}
+		return true
+	})
+	return depth
+}
+
+// opensBranch reports whether n is a block or clause a statement may be
+// skipped in.
+func opensBranch(n ast.Node) bool {
+	switch n.(type) {
+	case *ast.BlockStmt, *ast.CaseClause, *ast.CommClause:
+		return true
+	}
+	return false
+}
+
 // localValues collects every value assigned to each local name in body, in
 // source order: `:=`, `=`, `+=` and `var x = …`. A multi-value assignment from
-// one call gives every name that call.
-func localValues(body *ast.BlockStmt) map[string][]ast.Expr {
-	values := make(map[string][]ast.Expr)
-	add := func(lhs ast.Expr, rhs ast.Expr) {
-		if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
-			values[id.Name] = append(values[id.Name], rhs)
-		}
-	}
+// one call gives every name that call. A value assigned deeper (depth) than
+// the name's first value is conditional.
+func localValues(body *ast.BlockStmt, depth map[ast.Node]int) map[string][]localValue {
+	lv := localCollector{depth: depth, values: make(map[string][]localValue), first: make(map[string]int)}
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.AssignStmt:
 			for i, lhs := range n.Lhs {
-				add(lhs, assignedValue(n, i))
+				lv.add(lhs, assignedValue(n, i), n)
 			}
 		case *ast.DeclStmt:
 			if gen, ok := n.Decl.(*ast.GenDecl); ok {
-				eachValue(gen.Specs, func(name *ast.Ident, value ast.Expr) { add(name, value) })
+				lv.declare(gen)
 			}
 		}
 		return true
 	})
-	return values
+	return lv.values
+}
+
+// localCollector gathers the values of a body's locals (localValues): every
+// value per name, and the depth of each name's first one.
+type localCollector struct {
+	depth  map[ast.Node]int
+	values map[string][]localValue
+	first  map[string]int
+}
+
+// add records rhs as a value of lhs, assigned by the statement at.
+func (lc *localCollector) add(lhs, rhs ast.Expr, at ast.Node) {
+	id, ok := lhs.(*ast.Ident)
+	if !ok || id.Name == "_" {
+		return
+	}
+	d, seen := lc.first[id.Name]
+	if !seen {
+		lc.first[id.Name], d = lc.depth[at], lc.depth[at]
+	}
+	lc.values[id.Name] = append(lc.values[id.Name], localValue{expr: rhs, cond: lc.depth[at] > d})
+}
+
+// declare records the values of a `var` declaration inside the body.
+func (lc *localCollector) declare(gen *ast.GenDecl) {
+	for _, spec := range gen.Specs {
+		eachValue([]ast.Spec{spec}, func(name *ast.Ident, value ast.Expr) { lc.add(name, value, spec) })
+	}
 }
 
 // assignedValue returns the expression the i-th left-hand side of n receives:
@@ -215,7 +313,7 @@ func (p *pkgScan) assign(n *ast.AssignStmt) {
 	}
 	for i, lhs := range n.Lhs {
 		if id, ok := lhs.(*ast.Ident); ok && p.isLocal(id.Name) {
-			p.accumulate(id.Name, n.Rhs[i], n.Tok == token.ADD_ASSIGN)
+			p.accumulate(id.Name, n.Rhs[i], n.Tok == token.ADD_ASSIGN, n)
 			continue
 		}
 		ast.Inspect(lhs, p.visit)
@@ -234,16 +332,18 @@ func accumulates(n *ast.AssignStmt) bool {
 func (p *pkgScan) declareLocals(n *ast.ValueSpec) {
 	for i, v := range n.Values {
 		if i < len(n.Names) && p.isLocal(n.Names[i].Name) {
-			p.accumulate(n.Names[i].Name, v, false)
+			p.accumulate(n.Names[i].Name, v, false, n)
 			continue
 		}
 		ast.Inspect(v, p.visit)
 	}
 }
 
-// accumulate folds one value assigned to a local. `+=`, and `x = x + …`, extend
-// the statement the local is building; any other assignment starts a new one.
-func (p *pkgScan) accumulate(name string, rhs ast.Expr, add bool) {
+// accumulate folds one value assigned to a local by the statement at. `+=`,
+// and `x = x + …`, extend the statement the local is building — conditionally
+// when at is deeper than where that statement started; any other assignment
+// starts a new one.
+func (p *pkgScan) accumulate(name string, rhs ast.Expr, add bool, at ast.Node) {
 	if bin, ok := rhs.(*ast.BinaryExpr); ok && bin.Op == token.ADD {
 		if id, ok := leftmost(bin).(*ast.Ident); ok && id.Name == name {
 			add = true
@@ -251,10 +351,14 @@ func (p *pkgScan) accumulate(name string, rhs ast.Expr, add bool) {
 	}
 	pieces := p.fold(rhs, []string{name})
 	if idx, ok := p.scope.current[name]; ok && add {
+		if p.scope.depth[at] > p.scope.started[name] {
+			pieces = conditional(pieces)
+		}
 		p.appearances[idx].pieces = append(p.appearances[idx].pieces, pieces...)
 		return
 	}
 	p.scope.current[name] = len(p.appearances)
+	p.scope.started[name] = p.scope.depth[at]
 	p.appearances = append(p.appearances, appearance{pieces: pieces, owner: p.localKey(name)})
 }
 

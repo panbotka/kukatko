@@ -6,14 +6,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
-	"strings"
 )
-
-// projectMark stands in the folded text for a piece the scan cannot read but
-// whose name says it is the project predicate (`projectClause("$1")`,
-// `env.project`, `projectFilter`). It contains no `;`, so it never splits a
-// statement.
-const projectMark = "\x00project\x00"
 
 // unknownMark stands in the folded text for a piece the scan cannot read.
 const unknownMark = " ? "
@@ -33,6 +26,10 @@ type piece struct {
 	// is anchored there: a shared constant is judged, and allow-listed, at
 	// each statement that uses it, never once for all of them.
 	use token.Pos
+	// cond: the piece was appended to a statement under a branch or loop the
+	// statement's start is not under (`if x { q += " AND …" }`), so the
+	// statement may run without it.
+	cond bool
 }
 
 // usedAt anchors pieces folded from a package-level name at its use.
@@ -54,7 +51,7 @@ func (p *pkgScan) isStringExpr(e ast.Expr) bool {
 	case *ast.ParenExpr:
 		return p.isStringExpr(e.X)
 	case *ast.CallExpr:
-		return isCall(e, "fmt", "Sprintf") || isCall(e, "strings", "Join")
+		return isCall(e, "fmt", "Sprintf") || isCall(e, "strings", "Join") || p.helperOf(e) != nil
 	}
 	return false
 }
@@ -93,7 +90,8 @@ func foldLit(lit *ast.BasicLit) []piece {
 }
 
 // foldCall folds the calls that build strings the scan understands —
-// fmt.Sprintf and strings.Join; any other call is unknown.
+// fmt.Sprintf, strings.Join and a SQL helper of the package (helperOf); any
+// other call is unknown.
 func (p *pkgScan) foldCall(call *ast.CallExpr, seen []string) []piece {
 	if isCall(call, "fmt", "Sprintf") && len(call.Args) > 0 {
 		return p.foldSprintf(call, seen)
@@ -101,13 +99,100 @@ func (p *pkgScan) foldCall(call *ast.CallExpr, seen []string) []piece {
 	if isCall(call, "strings", "Join") && len(call.Args) == 2 {
 		return p.foldJoin(call, seen)
 	}
+	if fn := p.helperOf(call); fn != nil && !slices.Contains(seen, "func "+fn.Name.Name) {
+		return p.foldHelper(fn, call, seen)
+	}
 	return []piece{p.unknown(call)}
+}
+
+// helperOf returns the package's SQL helper call calls — a function (not a
+// method) returning a string whose body is one `return <string expression>`,
+// such as `func projectClause(ph string) string { return "photos.project_id
+// = " + ph }` — or nil. Its argument count must match its parameters.
+func (p *pkgScan) helperOf(call *ast.CallExpr) *ast.FuncDecl {
+	id, ok := call.Fun.(*ast.Ident)
+	if !ok {
+		return nil
+	}
+	fn := p.helpers[id.Name]
+	if fn == nil || len(call.Args) != len(paramNames(fn)) || call.Ellipsis.IsValid() {
+		return nil
+	}
+	return fn
+}
+
+// paramNames returns a function's parameter names in order ("_" for an
+// unnamed one).
+func paramNames(fn *ast.FuncDecl) []string {
+	var names []string
+	for _, f := range fn.Type.Params.List {
+		if len(f.Names) == 0 {
+			names = append(names, "_")
+		}
+		for _, n := range f.Names {
+			names = append(names, n.Name)
+		}
+	}
+	return names
+}
+
+// isHelper reports whether fn is a SQL helper: a function returning one
+// string whose body is a single return of a string expression.
+func isHelper(fn *ast.FuncDecl) bool {
+	if fn.Recv != nil || fn.Body == nil || len(fn.Body.List) != 1 || fn.Type.Results == nil ||
+		len(fn.Type.Results.List) != 1 || len(fn.Type.Results.List[0].Names) > 1 {
+		return false
+	}
+	if id, ok := fn.Type.Results.List[0].Type.(*ast.Ident); !ok || id.Name != "string" {
+		return false
+	}
+	return helperReturn(fn) != nil
+}
+
+// helperReturn returns the expression a function whose body is a single
+// one-value return returns, or nil.
+func helperReturn(fn *ast.FuncDecl) ast.Expr {
+	if fn.Body == nil || len(fn.Body.List) != 1 {
+		return nil
+	}
+	ret, ok := fn.Body.List[0].(*ast.ReturnStmt)
+	if !ok || len(ret.Results) != 1 {
+		return nil
+	}
+	return ret.Results[0]
+}
+
+// foldHelper folds a call of a SQL helper in place: its returned expression,
+// with each parameter standing for the folded argument the call passes. The
+// helper's own literals are anchored at the call, like a constant's at its
+// use; the arguments keep their own anchors.
+func (p *pkgScan) foldHelper(fn *ast.FuncDecl, call *ast.CallExpr, seen []string) []piece {
+	args := make(map[string][]piece, len(call.Args))
+	for i, name := range paramNames(fn) {
+		args[name] = p.fold(call.Args[i], seen)
+	}
+	p.used["func "+fn.Name.Name] = true
+	outer, outerArgs := p.scope, p.args
+	p.scope, p.args = nil, args
+	p.resolving++
+	pieces := p.fold(helperReturn(fn), append(seen, "func "+fn.Name.Name))
+	p.resolving--
+	p.scope, p.args = outer, outerArgs
+	for i := range pieces {
+		if pc := &pieces[i]; pc.lit != nil && !pc.use.IsValid() && pc.lit.Pos() >= fn.Pos() && pc.lit.End() <= fn.End() {
+			pc.use = call.Pos()
+		}
+	}
+	return pieces
 }
 
 // foldIdent folds a name: a local variable becomes every value assigned to it,
 // a package-level string constant or variable its value. A name already being
 // folded (`q = q + …`) contributes nothing; anything else is unknown.
 func (p *pkgScan) foldIdent(id *ast.Ident, seen []string) []piece {
+	if arg, ok := p.args[id.Name]; ok {
+		return slices.Clone(arg)
+	}
 	if slices.Contains(seen, id.Name) {
 		return nil
 	}
@@ -117,7 +202,11 @@ func (p *pkgScan) foldIdent(id *ast.Ident, seen []string) []piece {
 		p.used[p.localKey(id.Name)] = true
 		var out []piece
 		for _, v := range p.scope.values[id.Name] {
-			out = append(out, p.fold(v, append(seen, id.Name))...)
+			pieces := p.fold(v.expr, append(seen, id.Name))
+			if v.cond {
+				pieces = conditional(pieces)
+			}
+			out = append(out, pieces...)
 		}
 		return out
 	}
@@ -130,39 +219,23 @@ func (p *pkgScan) foldIdent(id *ast.Ident, seen []string) []piece {
 
 // unknown stands in for an expression the scan cannot read. Literals nested in
 // it are still scanned as appearances of their own — except while a name is
-// being resolved, as the walk reaches that value where it is defined. The
-// stand-in is projectMark when the expression is named after the project or
-// carries a literal that names a project column.
+// being resolved, as the walk reaches that value where it is defined. What the
+// expression is called says nothing: `projectFilter` folds to the same
+// stand-in as any other unreadable piece.
 func (p *pkgScan) unknown(e ast.Expr) piece {
 	if p.resolving == 0 {
 		ast.Inspect(e, p.visit)
 	}
-	if mentionsProject(e) {
-		return piece{text: projectMark}
-	}
 	return piece{text: unknownMark}
 }
 
-// mentionsProject reports whether e names the project: an identifier with
-// "project" in its name, or a string literal holding a project column.
-func mentionsProject(e ast.Expr) bool {
-	found := false
-	ast.Inspect(e, func(n ast.Node) bool {
-		switch n := n.(type) {
-		case *ast.Ident:
-			if strings.Contains(strings.ToLower(n.Name), "project") {
-				found = true
-			}
-		case *ast.BasicLit:
-			for _, col := range projectColumns {
-				if strings.Contains(n.Value, col) {
-					found = true
-				}
-			}
-		}
-		return !found
-	})
-	return found
+// conditional marks pieces as appended under a branch the statement's start
+// is not under.
+func conditional(pieces []piece) []piece {
+	for i := range pieces {
+		pieces[i].cond = true
+	}
+	return pieces
 }
 
 // verb matches one fmt verb, with its optional explicit argument index.
@@ -219,7 +292,7 @@ func (f *sprintfFold) literal(pc piece) {
 
 // sub cuts text[from:to] out of a literal piece, keeping its location.
 func sub(pc piece, from, to int) piece {
-	return piece{text: pc.text[from:to], lit: pc.lit, raw: pc.raw, off: pc.off + from, use: pc.use}
+	return piece{text: pc.text[from:to], lit: pc.lit, raw: pc.raw, off: pc.off + from, use: pc.use, cond: pc.cond}
 }
 
 // foldJoin folds strings.Join(elems, sep) when elems is a composite literal

@@ -20,6 +20,7 @@ const (
 	kwFrom   = "FROM"
 	kwUpdate = "UPDATE"
 	kwUsing  = "USING"
+	kwDelete = "DELETE"
 )
 
 // itemKind is how the next FROM/JOIN/UPDATE/INTO item is named.
@@ -41,7 +42,7 @@ var reservedWords = map[string]bool{
 var otherClauseWords = map[string]bool{
 	"WITH": true, "SELECT": true, "VALUES": true, "RETURNING": true, "GROUP": true, "ORDER": true,
 	"HAVING": true, "LIMIT": true, "OFFSET": true, "WINDOW": true, "FETCH": true, "DO": true, "SET": true,
-	"INSERT": true, "DELETE": true, "FOR": true,
+	"INSERT": true, kwDelete: true, "FOR": true,
 }
 
 // joinWords qualify a JOIN; they are skipped unless they call a function
@@ -99,8 +100,8 @@ func peek(toks []sqlToken, i int) sqlToken {
 }
 
 // plain applies a token that is no keyword: a group is searched for
-// subqueries (and is an ON CONFLICT target), projectMark in a FROM list marks
-// the level, a comma there expects the next item, and a condition collects it.
+// subqueries (and is an ON CONFLICT target), a comma in a FROM list expects
+// the next item, and a condition collects it.
 func (w *armWalk) plain(t sqlToken) {
 	switch {
 	case t.kind == tokGroup:
@@ -108,8 +109,6 @@ func (w *armWalk) plain(t sqlToken) {
 			w.lv.targetCols = append(w.lv.targetCols, t.inner...)
 		}
 		w.st.group(t, w.lv)
-	case t.kind == tokMark && w.clause == clauseFrom:
-		w.lv.marked = true
 	case t.isOp(",") && w.clause == clauseFrom:
 		w.expect = true
 	}
@@ -117,6 +116,29 @@ func (w *armWalk) plain(t sqlToken) {
 		last := len(w.lv.conds) - 1
 		w.lv.conds[last] = append(w.lv.conds[last], t)
 	}
+}
+
+// counts reports whether an item named after the keyword t is a reference:
+// t is written in upper case, or the whole statement is shaped like SQL. A
+// lower-case "update photos" in the prose of an error message is neither.
+func (w *armWalk) counts(t sqlToken) bool {
+	return t.text == t.upper || w.st.anyCase
+}
+
+// using records `JOIN … USING (cols)`: the item just joined equals every item
+// before it in lv on each of cols.
+func (w *armWalk) using(cols sqlToken) {
+	w.clause = clauseOther
+	if len(w.lv.refs) == 0 {
+		return
+	}
+	u := usingJoin{ref: w.lv.refs[len(w.lv.refs)-1]}
+	for _, t := range cols.inner {
+		if t.kind == tokWord {
+			u.cols = append(u.cols, t.text)
+		}
+	}
+	w.lv.usings = append(w.lv.usings, u)
 }
 
 // open switches to clause c and expects an item named as kind says.
@@ -141,7 +163,8 @@ func (w *armWalk) keyword(t, next sqlToken) bool {
 
 // itemKeyword applies a keyword an item follows — FROM, JOIN, a DELETE's
 // USING, INSERT's INTO, UPDATE — and reports whether t was one. The item
-// counts as a reference only after an upper-case keyword.
+// counts as a reference after an upper-case keyword, or after one in any case
+// in a statement shaped like SQL (sqlShaped).
 func (w *armWalk) itemKeyword(t, next sqlToken) bool {
 	switch t.upper {
 	case kwUpdate:
@@ -150,17 +173,17 @@ func (w *armWalk) itemKeyword(t, next sqlToken) bool {
 		if w.prev == "DISTINCT" { // IS DISTINCT FROM: a comparison
 			return false
 		}
-		w.open(clauseFrom, itemKind{counted: t.text == kwFrom, write: w.prev == "DELETE"})
+		w.open(clauseFrom, itemKind{counted: w.counts(t), write: w.prev == kwDelete})
 	case "JOIN":
-		w.open(clauseFrom, itemKind{counted: t.text == "JOIN"})
+		w.open(clauseFrom, itemKind{counted: w.counts(t)})
 	case kwUsing:
-		if next.kind == tokGroup { // JOIN … USING (col): a condition
-			w.condition()
+		if next.kind == tokGroup { // JOIN … USING (col): an equality of the joined items
+			w.using(next)
 			return true
 		}
-		w.open(clauseFrom, itemKind{counted: t.text == kwUsing})
+		w.open(clauseFrom, itemKind{counted: w.counts(t)})
 	case "INTO":
-		w.open(clauseOther, itemKind{counted: t.text == "INTO", write: true, insert: true})
+		w.open(clauseOther, itemKind{counted: w.counts(t), write: true, insert: true})
 	default:
 		return false
 	}
@@ -194,7 +217,7 @@ func (w *armWalk) update(t sqlToken) {
 	case "FOR", "KEY", "DO":
 		w.clause = clauseOther
 	default:
-		w.open(clauseOther, itemKind{counted: t.text == kwUpdate, write: true})
+		w.open(clauseOther, itemKind{counted: w.counts(t), write: true})
 	}
 }
 
@@ -213,9 +236,6 @@ func (w *armWalk) item(toks []sqlToken, i int) int {
 	t := toks[i]
 	switch {
 	case t.is("LATERAL") || t.is("ONLY"):
-		return i + 1
-	case t.kind == tokMark:
-		w.expect, w.lv.marked = false, true
 		return i + 1
 	case t.kind == tokGroup:
 		w.expect = false

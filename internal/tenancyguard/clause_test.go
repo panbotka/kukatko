@@ -78,14 +78,36 @@ func TestUnscopedRefs_scoped(t *testing.T) {
 		},
 		{"quoted keywords are skipped", "SELECT 1 FROM photos WHERE kind = 'FROM x' AND project_id = $1"},
 		{"FOR UPDATE is no target", "SELECT 1 FROM photos WHERE uid = $1 AND project_id = $2 FOR UPDATE"},
-		{"project mark as a conjunct", "SELECT 1 FROM photos WHERE uid = $1 AND " + projectMark},
-		{"project mark in a FROM list", "SELECT 1 FROM photos p " + projectMark},
+		{"an opaque piece as the value", "SELECT 1 FROM photos p WHERE p.project_id = ? AND p.uid = $2"},
+		{"CAST of a parameter", "SELECT 1 FROM photos p WHERE p.project_id = CAST($1 AS text)"},
+		{"a call over parameters", "SELECT 1 FROM photos p WHERE p.project_id = NULLIF($1, '')"},
+		{"OR inside a bracketed conjunct", "SELECT 1 FROM photos p WHERE p.project_id = $1 AND (p.uid = $2 OR p.uid = $3)"},
+		{"AND and OR inside CASE", "SELECT 1 FROM photos p WHERE p.project_id = $1 AND CASE WHEN a OR b THEN TRUE END"},
+		{"mixed-case keywords", "Select uid From photos p Where p.project_id = $1"},
 		{"projects table by its uid", "SELECT 1 FROM photos p JOIN projects pr ON pr.uid = p.project_id WHERE pr.uid = $1"},
 		{"keyed child by its parent key", "SELECT phash FROM photo_phashes WHERE photo_uid = $1"},
 		{"keyed child by a qualified ANY", "SELECT 1 FROM markers m WHERE m.subject_uid = ANY($1)"},
 		{
 			"keyed child joined to a scoped parent",
 			"SELECT 1 FROM photo_phashes ph JOIN photos p ON p.uid = ph.photo_uid WHERE p.project_id = $1",
+		},
+		{"keyed child by IN a list", "SELECT 1 FROM photo_labels pl WHERE pl.label_uid IN ($1, $2)"},
+		{"keyed child by IN a subquery", "SELECT 1 FROM user_ratings r WHERE r.photo_uid IN (SELECT uid FROM photos WHERE project_id = $1)"},
+		{"keyed child by its own uid", "SELECT 1 FROM markers WHERE uid = $1"},
+		{"comments keyed by their parent", "SELECT body FROM comments c WHERE c.photo_uid = $1"},
+		{"comment mentions keyed by their comment", "SELECT user_uid FROM comment_mentions WHERE comment_uid = ANY($1)"},
+		{
+			"keyed child joined to a scoped CTE",
+			"WITH x AS (SELECT uid FROM photos WHERE project_id = $1) " +
+				"SELECT 1 FROM x JOIN photo_phashes ph ON ph.photo_uid = x.uid",
+		},
+		{
+			"keyed child joined to a keyed child",
+			"SELECT 1 FROM photo_task_photos tp JOIN face_rejections r ON r.photo_uid = tp.photo_uid WHERE tp.task_uid = $1",
+		},
+		{
+			"a correlated fragment keyed to its outer item",
+			"EXISTS (SELECT 1 FROM user_ratings ur WHERE ur.photo_uid = photos.uid AND ur.user_uid = $2)",
 		},
 		{"keyed child JOIN … USING its key", "SELECT 1 FROM photos p JOIN photo_labels USING (photo_uid) WHERE p.project_id = $1"},
 		{"writes to a keyed child table", "DELETE FROM photo_files WHERE size = 0"},
@@ -213,8 +235,69 @@ func TestUnscopedRefs_unscoped(t *testing.T) {
 			stmt: "SELECT 1 FROM photos p JOIN project_members m ON m.project_uid = p.project_id WHERE m.user_uid = $1",
 			want: []string{"photos"},
 		},
-		{name: "project mark in a select list", stmt: "SELECT " + projectMark + " FROM photos WHERE uid = $1", want: []string{"photos"}},
-		{name: "project mark under OR", stmt: "SELECT 1 FROM photos WHERE uid = $1 OR " + projectMark, want: []string{"photos"}},
+		{
+			name: "OR binds looser than AND",
+			stmt: "SELECT 1 FROM photos p WHERE p.project_id = $1 AND p.uid = $2 OR p.uid = $3",
+			want: []string{"photos"},
+		},
+		{
+			name: "OR binds looser than AND inside a bracket",
+			stmt: "SELECT 1 FROM photos p WHERE (p.project_id = $1 AND p.uid = $2 OR p.uid = $3) AND p.x = $4",
+			want: []string{"photos"},
+		},
+		{
+			name: "OR TRUE in a bracket scopes nothing",
+			stmt: "SELECT 1 FROM photos p JOIN albums a ON a.uid = p.album_uid " +
+				"WHERE (a.project_id = $2 OR TRUE) AND p.project_id = $1",
+			want: []string{"albums"},
+		},
+		{
+			name: "an optional filter under OR",
+			stmt: "SELECT 1 FROM photo_tasks t WHERE ($2::text = '' OR t.project_id = $2::text)",
+			want: []string{"photo_tasks"},
+		},
+		{name: "an opaque piece under OR", stmt: "SELECT 1 FROM photos WHERE uid = $1 OR ?", want: []string{"photos"}},
+		{name: "an opaque conjunct is no predicate", stmt: "SELECT 1 FROM photos p WHERE ? AND p.uid = $1", want: []string{"photos"}},
+		{
+			name: "COALESCE over the column is a tautology",
+			stmt: "SELECT 1 FROM photos p WHERE p.project_id = COALESCE(NULLIF($1, ''), p.project_id)",
+			want: []string{"photos"},
+		},
+		{name: "a bracketed column", stmt: "SELECT 1 FROM photos p WHERE p.project_id = (p.project_id)", want: []string{"photos"}},
+		{name: "a call over the column", stmt: "SELECT 1 FROM photos p WHERE p.project_id = coalesce(p.project_id, 0)", want: []string{"photos"}},
+		{name: "the column itself", stmt: "SELECT 1 FROM photos p WHERE p.project_id = p.project_id", want: []string{"photos"}},
+		{name: "an IS test around the equality", stmt: "SELECT 1 FROM photos p WHERE p.project_id = $1 IS NOT FALSE", want: []string{"photos"}},
+		{name: "a CASE", stmt: "SELECT 1 FROM photos p WHERE CASE WHEN $2 THEN p.project_id = $1 ELSE TRUE END", want: []string{"photos"}},
+		{
+			name: "an AND inside CASE",
+			stmt: "SELECT 1 FROM photos p WHERE CASE WHEN $2 AND p.project_id = $1 THEN TRUE ELSE TRUE END",
+			want: []string{"photos"},
+		},
+		{name: "lower-case SQL", stmt: "select uid from photos where uid = $1", want: []string{"photos"}},
+		{name: "a mixed-case FROM", stmt: "SELECT uid From photos WHERE uid = $1", want: []string{"photos"}},
+		{
+			name: "a lower-case JOIN",
+			stmt: "SELECT 1 FROM albums a join photos p on p.uid = a.cover_photo_uid WHERE a.project_id = $1",
+			want: []string{"photos"},
+		},
+		{name: "lower-case UPDATE", stmt: "update photos set title = $2 where uid = $1", want: []string{"photos"}},
+		{name: "a parent key compared otherwise", stmt: "SELECT 1 FROM photo_phashes ph WHERE ph.photo_uid <> $1", want: []string{"photo_phashes"}},
+		{name: "a parent key NOT IN", stmt: "SELECT 1 FROM photo_phashes ph WHERE ph.photo_uid NOT IN ($1)", want: []string{"photo_phashes"}},
+		{name: "a parent key LIKE", stmt: "SELECT 1 FROM markers m WHERE m.photo_uid LIKE $1", want: []string{"markers"}},
+		{name: "a parent key equal to itself", stmt: "SELECT 1 FROM photo_phashes ph WHERE ph.photo_uid = ph.photo_uid", want: []string{"photo_phashes"}},
+		{name: "a parent key equal to a column", stmt: "SELECT 1 FROM photo_phashes ph WHERE ph.photo_uid = phash", want: []string{"photo_phashes"}},
+		{name: "an own uid range", stmt: "SELECT 1 FROM markers WHERE uid > ''", want: []string{"markers"}},
+		{
+			name: "two children keyed only to each other",
+			stmt: "SELECT 1 FROM photo_phashes a JOIN photo_phashes b ON b.photo_uid = a.photo_uid",
+			want: []string{"photo_phashes", "photo_phashes"},
+		},
+		{name: "whole-table read of comments", stmt: "SELECT body FROM comments WHERE author_uid = $1", want: []string{"comments"}},
+		{name: "whole-table read of user_ratings", stmt: "SELECT photo_uid FROM user_ratings WHERE user_uid = $1", want: []string{"user_ratings"}},
+		{name: "whole-table read of photo_task_photos", stmt: "SELECT count(*) FROM photo_task_photos", want: []string{"photo_task_photos"}},
+		{name: "whole-table read of face_rejections", stmt: "SELECT 1 FROM face_rejections WHERE rejected_by = $1", want: []string{"face_rejections"}},
+		{name: "whole-table read of review_skips", stmt: "SELECT 1 FROM review_skips WHERE user_uid = $1", want: []string{"review_skips"}},
+		{name: "whole-table read of notification_photos", stmt: "SELECT photo_uid FROM notification_photos", want: []string{"notification_photos"}},
 		{name: "a column only spelled like it", stmt: "SELECT 1 FROM photos WHERE photo_project_id = $1", want: []string{"photos"}},
 		{name: "project_invites wants project_uid", stmt: "UPDATE project_invites SET uses = 1 WHERE project_id = $1", want: []string{"project_invites"}},
 		{name: "read of a read-scoped table", stmt: "SELECT count(*) FROM audit_log WHERE actor_uid = $1", want: []string{"audit_log"}},
@@ -228,7 +311,7 @@ func TestUnscopedRefs_unscoped(t *testing.T) {
 		{
 			name: "a parent join leaves the parent judged",
 			stmt: "SELECT ph.photo_uid FROM photo_phashes ph JOIN photos p ON p.uid = ph.photo_uid",
-			want: []string{"photos"},
+			want: []string{"photo_phashes", "photos"},
 		},
 		{name: "unbalanced parentheses do not panic", stmt: "SELECT 1)) FROM photos WHERE (uid = $1", want: []string{"photos"}},
 		{name: "unterminated quote ends the scan", stmt: "SELECT 1 FROM photos WHERE kind = 'x AND project_id = $1", want: []string{"photos"}},
@@ -275,9 +358,47 @@ func TestBlankComments(t *testing.T) {
 	}
 }
 
+func TestSplitStatements(t *testing.T) {
+	t.Parallel()
+	stmts, starts := splitStatements("SELECT ';' FROM a; SELECT 'x")
+	if want := []string{"SELECT ';' FROM a", " SELECT 'x"}; !slices.Equal(stmts, want) {
+		t.Errorf("statements = %q, want %q", stmts, want)
+	}
+	if want := []int{0, 18}; !slices.Equal(starts, want) {
+		t.Errorf("starts = %v, want %v", starts, want)
+	}
+}
+
+func TestSQLShaped(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		stmt string
+		want bool
+	}{
+		{"select uid from photos", true},
+		{"with x as (select 1) select * from x", true},
+		{"with recursive x as (select 1) select * from x", true},
+		{"insert into photos (uid) values ($1)", true},
+		{"update photos set title = $1", true},
+		{"update photos p set title = $1", true},
+		{"delete from photos", true},
+		{"update photos: %w", false},
+		{"select photos", false},
+		{"delete photo ?", false},
+		{"photos from the album", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		toks, _ := tokenize(tt.stmt, 0, false)
+		if got := sqlShaped(toks); got != tt.want {
+			t.Errorf("sqlShaped(%q) = %v, want %v", tt.stmt, got, tt.want)
+		}
+	}
+}
+
 func TestTokenize(t *testing.T) {
 	t.Parallel()
-	toks, _ := tokenize(`SELECT "Photo".x, p.a<=$12 FROM (t) WHERE 'q''s' `+projectMark, 0, false)
+	toks, _ := tokenize(`SELECT "Photo".x, p.a<=$12 FROM (t) WHERE 'q''s' ?`, 0, false)
 	var got []string
 	for _, tk := range toks {
 		switch tk.kind {
@@ -285,13 +406,11 @@ func TestTokenize(t *testing.T) {
 			got = append(got, "(")
 		case tokString:
 			got = append(got, "'")
-		case tokMark:
-			got = append(got, "MARK")
 		default:
 			got = append(got, tk.text)
 		}
 	}
-	want := "SELECT Photo . x , p . a <= $12 FROM ( WHERE ' ' MARK"
+	want := "SELECT Photo . x , p . a <= $12 FROM ( WHERE ' ' ?"
 	if s := strings.Join(got, " "); s != want {
 		t.Errorf("tokens = %q, want %q", s, want)
 	}
