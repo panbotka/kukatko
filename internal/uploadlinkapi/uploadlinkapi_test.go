@@ -273,6 +273,26 @@ func currentRole(r *http.Request) project.Role {
 	return project.Role(role)
 }
 
+// strangerUID is an account signed in on the instance that is no member of the
+// link's project (fakeMembers): its upload must be filed like an anonymous one.
+const strangerUID = "us_stranger"
+
+// fakeMembers is the harness's MemberChecker: every account is an approved
+// member of the link's project except strangerUID; it records whom it was asked about.
+type fakeMembers struct {
+	err   error
+	asked string
+}
+
+// IsApprovedMember answers false for strangerUID and true for anybody else.
+func (f *fakeMembers) IsApprovedMember(_ context.Context, _, userUID string) (bool, error) {
+	f.asked = userUID
+	if f.err != nil {
+		return false, f.err
+	}
+	return userUID != strangerUID, nil
+}
+
 // passThrough is a no-op guard.
 func passThrough(next http.Handler) http.Handler { return next }
 
@@ -281,6 +301,7 @@ type harness struct {
 	store   *fakeStore
 	ingest  *fakeIngest
 	sidecar *fakeSidecar
+	members *fakeMembers
 	handler http.Handler
 	// reqCtx is the context upload sends its request with; nil is Background.
 	reqCtx context.Context //nolint:containedctx // The test client's request context.
@@ -291,6 +312,7 @@ func newHarness(t *testing.T, tweak func(*uploadlinkapi.Config)) *harness {
 	t.Helper()
 	creator := "us_owner"
 	h := &harness{
+		members: &fakeMembers{},
 		store: &fakeStore{hasLink: true, link: uploadlink.Link{
 			UID: "ul1", Title: "Pouť", Note: "Díky", CreatedBy: &creator, ExpiresAt: now.Add(24 * time.Hour),
 			Albums: []uploadlink.Target{{UID: "al1", Name: "Pouť 2026"}},
@@ -300,7 +322,7 @@ func newHarness(t *testing.T, tweak func(*uploadlinkapi.Config)) *harness {
 		sidecar: &fakeSidecar{},
 	}
 	cfg := uploadlinkapi.Config{
-		Store: h.store, Ingest: h.ingest, Sidecar: h.sidecar,
+		Store: h.store, Ingest: h.ingest, Sidecar: h.sidecar, Members: h.members,
 		RequireCurator: passThrough, OptionalAuth: passThrough, CurrentUser: currentUser, CurrentRole: currentRole,
 		Now: func() time.Time { return now },
 	}
@@ -497,7 +519,8 @@ func TestPublic(t *testing.T) {
 	body := decode(t, rec)
 	for key := range body {
 		switch key {
-		case "title", "project", "note", "albums", "labels", "expires_at", "registration_enabled", "storage_full":
+		case "title", "project", "note", "albums", "labels", "expires_at", "registration_enabled", "storage_full",
+			"credits_account":
 		default:
 			t.Errorf("public description leaks %q", key)
 		}
@@ -513,8 +536,24 @@ func TestPublic(t *testing.T) {
 	if cookies := rec.Result().Cookies(); len(cookies) != 1 || cookies[0].Name != uploadlinkapi.SessionCookieName {
 		t.Errorf("anonymous page cookies = %v, want the session cookie", cookies)
 	}
-	if signedIn := h.do(t, http.MethodGet, "/u/"+testCode, "us_v:viewer", ""); len(signedIn.Result().Cookies()) != 0 {
+	if body["credits_account"] != false {
+		t.Errorf("anonymous credits_account = %v, want false", body["credits_account"])
+	}
+	signedIn := h.do(t, http.MethodGet, "/u/"+testCode, "us_v:viewer", "")
+	if len(signedIn.Result().Cookies()) != 0 {
 		t.Errorf("signed-in page set cookies %v", signedIn.Result().Cookies())
+	}
+	if got := decode(t, signedIn)["credits_account"]; got != true {
+		t.Errorf("member's credits_account = %v, want true", got)
+	}
+	// Signed in on the instance but no member of the link's project: the page
+	// treats the visitor as anonymous — a session, and a name to type.
+	stranger := h.do(t, http.MethodGet, "/u/"+testCode, strangerUID+":", "")
+	if cookies := stranger.Result().Cookies(); len(cookies) != 1 || cookies[0].Name != uploadlinkapi.SessionCookieName {
+		t.Errorf("non-member page cookies = %v, want the session cookie", cookies)
+	}
+	if got := decode(t, stranger)["credits_account"]; got != false {
+		t.Errorf("non-member's credits_account = %v, want false", got)
 	}
 
 	if rec := h.do(t, http.MethodGet, "/u/Zz9Zz9Zz", "", ""); rec.Code != http.StatusNotFound {
@@ -704,6 +743,46 @@ func TestUpload_signedIn(t *testing.T) {
 	}
 	if len(rec.Result().Cookies()) != 0 {
 		t.Errorf("signed-in upload set cookies %v", rec.Result().Cookies())
+	}
+}
+
+// TestUpload_signedInNonMember verifies an account signed in on the instance
+// but no member of the link's project is never credited: the upload is filed
+// like an anonymous one — the typed name and a session, no account uid on the
+// photo, the provenance or the audit entry.
+func TestUpload_signedInNonMember(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, nil)
+	rec := h.upload(t, strangerUID+":", nil,
+		part{field: "name", content: "Jana"},
+		part{field: "files", filename: "a.jpg", content: "aaa"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+	if h.ingest.requests[0].UploadedBy != "" || h.store.recorded[0].UploadedBy != "" ||
+		h.store.entries[0].ActorUID != "" {
+		t.Errorf("non-member credited: request %+v, recorded %+v, audit actor %q",
+			h.ingest.requests[0], h.store.recorded[0], h.store.entries[0].ActorUID)
+	}
+	if h.store.recorded[0].SessionHash == "" || h.store.recorded[0].UploaderName != "Jana" {
+		t.Errorf("recorded %+v, want an anonymous session and the typed name", h.store.recorded[0])
+	}
+	if h.members.asked != strangerUID {
+		t.Errorf("membership asked about %q, want %q", h.members.asked, strangerUID)
+	}
+}
+
+// TestUpload_membershipCheckFails verifies a failed membership read refuses the
+// upload rather than guessing either way.
+func TestUpload_membershipCheckFails(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, nil)
+	h.members.err = errors.New("db down")
+	rec := h.upload(t, "us_v:viewer", nil, part{field: "files", filename: "a.jpg", content: "aaa"})
+	if rec.Code != http.StatusInternalServerError || len(h.ingest.requests) != 0 {
+		t.Errorf("status = %d, ingested %d; want 500 and nothing", rec.Code, len(h.ingest.requests))
 	}
 }
 

@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -64,4 +65,18 @@ func RequireApprovedMembers(ctx context.Context, q RowQuerier, projectUID string
 		return ErrNotMember
 	}
 	return nil
+}
+
+// IsApprovedMember reports whether userUID is an approved member of projectUID
+// whose identity the project may see (ApprovedMemberSQL) — the account a
+// project may credit by name. A uid with no account at all is no member.
+func (s *Store) IsApprovedMember(ctx context.Context, projectUID, userUID string) (bool, error) {
+	err := RequireApprovedMembers(ctx, s.pool, projectUID, userUID)
+	if errors.Is(err, ErrNotMember) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }

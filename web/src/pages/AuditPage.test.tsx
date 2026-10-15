@@ -493,6 +493,17 @@ describe('AuditPage in a project', () => {
     expect(screen.queryByText('us-former')).not.toBeInTheDocument()
   })
 
+  it('shows an actor who left the project as a former member, never by a name or uid', async () => {
+    fetchAuditMock.mockResolvedValue({
+      ...response([record({ actor_uid: 'us-left' })]),
+      former_actors: ['us-left'],
+    })
+    renderPage()
+
+    expect(await screen.findByRole('cell', { name: 'Former project member' })).toBeInTheDocument()
+    expect(screen.queryByText('us-left')).not.toBeInTheDocument()
+  })
+
   it("says its trail is the project's, never sends a project filter", async () => {
     renderPage(true, '/audit?project=rodina')
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/organize"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // photoTargetType is the audit target type of a recorded upload: the photo.
@@ -226,10 +227,14 @@ func AttributeSessionTx(ctx context.Context, tx pgx.Tx, projectUID, sessionHash,
 
 // provenanceSQL reads the earliest link upload that created the photo, with the
 // account it is attributed to (the signed-in uploader, or the one that claimed
-// the anonymous session at registration) when that account still exists.
-const provenanceSQL = `
+// the anonymous session at registration) when that account still exists. The
+// account is named by the project's rule (project.ShownNameSQL over the link's
+// project): one that is no member of it any more reads nameless, its former
+// flag set.
+var provenanceSQL = `
 SELECT l.uid, l.title, p.uploader_name, p.created_at, u.uid,
-       COALESCE(NULLIF(u.display_name, ''), u.username, '')
+       ` + project.ShownNameSQL("l.project_id", "u") + `,
+       COALESCE(` + project.FormerMemberSQL("l.project_id", "u") + `, false)
 FROM upload_link_photos p
 JOIN upload_links l ON l.uid = p.link_uid
 LEFT JOIN users u ON u.uid = p.uploaded_by
@@ -244,7 +249,7 @@ LIMIT 1`
 func (s *Store) Provenance(ctx context.Context, photoUID string) (*Provenance, error) {
 	var p Provenance
 	err := s.pool.QueryRow(ctx, provenanceSQL, photoUID).Scan(&p.LinkUID, &p.LinkTitle, &p.UploaderName, &p.UploadedAt,
-		&p.AccountUID, &p.AccountName)
+		&p.AccountUID, &p.AccountName, &p.AccountFormer)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil //nolint:nilnil // "no provenance" is a normal answer, not an error.
 	}

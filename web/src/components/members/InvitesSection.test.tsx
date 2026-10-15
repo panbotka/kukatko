@@ -92,6 +92,7 @@ describe('InvitesSection', () => {
           state: 'revoked',
           created_by_name: '',
         }),
+        invite({ uid: 'iv3', role: 'viewer', created_by_name: '', created_by_former: true }),
       ],
       default_days: 7,
       max_days: 90,
@@ -111,6 +112,11 @@ describe('InvitesSection', () => {
     expect(editor.getByText('0 / bez omezení')).toBeInTheDocument()
     expect(editor.getByText('smazaný účet')).toBeInTheDocument()
     expect(editor.queryByRole('button')).not.toBeInTheDocument()
+
+    // A creator who has left the project is a former member, not a deleted account.
+    const viewer = within(rowOf('Prohlížeč'))
+    expect(viewer.getByText('Bývalý člen projektu')).toBeInTheDocument()
+    expect(viewer.queryByText('smazaný účet')).not.toBeInTheDocument()
   })
 
   it('creates an invite and shows its address with a copy button', async () => {

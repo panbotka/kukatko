@@ -47,6 +47,11 @@ describe('UploadLinkLine', () => {
     expect(text).toBe('Nahráno přes odkaz „Pouť 2026“ · od: Jana Nováková')
   })
 
+  it('names an account that left the project as a former member, never by name', async () => {
+    const text = await renderLine(link({ account: { uid: 'us1', name: '', former: true } }))
+    expect(text).toBe('Nahráno přes odkaz „Pouť 2026“ · od: Bývalý člen projektu')
+  })
+
   it('says "bez jména" with neither — never an empty "od:"', async () => {
     const text = await renderLine(link())
     expect(text).toBe('Nahráno přes odkaz „Pouť 2026“ · bez jména')
@@ -81,5 +86,11 @@ describe('uploadLinkSender', () => {
     expect(uploadLinkSender(link({ uploader_name: ' ', account }))).toBe('Account')
     expect(uploadLinkSender(link({ account: { uid: 'us1', name: '' } }))).toBeUndefined()
     expect(uploadLinkSender(link())).toBeUndefined()
+  })
+
+  it('never names a former member by account, even should a name arrive', () => {
+    const former = { uid: 'us1', name: 'Live Name', former: true }
+    expect(uploadLinkSender(link({ account: former }))).toBeUndefined()
+    expect(uploadLinkSender(link({ uploader_name: 'Typed', account: former }))).toBe('Typed')
   })
 })

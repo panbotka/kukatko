@@ -18,7 +18,7 @@ import (
 // both take its last use, the project because it is the mutex every membership
 // change of that project takes (internal/project), so an accept and a removal
 // or role change of the same member never interleave.
-const lockInviteSQL = selectInviteSQL + " WHERE i.code_hash = $1 FOR UPDATE OF i, p"
+var lockInviteSQL = selectInviteSQL + " WHERE i.code_hash = $1 FOR UPDATE OF i, p"
 
 // lockMembershipSQL reads and locks the account's membership of the project.
 const lockMembershipSQL = `SELECT role, approved_at FROM project_members

@@ -213,8 +213,12 @@ export function TechnicalDetails({
   // one group and a timestamp in another. A photo with no uploader did not
   // arrive from nobody: it was imported, and saying so beats an empty dash.
   const addedAt = formatDateTimeMinutes(photo.created_at, locale)
+  // A former member of the project is still who brought the photo, but is
+  // named as one — never by their live name — and linked nowhere.
   const uploader =
-    photo.uploader !== undefined && photo.uploader.name !== '' ? photo.uploader : undefined
+    photo.uploader !== undefined && (photo.uploader.former === true || photo.uploader.name !== '')
+      ? photo.uploader
+      : undefined
   const upload = t('photo.technical.uploadedByImport', { at: addedAt })
 
   const hasPhotoGroup =
@@ -385,16 +389,22 @@ export function TechnicalDetails({
                     of the question. */}
                 <Trans
                   i18nKey="photo.technical.uploadedBy"
-                  values={{ name: uploader.name, at: addedAt }}
+                  values={{
+                    name: uploader.former === true ? t('formerMember') : uploader.name,
+                    at: addedAt,
+                  }}
                   components={{
                     // Not <link>: that is a void element to the HTML parser
                     // behind Trans, which would drop the name inside it.
-                    uploader: (
-                      <ProjectLink
-                        to={uploaderHref(uploader.uid)}
-                        className="text-decoration-none"
-                      />
-                    ),
+                    uploader:
+                      uploader.former === true ? (
+                        <span />
+                      ) : (
+                        <ProjectLink
+                          to={uploaderHref(uploader.uid)}
+                          className="text-decoration-none"
+                        />
+                      ),
                   }}
                 />
               </MetaField>

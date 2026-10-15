@@ -95,6 +95,12 @@ type publicLink struct {
 	// so the page says nothing can be uploaded before anybody picks a file. It
 	// is a yes/no only: the holder of a link learns no sizes.
 	StorageFull bool `json:"storage_full"`
+	// CreditsAccount is whether an upload from this request is credited to the
+	// signed-in account: only an approved member of the link's project is. A
+	// visitor who is signed in on the instance but no member of the project
+	// uploads exactly like an anonymous one — the typed name, never the
+	// account — so the page asks for a name instead of saying "uploading as".
+	CreditsAccount bool `json:"credits_account"`
 }
 
 // goneBody is the 410 of a link that exists but no longer accepts uploads. It
@@ -130,7 +136,12 @@ func (a *API) handlePublic(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, signedIn := a.currentUser(r); !signedIn && SessionHash(r) == "" {
+	credited, err := a.creditedAccount(r, link.ProjectUID)
+	if err != nil {
+		a.serverError(w, r, "checking the uploader's membership", err)
+		return
+	}
+	if credited == "" && SessionHash(r) == "" {
 		if _, err := a.startSession(w); err != nil {
 			a.serverError(w, r, "starting upload session", err)
 			return
@@ -140,7 +151,7 @@ func (a *API) handlePublic(w http.ResponseWriter, r *http.Request) {
 		Title: link.Title, Project: link.project.Name, Note: link.Note,
 		Albums: names(link.Albums), Labels: names(link.Labels),
 		ExpiresAt: link.ExpiresAt, RegistrationEnabled: a.registrationOpen(r, link.ProjectUID),
-		StorageFull: a.storageFull(r, link),
+		StorageFull: a.storageFull(r, link), CreditsAccount: credited != "",
 	})
 }
 
@@ -198,9 +209,9 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusRequestEntityTooLarge, quotaFullBody)
 		return
 	}
-	who, err := a.uploaderFor(w, r)
+	who, err := a.uploaderFor(w, r, link.ProjectUID)
 	if err != nil {
-		a.serverError(w, r, "starting upload session", err)
+		a.serverError(w, r, "resolving the uploader", err)
 		return
 	}
 	results, err := a.ingestParts(r, reader, link, who)
@@ -259,12 +270,17 @@ func (a *API) liveLink(w http.ResponseWriter, r *http.Request) (liveTarget, bool
 	return target, true
 }
 
-// uploaderFor resolves who the upload is attributed to: the signed-in account,
-// or else the anonymous session — the one the session cookie names, or a fresh
-// one whose cookie is set on w.
-func (a *API) uploaderFor(w http.ResponseWriter, r *http.Request) (uploader, error) {
-	if user, ok := a.currentUser(r); ok {
-		return uploader{userUID: user.UID}, nil
+// uploaderFor resolves who an upload through a link of projectUID is
+// attributed to: the signed-in account when the project credits it
+// (creditedAccount), or else the anonymous session — the one the session
+// cookie names, or a fresh one whose cookie is set on w.
+func (a *API) uploaderFor(w http.ResponseWriter, r *http.Request, projectUID string) (uploader, error) {
+	credited, err := a.creditedAccount(r, projectUID)
+	if err != nil {
+		return uploader{}, err
+	}
+	if credited != "" {
+		return uploader{userUID: credited}, nil
 	}
 	if hash := SessionHash(r); hash != "" {
 		return uploader{sessionHash: hash}, nil
@@ -274,6 +290,29 @@ func (a *API) uploaderFor(w http.ResponseWriter, r *http.Request) (uploader, err
 		return uploader{}, err
 	}
 	return uploader{sessionHash: hash}, nil
+}
+
+// creditedAccount returns the uid of the signed-in account an upload through a
+// link of projectUID is credited to, or "" for none. Only an approved member of
+// the link's project is credited (project.ApprovedMemberSQL): an account signed
+// in on the instance that belongs to another project only — or the system
+// administrator, who enters every project but belongs to none by that — would
+// otherwise be stored as the photo's uploader, and the project would read the
+// name of somebody outside it on the photo, in its uploader facet and in its
+// audit trail. Such a visitor uploads like an anonymous one instead.
+func (a *API) creditedAccount(r *http.Request, projectUID string) (string, error) {
+	user, ok := a.currentUser(r)
+	if !ok || a.members == nil {
+		return "", nil
+	}
+	member, err := a.members.IsApprovedMember(r.Context(), projectUID, user.UID)
+	if err != nil {
+		return "", fmt.Errorf("uploadlinkapi: checking %s's membership of %s: %w", user.UID, projectUID, err)
+	}
+	if !member {
+		return "", nil
+	}
+	return user.UID, nil
 }
 
 // startSession mints a fresh anonymous upload session, sets its cookie on w and

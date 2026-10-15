@@ -373,6 +373,47 @@ func TestProvenance_account(t *testing.T) {
 	}
 }
 
+// TestFormerMember_namelessOnLinkAndProvenance verifies the link's creator and
+// the account an upload is credited to read as nameless former members once
+// that account has left the link's project — and still after a blind re-add —
+// uids kept.
+func TestFormerMember_namelessOnLinkAndProvenance(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	link, _ := f.createLink(t)
+	if err := f.store.RecordUpload(ctx, uploadlink.Upload{
+		LinkUID: link.UID, PhotoUID: f.photo, Created: true, UploadedBy: f.curator,
+	}, audit.Entry{Action: audit.ActionUploadLinkUpload}); err != nil {
+		t.Fatalf("RecordUpload: %v", err)
+	}
+	if got, err := f.store.Get(ctx, project.BootstrapUID, link.UID); err != nil || got.CreatorName != "curator" ||
+		got.CreatorFormer {
+		t.Fatalf("a member's link = %+v, %v; want the creator named", got, err)
+	}
+
+	// In order: the account leaves, then a blind exact-match add brings it back
+	// withheld, which must not revive the name either.
+	for _, step := range []struct{ when, change string }{
+		{"after leaving", `DELETE FROM project_members WHERE user_uid = $1`},
+		{"after a blind re-add", `INSERT INTO project_members (project_uid, user_uid, role, approved_at, identity_withheld)
+			VALUES ('` + project.BootstrapUID + `', $1, 'viewer', now(), true)`},
+	} {
+		when := step.when
+		if _, err := f.db.Pool().Exec(ctx, step.change, f.curator); err != nil {
+			t.Fatalf("%s: %v", when, err)
+		}
+		got, err := f.store.Get(ctx, project.BootstrapUID, link.UID)
+		if err != nil || got.CreatorName != "" || !got.CreatorFormer || got.CreatedBy == nil || *got.CreatedBy != f.curator {
+			t.Errorf("%s: link = %+v, %v; want a nameless former creator", when, got, err)
+		}
+		prov, err := f.store.Provenance(ctx, f.photo)
+		if err != nil || prov == nil || prov.AccountName != "" || !prov.AccountFormer ||
+			prov.AccountUID == nil || *prov.AccountUID != f.curator {
+			t.Errorf("%s: provenance = %+v, %v; want a nameless former account", when, prov, err)
+		}
+	}
+}
+
 // TestAttributeSessionTx verifies a registration claims exactly the photos its
 // anonymous session created — not duplicates, not another session's, not a
 // photo somebody already owns — and only once.

@@ -27,7 +27,13 @@ export interface UploadLink {
   title: string
   note: string
   created_by: string | null
+  /** Empty once the account is gone, and for a former member (`created_by_former`). */
   created_by_name: string
+  /**
+   * The creator is no member of the project any more: shown as a former member,
+   * never by their live name.
+   */
+  created_by_former?: boolean
   created_at: string
   expires_at: string
   revoked_at: string | null
@@ -96,6 +102,12 @@ export interface PublicUploadLink {
    * uploaded until it has room again. A yes/no only — the page learns no sizes.
    */
   storage_full: boolean
+  /**
+   * Whether an upload from this browser is credited to the signed-in account —
+   * only an approved member of the link's project is. Anybody else (anonymous,
+   * or signed in but no member of the project) uploads under the name they type.
+   */
+  credits_account?: boolean
 }
 
 /**

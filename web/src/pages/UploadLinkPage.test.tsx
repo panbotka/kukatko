@@ -394,6 +394,7 @@ describe('UploadLinkPage', () => {
   })
 
   it('greets a signed-in uploader instead of asking for a name, and offers no registration', async () => {
+    linkMock.mockResolvedValue({ ...LINK, credits_account: true })
     uploadMock.mockResolvedValue(result('created'))
     const user = userEvent.setup()
     renderPage(viewer())
@@ -402,6 +403,15 @@ describe('UploadLinkPage', () => {
     await pick(user, [new File(['a'], 'a.jpg', { type: 'image/jpeg' })])
     await screen.findByTestId('upload-link-done')
     expect(screen.queryByTestId('upload-link-register')).not.toBeInTheDocument()
+  })
+
+  it("asks a signed-in visitor for a name when the link's project does not credit the account", async () => {
+    // Signed in on the instance but no member of the link's project: the upload
+    // is filed like an anonymous one, so the page must not claim otherwise.
+    linkMock.mockResolvedValue({ ...LINK, credits_account: false })
+    renderPage(viewer())
+    expect(await screen.findByLabelText('Who is it from?')).toBeInTheDocument()
+    expect(screen.queryByTestId('upload-link-signed-in')).not.toBeInTheDocument()
   })
 
   it('puts one large picker first and keeps the drop zone for wider screens', async () => {

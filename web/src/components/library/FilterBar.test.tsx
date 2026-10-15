@@ -1416,6 +1416,24 @@ describe('FilterBar advanced controls', () => {
     expect(screen.getByText('Uploaded by: Imported')).toBeInTheDocument()
   })
 
+  it('names a former member of the project as one, in the facet and on the chip', async () => {
+    const user = userEvent.setup()
+    const uploaders: readonly UploaderBucket[] = [
+      ...UPLOADERS,
+      { uid: 'us_gone', name: '', former: true, count: 4 },
+    ]
+    renderBar({ ...LIBRARY_DEFAULTS, uploader: 'us_gone' }, vi.fn(), { uploaders })
+    expect(screen.getByText('Uploaded by: Former project member')).toBeInTheDocument()
+
+    await openPanel(user)
+    const select = screen.getByLabelText<HTMLSelectElement>('Uploaded by')
+    expect(select.value).toBe('us_gone')
+    expect(
+      within(select).getByRole('option', { name: 'Former project member (4)' }),
+    ).toBeInTheDocument()
+    expect(within(select).queryByRole('option', { name: /us_gone/ })).not.toBeInTheDocument()
+  })
+
   it('keeps a picked uploader on offer when the rest of the view excludes them', async () => {
     const user = userEvent.setup()
     // `us_9` uploaded nothing that survives the other filters, so the facet does

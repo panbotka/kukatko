@@ -9,26 +9,31 @@ import (
 )
 
 // fakeUserResolver is a controllable UserResolver for resolveUploader unit tests:
-// it returns the configured user for a matching UID and auth.ErrUserNotFound
-// otherwise, recording the UID it was asked for.
+// it names the configured user for a matching UID — nameless and former when
+// the UID is in former — and returns auth.ErrUserNotFound otherwise, recording
+// the UID it was asked for.
 type fakeUserResolver struct {
 	byUID  map[string]auth.User
+	former map[string]bool
 	err    error
 	gotUID string
 }
 
-// GetUserByUID records uid and returns the configured user, the configured error,
-// or auth.ErrUserNotFound when no user matches.
-func (f *fakeUserResolver) GetUserByUID(_ context.Context, uid string) (auth.User, error) {
+// ProjectUserName records uid and returns the configured user's name, the
+// configured error, or auth.ErrUserNotFound when no user matches.
+func (f *fakeUserResolver) ProjectUserName(_ context.Context, _, uid string) (string, bool, error) {
 	f.gotUID = uid
 	if f.err != nil {
-		return auth.User{}, f.err
+		return "", false, f.err
 	}
 	user, ok := f.byUID[uid]
 	if !ok {
-		return auth.User{}, auth.ErrUserNotFound
+		return "", false, auth.ErrUserNotFound
 	}
-	return user, nil
+	if f.former[uid] {
+		return "", true, nil
+	}
+	return uploaderName(user.DisplayName, user.Username), false, nil
 }
 
 // TestResolveUploader checks that a photo's uploader UID resolves to a compact
@@ -61,6 +66,12 @@ func TestResolveUploader(t *testing.T) {
 			resolver:   &fakeUserResolver{byUID: users},
 			uploadedBy: new("us_bare"),
 			want:       &uploaderRef{UID: "us_bare", Name: "bob"},
+		},
+		{
+			name:       "a former member is nameless and marked former",
+			resolver:   &fakeUserResolver{byUID: users, former: map[string]bool{"us_named": true}},
+			uploadedBy: new("us_named"),
+			want:       &uploaderRef{UID: "us_named", Former: true},
 		},
 		{
 			name:       "nil uploader yields no reference",
@@ -104,7 +115,7 @@ func TestResolveUploader(t *testing.T) {
 				t.Fatalf("resolveUploader = %+v, want nil", got)
 			case tt.want != nil && got == nil:
 				t.Fatalf("resolveUploader = nil, want %+v", tt.want)
-			case tt.want != nil && (got.UID != tt.want.UID || got.Name != tt.want.Name):
+			case tt.want != nil && *got != *tt.want:
 				t.Errorf("resolveUploader = %+v, want %+v", got, tt.want)
 			}
 		})

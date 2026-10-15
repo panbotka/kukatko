@@ -104,10 +104,13 @@ type Link struct {
 	// CreatedBy is the creator's account UID, nil once the account is gone.
 	CreatedBy *string `json:"created_by"`
 	// CreatorName is the creator's display name (or username), empty when the
-	// account is gone.
-	CreatorName string    `json:"created_by_name"`
-	CreatedAt   time.Time `json:"created_at"`
-	ExpiresAt   time.Time `json:"expires_at"`
+	// account is gone — and when it is no member of the link's project any
+	// more, which CreatorFormer reports (project.FormerMemberSQL): the client
+	// says "former member" rather than read the account's live name.
+	CreatorName   string    `json:"created_by_name"`
+	CreatorFormer bool      `json:"created_by_former"`
+	CreatedAt     time.Time `json:"created_at"`
+	ExpiresAt     time.Time `json:"expires_at"`
 	// Code is the readable short code, empty for a link created before
 	// migration 0091 until its code is restored. It is never serialised from
 	// here: the HTTP layer decides per caller whether the code may be shown.
@@ -188,4 +191,7 @@ type Provenance struct {
 	// anonymous upload nobody claimed, and once the account is deleted.
 	AccountUID  *string
 	AccountName string
+	// AccountFormer reports an account that is no member of the link's project
+	// any more (project.FormerMemberSQL); AccountName is then empty.
+	AccountFormer bool
 }

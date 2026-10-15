@@ -630,7 +630,13 @@ export interface PhotoLabelRef {
  */
 export interface PhotoUploaderRef {
   uid: string
+  /** Empty for a former member (`former`). */
   name: string
+  /**
+   * The account is no member of the photo's project any more: the client says
+   * "former member" and links nowhere — the project does not read its live name.
+   */
+  former?: boolean
 }
 
 /**
@@ -1745,8 +1751,17 @@ export async function fetchPhotoYears(
 export interface UploaderBucket {
   /** The uploader's user UID, `''` for the imported photos. */
   uid: string
-  /** The uploader's display name (or username), `''` for the imported photos. */
+  /**
+   * The uploader's display name (or username), `''` for the imported photos and
+   * for a former member (`former`).
+   */
   name: string
+  /**
+   * The uploader is no member of the project any more: the facet says "former
+   * member" — the project does not read the account's live name. The `uid`
+   * still filters the grid.
+   */
+  former?: boolean
   /** How many photos of the current view are theirs. */
   count: number
 }

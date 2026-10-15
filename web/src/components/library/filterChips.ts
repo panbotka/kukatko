@@ -194,9 +194,10 @@ export function buildChips(
 
 /**
  * How an uploader filter is worded on its chip: the reserved "imported" group by
- * its own name, an uploader by the name the facet reported, and — when the facet
- * has not loaded (or the account is gone) — the raw UID, so the chip still says
- * which filter is on and can still be removed.
+ * its own name, an uploader by the name the facet reported, a former member of
+ * the project as one, and — when the facet has not loaded (or the account is
+ * gone) — the raw UID, so the chip still says which filter is on and can still
+ * be removed.
  */
 function uploaderChipName(
   uid: string,
@@ -207,5 +208,8 @@ function uploaderChipName(
     return t('library.filters.uploaderImported')
   }
   const uploader = uploaders?.find((candidate) => candidate.uid === uid)
+  if (uploader?.former === true) {
+    return t('formerMember')
+  }
   return uploader === undefined || uploader.name === '' ? uid : uploader.name
 }

@@ -13,6 +13,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -75,7 +76,7 @@ func newIsolationEnv(t *testing.T) *isolationEnv {
 	}
 	enqueuer := jobs.NewEnqueuer(jobs.NewStore(pool))
 	api := uploadlinkapi.NewAPI(uploadlinkapi.Config{
-		Store: store, Projects: projects,
+		Store: store, Projects: projects, Members: projects,
 		Ingest: ingest.New(ingest.Config{
 			Storage: fs, Photos: e.photos, Thumbnailer: thumb.New(fs, t.TempDir()),
 			Enqueuer: enqueuer, OCR: enqueuer, TempDir: t.TempDir(),
@@ -95,6 +96,22 @@ func newIsolationEnv(t *testing.T) *isolationEnv {
 	e.server = httptest.NewServer(r)
 	t.Cleanup(e.server.Close)
 	return e
+}
+
+// cookiesOf signs which's member in and returns the session cookies, for the
+// public routes the fixture's clients do not send to.
+func (e *isolationEnv) cookiesOf(t *testing.T, which projecttest.Side) []*http.Cookie {
+	t.Helper()
+	client := e.f.ClientFor(t, e.server, which)
+	base, err := url.Parse(e.server.URL)
+	if err != nil {
+		t.Fatalf("parsing the server URL: %v", err)
+	}
+	cookies := client.Jar.Cookies(base)
+	if len(cookies) == 0 {
+		t.Fatalf("signing %s in left no cookies", which)
+	}
+	return cookies
 }
 
 // jpegOf encodes a small JPEG filled with shade, so two shades are two
@@ -241,6 +258,65 @@ func TestPublicUpload_nearDuplicateWarningStaysInTheLinksProject(t *testing.T) {
 	}
 	if _, err := e.photos.GetByUIDInProject(t.Context(), e.f.B.ProjectUID, sameInB.PhotoUID); err != nil {
 		t.Errorf("the byte-identical copy is not B's photo: %v", err)
+	}
+}
+
+// TestPublicUpload_nonMemberIsNotCredited uploads through B's public link while
+// signed in as A's member, who is no member of B: the upload is filed like an
+// anonymous one — the typed name, an anonymous session — and B stores the
+// account's uid nowhere (the photo, its link provenance, the audit trail), so it
+// can never show the stranger's name. The page tells the visitor so: it does
+// not credit the account. B's own member is credited as before.
+func TestPublicUpload_nonMemberIsNotCredited(t *testing.T) {
+	e := newIsolationEnv(t)
+	ctx := t.Context()
+	stranger := e.cookiesOf(t, projecttest.SideA)
+
+	page := e.send(t, http.MethodGet, "/api/v1/u/"+e.f.B.UploadLinkCode, "", nil, stranger)
+	var described struct {
+		CreditsAccount bool `json:"credits_account"`
+	}
+	if err := json.NewDecoder(page.Body).Decode(&described); err != nil || page.StatusCode != http.StatusOK {
+		t.Fatalf("page = %d (%v)", page.StatusCode, err)
+	}
+	if described.CreditsAccount {
+		t.Error("B's page credits A's member's account")
+	}
+
+	inB, _ := e.upload(t, e.f.B.UploadLinkCode, jpegOf(t, 60), stranger)
+	photo, err := e.photos.GetByUIDInProject(ctx, e.f.B.ProjectUID, inB)
+	if err != nil {
+		t.Fatalf("the upload is not B's photo: %v", err)
+	}
+	if photo.UploadedBy != nil {
+		t.Errorf("B's photo is credited to %q, want nobody", *photo.UploadedBy)
+	}
+	var linkUploader, session *string
+	var typed string
+	if err := e.pool.QueryRow(ctx, `SELECT uploaded_by, session_hash, uploader_name
+		FROM upload_link_photos WHERE photo_uid = $1`, inB).Scan(&linkUploader, &session, &typed); err != nil {
+		t.Fatalf("reading the provenance: %v", err)
+	}
+	if linkUploader != nil || session == nil || typed != "Jana" {
+		t.Errorf("provenance account %v, session %v, name %q; want none, a session and Jana", linkUploader, session, typed)
+	}
+	var credited int
+	if err := e.pool.QueryRow(ctx, `SELECT count(*) FROM audit_log
+		WHERE project_id = $1 AND actor_uid = $2`, e.f.B.ProjectUID, e.f.A.UserUID).Scan(&credited); err != nil {
+		t.Fatalf("reading the audit trail: %v", err)
+	}
+	if credited != 0 {
+		t.Errorf("B's audit trail names A's member as the actor of %d entries", credited)
+	}
+
+	// Control: B's own member is credited by account.
+	inBByMember, _ := e.upload(t, e.f.B.UploadLinkCode, jpegOf(t, 90), e.cookiesOf(t, projecttest.SideB))
+	own, err := e.photos.GetByUIDInProject(ctx, e.f.B.ProjectUID, inBByMember)
+	if err != nil {
+		t.Fatalf("the member's upload is not B's photo: %v", err)
+	}
+	if own.UploadedBy == nil || *own.UploadedBy != e.f.B.UserUID {
+		t.Errorf("B's member's upload credited to %v, want %s", own.UploadedBy, e.f.B.UserUID)
 	}
 }
 

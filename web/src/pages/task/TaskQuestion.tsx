@@ -67,7 +67,12 @@ export function TaskQuestion({ task, canEdit, busy, onSave }: TaskQuestionProps)
 
   const byline = (
     <p className="text-body-secondary small mb-1">
-      {t('taskDetail.opened', { name: task.created_by_name || t('taskDetail.someone') })}
+      {t('taskDetail.opened', {
+        name:
+          task.created_by_former === true
+            ? t('formerMember')
+            : task.created_by_name || t('taskDetail.someone'),
+      })}
       {' · '}
       {task.photo_count === 0
         ? t('tasks.row.noPhotos')

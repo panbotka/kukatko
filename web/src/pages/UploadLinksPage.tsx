@@ -355,8 +355,10 @@ function LinkCard({
           {link.last_used_at !== null &&
             ` · ${t('uploadLinks.lastUsed', { date: formatDate(link.last_used_at, language) })}`}
           {showCreator &&
-            link.created_by_name !== '' &&
-            ` · ${t('uploadLinks.createdBy', { name: link.created_by_name })}`}
+            (link.created_by_former === true || link.created_by_name !== '') &&
+            ` · ${t('uploadLinks.createdBy', {
+              name: link.created_by_former === true ? t('formerMember') : link.created_by_name,
+            })}`}
         </p>
         {link.state === 'active' && link.path !== undefined && (
           <LinkAddress

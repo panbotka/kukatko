@@ -709,23 +709,31 @@ func (a *API) writeFilterPage(
 // effective limit back to the client when the request did not set one.
 const defaultPageLimit = 100
 
-// UserResolver resolves a user UID to the user record so the detail endpoint can
-// present the uploader's human-readable name instead of a raw UID. It is a narrow
-// interface so photoapi depends on the behaviour, not the auth store's wiring;
-// auth.Store satisfies it and a test fake can stand in. The lookup is limited to
-// the single-photo detail endpoint so list/search responses never pay a per-item
-// user query (no N+1). When nil the detail response omits the uploader object.
+// UserResolver resolves a user UID to the name the photo's project shows it by,
+// so the detail endpoint can present the uploader's human-readable name instead
+// of a raw UID. It is a narrow interface so photoapi depends on the behaviour,
+// not the auth store's wiring; auth.Store satisfies it and a test fake can stand
+// in. The lookup is limited to the single-photo detail endpoint so list/search
+// responses never pay a per-item user query (no N+1). When nil the detail
+// response omits the uploader object.
 type UserResolver interface {
-	// GetUserByUID returns the user with the given UID, or auth.ErrUserNotFound.
-	GetUserByUID(ctx context.Context, uid string) (auth.User, error)
+	// ProjectUserName returns the account's display name (else its username)
+	// as the project projectUID shows it — or no name and former true for an
+	// account that is no member of the project any more — or
+	// auth.ErrUserNotFound when no account has uid.
+	ProjectUserName(ctx context.Context, projectUID, uid string) (name string, former bool, err error)
 }
 
 // uploaderRef is the compact uploader reference embedded in a photo detail
 // response: the uploading user's UID plus a resolved human-readable Name (the
 // display name, falling back to the username when the display name is empty).
+// Former reports an account that is no member of the photo's project any more
+// (project.FormerMemberSQL); Name is then empty and the client says "former
+// member" — the project does not get to read the account's live name.
 type uploaderRef struct {
-	UID  string `json:"uid"`
-	Name string `json:"name"`
+	UID    string `json:"uid"`
+	Name   string `json:"name"`
+	Former bool   `json:"former,omitempty"`
 }
 
 // photoDetail is the JSON body returned by the detail endpoint: the photo (with
@@ -886,16 +894,18 @@ func (a *API) resolveOCR(ctx context.Context, uid string) string {
 // the uploader and the client shows its neutral fallback — when the photo has no
 // uploader (uploadedBy nil/empty, e.g. imported items), when no resolver is
 // wired, or when the user can no longer be resolved (a deleted account or a
-// lookup failure); it never fails the detail request over the uploader.
+// lookup failure); it never fails the detail request over the uploader. An
+// uploader who is no member of the request's project any more is reported
+// nameless with Former set.
 func (a *API) resolveUploader(ctx context.Context, uploadedBy *string) *uploaderRef {
 	if a.users == nil || uploadedBy == nil || *uploadedBy == "" {
 		return nil
 	}
-	user, err := a.users.GetUserByUID(ctx, *uploadedBy)
+	name, former, err := a.users.ProjectUserName(ctx, auth.ProjectUIDFromContext(ctx), *uploadedBy)
 	if err != nil {
 		return nil
 	}
-	return &uploaderRef{UID: user.UID, Name: uploaderName(user.DisplayName, user.Username)}
+	return &uploaderRef{UID: *uploadedBy, Name: name, Former: former}
 }
 
 // photoMemberships returns the photo's album and label chips for the detail

@@ -185,12 +185,13 @@ func (e *env) loginUser(t *testing.T, username string, role auth.AccountRole) (*
 
 // listResponse mirrors the endpoint's JSON body for decoding in tests.
 type listResponse struct {
-	Entries    []audit.Record    `json:"entries"`
-	Actors     map[string]string `json:"actors"`
-	Total      int               `json:"total"`
-	Limit      int               `json:"limit"`
-	Offset     int               `json:"offset"`
-	NextOffset *int              `json:"next_offset"`
+	Entries      []audit.Record    `json:"entries"`
+	Actors       map[string]string `json:"actors"`
+	FormerActors []string          `json:"former_actors"`
+	Total        int               `json:"total"`
+	Limit        int               `json:"limit"`
+	Offset       int               `json:"offset"`
+	NextOffset   *int              `json:"next_offset"`
 }
 
 // TestListForbiddenForNonAdmin verifies only a maintainer reads the instance

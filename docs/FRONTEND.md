@@ -2034,8 +2034,10 @@ here.
   the note, **where the photos go** (album/label names as non-clickable chips styled from `ENTITY_STYLE` —
   an uploader may not open them) and the expiry, and nothing else; an expired/revoked/unknown link gets a
   clear message instead. An anonymous visitor may type "Od koho?" (remembered per device under
-  `kukatko.uploadLink.uploaderName`, see **Browser storage**); a signed-in one is greeted by name and
-  uploads as themselves. **Foolproof on a phone** — almost everyone opens it there, often someone who
+  `kukatko.uploadLink.uploaderName`, see **Browser storage**); a signed-in **member of the link's
+  project** (the server's `credits_account`) is greeted by name and uploads as themselves — anybody else
+  signed in (another project's member, the maintainer) is not credited by the server, so the page asks
+  them "Od koho?" like an anonymous guest. **Foolproof on a phone** — almost everyone opens it there, often someone who
   has never seen the app — so it is **three screens, one action each**: *pick* (the header, "Od koho?"
   as an optional `lg` field, then **one full-width "Vybrat fotky"** `PickFilesButton` — `multiple`,
   `PICKER_ACCEPT`: images, videos, HEIC/RAW; the `DropZone` sits under it only from `md` up, a phone has
@@ -3216,8 +3218,9 @@ here.
   (UTC). prev/next pagination over `offset`/`next_offset` (limit 100) with a `od–do z total` count;
   filters and offset live in the URL (`useUrlState` over `AUDIT_DEFAULTS`), so Back restores the exact view.
   **Actors are named by the page's own `actors` map first** (the server names everyone who acted in the
-  page — a former or a still-waiting member too, who used to show as a raw uid; see `docs/API.md`), the
-  roster second (fetched **best-effort**), the uid only when neither knows the account, `—` for a system
+  page — a still-waiting member too, who used to show as a raw uid; see `docs/API.md`) — except a
+  **former member** of the project, whom the server lists nameless in `former_actors` and the page shows
+  as „Bývalý člen projektu" (`formerMember`) — the roster second (fetched **best-effort**), the uid only when neither knows the account, `—` for a system
   action; never blocking the table render. Loading/empty/error (retry via `reloadKey`) states, self-gated on
   `isAdmin`. The subtitle says „…v tomto projektu" — the trail is the project's, not the instance's.
   **`<AuditPage scope="instance" />` = `/system/audit`** (maintainer, self-gated on `isMaintainer`,
@@ -3871,8 +3874,14 @@ here.
   sends no name) reads as **„Bývalý člen projektu"** (`formerMember`) with no picture asked for — so does a
   mention of such an account (`CommentMention.former`: the `MentionChip` is muted, unlinked, and never the
   token's name), the task ledger's last-comment author and a former task participant in
-  `TaskParticipants` (`Participant.former` / `added_by_former`): a project stops seeing a live name that may
-  since have been renamed in another project (`CommentsPanel.test`, `TaskDetailPage.test`). The row's two actions are **a quiet pair of icon buttons** (pencil,
+  `TaskParticipants` (`Participant.former` / `added_by_former`); the same words, from the server's
+  `*_former` flags, name a task's opener (`TaskQuestion`'s byline) and last actor (`TasksPage` row), the
+  uploader facet's option and chip (`FilterBar`, `filterChips` — the uid still filters), the photo detail's
+  uploader (`TechnicalDetails`, unlinked) and upload-link sender (`UploadLinkLine`), an upload link's and an
+  invite's creator (`UploadLinksPage`, `InvitesSection`) and the audit actor (`AuditPage`): a project stops
+  seeing a live name that may since have been renamed in another project (`CommentsPanel.test`,
+  `TaskDetailPage.test`, `TasksPage.test`, `FilterBar.test`, `TechnicalDetails.test`, `UploadLinkLine.test`,
+  `UploadLinksPage.test`, `InvitesSection.test`, `AuditPage.test`). The row's two actions are **a quiet pair of icon buttons** (pencil,
   bin — `aria-label` + `title` „Upravit"/„Smazat") in a column of their own at the comment's top right
   (`.kk-comment__actions`), not a caption link and a red outline box under every remark: same `sm` link
   variant, same muted ink (`.kk-comment__action`), delete turning `--kk-danger-text` only on hover/focus

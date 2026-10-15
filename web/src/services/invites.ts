@@ -30,8 +30,13 @@ export interface Invite {
   uses: number
   revoked_at: string | null
   created_by: string | null
-  /** The creator's name; empty once the account is gone. */
+  /** The creator's name; empty once the account is gone, and for a former member. */
   created_by_name: string
+  /**
+   * The creator is no member of the project any more: shown as a former member,
+   * never by their live name.
+   */
+  created_by_former?: boolean
   created_at: string
   /** The readable short code. */
   code: string

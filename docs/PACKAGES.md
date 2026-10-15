@@ -705,7 +705,8 @@ to `## Package map` in `CLAUDE.md`.
   plus that year; `params.Sort`/`Order`/pagination are ignored, photos without `taken_at` don't fall into
   buckets, but `Total` (via `Count`) includes them — the basis of `photoapi`'s year facet),
   `UploaderBuckets(params)` (who uploaded the matching photos, `[]UploaderBucket{UID,Username,
-  DisplayName,Count}` in `store_uploaders.go` — one `GROUP BY uploaded_by` ordered count desc, uid asc,
+  DisplayName,Former,Count}` in `store_uploaders.go` — a former member of the project keeps the bucket and
+  uid, names empty, `Former` set (`project.FormerMemberSQL` on `$1`) — one `GROUP BY uploaded_by` ordered count desc, uid asc,
   the names resolved by a `LEFT JOIN users` **outside** the aggregating subquery, since the shared filters
   name photo columns unqualified and `users` carries columns of those very names; shares `buildWhere` with
   `List`/`Count`, so a bucket's count = exactly what `List` returns for the same filters plus that uploader;
@@ -1834,8 +1835,9 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   → `video.Transcode` (H.264/MP4 progressive, no range, `no-store`), falls back to the original when
   ffmpeg fails or the codec is unknown; **the non-destructive
   edit** via `Organizer` (the detail's album/label chips); **the detail's uploader** via the `UserResolver`
-  interface (satisfied by `auth.Store.GetUserByUID`, wired by `buildPhotoAPI`): `handleDetail`
-  resolves `photo.UploadedBy` → `uploader{uid,name}` (`name` = `display_name`, fallback `username`),
+  interface (satisfied by `auth.Store.ProjectUserName`, wired by `buildPhotoAPI`): `handleDetail`
+  resolves `photo.UploadedBy` → `uploader{uid,name,former}` (`name` = `display_name`, fallback `username`;
+  a former member of the request's project is nameless with `former` set),
   nil-safe (not wired / no uploader / an unresolvable user → `uploader` omitted, only on the
   detail, no N+1 in the list); **the detail's upload link** (`uploadlink.go`) via the
   `UploadLinkProvenance` interface (satisfied by `uploadlink.Store.Provenance`): `resolveUploadLink`
@@ -4289,7 +4291,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   **who is on a task** (`participants.go`, table `photo_task_participants` from migration
   `0081_photo_task_participants.sql`): `Participant{UserUID,Name,JoinedAt,AddedByUID,AddedByName,Former,
   AddedByFormer}` (a participant — or whoever asked them — who has left the task's project and is no
-  maintainer reads with no name and the flag set, `participantFormerParam`/`…Task`, CAT-4),
+  maintainer reads with no name and the flag set, `participantFormerParam`/`…Task`, CAT-4; so do the task's
+  creator, closer and last actor — `Task.CreatedByFormer`/`ClosedByFormer`/`LastActivityByFormer`,
+  `project.ShownNameSQL` over `t.project_id`),
   `Participants`/`Assign`/`Unassign`/`Join`, `Filter.ParticipantUID`, and — the part that makes the list
   true without anybody maintaining it — an idempotent `joinParticipant` inside *every* write's transaction,
   so acting on a question is what puts you on it. `added_by` is the one distinction the table carries:
@@ -4447,7 +4451,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   detail's `upload_link`); `RecordUpload`'s audit details carry the link's `link_title` (read by the
   `last_used_at` `UPDATE … RETURNING title`); every mutation audits in its own transaction)),
   `internal/uploadlinkapi/`
-  (the HTTP half: `NewAPI(Config{Store, Ingest, Projects, Sidecar, Registration?, RequireCurator, OptionalAuth,
+  (the HTTP half: `NewAPI(Config{Store, Ingest, Projects, Members?, Sidecar, Registration?, RequireCurator, OptionalAuth,
   CurrentUser?, CurrentRole?, CurrentProject?, IPLimit, LinkLimit, MaxFileSize, Quota?, MaxUploadsPerLink,
   DefaultDays, MaxDays, SecureCookies, Now?})` mounts
   `/upload-links` **per project** (`RegisterManagementRoutes`, under `/p/{project}`: every route works in
@@ -4459,7 +4463,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `project`, the **name** of the link's project read through `Projects` (never its uid or slug),
   `registration_enabled`, the link's own project's switch read through `Registration`, and `storage_full`,
   `ingest.QuotaRefusal` over `Quota` (an `ingest.QuotaChecker`, the shared `*ingest.Service`; nil = never
-  full) — the upload asks the same before reading the body and answers a full project 413
+  full), and `credits_account` — `creditedAccount`: a signed-in account is credited (`uploaderFor`) only
+  when `Members` (`MemberChecker`, `*project.Store.IsApprovedMember`; nil credits nobody) says it is an
+  approved member of the link's project, anybody else signed in uploads like an anonymous visitor and gets
+  the session cookie — the upload asks the same before reading the body and answers a full project 413
   `{"error":"quota_exceeded"}` with no sizes; `Registration` is a
   `RegistrationSettings`, `*settings.Store`; nil or a failed read = closed): `liveLink` resolves the link by code,
   then its project through `Projects` (`*project.Store`; a missing or deactivated project = the unknown
@@ -4762,6 +4769,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   its members and the accounts that appear as actors in its trail — else `ErrNoProjectPerson`, the project
   admin's `?user=` filter; `ActorNames(ctx, uids)` → uid → display name (or username) of the accounts that
   still exist, the `actors` map every listing page carries for the actors of its own entries;
+  `ProjectActorNames(ctx, projectUID, uids)` is the same for a project's listing, returning the former
+  members of that project (the `project.FormerMemberSQL` rule, written out) apart and nameless;
   `List` joins `projects` so a `Record` carries `ProjectUID` and `Project` = the slug, both nil for an
   instance entry) for the admin listing; **projects**: `Entry.ProjectUID` files an entry under a project
   (`audit_log.project_id`); `ProjectScoped(action)` is every known action but the hand-kept
@@ -4803,9 +4812,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `auth.ProjectUIDFromContext`; `parseFilter` from the query `user`/`entity_type`/`entity_uid`/
   `action`/`via`/`decision`/`since`/`until` (RFC3339)/`limit`/`offset` → `audit.Filter` (an invalid
   time/number/`via`/`decision` → 400), returns `{entries,actors,total,limit,offset,next_offset}` newest-first —
-  `actors` (`respond` → `audit.Store.ActorNames` over `actorUIDs(entries)`) names every account that acted in
-  the page, so a project admin reads a former or waiting member by name without the map ever naming anybody
-  who did not act in an entry the reader may already see;
+  `actors` (`respond` → `actorNames` → `audit.Store.ActorNames` over `actorUIDs(entries)`, on a project route
+  `ProjectActorNames`) names every account that acted in the page, so a project admin reads a waiting member
+  by name without the map ever naming anybody who did not act in an entry the reader may already see; a
+  project's former member is listed in `former_actors` instead, nameless;
   **every filter is checked and the parameter set is closed**, because an ignored typo answers 200 + an empty
   list, which reads as "this person did nothing": a key outside `recognisedParams` → 400 naming it
   (`rejectUnknownParams`, sorted so the message is deterministic), an `action` outside `audit.KnownAction` → 400
@@ -7442,8 +7452,21 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     distinct uid is an approved member, a uid with no account included, so a caller answering both alike is no
     account-existence oracle. Every write that stores somebody else's account uid where the project displays
     it uses it: task participants (`internal/phototask` `ask`), mention resolution (`internal/comments`
-    `resolveMentionsSQL`) and the import's `--uploader` (`cmd/kukatko` `resolveUploader`). A pending member
-    and a maintainer outside the project do not pass.
+    `resolveMentionsSQL`), the import's `--uploader` (`cmd/kukatko` `resolveUploader`) and the public upload
+    link's crediting (`Store.IsApprovedMember`, wired as `uploadlinkapi.Config.Members`: a signed-in
+    non-member uploads like an anonymous guest). A pending member and a maintainer outside the project do
+    not pass.
+  - `member_former.go` — **the one rule for showing a stored account by name in a project**:
+    `FormerMemberSQL(projectExpr, userAlias)` is true for an account row with no membership of the project
+    whose identity the project may see (none, or only a withheld exact-match add) that is not the maintainer
+    — a **former member**, also an account credited before the upload link checked membership; NULL for a
+    missing LEFT JOINed account. `ShownNameSQL` is its name column (display name, else username, `''` for a
+    former member or a missing account). Read by the task creator/closer/last actor (`internal/phototask`),
+    the uploader facet and the `uploader:` filter's name arms (`internal/photos`), the photo detail's uploader
+    (`auth.Store.ProjectUserName`), upload-link provenance and creators (`internal/uploadlink`) and invite
+    creators (`internal/invite`); each reports the flag so the client says "former member". The comments
+    package and `phototask/participants.go` spell the same predicate inline, and `audit.ProjectActorNames`
+    writes it out because `internal/audit` sits below this package.
   - `member_share.go` — **the one rule for showing one account's profile to another** (SEC-025):
     `SharesProject(ctx, projectUID, viewerUID, accountUID)` holds when both accounts pass
     `ApprovedMemberSQL` in one **active** project — `projectUID`, or any project when it is `""`. Asking

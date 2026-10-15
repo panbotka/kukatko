@@ -102,10 +102,14 @@ func buildUploadLinkAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, svc *ingest.Service,
 	sidecar ingest.SidecarEnqueuer,
 ) *uploadlinkapi.API {
+	// The project store also decides who is credited by account: only an
+	// approved member of the link's project.
+	projects := project.NewStore(db.Pool())
 	return uploadlinkapi.NewAPI(uploadlinkapi.Config{
 		Store:             uploadlink.NewStore(db.Pool()),
 		Ingest:            svc,
-		Projects:          project.NewStore(db.Pool()),
+		Projects:          projects,
+		Members:           projects,
 		Sidecar:           sidecar,
 		Registration:      settings.NewStore(db.Pool()),
 		RequireCurator:    authAPI.RequireCurator,

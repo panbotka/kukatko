@@ -80,7 +80,10 @@
 // as raw uids. The map names exactly the actors of entries the reader was
 // already allowed to read, so it is no oracle: a project admin learns the name
 // of somebody who acted in the project and of nobody else, the same people
-// the project's user filter resolves.
+// the project's user filter resolves. On a project's listing only the people
+// who still belong to it are named; an actor who has left (or never joined) is
+// listed in former_actors and shown as a former member, so the project never
+// reads a live name the account may have changed elsewhere since.
 package auditapi
 
 import (
@@ -234,14 +237,19 @@ func (a *API) projectPeople(projectUID string) ResolveUser {
 // listResponse is the JSON body returned by the list endpoint. NextOffset is the
 // offset to request for the following page, or null on the last page. Actors
 // names the accounts that acted in the page's entries (uid → display name); an
-// account since deleted is absent, its entries already lost their actor.
+// account since deleted is absent, its entries already lost their actor. On a
+// project's listing an actor who is no member of the project any more is absent
+// from Actors too and listed in FormerActors instead (sorted, never null): the
+// client says "former member" rather than show a live name the project no
+// longer gets to read. The instance listings name every actor and leave it empty.
 type listResponse struct {
-	Entries    []audit.Record    `json:"entries"`
-	Actors     map[string]string `json:"actors"`
-	Total      int               `json:"total"`
-	Limit      int               `json:"limit"`
-	Offset     int               `json:"offset"`
-	NextOffset *int              `json:"next_offset"`
+	Entries      []audit.Record    `json:"entries"`
+	Actors       map[string]string `json:"actors"`
+	FormerActors []string          `json:"former_actors"`
+	Total        int               `json:"total"`
+	Limit        int               `json:"limit"`
+	Offset       int               `json:"offset"`
+	NextOffset   *int              `json:"next_offset"`
 }
 
 // handleList parses the query filters, reads the matching page of audit entries
@@ -352,14 +360,32 @@ func (a *API) respond(w http.ResponseWriter, r *http.Request, filter audit.Filte
 		writeError(w, http.StatusInternalServerError, "counting audit entries failed")
 		return
 	}
-	actors, err := a.store.ActorNames(r.Context(), actorUIDs(entries))
+	resp := buildResponse(filter, entries, total)
+	resp.Actors, resp.FormerActors, err = a.actorNames(r, entries)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "naming audit actors failed")
 		return
 	}
-	resp := buildResponse(filter, entries, total)
-	resp.Actors = actors
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// actorNames names the actors of entries. On a project's route (inProject) a
+// former member of the project is reported apart, nameless; the instance
+// listings — the system administrator's trail and one's own actions — name
+// everybody, since nothing there is shown to a project.
+func (a *API) actorNames(r *http.Request, entries []audit.Record) (map[string]string, []string, error) {
+	if scoped, inProject := r.Context().Value(projectScopeKey{}).(string); inProject {
+		names, former, err := a.store.ProjectActorNames(r.Context(), scoped, actorUIDs(entries))
+		if err != nil {
+			return nil, nil, fmt.Errorf("auditapi: naming project actors: %w", err)
+		}
+		return names, former, nil
+	}
+	names, err := a.store.ActorNames(r.Context(), actorUIDs(entries))
+	if err != nil {
+		return nil, nil, fmt.Errorf("auditapi: naming actors: %w", err)
+	}
+	return names, []string{}, nil
 }
 
 // actorUIDs returns the distinct actors of entries, in first-seen order;

@@ -111,7 +111,9 @@ type Phase = 'pick' | 'uploading' | 'done'
  * Almost everyone opens it on a phone, often someone who has never seen the
  * app, so it is three plain screens with one thing to do on each:
  *
- * - **pick** — the optional "Od koho?" (remembered on the device) and one large
+ * - **pick** — the optional "Od koho?" (remembered on the device; a member of
+ *   the link's project, credited by account, is told so instead — anybody
+ *   else signed in uploads like an anonymous guest) and one large
  *   "Vybrat fotky" button; the drop zone is there only from the `md` width up;
  * - **uploading** — nothing but the overall progress (bytes, percentage,
  *   "X z Y fotek", a smoothed remaining time) and "keep the page open"; no
@@ -348,7 +350,7 @@ export function UploadLinkPage() {
                     </Alert>
                   )}
 
-                  {signedIn ? (
+                  {signedIn && load.link.credits_account === true ? (
                     <p className="text-secondary" data-testid="upload-link-signed-in">
                       <Icon name="person-circle" className="me-1" />
                       {t('uploadLink.signedInAs', { name: accountName(user) })}

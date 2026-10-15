@@ -1453,11 +1453,15 @@ function UploaderSelect({
         {(value === '' ? uploaders : offered).map((uploader) => (
           <option key={uploaderValue(uploader.uid)} value={uploaderValue(uploader.uid)}>
             {/* The imported group has no name of its own — only the reader's
-                language has one for it; an uploader the facet could not name
-                falls back to their uid rather than to a blank row. */}
+                language has one for it; a former member of the project is
+                named as one, never by their live name; an uploader the facet
+                could not name falls back to their uid rather than to a blank
+                row. */}
             {uploader.uid === ''
               ? t('library.filters.uploaderImported')
-              : uploader.name || uploader.uid}{' '}
+              : uploader.former === true
+                ? t('formerMember')
+                : uploader.name || uploader.uid}{' '}
             ({uploader.count})
           </option>
         ))}

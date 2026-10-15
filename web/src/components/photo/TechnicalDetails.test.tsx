@@ -180,6 +180,16 @@ describe('TechnicalDetails', () => {
     expect(link).not.toHaveTextContent(/2026/)
   })
 
+  it('names an uploader who left the project as a former member, linked nowhere', async () => {
+    renderDetails({ uploader: { uid: 'u1', name: '', former: true } })
+
+    await expand()
+    const label = screen.getByText('Upload')
+    expect(label.nextElementSibling).toHaveTextContent('Former project member')
+    expect(label.nextElementSibling).not.toHaveTextContent(/Imported/)
+    expect(screen.queryByRole('link', { name: 'Former project member' })).not.toBeInTheDocument()
+  })
+
   it('reads a photo with no uploader as imported, not as a dash', async () => {
     renderDetails()
 

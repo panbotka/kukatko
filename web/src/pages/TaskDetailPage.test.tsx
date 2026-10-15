@@ -489,6 +489,14 @@ describe('the question block', () => {
     expect(byline.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('says an author who left the project is a former member, never their name', async () => {
+    fetchTaskMock.mockResolvedValue(task({ created_by_name: '', created_by_former: true }))
+    renderPage()
+
+    expect(await screen.findByText(/Opened by Former project member/)).toBeInTheDocument()
+    expect(screen.queryByText(/Opened by someone/)).not.toBeInTheDocument()
+  })
+
   it('rewords the question in place, where the question is', async () => {
     const user = userEvent.setup()
     updateTaskMock.mockResolvedValue(task({ title: 'Which year exactly?', body: 'Two of them.' }))

@@ -68,8 +68,8 @@ internal/inventory/collect.go:246 instance-wide inventory storage check, reached
 # internal/invite
 internal/invite/accept.go:131 lockOpen: the accept path's lookup by the instance-unique code hash (FOR UPDATE); the invite row names its project
 internal/invite/accept.go:161 invite uid comes from lockOpen (code hash, FOR UPDATE) in the same tx; it counts a use of that invite
-internal/invite/store.go:106 Resolve: the public /invite/{code} lookup by the instance-unique code hash; the invite row names its project
-internal/invite/store.go:206 uid was locked by `uid = $1 AND project_uid = $2 FOR UPDATE` just before, in the same tx
+internal/invite/store.go:110 Resolve: the public /invite/{code} lookup by the instance-unique code hash; the invite row names its project
+internal/invite/store.go:210 uid was locked by `uid = $1 AND project_uid = $2 FOR UPDATE` just before, in the same tx
 
 # internal/jobs
 internal/jobs/store.go:852 maintainer-only /jobs browser (jobsapi), instance-wide by design; reads a per-photo job's project slug through its photo
@@ -120,7 +120,7 @@ internal/photos/store_impossibledate.go:59 instance-wide maintenance scan/repair
 internal/photos/store_impossibledate.go:117 maintenance repair of a uid its own instance-wide ListImpossibleTakenAt found; maintainer-only
 internal/photos/store_maintenance.go:37 ListPrimaryFiles feeds the instance-wide maintenance integrity scan, which groups rows by project itself
 internal/photos/store_ocr.go:48 ocrjob Recognize is worker-only (job Handle); the uid comes from the payload via GetForJob
-internal/photos/store_query.go:832 correlated subquery on photos.uid; the outer photos query is already scoped by project
+internal/photos/store_query.go:840 correlated subquery on photos.uid; the outer photos query is already scoped by project
 internal/photos/store_sidecar.go:72 sidecarjob Export is a worker-only job handler; the uid comes from the job payload
 internal/photos/store_stacks.go:233 applyNewStackTx runs only after requirePhotosInProject/requirePlansInProject in the same tx
 internal/photos/store_stacks.go:289 stack_uid read from a member proved by inProjectTx in the same tx; stacks never span projects
@@ -142,8 +142,8 @@ internal/photos/store_verify.go:63 ListCataloguedFiles feeds the instance-wide m
 internal/photos/store_videometa.go:131 metajob reprobeVideo is worker-only; the photo is loaded from the job payload via GetForJob
 
 # internal/phototask
-internal/phototask/store.go:316 the taskJoins fragment; its count and list queries take WHERE from Filter.conditions, which always adds t.project_id
-internal/phototask/store.go:322 the taskJoins fragment; its count and list queries take WHERE from Filter.conditions, which always adds t.project_id
+internal/phototask/store.go:327 the taskJoins fragment; its count and list queries take WHERE from Filter.conditions, which always adds t.project_id
+internal/phototask/store.go:333 the taskJoins fragment; its count and list queries take WHERE from Filter.conditions, which always adds t.project_id
 internal/phototask/store_write.go:194 updateIn first locks the row in the same tx with currentSQL (uid AND project_id = $2 FOR UPDATE)
 internal/phototask/store_write.go:353 touch is only called from AddPhotos/RemovePhotos, after lockTask (uid AND project_id FOR UPDATE) in the same tx
 
@@ -188,15 +188,15 @@ internal/taskassignnotify/taskassignnotify.go:180 assign observer runs in the ph
 # internal/uploadlink
 internal/uploadlink/recode.go:71 RestoreCode first locks the link with lockLiveCode (uid AND project_id FOR UPDATE) in the same tx
 internal/uploadlink/recode.go:122 RotateCode locks the link scoped (lockLiveCode) in the same tx; NOT EXISTS is the global code_hash uniqueness
-internal/uploadlink/store.go:109 ByCode: the public /u/{code} lookup by the instance-unique code hash; the link row carries its project
-internal/uploadlink/store.go:306 Extend locks the row with uid AND project_id = $2 FOR UPDATE in the same tx before updating
-internal/uploadlink/store.go:342 Revoke locks the row with uid AND project_id = $2 FOR UPDATE in the same tx before updating
-internal/uploadlink/uploads.go:63 public /u/{code} path; link uid comes from the global code-hash lookup and the link row carries its project
-internal/uploadlink/uploads.go:73 refusal readback for the same code-resolved link uid on the public upload path; the link row is its own scope
-internal/uploadlink/uploads.go:92 gives back the slot of the code-resolved link uid that ReserveUpload just took; the link carries its project
-internal/uploadlink/uploads.go:112 stamps the code-resolved link uid on the public upload path; the link carries its project
-internal/uploadlink/uploads.go:146 fileIntoTargets reads the project of the code-resolved link to confine its targets to it
-internal/uploadlink/uploads.go:246 provenance of a photo loaded scoped (photoInProject/GetByUIDInProject) or by the sidecar worker
+internal/uploadlink/store.go:113 ByCode: the public /u/{code} lookup by the instance-unique code hash; the link row carries its project
+internal/uploadlink/store.go:310 Extend locks the row with uid AND project_id = $2 FOR UPDATE in the same tx before updating
+internal/uploadlink/store.go:346 Revoke locks the row with uid AND project_id = $2 FOR UPDATE in the same tx before updating
+internal/uploadlink/uploads.go:64 public /u/{code} path; link uid comes from the global code-hash lookup and the link row carries its project
+internal/uploadlink/uploads.go:74 refusal readback for the same code-resolved link uid on the public upload path; the link row is its own scope
+internal/uploadlink/uploads.go:93 gives back the slot of the code-resolved link uid that ReserveUpload just took; the link carries its project
+internal/uploadlink/uploads.go:113 stamps the code-resolved link uid on the public upload path; the link carries its project
+internal/uploadlink/uploads.go:147 fileIntoTargets reads the project of the code-resolved link to confine its targets to it
+internal/uploadlink/uploads.go:251 provenance of a photo loaded scoped (photoInProject/GetByUIDInProject) or by the sidecar worker
 
 # internal/vectors
 internal/vectors/carryover.go:85 worker-only: RecordFaceDetection is called only by the facejob handler working from a photo uid

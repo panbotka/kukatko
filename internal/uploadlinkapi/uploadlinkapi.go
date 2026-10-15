@@ -76,6 +76,15 @@ type ProjectResolver interface {
 	Get(ctx context.Context, uid string) (*project.Project, error)
 }
 
+// MemberChecker answers whether a signed-in account belongs to a link's
+// project, which decides whether its upload is credited to it. It is satisfied
+// by *project.Store.
+type MemberChecker interface {
+	// IsApprovedMember reports whether userUID is an approved member of
+	// projectUID whose identity the project may see (project.ApprovedMemberSQL).
+	IsApprovedMember(ctx context.Context, projectUID, userUID string) (bool, error)
+}
+
 // RegistrationSettings reads whether a project takes self-service
 // registrations, which the public page reports so it offers registering
 // through the link only where the link's own project would accept it. It is
@@ -103,6 +112,10 @@ type Config struct {
 	// and a link of a deactivated project answers like an unknown one. Nil
 	// ingests into the link's project with no prefix (tests with fakes).
 	Projects ProjectResolver
+	// Members decides whether a signed-in uploader is credited by account: only
+	// an approved member of the link's project is; anybody else signed in on
+	// the instance uploads like an anonymous visitor. Nil credits nobody.
+	Members MemberChecker
 	// Sidecar reschedules the sidecar of every photo an upload filed; nil
 	// schedules none.
 	Sidecar SidecarEnqueuer
@@ -164,6 +177,7 @@ type API struct {
 	store          Store
 	ingest         Ingester
 	projects       ProjectResolver
+	members        MemberChecker
 	sidecar        SidecarEnqueuer
 	registration   RegistrationSettings
 	requireCurator func(http.Handler) http.Handler
@@ -188,7 +202,7 @@ type API struct {
 // whether throttling is configured.
 func NewAPI(cfg Config) *API {
 	a := &API{
-		store: cfg.Store, ingest: cfg.Ingest, projects: cfg.Projects, sidecar: cfg.Sidecar,
+		store: cfg.Store, ingest: cfg.Ingest, projects: cfg.Projects, members: cfg.Members, sidecar: cfg.Sidecar,
 		registration:   cfg.Registration,
 		requireCurator: cfg.RequireCurator, optionalAuth: cfg.OptionalAuth,
 		currentUser: cfg.CurrentUser, currentRole: cfg.CurrentRole, currentProject: cfg.CurrentProject,

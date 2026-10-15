@@ -507,7 +507,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     route below answers its real uid **404 `not_member`, exactly as for a uid that is no member**; it
     cannot be mentioned or put on a task; it is **not in standing** for any notification of the project
     (`internal/notifystanding`), so the project's admin cannot push their own text to it; it counts as
-    **no membership** for the former-member rule (comments, mentions, task participants — a blind re-add
+    **no membership** for the former-member rule (comments, mentions, task participants, creator/closer/last
+    actor, uploaders, link and invite creators, the project audit's actors — a blind re-add
     of a former member's address does not bring their name back), the review leaderboard and streaks, the
     project audit's `?user=` filter, and as **no working admin** for `last_admin` (so the sole admin's
     removal does not depend on whether the hidden account is disabled). **The project's own trail is
@@ -554,7 +555,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     **`RequireAdmin`**; an admin of A addressing B's invites gets the very 404 an unknown slug gets, and
     B's invite uid under A's prefix is the very 404 a missing uid gets.
   - `GET /invites` → `{invites: [{uid, role, expires_at, max_uses, uses, revoked_at, created_by,
-    created_by_name, created_at, code, url, state}], default_days: 7, max_days: 90}`, newest first.
+    created_by_name, created_by_former, created_at, code, url, state}], default_days: 7, max_days: 90}`,
+    newest first. A creator who is no member of the project any more is a **former member**
+    (`created_by_former: true`, `created_by_name: ""`; see *Former members* under the Tasks API).
     `state` is `active|expired|revoked|used_up`; `url` is `mail.base_url` + `/invite/<code>` (a
     host-relative path without a base URL); `max_uses: null` is no cap.
   - `POST /invites` `{role, days?, max_uses?}` → **201** + one invite as listed. `role` is
@@ -817,7 +820,11 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   therefore lists that event's contributors, not every account on the instance. The photos with **no**
   uploader are reported as their own entry (`uid: ""`, `name: ""` — the client names the group), so the
   counts add up to what the grid shows. `name` is the uploader's display name, falling back to their
-  username. The `uploader` filter is **the only one ignored** — a facet must not narrow its own offering;
+  username — except for a **former member** of the project (no membership there whose identity it may see,
+  not the maintainer — `project.FormerMemberSQL`; also an account an upload link credited before it checked
+  membership): the entry keeps its `uid` and count, `name` is `""` and **`former: true`** (omitted
+  otherwise), so the project never reads the account's live name. The `uploader:` query filter matches a
+  former member's photos by uid only, never by their name. The `uploader` filter is **the only one ignored** — a facet must not narrow its own offering;
   `sort`/`order` and pagination are ignored (always grouped by uploader).
   Backed by `photos.Store.UploaderBuckets` (shares `buildWhere` with `List`/`Count`), invalid param → 400;
   the `?uploader=` filter on `GET /photos` takes a **user UID**, or the reserved value **`none`** for the
@@ -908,17 +915,17 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   unassigned box, a bare "this person is here" has nothing left to be;
   `GET /photos/{uid}` full detail additionally carries **membership** `albums`/`labels` (inline detail
   chips, via the `PhotoOrganizer` interface / `organize.Store.AlbumsForPhoto`+`LabelsForPhoto`, the
-  request's project's albums and labels only; a nil organizer → empty arrays) and **`uploader`** `{uid,name}` — who uploaded the photo, the name resolved
-  server-side via `UserResolver` (`auth.Store.GetUserByUID`; `name` = `display_name`, fallback
-  `username`); omitted (`omitempty`) for photos without `uploaded_by` (the one-off imports),
+  request's project's albums and labels only; a nil organizer → empty arrays) and **`uploader`** `{uid,name,former?}` — who uploaded the photo, the name resolved
+  server-side via `UserResolver` (`auth.Store.ProjectUserName`; `name` = `display_name`, fallback
+  `username`; for a **former member** of the photo's project `name` is `""` and `former: true`); omitted (`omitempty`) for photos without `uploaded_by` (the one-off imports),
   and also when the user cannot be resolved — resolution is **only on the detail**, list/search do not
   resolve a per-photo uploader (no N+1);
-  **`upload_link`** `{uid, title, uploader_name?, account?: {uid,name}, uploaded_at}` — the upload link
+  **`upload_link`** `{uid, title, uploader_name?, account?: {uid,name,former?}, uploaded_at}` — the upload link
   that **created** the photo (`uploadlink.Store.Provenance` via the `UploadLinkProvenance` interface):
   the link (`title` may be `""`), the "Od koho?" name the guest typed (`uploader_name`, omitted when none
   was typed — the field stays optional on the public page), the account the upload is attributed to
   (signed in, or claimed at registration; omitted for an unclaimed anonymous upload and once the account
-  is deleted) and when. **Curators and above only** — a viewer's detail never carries it: the name is
+  is deleted; a former member of the link's project is nameless with `former: true`) and when. **Curators and above only** — a viewer's detail never carries it: the name is
   personal data a guest offered to the people running the event, and the link is managed on a curator
   page. Omitted for a photo no link created; a photo a link merely re-filed as a **duplicate** came from
   elsewhere and carries none, and a photo created through one link and re-filed by others reports the
@@ -1428,13 +1435,19 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   the envelope echoes the `limit`/`offset` actually applied, not the ones asked for.
   Each task carries `uid`, `title` (the question), `body` (Markdown context), `state`
   (`question`/`working`/`review`/`done`/`rejected`), `resolution`, `query`, **`options`** (always an
-  array, see below), `created_by`/`created_by_name`,
+  array, see below), `created_by`/`created_by_name`/**`created_by_former`**,
   `created_at`/`updated_at`/`state_at`/`state_by` (who last moved the state; absent on a task from before
-  it was recorded, which the server reads as the creator), `closed_at`/`closed_by`/`closed_by_name`,
+  it was recorded, which the server reads as the creator), `closed_at`/`closed_by`/`closed_by_name`/`closed_by_former`,
   `photo_count`, `cover_photo_uid`, `comment_count`, `last_comment_at`, **`participants`** (always an
-  array), **`last_activity_at`/`last_activity_by`/`last_activity_by_name`** (who acted last and when: the
-  newest of the last state change, the opening and the newest live comment — photo and participant changes
-  do not count; the uid is empty when the account is gone) and two flags that are **relative to the
+  array), **`last_activity_at`/`last_activity_by`/`last_activity_by_name`/`last_activity_by_former`** (who
+  acted last and when: the newest of the last state change, the opening and the newest live comment — photo
+  and participant changes do not count; the uid is empty when the account is gone). **Former members:**
+  the creator, closer and last actor are named by the same rule as participants and comment authors — an
+  account that is no member of the task's project any more (no membership there whose identity the
+  project may see, and not the maintainer; `project.FormerMemberSQL`) keeps its uid but its `*_name` is
+  `""` and its `*_former` flag `true`, so the project never reads a live name the account may have changed
+  elsewhere since it left. The same rule names the uploader facet, the photo detail's uploader and link
+  account, upload-link and invite creators and a project's audit actors. Then two flags that are **relative to the
   caller**: **`has_new_answer`** — somebody *other than the caller* has written in the thread since the
   state last moved (one's own context comment is not an answer; a soft-deleted comment never counts; a
   closed task may still carry it, because a late reply is worth seeing) — and **`waiting_on_me`** — the
@@ -2388,9 +2401,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `{uid}` route, nothing changed. `GET /upload-links` → `{links:[…], default_days, max_days}`, the
   caller's own links of the project newest-first (an **admin of the project / maintainer sees all of
   them**); each link is
-  `{uid,title,note,created_by,created_by_name,created_at,expires_at,revoked_at,upload_count,
+  `{uid,title,note,created_by,created_by_name,created_by_former,created_at,expires_at,revoked_at,upload_count,
   last_used_at,albums:[{uid,name}],labels:[{uid,name}],state,code?,path?}` with `state` ∈
-  `active|expired|revoked`. **`code`/`path`** (`"/u/<code>"`) are present only on a link the caller
+  `active|expired|revoked` (a creator who left the project: `created_by_name: ""`, `created_by_former: true`). **`code`/`path`** (`"/u/<code>"`) are present only on a link the caller
   **manages** (its creator, or an admin) **and** whose code is known — for anybody else, and for a link
   created before migration `0091` whose code was never restored, both keys are **absent**, never `""`.
   Every management answer below carries the same view, so `extend`/`revoke`/`restore-code`/`new-code`
@@ -2422,11 +2435,15 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   for the same bytes there only; the original is stored under that project's storage prefix), filed into
   its albums and labels and audited under it.
   `GET /u/{code}` → 200 `{title, project, note, albums:[names], labels:[names], expires_at,
-  registration_enabled, storage_full}` — `project` is the **name** of the project the photos go into (never
+  registration_enabled, storage_full, credits_account}` — `credits_account` is whether an upload from this
+  request is credited to the signed-in account (see below), so the page says "uploading as" only then and
+  otherwise asks for a name; `project` is the **name** of the project the photos go into (never
   its uid or slug), so the holder knows whose library they add to; `storage_full` is whether the link's project has used up its quota (a yes/no, no sizes) —
   names only, no UIDs, counts, creator or photos; `registration_enabled` is the link's **own project's**
   registration switch (the one a registration through the link is judged by, and the same flag that
-  project's public settings publish), so the page offers registering only where it can succeed; for an anonymous visitor (`OptionalAuth`) it also **starts the upload
+  project's public settings publish), so the page offers registering only where it can succeed; for a visitor
+  whose upload is not credited to an account (anonymous, or signed in but no member of the project —
+  `OptionalAuth`) it also **starts the upload
   session** (sets the `kukatko_upload_session` cookie when absent), because the page then uploads several
   files at once and each would otherwise mint a session of its own; **410** `{error, state:"expired"|"revoked"}` for a dead link, **404**
   for an unknown one. `POST /u/{code}/upload` (`OptionalAuth`, then the per-link
@@ -2456,8 +2473,12 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   or none; details `link_uid`, `link_title`, `uploader_name`, `outcome` — the title so the audit list can
   name an anonymous upload by its link), all in one transaction; its sidecar is rescheduled. That recording
   runs on a context detached from the request (bounded at 1 min), so a client that hangs up once its file is
-  in still has the upload filed and audited. A signed-in uploader owns the photo as
-  with any upload; an anonymous one is identified by the `kukatko_upload_session` cookie (HttpOnly,
+  in still has the upload filed and audited. A signed-in uploader who is an **approved member of the link's
+  project** (`project.ApprovedMemberSQL`, `uploadlinkapi.Config.Members`) owns the photo as with any upload;
+  **any other signed-in account** — a member of another project only, a pending member, the maintainer who
+  is no member — is **filed like an anonymous uploader** (the typed name and the session, never its uid on
+  the photo, the provenance or the audit entry), so the project never learns the name of somebody outside
+  it; a failed membership read is a 500, never a guess. An anonymous one is identified by the `kukatko_upload_session` cookie (HttpOnly,
   SameSite=Strict, path `/api/v1`, session-scoped; minted here only if the page's GET did not) whose hash
   marks their photos for `POST /auth/register` with
   `upload_link`. A dead link answers 404/410 to the upload too. Mounted with the signed-in upload
@@ -2909,13 +2930,17 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   SPA's `/system/audit` is its reader). `instance_only` accepts `true`/`false` (anything else → 400), next to a
   `?project=` → **400** `instance_only and project exclude each other`, and on `GET /p/{project}/audit` (and
   `/p/{project}/audit/mine`) it is refused by name like `?project=`.
-  Body `{entries,actors,total,limit,offset,next_offset}` — **`actors`** maps the uid of every account that
+  Body `{entries,actors,former_actors,total,limit,offset,next_offset}` — **`actors`** maps the uid of every account that
   acted in one of the page's entries to its display name (`COALESCE(NULLIF(display_name,''), username)`,
   `audit.Store.ActorNames`; `{}` for a page without actors, an account since deleted is absent). It names
   exactly the actors of entries the reader may already read, so it is **no oracle**: a project admin learns
-  the names of those who acted in the project — former and still-waiting members included, whom the
+  the names of those who acted in the project — still-waiting members included, whom the
   project's directory does not list and who used to show as raw uids — and of nobody else, the same people
-  `?user=` resolves among. Entry =
+  `?user=` resolves among. On a **project's** listing (`/p/{project}/audit`, `/audit/mine` there) an actor
+  who is **no member of the project any more** (the former-member rule, `audit.Store.ProjectActorNames`) is
+  absent from `actors` and listed in **`former_actors`** (sorted uids, never `null`) instead — the client
+  shows "former member", never the account's live name; the instance listings name everybody and send
+  `former_actors: []`. Entry =
   `{id,project_uid,project,actor_uid,action,target_type,target_uid,details,ip,user_agent,created_at}` —
   `project_uid` and `project` (the slug, joined from `projects`) are `null` for an instance entry; newest-first;
   for edit actions `details.changes` = `{"<field>":{"old":…,"new":…}}` with only the changed fields — see

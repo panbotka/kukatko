@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/uploadlink"
 )
 
@@ -34,10 +35,13 @@ func NewStore(pool *pgxpool.Pool) *Store {
 }
 
 // selectInviteSQL reads invites with their creator's name and their project, so
-// one query yields a complete Invite.
-const selectInviteSQL = `
+// one query yields a complete Invite. The creator is named by the project's
+// rule (project.ShownNameSQL): one who is no member of the invite's project any
+// more reads nameless, its former flag set.
+var selectInviteSQL = `
 SELECT i.uid, i.role, i.expires_at, i.max_uses, i.uses, i.revoked_at, i.created_by,
-       COALESCE(NULLIF(u.display_name, ''), u.username, ''), i.created_at, i.code,
+       ` + project.ShownNameSQL("i.project_uid", "u") + `,
+       COALESCE(` + project.FormerMemberSQL("i.project_uid", "u") + `, false), i.created_at, i.code,
        p.uid, p.slug, p.name, p.active
 FROM project_invites i
 JOIN projects p ON p.uid = i.project_uid
@@ -47,7 +51,7 @@ LEFT JOIN users u ON u.uid = i.created_by`
 func scanInvite(row pgx.Row, notFound error) (Invite, error) {
 	var inv Invite
 	err := row.Scan(&inv.UID, &inv.Role, &inv.ExpiresAt, &inv.MaxUses, &inv.Uses, &inv.RevokedAt,
-		&inv.CreatedBy, &inv.CreatorName, &inv.CreatedAt, &inv.Code,
+		&inv.CreatedBy, &inv.CreatorName, &inv.CreatorFormer, &inv.CreatedAt, &inv.Code,
 		&inv.ProjectUID, &inv.ProjectSlug, &inv.ProjectName, &inv.projectActive)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Invite{}, notFound

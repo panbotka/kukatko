@@ -167,6 +167,14 @@ describe('UploadLinksPage', () => {
     expect(await screen.findByText(/created by Pepa/)).toBeInTheDocument()
   })
 
+  it('names a creator who left the project as a former member', async () => {
+    listMock.mockResolvedValue(
+      list(link({ created_by: 'u9', created_by_name: '', created_by_former: true })),
+    )
+    renderPage('/upload-links', true)
+    expect(await screen.findByText(/created by Former project member/)).toBeInTheDocument()
+  })
+
   it('shows an empty state', async () => {
     listMock.mockResolvedValue(list())
     renderPage()

@@ -229,39 +229,55 @@ func TestProjectListing_noUsernameOracle(t *testing.T) {
 }
 
 // TestProjectListing_namesItsActors proves a page names the accounts that
-// acted in its entries — a former member included, whom the project's
-// directory no longer lists — and nobody else: an account that acted only in
-// another project is not named, so the map is no way to learn about it.
+// acted in its entries while they belong to the project, lists a former member
+// apart and nameless — the project no longer reads their live name — and names
+// nobody else: an account that acted only in another project is in neither, so
+// the answer is no way to learn about it.
 func TestProjectListing_namesItsActors(t *testing.T) {
 	f := newProjectFixture(t)
 	// vera acted only in v; ola acted in b once and was never (or is no
-	// longer) a member of it.
+	// longer) a member of it; ida is b's member and acted there.
 	_, veraUID := f.env.loginUser(t, "vera", auth.AccountViewer)
 	_, olaUID := f.env.loginUser(t, "ola", auth.AccountViewer)
+	_, idaUID := f.env.loginUser(t, "ida", auth.AccountViewer)
+	if _, err := f.env.projects.AddMember(t.Context(), audit.Meta{}, f.b.UID, idaUID, project.RoleEditor, true); err != nil {
+		t.Fatalf("adding ida to b: %v", err)
+	}
 	f.env.seed(t,
 		audit.Entry{ActorUID: veraUID, Action: audit.ActionAlbumCreate, TargetType: "albums", TargetUID: "al-vera",
 			ProjectUID: project.BootstrapUID},
 		audit.Entry{ActorUID: olaUID, Action: audit.ActionAlbumCreate, TargetType: "albums", TargetUID: "al-ola",
 			ProjectUID: f.b.UID},
+		audit.Entry{ActorUID: idaUID, Action: audit.ActionAlbumCreate, TargetType: "albums", TargetUID: "al-ida",
+			ProjectUID: f.b.UID},
 	)
 	base := f.env.baseURL + "/api/v1"
 
 	got := list(t, f.adminB, base+"/p/b/audit")
-	if got.Actors[olaUID] != "ola" {
-		t.Errorf("b's actors = %v, want the former member %s named ola", got.Actors, olaUID)
+	if got.Actors[idaUID] != "ida" {
+		t.Errorf("b's actors = %v, want its member %s named ida", got.Actors, idaUID)
 	}
-	if _, leaked := got.Actors[veraUID]; leaked {
-		t.Errorf("b's actors = %v, name %s who acted only in v", got.Actors, veraUID)
+	if name, named := got.Actors[olaUID]; named {
+		t.Errorf("b's actors name the former member %s %q", olaUID, name)
+	}
+	if !slices.Equal(got.FormerActors, []string{olaUID}) {
+		t.Errorf("b's former actors = %v, want exactly %s", got.FormerActors, olaUID)
+	}
+	if _, leaked := got.Actors[veraUID]; leaked || slices.Contains(got.FormerActors, veraUID) {
+		t.Errorf("b's actors = %v / %v, mention %s who acted only in v", got.Actors, got.FormerActors, veraUID)
 	}
 	if len(got.Actors) != 1 {
-		t.Errorf("b's actors = %v, want exactly the page's one actor", got.Actors)
+		t.Errorf("b's actors = %v, want exactly the page's one member", got.Actors)
+	}
+	if _, body := rawGet(t, f.adminB, base+"/p/b/audit"); strings.Contains(body, `"ola"`) {
+		t.Error("b's listing carries the former member's name somewhere")
 	}
 
 	// The maintainer's whole trail names both; an actor-less page names nobody
 	// and is still an object, never null.
 	whole := list(t, f.maintainer, base+"/audit")
-	if whole.Actors[olaUID] != "ola" || whole.Actors[veraUID] != "vera" {
-		t.Errorf("instance actors = %v, want ola and vera named", whole.Actors)
+	if whole.Actors[olaUID] != "ola" || whole.Actors[veraUID] != "vera" || len(whole.FormerActors) != 0 {
+		t.Errorf("instance actors = %v / former %v, want ola and vera named", whole.Actors, whole.FormerActors)
 	}
 	status, body := rawGet(t, f.maintainer, base+"/audit?instance_only=true")
 	if status != http.StatusOK || !strings.Contains(body, `"actors":{}`) {

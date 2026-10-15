@@ -428,3 +428,70 @@ func assertFormerParticipants(t *testing.T, f *fixture, taskUID, asked, when str
 		}
 	}
 }
+
+// TestTask_formerAuthorCloserAndLastActor verifies the task's creator, closer
+// and last actor read as nameless former members once that account has left
+// the task's project — in Get and in the listing — and still do after a blind
+// re-add, while a member reads by name.
+func TestTask_formerAuthorCloserAndLastActor(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	task := f.mustCreate(t, "Kdo je to?")
+	if _, err := f.tasks.Update(ctx, project.BootstrapUID, task.UID, phototask.Update{
+		State: statePtr(phototask.StateDone), Resolution: new("hotovo"),
+	}, entry(audit.ActionTaskUpdate)); err != nil {
+		t.Fatalf("closing: %v", err)
+	}
+	one, err := f.tasks.Get(ctx, project.BootstrapUID, task.UID, actor)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if one.CreatedByName != "Pan Botka" || one.ClosedByName != "Pan Botka" || one.LastActivityByName != "Pan Botka" ||
+		one.CreatedByFormer || one.ClosedByFormer || one.LastActivityByFormer {
+		t.Fatalf("a member's task = created %q/%v closed %q/%v last %q/%v, want named", one.CreatedByName,
+			one.CreatedByFormer, one.ClosedByName, one.ClosedByFormer, one.LastActivityByName, one.LastActivityByFormer)
+	}
+
+	if _, err := f.db.Pool().Exec(ctx, `DELETE FROM project_members WHERE project_uid = $1`,
+		project.BootstrapUID); err != nil {
+		t.Fatalf("emptying the project: %v", err)
+	}
+	assertFormerTaskPeople(t, f, task.UID, "after leaving")
+
+	if _, err := f.db.Pool().Exec(ctx, `INSERT INTO project_members
+		(project_uid, user_uid, role, approved_at, identity_withheld) VALUES ($1, $2, 'viewer', now(), true)`,
+		project.BootstrapUID, actor); err != nil {
+		t.Fatalf("re-adding blindly: %v", err)
+	}
+	assertFormerTaskPeople(t, f, task.UID, "after a blind re-add")
+}
+
+// assertFormerTaskPeople fails t unless the task's creator, closer and last
+// actor — all of them actor — read as nameless former members in Get and in
+// the listing alike, uids kept.
+func assertFormerTaskPeople(t *testing.T, f *fixture, taskUID, when string) {
+	t.Helper()
+	ctx := context.Background()
+	one, err := f.tasks.Get(ctx, project.BootstrapUID, taskUID, actor)
+	if err != nil {
+		t.Fatalf("Get %s: %v", when, err)
+	}
+	listed, _, err := f.tasks.List(ctx, project.BootstrapUID, phototask.Filter{})
+	if err != nil || len(listed) != 1 {
+		t.Fatalf("List %s = %d tasks, %v; want the one", when, len(listed), err)
+	}
+	for source, task := range map[string]phototask.Task{"Get": one, "List": listed[0]} {
+		if task.CreatedByName != "" || !task.CreatedByFormer || task.CreatedByUID != actor {
+			t.Errorf("%s %s: creator %q %q former=%v, want a nameless former member", when, source,
+				task.CreatedByUID, task.CreatedByName, task.CreatedByFormer)
+		}
+		if task.ClosedByName != "" || !task.ClosedByFormer || task.ClosedByUID != actor {
+			t.Errorf("%s %s: closer %q %q former=%v, want a nameless former member", when, source,
+				task.ClosedByUID, task.ClosedByName, task.ClosedByFormer)
+		}
+		if task.LastActivityByName != "" || !task.LastActivityByFormer || task.LastActivityByUID != actor {
+			t.Errorf("%s %s: last actor %q %q former=%v, want a nameless former member", when, source,
+				task.LastActivityByUID, task.LastActivityByName, task.LastActivityByFormer)
+		}
+	}
+}

@@ -62,7 +62,7 @@ func (a *API) resolveUploadLink(r *http.Request, photoUID string) *uploadLinkRef
 		UID: prov.LinkUID, Title: prov.LinkTitle, UploaderName: prov.UploaderName, UploadedAt: prov.UploadedAt,
 	}
 	if prov.AccountUID != nil {
-		ref.Account = &uploaderRef{UID: *prov.AccountUID, Name: prov.AccountName}
+		ref.Account = &uploaderRef{UID: *prov.AccountUID, Name: prov.AccountName, Former: prov.AccountFormer}
 	}
 	return ref
 }

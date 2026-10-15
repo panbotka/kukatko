@@ -123,7 +123,7 @@ func newIntegrationEnvWith(t *testing.T, opts ...envOption) *integrationEnv {
 		UploadLinks: uploadlinkapi.NewRegistrationGate(store, nil, nil),
 	})
 	cfg := uploadlinkapi.Config{
-		Store: store, Ingest: seededIngest{photos: e.photos},
+		Store: store, Ingest: seededIngest{photos: e.photos}, Members: project.NewStore(db.Pool()),
 		RequireCurator: authAPI.RequireCurator, OptionalAuth: authAPI.OptionalAuth,
 	}
 	for _, opt := range opts {

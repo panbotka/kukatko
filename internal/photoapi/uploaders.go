@@ -12,10 +12,15 @@ import (
 // with no uploader — the ones an import brought in — and so is Name, because
 // naming that group ("imported") is the client's job: only it knows the reader's
 // language.
+//
+// Former marks an uploader who is no member of the project any more
+// (photos.UploaderBucket.Former): Name is then empty and the client says "former
+// member". The entry keeps its UID, so selecting it still filters the grid.
 type uploaderFacet struct {
-	UID   string `json:"uid"`
-	Name  string `json:"name"`
-	Count int    `json:"count"`
+	UID    string `json:"uid"`
+	Name   string `json:"name"`
+	Former bool   `json:"former,omitempty"`
+	Count  int    `json:"count"`
 }
 
 // uploadersResponse is the JSON body of the uploader facet: the contributors to
@@ -92,9 +97,10 @@ func uploaderFacets(buckets []photos.UploaderBucket) []uploaderFacet {
 	out := make([]uploaderFacet, 0, len(buckets))
 	for _, bucket := range buckets {
 		out = append(out, uploaderFacet{
-			UID:   bucket.UID,
-			Name:  uploaderName(bucket.DisplayName, bucket.Username),
-			Count: bucket.Count,
+			UID:    bucket.UID,
+			Name:   uploaderName(bucket.DisplayName, bucket.Username),
+			Former: bucket.Former,
+			Count:  bucket.Count,
 		})
 	}
 	return out

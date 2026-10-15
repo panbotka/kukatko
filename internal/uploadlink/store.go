@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TargetType is the audit target type of a link mutation.
@@ -46,10 +47,13 @@ type row interface {
 }
 
 // selectLinkSQL reads links with their creator's name and both target lists
-// (as JSON arrays ordered by name), so one query yields a complete Link.
-const selectLinkSQL = `
+// (as JSON arrays ordered by name), so one query yields a complete Link. The
+// creator is named by the project's rule (project.ShownNameSQL): one who is no
+// member of the link's project any more reads nameless, its former flag set.
+var selectLinkSQL = `
 SELECT l.uid, l.title, l.note, l.created_by,
-       COALESCE(NULLIF(u.display_name, ''), u.username, ''),
+       ` + project.ShownNameSQL("l.project_id", "u") + `,
+       COALESCE(` + project.FormerMemberSQL("l.project_id", "u") + `, false),
        l.created_at, l.expires_at, COALESCE(l.code, ''), l.revoked_at, l.upload_count, l.last_used_at,
        COALESCE((SELECT json_agg(json_build_object('uid', a.uid, 'name', a.title) ORDER BY a.title, a.uid)
                  FROM upload_link_albums la JOIN albums a ON a.uid = la.album_uid
@@ -68,7 +72,7 @@ func scanLink(r row) (Link, error) {
 		link           Link
 		albums, labels []byte
 	)
-	err := r.Scan(&link.UID, &link.Title, &link.Note, &link.CreatedBy, &link.CreatorName,
+	err := r.Scan(&link.UID, &link.Title, &link.Note, &link.CreatedBy, &link.CreatorName, &link.CreatorFormer,
 		&link.CreatedAt, &link.ExpiresAt, &link.Code, &link.RevokedAt, &link.UploadCount, &link.LastUsedAt,
 		&albums, &labels, &link.ProjectUID)
 	if errors.Is(err, pgx.ErrNoRows) {

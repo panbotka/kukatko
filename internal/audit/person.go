@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -79,4 +80,57 @@ func (s *Store) ActorNames(ctx context.Context, uids []string) (map[string]strin
 		return nil, fmt.Errorf("audit: iterating actor names: %w", err)
 	}
 	return names, nil
+}
+
+// projectActorNamesSQL is actorNamesSQL for a listing narrowed to the project
+// $2: it adds whether each account is a former member there — no membership of
+// the project whose identity the project may see, and not the instance's
+// maintainer, who belongs everywhere. The predicate is project.FormerMemberSQL
+// written out ('maintainer' is auth.RoleMaintainer): this package sits below
+// both and imports neither, so the two must be kept in step by hand.
+const projectActorNamesSQL = `SELECT u.uid, COALESCE(NULLIF(u.display_name, ''), u.username),
+	(u.role <> 'maintainer' AND NOT EXISTS (SELECT 1 FROM project_members fmm
+		WHERE fmm.user_uid = u.uid AND fmm.project_uid = $2 AND NOT fmm.identity_withheld))
+FROM users u
+WHERE u.uid = ANY($1)`
+
+// ProjectActorNames is ActorNames for a listing of the project projectUID. A
+// project shows a person by name only while they belong to it: an account that
+// has left (or never joined — an upload credited before the upload link
+// checked membership) is a former member, reported in former and absent from
+// names, so the project never reads a live name the account may have changed
+// elsewhere since. The client says "former member" for it, the way comments
+// and tasks do. An account since deleted is in neither.
+func (s *Store) ProjectActorNames(
+	ctx context.Context, projectUID string, uids []string,
+) (names map[string]string, former []string, err error) {
+	names = make(map[string]string, len(uids))
+	former = make([]string, 0)
+	if len(uids) == 0 {
+		return names, former, nil
+	}
+	rows, err := s.pool.Query(ctx, projectActorNamesSQL, uids, projectUID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("audit: reading project actor names: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			uid, name string
+			isFormer  bool
+		)
+		if err := rows.Scan(&uid, &name, &isFormer); err != nil {
+			return nil, nil, fmt.Errorf("audit: scanning a project actor name: %w", err)
+		}
+		if isFormer {
+			former = append(former, uid)
+			continue
+		}
+		names[uid] = name
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("audit: iterating project actor names: %w", err)
+	}
+	slices.Sort(former)
+	return names, former, nil
 }

@@ -372,7 +372,11 @@ function totalOf(summary: TaskSummary | null): number | undefined {
 function TaskRow({ task }: { task: Task }) {
   const { t, i18n } = useTranslation()
   const lastBy =
-    task.last_activity_by_name !== '' ? task.last_activity_by_name : t('taskDetail.someone')
+    task.last_activity_by_former === true
+      ? t('formerMember')
+      : task.last_activity_by_name !== ''
+        ? task.last_activity_by_name
+        : t('taskDetail.someone')
   return (
     <li>
       <ProjectLink

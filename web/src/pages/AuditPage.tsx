@@ -95,20 +95,22 @@ function detailsId(record: AuditRecord): string {
 }
 
 /**
- * Resolves an entry's actor to a display name: the page's own `actors` map
- * first (the server names everybody who acted in the page, former members
- * included), then the loaded roster, and the raw UID only when neither knows
- * the account; an em dash for a system action with no actor. An anonymous upload
+ * Resolves an entry's actor to a display name: a former member of the project
+ * (the page's `former_actors`) as one — never by their live name, which the
+ * server does not send — then the page's own `actors` map (the server names
+ * everybody else who acted in the page), then the loaded roster, and the raw UID
+ * only when none knows the account; an em dash for a system action with no actor. An anonymous upload
  * through an upload link has no actor either, but it has somebody behind it: it
  * is named by its link and the name the guest typed (just the link when they
  * typed none).
  */
 function actorLabel(
   record: AuditRecord,
-  actors: Readonly<Record<string, string>>,
+  page: Pick<AuditListResponse, 'actors' | 'former_actors'>,
   users: Map<string, ActorOption>,
   t: TFunction,
 ): string {
+  const { actors } = page
   const actorUid = record.actor_uid
   if (actorUid === null) {
     const guest = uploadLinkActor(record)
@@ -124,6 +126,9 @@ function actorLabel(
     return name === ''
       ? t('audit.uploadLinkActor.anonymous', { title })
       : t('audit.uploadLinkActor.named', { title, name })
+  }
+  if (page.former_actors?.includes(actorUid) === true) {
+    return t('formerMember')
   }
   if (Object.hasOwn(actors, actorUid)) {
     return actors[actorUid]
@@ -219,8 +224,9 @@ function loadPage(
  * open in that entry's project. The actor filter offers every account.
  *
  * Actors are named by the page's own `actors` map — the server names everyone
- * who acted in the page, so a former or a still-waiting member shows by name
- * rather than as a raw uid — and the roster fills in the rest. Name resolution
+ * who acted in the page, so a still-waiting member shows by name rather than as
+ * a raw uid, and a project's former member as a former member — and the roster
+ * fills in the rest. Name resolution
  * never blocks the table from rendering.
  */
 export function AuditPage({ scope = 'project' }: AuditPageProps) {
@@ -359,7 +365,7 @@ export function AuditPage({ scope = 'project' }: AuditPageProps) {
       header: t('audit.columns.actor'),
       cellClassName: 'text-break',
       cell: (record) =>
-        actorLabel(record, state.status === 'ready' ? state.data.actors : {}, users, t),
+        actorLabel(record, state.status === 'ready' ? state.data : { actors: {} }, users, t),
     },
     {
       key: 'action',

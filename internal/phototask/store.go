@@ -10,6 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // Paging bounds for a listing. A library holds tens of open tasks, not
@@ -67,17 +69,26 @@ const waitingSQL = `(t.state NOT IN ('done', 'rejected')
 // here rather than by the caller so one query yields everything a listing
 // renders — and so the thread's newest reply is available to the filter and the
 // ordering, not just to the payload.
-const taskColumns = `t.uid, t.title, t.body, t.state, t.resolution, t.source_query,
-	COALESCE(t.created_by, ''), COALESCE(NULLIF(cu.display_name, ''), cu.username, ''),
+//
+// The creator, the closer and the last actor are named by the project's rule
+// (project.ShownNameSQL): an account that is no member of the task's project
+// any more reads as a former member — no name, its former flag set — exactly
+// like a participant or a comment author, so the project never reads a live
+// name the account may have changed elsewhere since it left.
+var taskColumns = `t.uid, t.title, t.body, t.state, t.resolution, t.source_query,
+	COALESCE(t.created_by, ''), ` + project.ShownNameSQL("t.project_id", "cu") + `,
 	t.created_at, t.updated_at, t.state_at, COALESCE(t.state_by, ''),
-	t.closed_at, COALESCE(t.closed_by, ''), COALESCE(NULLIF(xu.display_name, ''), xu.username, ''),
+	t.closed_at, COALESCE(t.closed_by, ''), ` + project.ShownNameSQL("t.project_id", "xu") + `,
 	(SELECT count(*) FROM photo_task_photos tp WHERE tp.task_uid = t.uid),
 	COALESCE((SELECT tp.photo_uid FROM photo_task_photos tp WHERE tp.task_uid = t.uid
 		ORDER BY tp.added_at, tp.photo_uid LIMIT 1), ''),
 	th.comment_count, th.last_comment_at, ` + answeredSQL + `,
 	COALESCE(la.at, t.created_at), COALESCE(la.by, ''),
-	COALESCE(NULLIF(lu.display_name, ''), lu.username, ''), ` + waitingSQL + `,
-	pa.participants, t.options`
+	` + project.ShownNameSQL("t.project_id", "lu") + `, ` + waitingSQL + `,
+	pa.participants, t.options,
+	COALESCE(` + project.FormerMemberSQL("t.project_id", "cu") + `, false),
+	COALESCE(` + project.FormerMemberSQL("t.project_id", "xu") + `, false),
+	COALESCE(` + project.FormerMemberSQL("t.project_id", "lu") + `, false)`
 
 // threadJoin summarises a task's thread as th. It is a LATERAL so its values
 // can be filtered and ordered on, which is the whole reason the count is not
@@ -417,7 +428,7 @@ func scanTask(row rowScanner) (Task, error) {
 		&t.ClosedAt, &t.ClosedByUID, &t.ClosedByName,
 		&t.PhotoCount, &t.CoverPhotoUID, &t.CommentCount, &t.LastCommentAt, &t.HasNewAnswer,
 		&t.LastActivityAt, &t.LastActivityByUID, &t.LastActivityByName, &t.WaitingOnMe,
-		&participants, &t.Options)
+		&participants, &t.Options, &t.CreatedByFormer, &t.ClosedByFormer, &t.LastActivityByFormer)
 	if err != nil {
 		return Task{}, fmt.Errorf("scanning task row: %w", err)
 	}

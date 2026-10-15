@@ -100,10 +100,18 @@ export interface AuditListResponse {
   entries: AuditRecord[]
   /**
    * The display name of every account that acted in one of `entries`, by uid —
-   * former and still-waiting members too, whom no directory lists. An account
-   * since deleted is absent (its entries no longer carry an actor anyway).
+   * still-waiting members too, whom no directory lists. An account since deleted
+   * is absent (its entries no longer carry an actor anyway). On a project's
+   * listing an actor who is no member of the project any more is absent too and
+   * listed in `former_actors` instead.
    */
   actors: Record<string, string>
+  /**
+   * The actors of `entries` who are no member of the project any more, on a
+   * project's listing: shown as a former member, never by their live name. The
+   * instance listings name everybody and send it empty.
+   */
+  former_actors?: string[]
   total: number
   limit: number
   offset: number

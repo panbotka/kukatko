@@ -123,6 +123,13 @@ func seedDiacriticsRelations(t *testing.T, pool *pgxpool.Pool, lib diacriticsLib
 		lib.user); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
+	// A member of the project: `uploader:` matches a name only while the project
+	// may show it (project.FormerMemberSQL), and this test is about the accents.
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO project_members (project_uid, user_uid, role, approved_at) VALUES ($1, $2, 'viewer', now())`,
+		project.BootstrapUID, lib.user); err != nil {
+		t.Fatalf("insert membership: %v", err)
+	}
 	if _, err := pool.Exec(ctx,
 		`UPDATE photos SET uploaded_by = $2 WHERE uid = $1`, lib.accented, lib.user); err != nil {
 		t.Fatalf("set uploader: %v", err)

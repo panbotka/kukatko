@@ -180,11 +180,15 @@ type Task struct {
 	// answered in free text.
 	Options []string `json:"options"`
 	// CreatedByUID and CreatedByName are empty for a task whose author's account
-	// has since been deleted (the row survives authorless).
-	CreatedByUID  string    `json:"created_by"`
-	CreatedByName string    `json:"created_by_name"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	// has since been deleted (the row survives authorless). CreatedByName is
+	// empty too, and CreatedByFormer set, when the author is no member of the
+	// task's project any more (project.FormerMemberSQL): the client says
+	// "former member" rather than the account's live name.
+	CreatedByUID    string    `json:"created_by"`
+	CreatedByName   string    `json:"created_by_name"`
+	CreatedByFormer bool      `json:"created_by_former"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 	// StateAt is when the state last moved. Compared against the newest comment
 	// by somebody other than the reader it answers the question the state alone
 	// cannot: has anybody replied since?
@@ -196,7 +200,9 @@ type Task struct {
 	ClosedAt     *time.Time `json:"closed_at,omitempty"`
 	ClosedByUID  string     `json:"closed_by,omitempty"`
 	ClosedByName string     `json:"closed_by_name,omitempty"`
-	PhotoCount   int        `json:"photo_count"`
+	// ClosedByFormer is CreatedByFormer for whoever closed the task.
+	ClosedByFormer bool `json:"closed_by_former,omitempty"`
+	PhotoCount     int  `json:"photo_count"`
 	// CoverPhotoUID is one of the task's photographs, used as the listing's
 	// thumbnail: the earliest added, with the uid breaking ties. A whole batch is
 	// normally added in one statement and therefore shares one added_at, so within
@@ -226,6 +232,8 @@ type Task struct {
 	LastActivityAt     time.Time `json:"last_activity_at"`
 	LastActivityByUID  string    `json:"last_activity_by"`
 	LastActivityByName string    `json:"last_activity_by_name"`
+	// LastActivityByFormer is CreatedByFormer for the last actor.
+	LastActivityByFormer bool `json:"last_activity_by_former"`
 	// WaitingOnMe reports that the move is the reader's: the task is open, the
 	// reader is on it, and the last activity was somebody else's (an unknown
 	// actor counts as somebody else). Always false for a reader who is not on

@@ -46,12 +46,14 @@ export function uploadLinkSummary(summary: UploadSummary, t: TFunction): string 
  * in, or claimed at registration), otherwise `undefined` — nobody said. The typed
  * name wins over the account because it is what the sender chose to sign with;
  * the account is shown anyway as the photo's uploader in the technical details.
+ * An account that is no member of the project any more has no name here
+ * (`account.former`); the caller words it as a former member.
  */
 export function uploadLinkSender(link: PhotoUploadLinkRef): string | undefined {
   const typed = link.uploader_name?.trim() ?? ''
   if (typed !== '') {
     return typed
   }
-  const account = link.account?.name.trim() ?? ''
+  const account = link.account?.former === true ? '' : (link.account?.name.trim() ?? '')
   return account !== '' ? account : undefined
 }

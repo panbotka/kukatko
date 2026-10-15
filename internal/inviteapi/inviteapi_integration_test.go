@@ -489,3 +489,25 @@ func TestPublic_rateLimited(t *testing.T) {
 		t.Errorf("past the burst = %d, want 429", status)
 	}
 }
+
+// TestInvite_formerCreatorIsNameless verifies an invite's creator reads as a
+// nameless former member once they have left the invite's project, uid kept,
+// so the project never reads the account's live name.
+func TestInvite_formerCreatorIsNameless(t *testing.T) {
+	e := newEnv(t, nil)
+	ctx := t.Context()
+	created := e.createInvite(t, map[string]any{"role": "viewer"})
+	store := invite.NewStore(e.pool)
+	got, err := store.Get(ctx, e.f.B.ProjectUID, created.UID)
+	if err != nil || got.CreatorName == "" || got.CreatorFormer {
+		t.Fatalf("a member's invite = %+v, %v; want the creator named", got, err)
+	}
+	if _, err := e.pool.Exec(ctx, `DELETE FROM project_members WHERE project_uid = $1 AND user_uid = $2`,
+		e.f.B.ProjectUID, e.f.B.UserUID); err != nil {
+		t.Fatalf("removing B's admin: %v", err)
+	}
+	got, err = store.Get(ctx, e.f.B.ProjectUID, created.UID)
+	if err != nil || got.CreatorName != "" || !got.CreatorFormer || got.CreatedBy == nil || *got.CreatedBy != e.f.B.UserUID {
+		t.Errorf("after leaving: invite = %+v, %v; want a nameless former creator", got, err)
+	}
+}

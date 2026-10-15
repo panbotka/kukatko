@@ -69,7 +69,13 @@ export interface Task {
   options: string[]
   /** Empty for a task whose author's account has since been deleted. */
   created_by: string
+  /** Empty for a deleted account and for a former member (`created_by_former`). */
   created_by_name: string
+  /**
+   * The author is no member of the task's project any more: the client says
+   * "former member" — the project does not read the account's live name.
+   */
+  created_by_former?: boolean
   created_at: string
   updated_at: string
   /** When the state last moved — what `has_new_answer` is measured against. */
@@ -82,6 +88,8 @@ export interface Task {
   closed_at?: string
   closed_by?: string
   closed_by_name?: string
+  /** `created_by_former` for whoever closed the task. */
+  closed_by_former?: boolean
   photo_count: number
   /** The first photograph added, for the listing's thumbnail. */
   cover_photo_uid?: string
@@ -101,6 +109,8 @@ export interface Task {
   last_activity_at: string
   last_activity_by: string
   last_activity_by_name: string
+  /** `created_by_former` for the last actor. */
+  last_activity_by_former?: boolean
   /**
    * The move is the reader's: the task is open, the reader is on it, and the
    * last activity was somebody else's. Always false for a closed task and for

@@ -331,7 +331,10 @@ the same way, by its slug in the URL (`/api/v1/p/<project>/…`).
   dropped connection or a trip to another app carries on by itself ("Spojení přerušeno, pokračuji…"),
   being offline just waits, and a reload says kindly which batch was cut short (picking the photos again
   never doubles them). It ends with a big check mark, "Hotovo, nahráno 12 fotek", a retry for any file
-  that did not make it and **Nahrát další**.
+  that did not make it and **Nahrát další**. A member of the project uploads under their own account;
+  anybody else — signed in to another project or not — signs with the name they type, so a project never
+  shows the name of somebody outside it (nor the live name of a former member, who reads as „Bývalý člen
+  projektu" wherever they once acted).
   A file that is not a photo or a video at all — whatever it is called — is turned away as just that
   ("Tohle není fotka ani video") and never reaches the album. The photos are in the album at once; an unwanted one is archived as usual. The sender may say who
   they are — curators then see "Nahráno přes odkaz „Pouť 2026“ · od: Jana" on the photo, and the audit

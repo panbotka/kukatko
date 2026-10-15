@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/query"
 )
 
@@ -488,6 +489,12 @@ func familyMembersSQL(pattern, uid, project string) string {
 // text arm in this file is: a person typing `uploader:tomas` is naming a
 // colleague from memory, not spelling a stored value, and "Tomáš" has to answer
 // to it.
+//
+// The name arms match only an uploader the project still shows by name: a
+// former member's live name (project.FormerMemberSQL) is not the project's to
+// read, and matching it would tell a searcher whose photos those are under the
+// name the account goes by elsewhere today. The exact UID arm still finds them,
+// which is what selecting the facet's former-member bucket sends.
 func uploaderCond(v query.Value, env condEnv) (string, bool) {
 	if v.Text == query.UploaderNone {
 		return "photos.uploaded_by IS NULL", true
@@ -495,8 +502,9 @@ func uploaderCond(v query.Value, env condEnv) (string, bool) {
 	p := env.bind(likePattern(v.TextPattern()))
 	uid := env.bind(v.Text)
 	return "EXISTS (SELECT 1 FROM users u WHERE u.uid = photos.uploaded_by AND (" +
+		"(NOT " + project.FormerMemberSQL(env.project, "u") + " AND (" +
 		unaccentLike("u.username", p) + " OR " +
-		unaccentLike("u.display_name", p) + " OR " +
+		unaccentLike("u.display_name", p) + ")) OR " +
 		"u.uid = " + uid + "))", true
 }
 

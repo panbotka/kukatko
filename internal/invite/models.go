@@ -94,9 +94,11 @@ type Invite struct {
 	// CreatedBy is the creator's account UID, nil once the account is gone.
 	CreatedBy *string `json:"created_by"`
 	// CreatorName is the creator's display name (or username), empty when the
-	// account is gone.
-	CreatorName string    `json:"created_by_name"`
-	CreatedAt   time.Time `json:"created_at"`
+	// account is gone — and when it is no member of the invite's project any
+	// more, which CreatorFormer reports (project.FormerMemberSQL).
+	CreatorName   string    `json:"created_by_name"`
+	CreatorFormer bool      `json:"created_by_former"`
+	CreatedAt     time.Time `json:"created_at"`
 	// Code is the readable short code. It is never serialised from here: the
 	// HTTP layer shows it only to the project's admins.
 	Code string `json:"-"`

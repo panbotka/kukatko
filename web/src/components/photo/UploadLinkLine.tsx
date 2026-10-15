@@ -21,7 +21,10 @@ export interface UploadLinkLineProps {
  */
 export function UploadLinkLine({ link }: UploadLinkLineProps) {
   const { t } = useTranslation()
-  const sender = uploadLinkSender(link)
+  // A sender who typed nothing and whose account has left the project is a
+  // former member, not "nameless": somebody did say who they were.
+  const sender =
+    uploadLinkSender(link) ?? (link.account?.former === true ? t('formerMember') : undefined)
   const title = link.title.trim()
   return (
     <p className="small text-secondary mb-0 d-flex align-items-baseline gap-2">

@@ -43,7 +43,8 @@ answered for any project and relied on their callers proving the photo first; no
 was fixed on **2026-10-14** too. **SEC-027** (a project admin's blind member add revealed the account
 behind an address — its existence, uid, uploaded picture — and let the project's notifications reach it)
 was found and fixed on **2026-10-15**, and so was SEC-025's accepted residue (an uploaded profile picture
-served to any signed-in account by uid, and its 200/404 existence oracle).
+served to any signed-in account by uid, and its 200/404 existence oracle). **SEC-028** (a project read the
+live name of an outsider credited through its upload link, and of former members) was fixed the same day.
 Everything else below is open as written.
 
 > **Severity scale:** critical / high / medium / low / info. A weakness that is not
@@ -1209,6 +1210,41 @@ Everything else below is open as written.
   `TestParticipants_formerMembers` (`internal/phototask`) and
   `TestLeaderboard_countsOnlyTheProjectsApprovedMembers` (`internal/review`). Each fails on the code before
   the fix (the withdraw and throttle tests do not even compile against it).
+- **Fixed:** 2026-10-15.
+
+### SEC-028 — LOW — **FIXED** — A project read the live name of somebody outside it
+
+- **Origin:** multi-tenancy review round 3 (2026-10-15, `main` 996ae051), finding 3 of the fixes report (a
+  sibling f846f281 missed) and its verdict on f24c192d ("former member" stopped at comments). Rated
+  **low**: it reveals a name, not content, and needs the account to act (upload) or to have been a member.
+- **Scenario (before the fix):**
+  1. **Upload-link crediting.** An account signed in on the instance but a member of project A only
+     uploads through B's public link (`/u/{code}` is mounted with `OptionalAuth`). `uploaderFor` credited
+     any signed-in account, so B stored its uid on the photo, the link provenance and the audit entry, and
+     then showed the stranger's live name in the photo detail, the uploader facet, `uploader:<name>` search,
+     the upload provenance and the audit `actors` — while the page told the visitor "uploading as you".
+  2. **Former members.** After a member left B, the task creator/closer/last actor, the uploader facet,
+     the photo detail's uploader and link account, upload-link and invite creators and the project audit's
+     `actors` kept reading the account's current name — renamed perhaps in another project — although
+     comments and task participants already said "former member".
+- **Fix:** the public link credits a signed-in account only if it is an approved member of the link's
+  project whose identity the project may see (`project.Store.IsApprovedMember` →
+  `uploadlinkapi.Config.Members`); anybody else is filed like an anonymous guest (typed name + session), and
+  the page's `credits_account` says which. Every reader of a stored account in a project applies one rule,
+  `project.FormerMemberSQL` (no non-withheld membership and not the maintainer): the name reads empty and a
+  `*_former` flag / `former_actors` entry makes the client say „Bývalý člen projektu"; the uid stays (a
+  former uploader's bucket still filters by uid; `uploader:` matches a former member by uid only). The
+  review leaderboard and streaks already joined approved, non-withheld memberships (4fd5ddf0, e62d3690),
+  so a former reviewer drops off the board rather than showing by name.
+- **Regression tests:** `TestPublicUpload_nonMemberIsNotCredited` (`internal/uploadlinkapi`, two projects:
+  A's member uploads through B's link — no uid on the photo, the provenance or B's trail, the page does not
+  credit; B's member still is), `TestUpload_signedInNonMember` / `TestUpload_membershipCheckFails` (unit),
+  `TestTask_formerAuthorCloserAndLastActor` (`internal/phototask`),
+  `TestUploaderBuckets_formerMemberIsNameless` and `TestUploaderFilter_formerMemberMatchesByUIDOnly`
+  (`internal/photos`), `TestProjectUserName_formerMember` (`internal/auth`),
+  `TestFormerMember_namelessOnLinkAndProvenance` (`internal/uploadlink`),
+  `TestInvite_formerCreatorIsNameless` (`internal/inviteapi`) and `TestProjectListing_namesItsActors`
+  (`internal/auditapi`). Each fails on the code before the fix.
 - **Fixed:** 2026-10-15.
 
 ---

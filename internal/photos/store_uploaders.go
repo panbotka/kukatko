@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // UploaderBucket is one uploader of the photos matching a filter, together with
@@ -23,6 +25,12 @@ type UploaderBucket struct {
 	// DisplayName is the uploader's full name, empty when they never set one (and
 	// for the no-uploader bucket).
 	DisplayName string
+	// Former reports an uploader who is no member of the project any more (or
+	// never was — an upload credited before the upload link checked
+	// membership): project.FormerMemberSQL. Username and DisplayName are then
+	// empty, so the project never reads the account's live name; the client
+	// says "former member".
+	Former bool
 	// Count is how many of the matching photos this bucket holds.
 	Count int
 }
@@ -36,7 +44,14 @@ type UploaderBucket struct {
 // those very names — joined first, the filters would be ambiguous. The join is a
 // LEFT one so the NULL uploaded_by group survives it, and the count is taken
 // before the join, so it can never be multiplied by it.
-const uploadersSQL = `SELECT b.uploaded_by, u.username, u.display_name, b.cnt
+//
+// A former member of the project ($1, bound first by buildWhere) keeps their
+// bucket — the photos are still theirs, and selecting it still filters by uid —
+// but not their name: both name columns read NULL and the last column is set.
+var uploadersSQL = `SELECT b.uploaded_by,
+    CASE WHEN ` + uploaderFormerSQL + ` THEN NULL ELSE u.username END,
+    CASE WHEN ` + uploaderFormerSQL + ` THEN NULL ELSE u.display_name END,
+    b.cnt, COALESCE(` + uploaderFormerSQL + `, false)
 FROM (
     SELECT uploaded_by, count(*)::int AS cnt
     FROM photos%s
@@ -44,6 +59,10 @@ FROM (
 ) b
 LEFT JOIN users u ON u.uid = b.uploaded_by
 ORDER BY b.cnt DESC, b.uploaded_by ASC NULLS LAST`
+
+// uploaderFormerSQL is project.FormerMemberSQL for the uploader row u of
+// uploadersSQL in the project $1.
+var uploaderFormerSQL = project.FormerMemberSQL("$1", "u")
 
 // UploaderBuckets returns the uploaders of the photos matching params, the
 // largest contribution first, each with its photo count — the option list behind
@@ -75,7 +94,7 @@ func (s *Store) UploaderBuckets(
 			bucket                     UploaderBucket
 			uid, username, displayName *string
 		)
-		if scanErr := rows.Scan(&uid, &username, &displayName, &bucket.Count); scanErr != nil {
+		if scanErr := rows.Scan(&uid, &username, &displayName, &bucket.Count, &bucket.Former); scanErr != nil {
 			return nil, fmt.Errorf("photos: scanning uploader bucket: %w", scanErr)
 		}
 		bucket.UID = derefString(uid)

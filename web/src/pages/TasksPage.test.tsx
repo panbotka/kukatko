@@ -212,6 +212,18 @@ describe('TasksPage', () => {
     expect(stamp?.textContent).not.toBe('')
   })
 
+  it('says a last actor who left the project is a former member, never their name', async () => {
+    fetchTasksMock.mockResolvedValue(
+      page([
+        task({ last_activity_by: 'u2', last_activity_by_name: '', last_activity_by_former: true }),
+      ]),
+    )
+    renderPage()
+
+    expect(await screen.findByText(/last by Former project member/)).toBeInTheDocument()
+    expect(screen.queryByText(/last by someone/)).not.toBeInTheDocument()
+  })
+
   it('says a task over nothing has no photos, in words and with the placeholder', async () => {
     fetchTasksMock.mockResolvedValue(
       page([

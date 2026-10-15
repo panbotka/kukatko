@@ -338,7 +338,9 @@ export function InvitesSection() {
       key: 'createdBy',
       header: t('invites.columns.createdBy'),
       cell: (inv) =>
-        inv.created_by_name === '' ? (
+        inv.created_by_former === true ? (
+          <span className="text-secondary">{t('formerMember')}</span>
+        ) : inv.created_by_name === '' ? (
           <span className="text-secondary">{t('invites.creatorGone')}</span>
         ) : (
           inv.created_by_name
