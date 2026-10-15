@@ -15,6 +15,7 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/push"
 	"github.com/panbotka/kukatko/internal/settings"
 	"github.com/panbotka/kukatko/internal/uploadlink"
 	"github.com/panbotka/kukatko/internal/uploadlinkapi"
@@ -23,7 +24,8 @@ import (
 // buildAuth assembles the auth subsystem from configuration and the database:
 // the store, the session service, the login rate limiter, the self-service
 // registration flow, the password-reset flow, the passkey flow, and the HTTP
-// API. The returned API mounts the auth routes;
+// API — which forgets a browser's push subscription when it signs out. The
+// returned API mounts the auth routes;
 // the returned Service is used for bootstrap and the background session-cleanup
 // loop. It fails only on a passkey relying party the WebAuthn library refuses.
 //
@@ -79,6 +81,7 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service, e
 		PasswordReset: passwordReset,
 		Passkeys:      passkeys,
 		SecureCookies: cfg.Web.SecureCookies,
+		PushDevices:   push.NewStore(db.Pool()),
 	})
 	return api, svc, nil
 }

@@ -15,11 +15,27 @@ import { AuthProvider } from './AuthProvider'
 const fetchMe = vi.fn<() => Promise<AuthSession | null>>()
 const signIn = vi.fn<() => Promise<AuthSession>>()
 
-const signOut = vi.fn<() => Promise<void>>()
+const signOut = vi.fn<(pushEndpoint?: string | null) => Promise<void>>()
 
 vi.mock('../services/auth', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/auth')>()
-  return { ...actual, fetchMe: () => fetchMe(), logout: () => signOut() }
+  return {
+    ...actual,
+    fetchMe: () => fetchMe(),
+    logout: (pushEndpoint?: string | null) => signOut(pushEndpoint),
+  }
+})
+
+const heldSubscription = vi.fn<() => Promise<PushSubscription | null>>()
+const dropSubscription = vi.fn<(subscription: PushSubscription) => Promise<void>>()
+
+vi.mock('../pwa/push', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../pwa/push')>()
+  return {
+    ...actual,
+    heldPushSubscription: () => heldSubscription(),
+    dropBrowserSubscription: (subscription: PushSubscription) => dropSubscription(subscription),
+  }
 })
 
 vi.mock('../services/passkeys', async (importOriginal) => {
@@ -64,6 +80,13 @@ function renderProvider() {
     </AuthProvider>,
   )
 }
+
+// Every sign-out reads the browser's push subscription first; by default this
+// browser holds none.
+beforeEach(() => {
+  heldSubscription.mockResolvedValue(null)
+  dropSubscription.mockResolvedValue(undefined)
+})
 
 // No mock reset here on purpose: `restoreMocks: true` (vite.config.ts) already
 // restores before each test, and resetting afterwards races RTL cleanup — see
@@ -262,6 +285,86 @@ describe('AuthProvider browser state', () => {
 
     expect(await screen.findByTestId('status')).toHaveTextContent('unauthenticated')
     expect(window.localStorage.getItem('kukatko.announcement.dismissedAt.u1')).toBeNull()
+  })
+
+  /** Renders the sign-out probe for SESSION and waits until it is signed in. */
+  async function renderSignedIn() {
+    render(
+      <AuthProvider>
+        <SignOutProbe />
+      </AuthProvider>,
+    )
+    expect(await screen.findByTestId('status')).toHaveTextContent('authenticated')
+  }
+
+  /** This browser's push subscription, as `pwa/push` hands it over. */
+  const SUBSCRIPTION = { endpoint: 'https://push.example.test/send/abc' } as PushSubscription
+
+  it('forgets this browser’s push subscription on sign-out, on the server and in the browser', async () => {
+    const user = userEvent.setup()
+    fetchMe.mockResolvedValue(SESSION)
+    signOut.mockResolvedValue(undefined)
+    heldSubscription.mockResolvedValue(SUBSCRIPTION)
+    await renderSignedIn()
+
+    await user.click(screen.getByRole('button', { name: 'sign out' }))
+
+    expect(await screen.findByTestId('status')).toHaveTextContent('unauthenticated')
+    expect(signOut).toHaveBeenCalledWith(SUBSCRIPTION.endpoint)
+    expect(dropSubscription).toHaveBeenCalledWith(SUBSCRIPTION)
+  })
+
+  it('names no subscription when the browser holds none', async () => {
+    const user = userEvent.setup()
+    fetchMe.mockResolvedValue(SESSION)
+    signOut.mockResolvedValue(undefined)
+    await renderSignedIn()
+
+    await user.click(screen.getByRole('button', { name: 'sign out' }))
+
+    expect(await screen.findByTestId('status')).toHaveTextContent('unauthenticated')
+    expect(signOut).toHaveBeenCalledWith(null)
+    expect(dropSubscription).not.toHaveBeenCalled()
+  })
+
+  it('drops the browser’s subscription even when the server never heard the sign-out', async () => {
+    const user = userEvent.setup()
+    fetchMe.mockResolvedValue(SESSION)
+    signOut.mockRejectedValue(new NetworkError('Failed to fetch'))
+    heldSubscription.mockResolvedValue(SUBSCRIPTION)
+    await renderSignedIn()
+
+    await user.click(screen.getByRole('button', { name: 'sign out' }))
+
+    expect(await screen.findByTestId('status')).toHaveTextContent('unauthenticated')
+    expect(dropSubscription).toHaveBeenCalledWith(SUBSCRIPTION)
+  })
+
+  it('signs out when reading the subscription fails', async () => {
+    const user = userEvent.setup()
+    fetchMe.mockResolvedValue(SESSION)
+    signOut.mockResolvedValue(undefined)
+    heldSubscription.mockRejectedValue(new Error('no worker'))
+    await renderSignedIn()
+
+    await user.click(screen.getByRole('button', { name: 'sign out' }))
+
+    expect(await screen.findByTestId('status')).toHaveTextContent('unauthenticated')
+    expect(signOut).toHaveBeenCalledWith(null)
+  })
+
+  it('signs out when dropping the subscription fails', async () => {
+    const user = userEvent.setup()
+    fetchMe.mockResolvedValue(SESSION)
+    signOut.mockResolvedValue(undefined)
+    heldSubscription.mockResolvedValue(SUBSCRIPTION)
+    dropSubscription.mockRejectedValue(new Error('push service down'))
+    await renderSignedIn()
+
+    await user.click(screen.getByRole('button', { name: 'sign out' }))
+
+    expect(await screen.findByTestId('status')).toHaveTextContent('unauthenticated')
+    expect(dropSubscription).toHaveBeenCalledWith(SUBSCRIPTION)
   })
 
   it('opens in the signed-in account’s language and returns to Czech on sign-out', async () => {

@@ -8,6 +8,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/panbotka/kukatko/internal/clientip"
 	"github.com/panbotka/kukatko/internal/project"
@@ -143,17 +144,47 @@ func (a *API) allowLoginAttempt(key, username string) bool {
 	return perAddress && perUsername
 }
 
-// handleLogout deletes the current session and clears the cookie. It is
-// idempotent and always responds 204, even without a valid session.
+// logoutRequest is the optional body of POST /auth/logout. PushEndpoint names
+// the push subscription the signing-out browser holds, so the server stops
+// delivering that account's notifications to it — on a shared device the next
+// person must not receive them.
+type logoutRequest struct {
+	PushEndpoint string `json:"push_endpoint"`
+}
+
+// handleLogout deletes the current session, forgets the push subscription the
+// body names (when it belongs to the session's account) and clears the cookie.
+// It is idempotent and always responds 204, even without a valid session. The
+// body is optional, and neither an unreadable one nor a failure to forget the
+// subscription stops the sign-out: the person is leaving either way, and the
+// browser drops its half of the subscription itself.
 func (a *API) handleLogout(w http.ResponseWriter, r *http.Request) {
+	var req logoutRequest
+	// No body, unknown fields and garbage alike only mean nothing is forgotten.
+	_ = decodeJSON(w, r, &req)
 	if cookie, err := r.Cookie(sessionCookieName); err == nil {
-		if err := a.svc.Logout(r.Context(), cookie.Value); err != nil {
+		userUID, err := a.svc.Logout(r.Context(), cookie.Value)
+		if err != nil {
 			writeError(w, http.StatusInternalServerError, "logout failed")
 			return
 		}
+		a.forgetPushDevice(r.Context(), userUID, strings.TrimSpace(req.PushEndpoint))
 	}
 	a.clearSessionCookie(w)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// forgetPushDevice deletes userUID's push subscription for endpoint. Nothing
+// happens without an account, an endpoint or a wired subscription store, and a
+// failure is logged rather than returned: it must never block a sign-out.
+func (a *API) forgetPushDevice(ctx context.Context, userUID, endpoint string) {
+	if a.pushDevices == nil || userUID == "" || endpoint == "" {
+		return
+	}
+	if _, err := a.pushDevices.DeleteForUserByEndpoint(ctx, userUID, endpoint); err != nil {
+		slog.WarnContext(ctx, "auth: forgetting the push subscription at sign-out",
+			"user_uid", userUID, "error", err)
+	}
 }
 
 // handleMe returns the authenticated user and the session download token. It

@@ -6837,7 +6837,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `pgx.Tx`, so the push fan-out reads the devices **inside the caller's transaction**),
     `DeleteByEndpoint` (whoever owns it — what an unsubscribing
     browser and an `ErrGone` both name), `DeleteByID(userUID, id)` (**owner-scoped**: a foreign id is
-    `ErrNotFound` like a missing one), `DeleteAllForUser`, `RecordSuccess` (stamps `last_used_at`, resets
+    `ErrNotFound` like a missing one), `DeleteForUserByEndpoint(userUID, endpoint)` (**owner-scoped**, returns
+    the count, `0` is no error — the sign-out's delete, `auth.APIConfig.PushDevices`), `DeleteAllForUser`,
+    `RecordSuccess` (stamps `last_used_at`, resets
     the count) and `RecordFailure` (returns the failures since the last success, so the caller can retire a
     subscription that keeps failing). The table is **account data**: `maintenance reset` keeps it
     (`internal/reset` `preservedTables`).

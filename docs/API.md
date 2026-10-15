@@ -94,8 +94,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
 
 <!-- BODY BEGIN -->
 - **Auth API (`/api/v1`):** `POST /auth/login` (set HttpOnly+SameSite=Strict cookie + opaque
-  `download_token`), `POST /auth/register` (anonymous, see below), `POST /auth/logout`,
-  `GET /auth/me`, `POST /auth/password` (revokes other
+  `download_token`), `POST /auth/register` (anonymous, see below), `POST /auth/logout` (always `204`;
+  its optional `{push_endpoint}` body is under the push routes), `GET /auth/me`, `POST /auth/password` (revokes other
   sessions), `GET|POST /auth/password-reset/{token}` (anonymous, see below),
   `POST /auth/welcome-seen`, the passkey routes under `/auth/passkeys/*` (see below) — every signed-in
   one behind `RequireSignedIn` (no project entered). `PUT /api/v1/p/{project}/auth/subject` is
@@ -2670,6 +2670,16 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     the caller's own rows and deleted under the caller's account, so an endpoint that is unknown **or
     somebody else's** is `404`; no `endpoint` → `400`. Works with push off, so a device can always be
     cleaned up.
+  - **Signing out forgets this browser's subscription.** `POST /auth/logout` takes an optional body
+    `{push_endpoint}` — the endpoint of the push subscription the signing-out browser holds. The server
+    ends the session and, in the same request, deletes that endpoint's row **of the session's account
+    only** (`push.Store.DeleteForUserByEndpoint`; another account's endpoint, a request without a session
+    and an unknown endpoint delete nothing). On a shared device the next person would otherwise keep
+    receiving the previous account's notifications, whose titles name its photos and albums. No body, an
+    unreadable body and a failing delete all still sign out (`204`; the failure is logged): the browser
+    drops its half itself, and the push service then answers "gone". There is no "sign out everywhere";
+    the recovery paths that delete sessions (password change/reset, SEC-021) leave subscriptions alone,
+    and a disabled account receives nothing anyway (`notifystanding`).
   - **`GET /notifications/preferences`** → `200 {preferences:[{kind, channel, enabled, is_default}]}`:
     the **effective** set, one entry per known kind and **delivery channel** — every kind offers all three,
     in display order `in_app`, `push`, `email` (`tagged/in_app`, `tagged/push`, `tagged/email`,

@@ -146,6 +146,20 @@ describe('logout', () => {
       '/api/v1/auth/logout',
       expect.objectContaining({ method: 'POST' }),
     )
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(init.body).toBeUndefined()
+  })
+
+  it('names the browser’s push subscription so the server forgets it with the session', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(logout('https://push.example.test/send/abc')).resolves.toBeUndefined()
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/v1/auth/logout')
+    expect(init.body).toBe(JSON.stringify({ push_endpoint: 'https://push.example.test/send/abc' }))
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json' })
   })
 })
 

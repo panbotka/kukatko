@@ -282,10 +282,12 @@ func (s *Service) AuthenticateDownloadToken(ctx context.Context, token string) (
 	return user, sess, nil
 }
 
-// Logout deletes the session identified by token. It is idempotent: logging out
-// an already-removed session is not an error.
-func (s *Service) Logout(ctx context.Context, token string) error {
-	return s.store.DeleteSessionByToken(ctx, token)
+// Logout deletes the session identified by token and returns the uid of the
+// account it belonged to ("" when there was no such session), so the caller can
+// forget what else that account left on this device. It is idempotent: logging
+// out an already-removed session is not an error.
+func (s *Service) Logout(ctx context.Context, token string) (string, error) {
+	return s.store.EndSession(ctx, token)
 }
 
 // ChangePassword verifies the user's current password, stores a hash of the new

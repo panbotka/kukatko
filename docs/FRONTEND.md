@@ -8573,7 +8573,12 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
   refusal `failed`, and either way the **browser subscription is dropped again**, so the browser never
   believes in a subscription nothing delivers to. `unsubscribeFromPush()` DELETEs the endpoint on the
   server (`404` and a network error are both fine — once the browser drops it, the push service answers
-  "gone" and the `push_send` job prunes the row) and then unsubscribes the browser.
+  "gone" and the `push_send` job prunes the row) and then unsubscribes the browser. **Signing out** uses
+  the other two exports: `heldPushSubscription()` (the browser's subscription, permission ignored; `null`
+  when none, no worker, no support or the lookup throws) is read **before** the sign-out request so its
+  endpoint rides along as `push_endpoint` (the server forgets it with the session, see `docs/API.md`), and
+  `dropBrowserSubscription()` (best-effort `unsubscribe()`, a failure swallowed) drops the browser's half
+  after it.
   **Android and iOS differ** (checked on 2026-09-26 against MDN's browser-compat data for
   `PushManager` and WebKit's „Web Push for Web Apps on iOS and iPadOS" post). **Android needs nothing
   beyond VAPID**: the compat data lists the Push API in Chrome for Android since 42 (the spec for this
@@ -8597,7 +8602,9 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
   uncontrolled one, off-origin deeplinks, the unchanged listener set and whitelist) plus the images
   block; `src/pwa/push.test.ts` walks every branch of `push.ts` (unsupported incl. no `PushManager`,
   no-worker, disabled, denied, prompt, granted, reuse and key rotation, subscribe refusals, the server's
-  503/500/network rollback, unsubscribe with the server forgetful or unreachable, `isPushEnabled` over
+  503/500/network rollback, unsubscribe with the server forgetful or unreachable, the sign-out pair
+  (`heldPushSubscription` whatever the permission and its every `null`, `dropBrowserSubscription`
+  swallowing a failure), `isPushEnabled` over
   on/off/no key/5xx/network, `isIosOutsideInstalledApp` over iPhone tab, iPad-as-Mac, installed app,
   desktop Mac and Android).
 - **Browser storage:** what the app keeps in `localStorage`/`sessionStorage`, and whose it is. Two people share
@@ -8617,21 +8624,27 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
   `kukatko.review.run` (session, user and project recorded inside) and
   `kukatko.lastPickedLocation` (session — where one account was geotagging is not where the next starts).
   **User-scoped, kept across sign-out:** `kukatko.language.<uid>` (a preference, and signing back in should
-  find it) and `kukatko.pushPrompt.answered.<uid>` (a push subscription belongs to the browser and outlives the
-  session; forgetting the answer would only ask again). **Per device by design, never cleared:**
+  find it) and `kukatko.pushPrompt.answered.<uid>` (the answer is the account's on this browser; signing out drops the
+  subscription itself, and the settings page turns it back on — forgetting the answer would only ask again). **Per device by design, never cleared:**
   `kukatko.grid.density`, `kukatko.review.density`, `kukatko.slideshow.settings`, `kukatko.viewer.chromeHintSeen`,
   `kukatko.uploadLink.uploaderName` (the "from whom" an anonymous uploader typed on the public upload-link
   page — it belongs to the phone, and there is no account to scope it to), `kukatko.uploadLink.batch` (the
   link, file count and start of a batch still running on that page, so a reload can say what was lost —
   the phone's, for the same reason) and `kukatko.video.rate` (session) — they describe the screen, not the person. **Sign-out** = `AuthProvider`
-  `logout` calls `clearSignedOutState()` (`auth/signOutStorage.ts`) in its `finally`, so the storage is cleared
-  even when the server never heard the request; it walks both storages and removes every key equal to one of
+  `logout` first reads this browser's push subscription (`heldPushSubscription`, a failure = none) and sends
+  its endpoint with `POST /auth/logout`, so the server forgets it with the session; its `finally` then drops
+  the browser's half (`dropBrowserSubscription`, **not awaited**, so a hung push service cannot hold the
+  sign-out up) and calls `clearSignedOutState()` (`auth/signOutStorage.ts`), so the storage is cleared
+  even when the server never heard the request — on a shared device the next person neither inherits the
+  storage nor receives the previous account's notifications; it walks both storages and removes every key equal to one of
   `SIGN_OUT_CLEARED` or starting with it plus a dot — every account's copy, and the global keys older builds
   wrote (`kukatko.announcement.dismissedAt`, `kukatko.review.daily`, `kukatko.gridScroll`, `i18nextLng`),
   which are no longer read by anything. Nothing here has a server-side copy. A new stored key must be placed in
   one of these three groups (and, if it is account state, added to `SIGN_OUT_CLEARED`). Tests:
   `signOutStorage.test.ts` (every cleared key in both storages, every survivor, a storage that throws),
-  `AuthProvider.test.tsx` (sign-out clears, also on a network failure; the language follows the account), and a
+  `AuthProvider.test.tsx` (sign-out clears, also on a network failure; it names the held push subscription
+  to the server and drops it in the browser, also when the server never heard it, and signs out when the
+  lookup or the drop fails; the language follows the account), and a
   "written as A, not honoured as B" case per key in `AnnouncementBanner`, `WhatsNewPanel`, `reviewRounds`,
   `ReviewPage`, `gridScroll`, `useGridScrollMemory`, `accountLanguage` and `LanguageSwitcher` tests.
 

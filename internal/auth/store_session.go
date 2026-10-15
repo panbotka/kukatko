@@ -85,13 +85,29 @@ func (s *Store) UpdateSessionExpiry(ctx context.Context, id string, expiresAt ti
 	return nil
 }
 
-// DeleteSessionByToken removes the session with the given token (logout). A
-// missing session is not an error: logout is idempotent.
+// DeleteSessionByToken removes the session with the given token (a lapsed one;
+// logout goes through EndSession). A missing session is not an error.
 func (s *Store) DeleteSessionByToken(ctx context.Context, token string) error {
 	if _, err := s.pool.Exec(ctx, "DELETE FROM sessions WHERE token = $1", token); err != nil {
 		return fmt.Errorf("auth: deleting session: %w", err)
 	}
 	return nil
+}
+
+// EndSession removes the session with the given token (logout) and returns the
+// uid of the account it belonged to, or "" when no session had that token. A
+// missing session is not an error: logout is idempotent.
+func (s *Store) EndSession(ctx context.Context, token string) (string, error) {
+	var userUID string
+	err := s.pool.QueryRow(ctx,
+		"DELETE FROM sessions WHERE token = $1 RETURNING user_uid", token).Scan(&userUID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("auth: ending session: %w", err)
+	}
+	return userUID, nil
 }
 
 // DeleteUserSessionsExcept removes every session for userUID except the one

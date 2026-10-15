@@ -3,6 +3,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react
 import i18n from '../i18n'
 import { useAccountLanguage } from '../i18n/accountLanguage'
 import { entryProjectSlug } from '../project/paths'
+import { dropBrowserSubscription, heldPushSubscription } from '../pwa/push'
 import { setCurrentProjectSlug } from '../services/api'
 import * as authService from '../services/auth'
 import { signInWithPasskey } from '../services/passkeys'
@@ -29,7 +30,8 @@ const INITIAL_STATE: AuthState = { status: 'loading', session: null }
  * It also owns the browser state that belongs to a session: the UI language
  * follows the signed-in account (see {@link useAccountLanguage}), and signing
  * out removes what the account left in storage (see
- * {@link clearSignedOutState}), so the next person on this browser starts clean.
+ * {@link clearSignedOutState}) and this browser's push subscription, so the
+ * next person on this browser starts clean.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(INITIAL_STATE)
@@ -109,11 +111,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applySignIn])
 
   // The storage is cleared whether or not the server heard the sign-out: the
-  // person clicking it is leaving this browser either way.
+  // person clicking it is leaving this browser either way. So is the push
+  // subscription, in both places: the request names it, so the server forgets
+  // it with the session, and the browser drops its half afterwards — or the
+  // next person on a shared device would receive this account's notifications.
+  // Neither half can hold the sign-out up: a failed lookup sends no endpoint,
+  // and the drop is not awaited.
   const logout = useCallback(async () => {
+    const subscription = await heldPushSubscription().catch(() => null)
     try {
-      await authService.logout()
+      await authService.logout(subscription?.endpoint ?? null)
     } finally {
+      if (subscription) {
+        void dropBrowserSubscription(subscription).catch(() => undefined)
+      }
       clearSignedOutState()
       applySession(null)
     }

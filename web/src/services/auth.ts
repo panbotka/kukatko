@@ -295,12 +295,24 @@ export async function register(
   return (await res.json()) as RegisteredAccount
 }
 
-/** Ends the current session. Idempotent: the backend always returns 204. */
-export async function logout(signal?: AbortSignal): Promise<void> {
+/**
+ * Ends the current session. Idempotent: the backend always returns 204.
+ *
+ * `pushEndpoint` names the push subscription this browser holds (see
+ * `pwa/push`); the server forgets it together with the session, so the next
+ * person on a shared device does not receive this account's notifications.
+ */
+export async function logout(pushEndpoint?: string | null, signal?: AbortSignal): Promise<void> {
   const res = await apiFetch('/auth/logout', {
     method: 'POST',
     credentials: 'same-origin',
     signal,
+    ...(pushEndpoint
+      ? {
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ push_endpoint: pushEndpoint }),
+        }
+      : {}),
   })
   if (!res.ok) {
     throw new ApiError(res.status, await readErrorMessage(res))

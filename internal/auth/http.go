@@ -52,7 +52,18 @@ type API struct {
 	projects *project.Store
 	// lastProject throttles the per-account "last project" write.
 	lastProject *lastProjectThrottle
+	// pushDevices forgets the browser a sign-out happens in, or nil when the
+	// instance wires no push subscriptions.
+	pushDevices PushDevices
 	now         func() time.Time
+}
+
+// PushDevices forgets a browser's Web Push subscription when its account signs
+// out there. internal/push's Store satisfies it.
+type PushDevices interface {
+	// DeleteForUserByEndpoint removes the subscription of userUID whose endpoint
+	// is endpoint and reports how many rows went; one already gone is no error.
+	DeleteForUserByEndpoint(ctx context.Context, userUID, endpoint string) (int64, error)
 }
 
 // APIConfig configures NewAPI.
@@ -105,6 +116,9 @@ type APIConfig struct {
 	// Projects is the project store the guards resolve projects and memberships
 	// with. Optional: when nil, NewAPI builds one over the service's pool.
 	Projects *project.Store
+	// PushDevices forgets the push subscription of the browser a sign-out
+	// happens in. Optional: when nil, signing out ends the session only.
+	PushDevices PushDevices
 }
 
 // NewAPI returns an API from cfg, using time.Now as its clock.
@@ -124,6 +138,7 @@ func NewAPI(cfg APIConfig) *API {
 		secureCookies:      cfg.SecureCookies,
 		projects:           projectsFor(cfg),
 		lastProject:        &lastProjectThrottle{},
+		pushDevices:        cfg.PushDevices,
 		now:                time.Now,
 	}
 }

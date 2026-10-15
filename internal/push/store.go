@@ -246,6 +246,20 @@ func (s *Store) DeleteByEndpoint(ctx context.Context, endpoint string) error {
 	return nil
 }
 
+// DeleteForUserByEndpoint removes the subscription of userUID whose endpoint is
+// endpoint and reports how many rows went (0 or 1). It is how signing out
+// forgets the browser it happens in: the owner is part of the match, so an
+// endpoint another account holds is left alone, and one already gone is no
+// error — a sign-out is idempotent.
+func (s *Store) DeleteForUserByEndpoint(ctx context.Context, userUID, endpoint string) (int64, error) {
+	tag, err := s.pool.Exec(ctx,
+		`DELETE FROM push_subscriptions WHERE endpoint = $1 AND user_uid = $2`, endpoint, userUID)
+	if err != nil {
+		return 0, fmt.Errorf("push: deleting a subscription of %s by endpoint: %w", userUID, err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // DeleteByID removes the subscription id of the account userUID. The owner is
 // part of the match, so an id belonging to somebody else is ErrNotFound exactly
 // like one that does not exist — a person managing their devices can never

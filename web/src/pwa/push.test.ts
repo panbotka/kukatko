@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   decodeBase64Url,
+  dropBrowserSubscription,
   getPushPermission,
   getPushState,
+  heldPushSubscription,
   isIosOutsideInstalledApp,
   isPushEnabled,
   isPushSupported,
@@ -419,6 +421,42 @@ describe('unsubscribeFromPush', () => {
 
     Reflect.deleteProperty(navigator, 'serviceWorker')
     await expect(unsubscribeFromPush()).resolves.toMatchObject({ status: 'unsupported' })
+  })
+})
+
+describe('heldPushSubscription and dropBrowserSubscription (sign-out)', () => {
+  it('hands over the subscription this browser holds, whatever the permission', async () => {
+    const held = new FakeSubscription(ENDPOINT, KEY_BYTES)
+    pushManager.current = held
+    permission = 'denied'
+
+    await expect(heldPushSubscription()).resolves.toBe(held)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('resolves null without a subscription, a worker or push support, and when the lookup throws', async () => {
+    await expect(heldPushSubscription()).resolves.toBeNull()
+
+    pushManager.getSubscription.mockRejectedValueOnce(new Error('boom'))
+    await expect(heldPushSubscription()).resolves.toBeNull()
+
+    registration = undefined
+    await expect(heldPushSubscription()).resolves.toBeNull()
+
+    Reflect.deleteProperty(navigator, 'serviceWorker')
+    await expect(heldPushSubscription()).resolves.toBeNull()
+  })
+
+  it('drops the browser’s half and swallows a failure', async () => {
+    const held = new FakeSubscription(ENDPOINT, KEY_BYTES)
+    await dropBrowserSubscription(held as unknown as PushSubscription)
+    expect(held.unsubscribe).toHaveBeenCalledOnce()
+
+    held.unsubscribe.mockRejectedValueOnce(new Error('push service down'))
+    await expect(
+      dropBrowserSubscription(held as unknown as PushSubscription),
+    ).resolves.toBeUndefined()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 

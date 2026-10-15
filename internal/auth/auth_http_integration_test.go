@@ -24,6 +24,7 @@ import (
 	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/notifydeliver"
 	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/push"
 	"github.com/panbotka/kukatko/internal/pushjob"
 	"github.com/panbotka/kukatko/internal/settings"
 )
@@ -100,6 +101,9 @@ func newHTTPEnvWithProxies(t *testing.T, loginLimit int, trusted []string) *http
 			Mail:     mail,
 			LinkBase: testResetLinkBase,
 		}),
+		// Wired as production wires it, so signing out forgets the browser's
+		// push subscription (logout_push_integration_test).
+		PushDevices: push.NewStore(db.Pool()),
 	})
 
 	trustedSet, err := clientip.ParseSet(trusted)

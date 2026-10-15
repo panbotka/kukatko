@@ -273,12 +273,40 @@ function subscribeFailure(error: unknown): PushState {
   return state('failed')
 }
 
-/** Drops a browser subscription, swallowing a failure (it is best effort). */
-async function dropBrowserSubscription(subscription: PushSubscription): Promise<void> {
+/**
+ * Drops a browser subscription, swallowing a failure (it is best effort).
+ * Signing out uses it for the browser's half once the server has forgotten
+ * its own (see {@link heldPushSubscription}).
+ */
+export async function dropBrowserSubscription(subscription: PushSubscription): Promise<void> {
   try {
     await subscription.unsubscribe()
   } catch {
     // Left for the push service to expire; the server prunes it once gone.
+  }
+}
+
+/**
+ * The push subscription this browser holds, or null when it holds none or
+ * cannot say. Signing out reads it first: the sign-out request names its
+ * endpoint, so the server forgets it with the session, and the browser drops it
+ * afterwards with {@link dropBrowserSubscription} — on a shared device the next
+ * person must not receive the previous account's notifications. Unlike
+ * {@link getPushState} it ignores the permission: a subscription is dropped
+ * whatever the person answered since.
+ */
+export async function heldPushSubscription(): Promise<PushSubscription | null> {
+  if (!isPushSupported()) {
+    return null
+  }
+  const registration = await workerRegistration()
+  if (!registration) {
+    return null
+  }
+  try {
+    return await registration.pushManager.getSubscription()
+  } catch {
+    return null
   }
 }
 

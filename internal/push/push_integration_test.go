@@ -225,6 +225,51 @@ func TestStore_listAndDelete(t *testing.T) {
 	}
 }
 
+// TestStore_deleteForUserByEndpoint covers the sign-out's delete: only the
+// named endpoint of the named account goes, and a repeat (or a foreign
+// endpoint) deletes nothing without failing.
+func TestStore_deleteForUserByEndpoint(t *testing.T) {
+	store, users, _ := newStore(t)
+	ctx := context.Background()
+	alice := makeUser(t, users, "push_alice", "alice")
+	bob := makeUser(t, users, "push_bob", "bob")
+	phone, err := store.Upsert(ctx, subscription(t, alice, "https://push.example.org/phone", "phone"))
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	laptop, err := store.Upsert(ctx, subscription(t, alice, "https://push.example.org/laptop", "laptop"))
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	bobs, err := store.Upsert(ctx, subscription(t, bob, "https://push.example.org/bob", "bob"))
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	steps := []struct {
+		name     string
+		userUID  string
+		endpoint string
+		want     int64
+	}{
+		{name: "another account's endpoint", userUID: alice, endpoint: bobs.Endpoint, want: 0},
+		{name: "own endpoint", userUID: alice, endpoint: phone.Endpoint, want: 1},
+		{name: "already gone", userUID: alice, endpoint: phone.Endpoint, want: 0},
+	}
+	for _, step := range steps {
+		removed, err := store.DeleteForUserByEndpoint(ctx, step.userUID, step.endpoint)
+		if err != nil || removed != step.want {
+			t.Fatalf("%s: DeleteForUserByEndpoint = %d, %v; want %d", step.name, removed, err, step.want)
+		}
+	}
+	if list, _ := store.ListForUser(ctx, alice); len(list) != 1 || list[0].ID != laptop.ID {
+		t.Fatalf("alice lists %+v, want only the laptop", list)
+	}
+	if list, _ := store.ListForUser(ctx, bob); len(list) != 1 {
+		t.Fatalf("bob lost his subscription: %+v", list)
+	}
+}
+
 // TestStore_bookkeeping covers the failure count and its reset on success, and
 // ErrNotFound for an unknown id.
 func TestStore_bookkeeping(t *testing.T) {
