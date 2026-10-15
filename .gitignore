@@ -41,6 +41,11 @@ config.local.*
 # deployment repos, so they stay out of the project history).
 .claude/
 
+# Botka task specs (docs/specs/task-<uuid>.md). They are the agent's private
+# brief and routinely carry private context; the repo is public, so they stay
+# local only. (docs/superpowers/ design docs ARE documentation and stay tracked.)
+/docs/specs/
+
 # Editor / OS
 .DS_Store
 .idea/

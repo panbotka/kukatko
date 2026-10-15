@@ -15,10 +15,10 @@ import (
 )
 
 // The three real-world shapes the ranking has to get right, measured with
-// exiftool against the RAW files in the production library (see
-// docs/specs/task-9f65bf54…): a Nikon body that hides the near-full-resolution
-// image in JpgFromRaw and leaves PreviewImage thumbnail-sized, a Sony body that
-// carries no JpgFromRaw at all, and a file that only has JpgFromRaw.
+// exiftool against the RAW files in the production library: a Nikon body that
+// hides the near-full-resolution image in JpgFromRaw and leaves PreviewImage
+// thumbnail-sized, a Sony body that carries no JpgFromRaw at all, and a file
+// that only has JpgFromRaw.
 var (
 	previewTag   = rawPreviewTags[0]
 	jpgFromRaw   = rawPreviewTags[1]

@@ -1230,7 +1230,7 @@ to `## Package map` in `CLAUDE.md`.
   `OpenCached` answers about the local disk alone and is only for callers that really mean the cache. Mistaking
   the one for the other is what dead-lettered **every** `image_embed` job after the move to R2 — the thumbnail
   job published the preview, `Generate` rightly declined to re-encode it, and the handler then failed on the
-  cache file that had never existed (spec `task-08a84c07`);
+  cache file that had never existed;
   `GridSize` (`tile_500`) is the square size a card or a medallion renders and that `thumb_url` carries in the
   payload, `PreviewSize` (`fit_720`) the aspect-preserving one the justified library wall renders, carried as
   `preview_url` — a wall tile is the shape of its photograph, so a square crop would cut its ends off and go
