@@ -73,4 +73,18 @@ func TestStore_inboxIsScopedByProject(t *testing.T) {
 	if _, err := store.UnreadCount(ctx, "", user); !errors.Is(err, notification.ErrNoProject) {
 		t.Errorf("UnreadCount without a project = %v, want ErrNoProject", err)
 	}
+	if _, err := store.UnreadByProject(ctx, user, nil); !errors.Is(err, notification.ErrNoStanding) {
+		t.Errorf("UnreadByProject without a standing rule = %v, want ErrNoStanding", err)
+	}
+	// The standing rule is what narrows the read: one letting every project
+	// through counts B's unread one, an empty filter nothing at all.
+	all := func(string, string) string { return "TRUE" }
+	if got, err := store.UnreadByProject(ctx, user, all); err != nil || len(got) != 1 ||
+		got[0] != (notification.ProjectUnread{ProjectUID: f.B.ProjectUID, Unread: 1}) {
+		t.Errorf("UnreadByProject(every project) = %+v, %v; want B's one", got, err)
+	}
+	none := func(string, string) string { return "FALSE" }
+	if got, err := store.UnreadByProject(ctx, user, none); err != nil || got == nil || len(got) != 0 {
+		t.Errorf("UnreadByProject(no project) = %#v, %v; want an empty, non-nil slice", got, err)
+	}
 }

@@ -1,5 +1,7 @@
 import { createContext, useContext } from 'react'
 
+import type { UnreadByProject } from '../services/notifications'
+
 /**
  * The in-app inbox's unread count as the shell holds it, plus the handle to
  * refetch it.
@@ -10,6 +12,13 @@ import { createContext, useContext } from 'react'
  */
 export interface NotificationInboxState {
   unread: number | null
+  /**
+   * The unread count of every project the account is in standing in, keyed by
+   * project uid (a project with none is absent) — the marks on the other
+   * projects in the switcher, the phone drawer and the chooser. Null, like
+   * `unread`, until known.
+   */
+  unreadByProject: UnreadByProject | null
   /**
    * Refetches the count now. The bell calls it when it opens and after "mark all
    * read", the notification page after it marked one read. A no-op outside the
@@ -24,6 +33,7 @@ export interface NotificationInboxState {
  */
 export const NOTIFICATION_INBOX_DEFAULT: NotificationInboxState = {
   unread: null,
+  unreadByProject: null,
   refresh: () => {
     // Nothing to refresh without a provider.
   },
@@ -44,4 +54,14 @@ export const NotificationInboxContext = createContext<NotificationInboxState>(
  */
 export function useNotificationInbox(): NotificationInboxState {
   return useContext(NotificationInboxContext)
+}
+
+/**
+ * Returns how many unread notifications the project `projectUID` holds for the
+ * reader: 0 when it has none or nothing is known yet — the badge then simply
+ * is not drawn.
+ */
+export function useProjectUnread(): (projectUID: string) => number {
+  const { unreadByProject } = useNotificationInbox()
+  return (projectUID) => unreadByProject?.[projectUID] ?? 0
 }

@@ -55,7 +55,7 @@ function Where() {
 function renderBell(unread: number | null, refresh = vi.fn()) {
   render(
     <I18nextProvider i18n={i18n}>
-      <NotificationInboxContext.Provider value={{ unread, refresh }}>
+      <NotificationInboxContext.Provider value={{ unread, unreadByProject: null, refresh }}>
         <MemoryRouter initialEntries={['/']}>
           <NotificationBell />
           <Routes>

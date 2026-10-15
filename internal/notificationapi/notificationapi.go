@@ -75,6 +75,11 @@ type NotificationStore interface {
 	// MarkAllRead marks every unread notification in ownerUID's inbox read and
 	// returns how many it marked.
 	MarkAllRead(ctx context.Context, projectUID, ownerUID string) (int64, error)
+	// UnreadByProject returns how many unread inbox notifications ownerUID has
+	// in each project standing lets through, projects with none left out.
+	UnreadByProject(
+		ctx context.Context, ownerUID string, standing notification.StandingSQL,
+	) ([]notification.ProjectUnread, error)
 	// Photos returns the photo uids of the frozen set that vis lets through,
 	// in their frozen order, or notification.ErrNotFound.
 	Photos(
@@ -141,9 +146,10 @@ type Config struct {
 	// RequireAuth guards the project-scoped inbox routes for any member of the
 	// request's project.
 	RequireAuth func(http.Handler) http.Handler
-	// RequireSignedIn guards the instance-wide /push/* routes for any signed-in
-	// account: a device belongs to an account, not to a project, so no project
-	// is entered. Nil falls back to RequireAuth (for a test router that mounts
+	// RequireSignedIn guards the instance-wide routes (/push/* and the
+	// per-project unread count) for any signed-in account: a device belongs to
+	// an account, not to a project, and the count spans every project, so no
+	// project is entered. Nil falls back to RequireAuth (for a test router that mounts
 	// both halves without the auth stack).
 	RequireSignedIn func(http.Handler) http.Handler
 	// SubscribeThrottle rate-limits the subscription write; it is mounted inside
@@ -182,6 +188,7 @@ func NewAPI(cfg Config) *API {
 //	GET    /push/subscriptions           the caller's subscribed devices
 //	POST   /push/subscriptions           register or refresh this browser (503 when push is off)
 //	DELETE /push/subscriptions?endpoint= remove one of the caller's subscriptions
+//	GET    /notifications/unread-by-project  the unread count of every project the caller stands in
 //	GET    /notifications                the caller's inbox, newest first (?unread, ?limit, ?offset)
 //	GET    /notifications/unread-count   how many inbox notifications are unread
 //	POST   /notifications/read-all       mark the whole inbox read
@@ -190,12 +197,21 @@ func NewAPI(cfg Config) *API {
 //	GET    /notifications/{uid}          one notification with its visible photos
 //	POST   /notifications/{uid}/read     mark it read
 //
-// The server mounts the two halves apart: RegisterPushRoutes once (a device
-// belongs to an account, not a project), RegisterInboxRoutes with the
-// project-scoped API, under /api/v1/p/{project}.
+// The server mounts the two halves apart: RegisterInstanceRoutes once (a device
+// belongs to an account, not a project, and the per-project count spans every
+// project), RegisterInboxRoutes with the project-scoped API, under
+// /api/v1/p/{project}.
 func (a *API) RegisterRoutes(r chi.Router) {
-	a.RegisterPushRoutes(r)
+	a.RegisterInstanceRoutes(r)
 	a.RegisterInboxRoutes(r)
+}
+
+// RegisterInstanceRoutes mounts the instance-wide half of RegisterRoutes: the
+// /push/* routes and the per-project unread count, both guarded by
+// RequireSignedIn — neither enters a project.
+func (a *API) RegisterInstanceRoutes(r chi.Router) {
+	a.RegisterPushRoutes(r)
+	r.With(a.requireSigned).Get("/notifications/unread-by-project", a.handleUnreadByProject)
 }
 
 // RegisterPushRoutes mounts the instance-wide /push/* half of RegisterRoutes.

@@ -502,7 +502,7 @@ func readAPIOptions(
 	auditAPI := buildAuditAPI(db, authAPI)
 	api.audit = auditAPI.RegisterProjectRoutes
 	return []server.Option{
-		server.WithAPI(notifications.RegisterPushRoutes),
+		server.WithAPI(notifications.RegisterInstanceRoutes),
 		server.WithAPI(auditAPI.RegisterRoutes),
 		server.WithAPI(buildProjectsAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(invites.RegisterPublicRoutes),

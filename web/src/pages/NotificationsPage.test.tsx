@@ -79,7 +79,7 @@ function Where() {
 function renderPage(path = '/p/v/notifications', refresh = vi.fn()) {
   render(
     <I18nextProvider i18n={i18n}>
-      <NotificationInboxContext.Provider value={{ unread: 1, refresh }}>
+      <NotificationInboxContext.Provider value={{ unread: 1, unreadByProject: null, refresh }}>
         <MemoryRouter initialEntries={[path]}>
           <Routes>
             <Route

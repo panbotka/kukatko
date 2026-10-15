@@ -5,8 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
+import {
+  NOTIFICATION_INBOX_DEFAULT,
+  NotificationInboxContext,
+} from '../notifications/NotificationInboxContext'
 import { ProjectContext, type ProjectContextValue } from '../project/ProjectContext'
 import type { ProjectMembership } from '../services/auth'
+import type { UnreadByProject } from '../services/notifications'
 
 import { ProjectsPage } from './ProjectsPage'
 
@@ -33,8 +38,15 @@ function auth(isMaintainer = false): AuthContextValue {
   } as unknown as AuthContextValue
 }
 
-/** Mounts the chooser for an account with `projects`. */
-function renderChooser(projects: ProjectMembership[], isMaintainer = false) {
+/**
+ * Mounts the chooser for an account with `projects`, with `unreadByProject` as
+ * the inbox provider's per-project counts.
+ */
+function renderChooser(
+  projects: ProjectMembership[],
+  isMaintainer = false,
+  unreadByProject: UnreadByProject | null = null,
+) {
   const ctx: ProjectContextValue = {
     project: projects[0] ?? null,
     projects,
@@ -46,9 +58,13 @@ function renderChooser(projects: ProjectMembership[], isMaintainer = false) {
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth(isMaintainer)}>
         <ProjectContext.Provider value={ctx}>
-          <MemoryRouter initialEntries={['/projects']}>
-            <ProjectsPage />
-          </MemoryRouter>
+          <NotificationInboxContext.Provider
+            value={{ ...NOTIFICATION_INBOX_DEFAULT, unreadByProject }}
+          >
+            <MemoryRouter initialEntries={['/projects']}>
+              <ProjectsPage />
+            </MemoryRouter>
+          </NotificationInboxContext.Provider>
         </ProjectContext.Provider>
       </AuthContext.Provider>
     </I18nextProvider>,
@@ -153,6 +169,25 @@ describe('ProjectsPage', () => {
 
     renderChooser([member('v')], false)
     expect(screen.queryByRole('link', { name: 'Správa projektů' })).not.toBeInTheDocument()
+  })
+
+  it('marks a project with unread notifications with their count', () => {
+    renderChooser([member('v'), member('rodina'), member('skola')], false, {
+      'p-rodina': 3,
+      'p-skola': 0,
+    })
+
+    const badge = within(cardOf('Projekt rodina')).getByTestId('project-unread')
+    expect(badge).toHaveTextContent(/^3/)
+    expect(badge).toHaveAttribute('title', '3 nepřečtená oznámení')
+    expect(within(cardOf('Projekt v')).queryByTestId('project-unread')).not.toBeInTheDocument()
+    expect(within(cardOf('Projekt skola')).queryByTestId('project-unread')).not.toBeInTheDocument()
+  })
+
+  it('draws no unread mark while the counts are unknown', () => {
+    renderChooser([member('v'), member('rodina')])
+
+    expect(screen.queryByTestId('project-unread')).not.toBeInTheDocument()
   })
 
   it('titles the tab after the chooser, with no project in it', () => {

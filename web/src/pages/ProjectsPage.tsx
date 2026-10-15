@@ -11,7 +11,9 @@ import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { Icon } from '../components/Icon'
 import { SYSTEM_PROJECTS_PATH } from '../components/navItems'
+import { ProjectUnreadBadge } from '../components/notifications/ProjectUnreadBadge'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useProjectUnread } from '../notifications/NotificationInboxContext'
 import { useProject } from '../project/ProjectContext'
 import { isEnterable, projectPathFor } from '../project/paths'
 import type { ProjectMembership } from '../services/auth'
@@ -31,7 +33,9 @@ export const PROJECT_ADMIN_PATH = SYSTEM_PROJECTS_PATH
  *
  * A card shows the project's name, its description (clamped to three lines; an
  * empty one is not drawn) and the
- * account's role in it. An enterable card — approved, in an active project — is
+ * account's role in it, and — when the project holds unread notifications for
+ * the reader — the bell's red pill with their count, so news in a project the
+ * reader is not working in is seen here too. An enterable card — approved, in an active project — is
  * one big link to the project's home (a stretched link: the name is the link,
  * the whole card its target). A deactivated project is greyed with „Nedostupné",
  * an unapproved membership says „Čeká na schválení"; neither is a link. No
@@ -103,6 +107,7 @@ export function ProjectsPage() {
 /** One membership on the chooser; see {@link ProjectsPage}. */
 function ProjectCard({ membership }: { membership: ProjectMembership }) {
   const { t } = useTranslation()
+  const unreadOf = useProjectUnread()
   const enterable = isEnterable(membership)
   // Why a card cannot be entered: the project is off (whatever the membership),
   // else the membership still waits for a project admin.
@@ -132,6 +137,9 @@ function ProjectCard({ membership }: { membership: ProjectMembership }) {
               membership.name
             )}
           </Card.Title>
+          {/* Only an enterable project is ever counted (the server names no
+              other), so the pill always sits on a card the reader can open. */}
+          <ProjectUnreadBadge count={unreadOf(membership.uid)} className="align-self-center" />
           <Badge bg="secondary">{t(`roles.${membership.role}`)}</Badge>
         </div>
         {description !== '' && (

@@ -7,12 +7,14 @@ import BsNavLink from 'react-bootstrap/NavLink'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation } from 'react-router-dom'
 
+import { useProjectUnread } from '../notifications/NotificationInboxContext'
 import { ProjectContext } from '../project/ProjectContext'
 import { isEnterable, PROJECTS_PATH, routeAfterSwitch } from '../project/paths'
 import type { ProjectMembership } from '../services/auth'
 
 import { Icon } from './Icon'
 import { PROJECTS_ITEM } from './navItems'
+import { ProjectUnreadBadge } from './notifications/ProjectUnreadBadge'
 
 /** The DOM id of the bar's switcher toggle (a dropdown needs one for ARIA). */
 export const PROJECT_SWITCHER_ID = 'project-switcher'
@@ -59,6 +61,14 @@ export interface ProjectSwitcherProps {
  * with every enterable project (each opening at its home) and "All projects…"
  * — or, where no menu fits, a plain link to the chooser.
  *
+ * **News elsewhere.** Every other project with unread notifications wears the
+ * bell's red pill with its count ({@link ProjectUnreadBadge}) — in the menu, the
+ * drawer's rows and the neutral list alike — because the bell speaks only for
+ * the project the reader is in, and push and e-mail are off by default. In the
+ * bar the name itself carries the other projects' total, so the news is seen
+ * before the menu is opened (and on a phone, where the bar's name opens
+ * nothing, before the drawer is).
+ *
  * **Width.** In the bar the name is the one item that may give way: the
  * stylesheet lets it shrink and ellipsise (`.kk-project-switcher`), with the
  * whole name in the `title`, so a long project name never pushes the row past
@@ -68,6 +78,7 @@ export function ProjectSwitcher({ variant, menu = true, onNavigate }: ProjectSwi
   const { t } = useTranslation()
   const ctx = useContext(ProjectContext)
   const { pathname } = useLocation()
+  const unreadOf = useProjectUnread()
 
   if (ctx === null) {
     return null
@@ -89,6 +100,9 @@ export function ProjectSwitcher({ variant, menu = true, onNavigate }: ProjectSwi
   }
   const multiple = ctx.projects.length > 1
   const others = ctx.projects.filter((m) => m.slug !== current.slug && isEnterable(m))
+  // The news waiting in the projects the reader is not in — the bell has the
+  // current one's.
+  const othersUnread = others.reduce((sum, m) => sum + unreadOf(m.uid), 0)
   // The page's own project: the address names it (an instance page took the
   // neutral branch above).
   const fromSlug = current.slug
@@ -96,6 +110,17 @@ export function ProjectSwitcher({ variant, menu = true, onNavigate }: ProjectSwi
   /** The address `membership`'s project opens at from where the reader stands. */
   function targetOf(membership: ProjectMembership): string {
     return routeAfterSwitch(pathname, fromSlug, membership.slug)
+  }
+
+  /** The other projects' unread total on the bar's name, saying whose it is. */
+  function othersBadge(count: number) {
+    return (
+      <ProjectUnreadBadge
+        count={count}
+        label={t('projectSwitcher.othersUnread', { count })}
+        className="kk-project-switcher__unread"
+      />
+    )
   }
 
   /** The role the account holds in `membership`'s project, as a badge. */
@@ -127,6 +152,7 @@ export function ProjectSwitcher({ variant, menu = true, onNavigate }: ProjectSwi
             >
               <Icon name="folder2-open" className="kk-navdrawer__icon" />
               <span className="kk-navdrawer__label">{membership.name}</span>
+              <ProjectUnreadBadge count={unreadOf(membership.uid)} />
               {roleBadge(membership)}
             </Link>
           ))}
@@ -153,6 +179,7 @@ export function ProjectSwitcher({ variant, menu = true, onNavigate }: ProjectSwi
         data-testid="project-switcher"
       >
         <span className="kk-project-switcher__name">{current.name}</span>
+        {multiple && othersBadge(othersUnread)}
       </span>
     )
   }
@@ -167,6 +194,7 @@ export function ProjectSwitcher({ variant, menu = true, onNavigate }: ProjectSwi
           className="kukatko-tap-target kk-project-switcher__toggle"
         >
           <span className="kk-project-switcher__name">{current.name}</span>
+          {othersBadge(othersUnread)}
         </Dropdown.Toggle>
         <Dropdown.Menu>
           {others.map((membership) => (
@@ -178,6 +206,7 @@ export function ProjectSwitcher({ variant, menu = true, onNavigate }: ProjectSwi
               className="kukatko-tap-target d-flex align-items-center gap-2"
             >
               <span className="flex-grow-1">{membership.name}</span>
+              <ProjectUnreadBadge count={unreadOf(membership.uid)} />
               {roleBadge(membership)}
             </Dropdown.Item>
           ))}
@@ -217,6 +246,8 @@ function NeutralSwitcher({
   pathname,
 }: NeutralSwitcherProps) {
   const { t } = useTranslation()
+  const unreadOf = useProjectUnread()
+  const total = projects.reduce((sum, m) => sum + unreadOf(m.uid), 0)
 
   /** The home of `membership`'s project. */
   function targetOf(membership: ProjectMembership): string {
@@ -239,6 +270,7 @@ function NeutralSwitcher({
           >
             <Icon name="folder2-open" className="kk-navdrawer__icon" />
             <span className="kk-navdrawer__label">{membership.name}</span>
+            <ProjectUnreadBadge count={unreadOf(membership.uid)} />
           </Link>
         ))}
         <Link
@@ -264,6 +296,11 @@ function NeutralSwitcher({
           className="kukatko-tap-target kk-project-switcher__toggle"
         >
           <span className="kk-project-switcher__name">{t('projectSwitcher.choose')}</span>
+          <ProjectUnreadBadge
+            count={total}
+            label={t('projectSwitcher.othersUnread', { count: total })}
+            className="kk-project-switcher__unread"
+          />
         </Nav.Link>
       </Nav>
     )
@@ -279,6 +316,11 @@ function NeutralSwitcher({
           className="kukatko-tap-target kk-project-switcher__toggle"
         >
           <span className="kk-project-switcher__name">{t('projectSwitcher.choose')}</span>
+          <ProjectUnreadBadge
+            count={total}
+            label={t('projectSwitcher.othersUnread', { count: total })}
+            className="kk-project-switcher__unread"
+          />
         </Dropdown.Toggle>
         <Dropdown.Menu>
           {projects.map((membership) => (
@@ -289,7 +331,8 @@ function NeutralSwitcher({
               title={t('projectSwitcher.switchTo', { name: membership.name })}
               className="kukatko-tap-target d-flex align-items-center gap-2"
             >
-              {membership.name}
+              <span className="flex-grow-1">{membership.name}</span>
+              <ProjectUnreadBadge count={unreadOf(membership.uid)} />
             </Dropdown.Item>
           ))}
           <Dropdown.Divider />

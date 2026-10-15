@@ -112,6 +112,67 @@ func (s *Store) UnreadCount(ctx context.Context, projectUID, ownerUID string) (i
 	return count, nil
 }
 
+// StandingSQL builds the SQL condition that holds when the account userExpr
+// may read notifications of the project projectExpr, both SQL expressions of
+// the enclosing statement. It is internal/notifystanding's MemberSQL, passed
+// in by the caller because that package imports this one for the kinds and
+// cannot be imported back.
+type StandingSQL func(userExpr, projectExpr string) string
+
+// ProjectUnread is how many unread inbox notifications one project holds for
+// an account.
+type ProjectUnread struct {
+	// ProjectUID is the project the notifications are about.
+	ProjectUID string
+	// Unread is how many of them are unread; always positive.
+	Unread int
+}
+
+// unreadByProjectSQL counts an owner's unread inbox notifications ($1) per
+// project, keeping only the projects standing lets through: every project at
+// once, so the one tenancy predicate is the standing condition's membership,
+// not a project parameter.
+func unreadByProjectSQL(standing StandingSQL) string {
+	return `SELECT n.project_id, count(*)
+FROM notifications n
+WHERE n.user_uid = $1 AND n.in_app AND n.read_at IS NULL
+  AND ` + standing("n.user_uid", "n.project_id") + `
+GROUP BY n.project_id
+ORDER BY n.project_id`
+}
+
+// UnreadByProject returns, for every project in which ownerUID has unread inbox
+// notifications and which standing lets through, how many — ordered by project
+// uid, a project with nothing unread left out. It is the one inbox read that
+// spans projects: the switcher marks the projects with news the reader is not
+// working in. A project whose membership was removed, is still pending or
+// withheld, or which was deactivated is not in standing, so its notifications
+// are neither counted nor is its existence told. A nil standing is an error:
+// an unfiltered count would name every project the account was ever notified
+// about.
+func (s *Store) UnreadByProject(ctx context.Context, ownerUID string, standing StandingSQL) ([]ProjectUnread, error) {
+	if standing == nil {
+		return nil, ErrNoStanding
+	}
+	rows, err := s.pool.Query(ctx, unreadByProjectSQL(standing), ownerUID)
+	if err != nil {
+		return nil, fmt.Errorf("notification: counting the unread of %s per project: %w", ownerUID, err)
+	}
+	defer rows.Close()
+	out := []ProjectUnread{}
+	for rows.Next() {
+		var p ProjectUnread
+		if err := rows.Scan(&p.ProjectUID, &p.Unread); err != nil {
+			return nil, fmt.Errorf("notification: scanning the unread of %s per project: %w", ownerUID, err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("notification: counting the unread of %s per project: %w", ownerUID, err)
+	}
+	return out, nil
+}
+
 // markAllReadSQL stamps every unread inbox notification of the owner read.
 const markAllReadSQL = `
 UPDATE notifications n SET read_at = now()

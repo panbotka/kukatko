@@ -6996,7 +6996,11 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     **`UnreadCount(ctx, ownerUID)`** (the bell's number); **`MarkAllRead(ctx, ownerUID)`** stamps every
     unread inbox row and returns how many — an already-read one keeps its first reading, a record outside
     the inbox and other accounts are untouched. Two partial indexes (migration 0095) serve the page and
-    the count.
+    the count. **`UnreadByProject(ctx, ownerUID, standing)`** is the one inbox read spanning projects —
+    the owner's unread in-app count per project, projects with none left out, ordered by uid — narrowed
+    by the injected `StandingSQL` (the caller passes `notifystanding.MemberSQL`; this package cannot
+    import it, `notifystanding` imports it for the kinds); a nil rule is `ErrNoStanding`, never an
+    unfiltered count. Allow-listed in `internal/tenancyguard` with that reason.
   - **`Photos(ctx, ownerUID, uid, Visibility)`** is the only way to read a set, and it makes the caller
     state visibility instead of handing out a raw list to render blindly: the zero `Visibility` drops
     archived, hidden-from-library and private photographs; `IncludeArchived`/`IncludeHidden`/
@@ -7033,12 +7037,14 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   [`API.md`](API.md). Wired by `buildNotificationAPI` (`cmd/kukatko/notification.go`) inside
   `readAPIOptions`, every route behind `RequireAuth` (all roles).
   - **Interfaces, not stores:** `SubscriptionStore` (`Upsert`/`ListForUser`/`DeleteByID` of
-    `push.Store`), `NotificationStore` (`Get`/`MarkRead`/`List`/`UnreadCount`/`MarkAllRead`/`Photos`/
+    `push.Store`), `NotificationStore` (`Get`/`MarkRead`/`List`/`UnreadCount`/`UnreadByProject`/`MarkAllRead`/`Photos`/
     `Preferences`/`ReplacePreferences` of `notification.Store`) and `PhotoStore` (`ListByUIDsInProject`).
     The inbox routes (`RegisterInboxRoutes`, mounted under `/p/{project}`) pass the request's project
     (`projectOf(r)`) to every read and mark, so another project's notification is the very 404 a missing one
     gets and the inbox, the unread count and read-all are per project; the preferences ignore the project
-    (one set per account) and the push routes stay instance-wide. `Storage` feeds an `internal/mediaurl` builder
+    (one set per account) and the push routes stay instance-wide. `RegisterInstanceRoutes` (mounted
+    once, `RequireSignedIn`) is `/push/*` plus `GET /notifications/unread-by-project`, which counts
+    through `notifystanding.MemberSQL` so only projects the caller is in standing in are named. `Storage` feeds an `internal/mediaurl` builder
     that stamps the media URLs on the returned photos.
   - **Two secrets kept out by construction.** `PushSettings{Enabled, PublicKey}` is all of the push
     configuration the package is given — there is no field the VAPID private key could travel in

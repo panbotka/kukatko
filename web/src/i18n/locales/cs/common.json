@@ -3362,7 +3362,12 @@
     "all": "Všechny projekty…",
     "allTitle": "Zobrazit všechny vaše projekty",
     "choose": "Moje projekty",
-    "chooseTitle": "Otevřít některý z vašich projektů"
+    "chooseTitle": "Otevřít některý z vašich projektů",
+    "unread_one": "{{count}} nepřečtené oznámení",
+    "unread_few": "{{count}} nepřečtená oznámení",
+    "unread_many": "{{count}} nepřečteného oznámení",
+    "unread_other": "{{count}} nepřečtených oznámení",
+    "othersUnread": "Nepřečtená oznámení v jiných projektech: {{count}}"
   },
   "notFound": {
     "title": "Stránka nenalezena",

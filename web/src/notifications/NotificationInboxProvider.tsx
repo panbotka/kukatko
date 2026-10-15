@@ -2,7 +2,11 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 
 import { useAuth } from '../auth/AuthContext'
 import { useProjectSlug } from '../project/ProjectContext'
-import { fetchUnreadNotificationCount } from '../services/notifications'
+import {
+  fetchUnreadByProject,
+  fetchUnreadNotificationCount,
+  type UnreadByProject,
+} from '../services/notifications'
 
 import { NotificationInboxContext, type NotificationInboxState } from './NotificationInboxContext'
 
@@ -16,7 +20,10 @@ export const REFRESH_INTERVAL_MS = 60_000
 /**
  * Provides the in-app inbox's unread count (`GET /api/v1/p/<slug>/notifications/unread-count`)
  * to the shell — the bell's badge reads it, and so does anything that wants to
- * know whether there is news.
+ * know whether there is news. Alongside it, on the same schedule, the count of
+ * every project at once (`GET /api/v1/notifications/unread-by-project`), which
+ * marks the *other* projects in the switcher, the phone drawer and the chooser:
+ * the bell only ever speaks for the project the reader is in.
  *
  * **Only for a signed-in reader.** Nothing is fetched while the session is
  * anything but authenticated, and signing out clears the count at once.
@@ -37,6 +44,7 @@ export function NotificationInboxProvider({ children }: { children: ReactNode })
   // whatever project the API is pointed at, which the provider keeps in step.
   const slug = useProjectSlug()
   const [unread, setUnread] = useState<number | null>(null)
+  const [unreadByProject, setUnreadByProject] = useState<UnreadByProject | null>(null)
   // The in-flight request, so a refresh supersedes a poll instead of racing it:
   // only the newest request may set state.
   const controller = useRef<AbortController | null>(null)
@@ -60,6 +68,18 @@ export function NotificationInboxProvider({ children }: { children: ReactNode })
           setUnread(null)
         }
       })
+    // Independent of the bell's: either may fail without hiding the other.
+    void fetchUnreadByProject(current.signal)
+      .then((next) => {
+        if (controller.current === current) {
+          setUnreadByProject(next)
+        }
+      })
+      .catch(() => {
+        if (controller.current === current) {
+          setUnreadByProject(null)
+        }
+      })
   }, [enabled])
 
   useEffect(() => {
@@ -67,6 +87,7 @@ export function NotificationInboxProvider({ children }: { children: ReactNode })
       controller.current?.abort()
       controller.current = null
       setUnread(null)
+      setUnreadByProject(null)
       return
     }
     let timer: number | null = null
@@ -102,12 +123,17 @@ export function NotificationInboxProvider({ children }: { children: ReactNode })
       controller.current?.abort()
       controller.current = null
       // The count was the old project's (or the old session's): never show it
-      // in the next one while its own is on the way.
+      // in the next one while its own is on the way. The per-project counts
+      // stay: they are the same whichever project the reader is in, and the
+      // new fetch replaces them.
       setUnread(null)
     }
   }, [enabled, load, slug])
 
-  const value = useMemo<NotificationInboxState>(() => ({ unread, refresh: load }), [unread, load])
+  const value = useMemo<NotificationInboxState>(
+    () => ({ unread, unreadByProject, refresh: load }),
+    [unread, unreadByProject, load],
+  )
 
   return (
     <NotificationInboxContext.Provider value={value}>{children}</NotificationInboxContext.Provider>

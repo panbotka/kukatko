@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   fetchNotifications,
+  fetchUnreadByProject,
   fetchUnreadNotificationCount,
   markAllNotificationsRead,
   type NotificationPreference,
@@ -117,6 +118,22 @@ describe('inbox requests', () => {
       '/api/v1/p/v/notifications/read-all',
       { method: 'POST', credentials: 'same-origin' },
     ])
+  })
+
+  it("reads every project's unread count from the instance route, keyed by project uid", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      ok({
+        projects: [
+          { project: 'pj-a', unread: 2 },
+          { project: 'pj-b', unread: 120 },
+        ],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchUnreadByProject()).resolves.toEqual({ 'pj-a': 2, 'pj-b': 120 })
+    // Instance-level: never under the current project's prefix.
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/notifications/unread-by-project')
   })
 
   it('opens a notification at its link, or its own page when it has none', () => {

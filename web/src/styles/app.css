@@ -521,6 +521,19 @@ body {
 
 .kk-project-switcher--static {
   display: flex;
+  align-items: center;
+}
+
+/* The other projects' unread total beside the name: never squeezed, so the
+   name is what gives way. */
+.kk-project-switcher__unread {
+  flex: none;
+  margin-inline-start: 0.375rem;
+}
+
+/* A project's unread pill in a menu, drawer row or chooser card. */
+.kk-project-unread {
+  flex: none;
 }
 
 @media (min-width: 992px) {

@@ -3196,7 +3196,10 @@
     "all": "All projects…",
     "allTitle": "Show all your projects",
     "choose": "My projects",
-    "chooseTitle": "Open one of your projects"
+    "chooseTitle": "Open one of your projects",
+    "unread_one": "{{count}} unread notification",
+    "unread_other": "{{count}} unread notifications",
+    "othersUnread": "Unread notifications in other projects: {{count}}"
   },
   "notFound": {
     "title": "Page not found",

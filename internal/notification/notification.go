@@ -231,6 +231,9 @@ var (
 	// ErrNoProject means a notification or an inbox read without a project: a
 	// programming error, never "every project of the instance".
 	ErrNoProject = errors.New("notification: no project given")
+	// ErrNoStanding means a cross-project inbox read without the standing
+	// rule: a programming error, never "every project ever notified about".
+	ErrNoStanding = errors.New("notification: no standing rule given")
 )
 
 // Notification is one stored notification as its owner reads it.

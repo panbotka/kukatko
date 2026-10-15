@@ -10,11 +10,13 @@ import { NotificationInboxProvider, REFRESH_INTERVAL_MS } from './NotificationIn
 
 vi.mock('../services/notifications', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/notifications')>()
-  return { ...actual, fetchUnreadNotificationCount: vi.fn() }
+  return { ...actual, fetchUnreadNotificationCount: vi.fn(), fetchUnreadByProject: vi.fn() }
 })
 
-const { fetchUnreadNotificationCount } = await import('../services/notifications')
+const { fetchUnreadNotificationCount, fetchUnreadByProject } =
+  await import('../services/notifications')
 const fetchMock = vi.mocked(fetchUnreadNotificationCount)
+const byProjectMock = vi.mocked(fetchUnreadByProject)
 
 function auth(status: AuthContextValue['status']): AuthContextValue {
   return {
@@ -25,10 +27,13 @@ function auth(status: AuthContextValue['status']): AuthContextValue {
 
 /** Prints the count the provider holds, or "none", and offers its refresh. */
 function Probe() {
-  const { unread, refresh } = useNotificationInbox()
+  const { unread, unreadByProject, refresh } = useNotificationInbox()
   return (
     <>
       <output>{unread === null ? 'none' : String(unread)}</output>
+      <span data-testid="by-project">
+        {unreadByProject === null ? 'unknown' : JSON.stringify(unreadByProject)}
+      </span>
       <button type="button" onClick={refresh}>
         refresh
       </button>
@@ -75,6 +80,8 @@ function providerIn(slug: string) {
 beforeEach(() => {
   fetchMock.mockReset()
   fetchMock.mockResolvedValue(3)
+  byProjectMock.mockReset()
+  byProjectMock.mockResolvedValue({ 'pr-jiny': 2 })
 })
 
 afterEach(() => {
@@ -94,6 +101,34 @@ describe('NotificationInboxProvider', () => {
 
     expect(screen.getByText('none')).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalled()
+    expect(byProjectMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId('by-project')).toHaveTextContent('unknown')
+  })
+
+  it("fetches every project's count alongside the bell's, on the same schedule", async () => {
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('by-project')).toHaveTextContent('{"pr-jiny":2}')
+    })
+    expect(byProjectMock).toHaveBeenCalledTimes(1)
+
+    byProjectMock.mockResolvedValue({ 'pr-jiny': 5 })
+    act(() => {
+      window.dispatchEvent(new Event('focus'))
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('by-project')).toHaveTextContent('{"pr-jiny":5}')
+    })
+    expect(byProjectMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("hides only the per-project counts when their fetch fails, never the bell's", async () => {
+    byProjectMock.mockRejectedValue(new Error('offline'))
+    renderProvider()
+
+    expect(await screen.findByText('3')).toBeInTheDocument()
+    expect(screen.getByTestId('by-project')).toHaveTextContent('unknown')
   })
 
   it('refreshes when asked and when the window regains focus', async () => {

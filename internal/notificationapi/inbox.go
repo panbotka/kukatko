@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/panbotka/kukatko/internal/notification"
+	"github.com/panbotka/kukatko/internal/notifystanding"
 )
 
 // listEnvelope is one page of the caller's inbox: the notifications, newest
@@ -22,6 +23,18 @@ type listEnvelope struct {
 // unreadEnvelope is the bell's number.
 type unreadEnvelope struct {
 	Unread int `json:"unread"`
+}
+
+// projectUnreadView is one project's unread count.
+type projectUnreadView struct {
+	Project string `json:"project"`
+	Unread  int    `json:"unread"`
+}
+
+// unreadByProjectEnvelope is the unread count of every project the caller has
+// news in.
+type unreadByProjectEnvelope struct {
+	Projects []projectUnreadView `json:"projects"`
 }
 
 // markedEnvelope says how many notifications a "mark all read" marked.
@@ -101,6 +114,30 @@ func (a *API) handleUnreadCount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, unreadEnvelope{Unread: count})
+}
+
+// handleUnreadByProject writes, for every project the caller is in standing in
+// (notifystanding.MemberSQL: an approved, unwithheld membership of an enabled
+// account in an active project) and has unread inbox notifications in, how many
+// — what the project switcher and the chooser mark the other projects with. A
+// project the caller is not in standing in is never named, however many
+// notifications it once sent them.
+func (a *API) handleUnreadByProject(w http.ResponseWriter, r *http.Request) {
+	user, ok := currentUser(w, r)
+	if !ok {
+		return
+	}
+	counts, err := a.notifications.UnreadByProject(r.Context(), user.UID, notifystanding.MemberSQL)
+	if err != nil {
+		log.Printf("notificationapi: counting the unread of %s per project: %v", user.UID, err)
+		writeError(w, http.StatusInternalServerError, "counting notifications failed")
+		return
+	}
+	views := make([]projectUnreadView, 0, len(counts))
+	for _, c := range counts {
+		views = append(views, projectUnreadView{Project: c.ProjectUID, Unread: c.Unread})
+	}
+	writeJSON(w, http.StatusOK, unreadByProjectEnvelope{Projects: views})
 }
 
 // handleMarkAllRead marks every unread notification in the caller's inbox

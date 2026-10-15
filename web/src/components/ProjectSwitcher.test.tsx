@@ -6,8 +6,13 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
+import {
+  NOTIFICATION_INBOX_DEFAULT,
+  NotificationInboxContext,
+} from '../notifications/NotificationInboxContext'
 import { ProjectContext, type ProjectContextValue } from '../project/ProjectContext'
 import type { ProjectMembership } from '../services/auth'
+import type { UnreadByProject } from '../services/notifications'
 
 import { ProjectSwitcher, type ProjectSwitcherProps } from './ProjectSwitcher'
 
@@ -29,24 +34,32 @@ function value(projects: ProjectMembership[], inAddress = true): ProjectContextV
   return { project: projects[0], projects, status: 'ready', inAddress, switchProject: vi.fn() }
 }
 
-/** Mounts the switcher inside a navbar at `path`, as the shell does. */
+/**
+ * Mounts the switcher inside a navbar at `path`, as the shell does, with
+ * `unreadByProject` as the inbox provider's per-project counts.
+ */
 function renderSwitcher(
   ctx: ProjectContextValue | null,
   props: ProjectSwitcherProps = { variant: 'bar' },
   path = '/p/v/albums',
+  unreadByProject: UnreadByProject | null = null,
 ) {
   const switcher = <ProjectSwitcher {...props} />
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={[path]}>
-        <Navbar expand="lg">
-          {ctx === null ? (
-            switcher
-          ) : (
-            <ProjectContext.Provider value={ctx}>{switcher}</ProjectContext.Provider>
-          )}
-        </Navbar>
-      </MemoryRouter>
+      <NotificationInboxContext.Provider
+        value={{ ...NOTIFICATION_INBOX_DEFAULT, unread: 0, unreadByProject }}
+      >
+        <MemoryRouter initialEntries={[path]}>
+          <Navbar expand="lg">
+            {ctx === null ? (
+              switcher
+            ) : (
+              <ProjectContext.Provider value={ctx}>{switcher}</ProjectContext.Provider>
+            )}
+          </Navbar>
+        </MemoryRouter>
+      </NotificationInboxContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -207,5 +220,84 @@ describe('ProjectSwitcher — drawer', () => {
     const section = screen.getByRole('region', { name: 'Project' })
     expect(within(section).getByText('Veselice')).toBeInTheDocument()
     expect(within(section).queryByRole('link')).not.toBeInTheDocument()
+  })
+})
+
+describe('ProjectSwitcher — unread notifications of other projects', () => {
+  // Veselice is current (its own news is the bell's); rodina and skola are not.
+  const three = () =>
+    value([member('v'), member('rodina', { role: 'curator' }), member('skola', { role: 'admin' })])
+  const counts: UnreadByProject = { 'p-v': 4, 'p-rodina': 2 }
+
+  it("marks the bar's name with the other projects' total, and each row with its own", async () => {
+    const user = userEvent.setup()
+    renderSwitcher(three(), { variant: 'bar' }, '/p/v/albums', counts)
+
+    // 2, not 6: the current project's 4 are the bell's.
+    const toggle = screen.getByRole('button', {
+      name: 'Veselice Unread notifications in other projects: 2',
+    })
+    expect(within(toggle).getByTestId('project-unread')).toHaveTextContent(/^2/)
+    await user.click(toggle)
+
+    const rodina = await screen.findByRole('link', { name: /Projekt rodina/ })
+    expect(rodina).toHaveAccessibleName('Projekt rodina 2 unread notifications Curator')
+    const skola = screen.getByRole('link', { name: /Projekt skola/ })
+    expect(within(skola).queryByTestId('project-unread')).not.toBeInTheDocument()
+  })
+
+  it('marks the plain name below lg, where the drawer is the way to switch', () => {
+    renderSwitcher(three(), { variant: 'bar', menu: false }, '/p/v/albums', counts)
+
+    const badge = within(screen.getByTestId('project-switcher')).getByTestId('project-unread')
+    expect(badge).toHaveTextContent('Unread notifications in other projects: 2')
+  })
+
+  it("marks each of the drawer's project rows", () => {
+    renderSwitcher(three(), { variant: 'drawer' }, '/p/v/albums', counts)
+
+    const section = screen.getByRole('region', { name: 'Project' })
+    const rodina = within(section).getByRole('link', { name: /Projekt rodina/ })
+    expect(within(rodina).getByTestId('project-unread')).toHaveTextContent('2 unread notifications')
+    const skola = within(section).getByRole('link', { name: /Projekt skola/ })
+    expect(within(skola).queryByTestId('project-unread')).not.toBeInTheDocument()
+    // The current project's name carries no pill: the bell speaks for it.
+    expect(within(section).getAllByTestId('project-unread')).toHaveLength(1)
+  })
+
+  it('counts every project outside a project, where none is current', async () => {
+    const user = userEvent.setup()
+    const ctx = value([member('v'), member('rodina')], false)
+    renderSwitcher(ctx, { variant: 'bar' }, '/account', counts)
+
+    await user.click(
+      screen.getByRole('button', { name: 'My projects Unread notifications in other projects: 6' }),
+    )
+    expect(
+      await screen.findByRole('link', { name: 'Veselice 4 unread notifications' }),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('link', { name: 'Projekt rodina 2 unread notifications' }),
+    ).toBeVisible()
+  })
+
+  it('uses the Czech plural forms', async () => {
+    await i18n.changeLanguage('cs')
+    renderSwitcher(three(), { variant: 'drawer' }, '/p/v/albums', { 'p-rodina': 1, 'p-skola': 5 })
+
+    expect(screen.getByRole('link', { name: /Projekt rodina 1 nepřečtené oznámení/ })).toBeVisible()
+    expect(
+      screen.getByRole('link', { name: /Projekt skola 5 nepřečtených oznámení/ }),
+    ).toBeVisible()
+  })
+
+  it('draws nothing while the counts are unknown or zero', () => {
+    const { unmount } = renderSwitcher(three(), { variant: 'drawer' })
+    expect(screen.queryByTestId('project-unread')).not.toBeInTheDocument()
+    unmount()
+
+    renderSwitcher(three(), { variant: 'bar' }, '/p/v/albums', { 'p-v': 3 })
+    expect(screen.getByRole('button', { name: 'Veselice' })).toBeVisible()
+    expect(screen.queryByTestId('project-unread')).not.toBeInTheDocument()
   })
 })

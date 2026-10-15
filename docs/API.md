@@ -30,7 +30,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
 - **Instance-wide, mounted once without the prefix:** `/auth/*` (incl. `/auth/picture`; all of it
   behind `RequireSignedIn`, which enters no project — an account in no project yet may use it),
   `/admin/users` (maintainer-only), `/users/{uid}/avatar`, `/projects` and the account list
-  `GET /users` + `PATCH /users/{uid}` (both maintainer-only), `/push/*`, `/jobs`, `/system`, `/backup`,
+  `GET /users` + `PATCH /users/{uid}` (both maintainer-only), `/push/*`, the per-project unread count
+  `GET /notifications/unread-by-project`, `/jobs`, `/system`, `/backup`,
   `/maintenance/scan|repair|audit/purge`, `/restore`, `/audit`, the public `/u/{code}` (no prefix:
   **the link resolves its own project** from `upload_links.project_id` and files the upload there), the
   public `/invite/{code}`, the sign-in screen's anonymous `GET /settings/public`, the old-link resolver
@@ -2617,8 +2618,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   of the new photographs was of them, and the client shows no line for it either way; being a subset of
   `photos` it can never be the only news, so it does not affect `has_news`. Mounted by `server.WithAPI` (`buildWhatsNewAPI` in `cmd/kukatko/whatsnew.go`).
 - **Notification API (`/api/v1/p/{project}` for `/notifications/*`, `/api/v1` for the instance-wide
-  `/push/*`, `internal/notificationapi` over `internal/push` + `internal/notification`; the inbox
-  `RequireAuth`, `/push/*` `RequireSignedIn` — a device belongs to an account, not a project):** the HTTP surface of Web Push and of the notification records. **Every role
+  `/push/*` and `/notifications/unread-by-project`, `internal/notificationapi` over `internal/push` +
+  `internal/notification`; the inbox `RequireAuth`, the instance routes `RequireSignedIn` — a device
+  belongs to an account, not a project, and the per-project count spans every project):** the HTTP surface of Web Push and of the notification records. **Every role
   may use every route**, viewers included — being told you were tagged is not a curation power — and every
   operation is **scoped to the calling account**. The inbox routes are **per project** as well: a
   notification belongs to the project it is about (the tagged photos', the task's, the album's, the
@@ -2641,6 +2643,19 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     inbox is `{notifications: [], total: 0, …}`.
   - **`GET /notifications/unread-count`** → `200 {unread}`: how many inbox notifications are unread — what
     the bell polls (about once a minute while the tab is visible, and on focus).
+  - **`GET /api/v1/notifications/unread-by-project`** (instance-level, no project prefix,
+    `RequireSignedIn`) → `200 {projects:[{project, unread}]}`: how many unread inbox notifications the
+    caller has in **each project they are in standing in** — `notifystanding.MemberSQL`: an approved
+    membership whose identity is not withheld, an enabled account, an active project — ordered by project
+    uid. A project with nothing unread is absent, so an account with no news gets `{projects: []}`. The
+    one inbox read that spans projects: the bell counts only the project the reader is in, so the project
+    switcher, the phone drawer and the chooser `/projects` mark the *other* projects with it (push and
+    e-mail are off by default, so the inbox is most people's only channel). **No other project is ever
+    named**: a removed, pending or withheld membership, or a deactivated project, drops out even though
+    its notifications are still stored — the count tells nothing about a project the caller cannot enter
+    (`internal/notificationapi/unread_by_project_integration_test.go` walks one membership through every
+    state). Same `in_app` rule as the bell: read records and push/mail-only records never count. Signed
+    out → `401`.
   - **`POST /notifications/read-all`** → `200 {marked}`: stamps every unread inbox notification read and
     says how many; already-read ones keep their first reading, records outside the inbox and every other
     account are untouched. Nothing unread → `{marked: 0}`.

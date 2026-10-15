@@ -231,6 +231,33 @@ export async function fetchUnreadNotificationCount(signal?: AbortSignal): Promis
   return body.unread
 }
 
+/**
+ * How many unread inbox notifications the caller has in each project, keyed by
+ * project uid. Only projects the account is an approved member of in an active
+ * project are ever named, and a project with nothing unread is absent — so a
+ * missing key reads as 0.
+ */
+export type UnreadByProject = Readonly<Record<string, number>>
+
+/**
+ * Reads the unread count of every project at once (`GET /notifications/unread-by-project`,
+ * instance-level): what marks the other projects in the switcher, the phone
+ * drawer and the chooser, so news in a project the reader is not working in is
+ * not missed.
+ */
+export async function fetchUnreadByProject(signal?: AbortSignal): Promise<UnreadByProject> {
+  const res = await fetch(instancePath('/notifications/unread-by-project'), {
+    credentials: 'same-origin',
+    signal,
+  })
+  const body = await readJson<{ projects: { project: string; unread: number }[] }>(res)
+  const out: Record<string, number> = {}
+  for (const { project, unread } of body.projects) {
+    out[project] = unread
+  }
+  return out
+}
+
 /** Marks every unread notification in the caller's inbox read; resolves to how many it marked. */
 export async function markAllNotificationsRead(): Promise<number> {
   const res = await fetch(apiPath('/notifications/read-all'), {

@@ -6162,7 +6162,16 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the tab is visible (paused hidden), **immediately when the tab becomes visible or the window regains
   focus**, and on `refresh()` (the bell on open and after „mark all", the inbox page, `NotificationPage`
   after marking). A failed fetch sets `unread` to `null` = no badge; the default outside a provider is
-  `null` + a no-op `refresh`. Tests `notifications/NotificationInboxProvider.test.tsx`;
+  `null` + a no-op `refresh`. **Alongside, on the same schedule and abort controller**, it fetches
+  `unreadByProject` (`fetchUnreadByProject`, the instance-level `GET /notifications/unread-by-project`,
+  keyed by project uid, a project with none absent; either fetch may fail without hiding the other's
+  badge; kept across a project switch — it is the same in every project — and cleared on sign-out).
+  `useProjectUnread()` turns it into `(projectUid) => count` (0 when unknown) for the switcher, the
+  drawer and `ProjectsPage`, which draw it through **`ProjectUnreadBadge`**
+  (`components/notifications/ProjectUnreadBadge.tsx`): the bell's red pill (`kk-waiting-badge
+  kk-project-unread`, `badgeText`), nothing for 0, the numeral `aria-hidden` and a visually hidden
+  sentence („2 nepřečtená oznámení", `projectSwitcher.unread` plural; or a caller's `label`) so the
+  row's accessible name says what it counts. Tests `notifications/NotificationInboxProvider.test.tsx`;
   `NotificationBell` (`components/notifications/NotificationBell.tsx`, constants in `bell.ts`) = the
   inbox's door in the navbar: an `outline-secondary` `sm` icon button (`bell`, `bell-fill` while
   something is unread) with the unread count as the tasks badge on its corner (`kk-waiting-badge--over`,
@@ -8856,7 +8865,9 @@ the badges under AA) with „Nedostupné"; an unapproved membership says „Ček
 `aria-disabled` and carry no link. No membership at all is an `EmptyState` „Nejste členem žádného
 projektu. Požádejte správce projektu o pozvánku." The page header holds the ways out an account needs
 whatever it belongs to — **Účet** and **Odhlásit se** — and, for a maintainer, **Správa projektů** →
-`/system/projects` (`PROJECT_ADMIN_PATH` = `SYSTEM_PROJECTS_PATH`).
+`/system/projects` (`PROJECT_ADMIN_PATH` = `SYSTEM_PROJECTS_PATH`). A card whose project holds
+unread notifications for the reader wears `ProjectUnreadBadge` before the role badge (only enterable
+projects are ever counted, so it never lands on a greyed card).
 
 **The header switcher** (`components/ProjectSwitcher.tsx`). It reads `ProjectContext` directly and
 renders nothing outside a provider or for an account with no project. `variant="bar"` sits in the
@@ -8869,6 +8880,13 @@ navbar dropdown cannot float there, so the phone row shows the bare name at its 
 leading edge and switching is the drawer's first section (`variant="drawer"`: a „Projekt" `<section>`
 with the name as text, then the other projects and „Všechny projekty…" as ordinary rows that close
 the drawer). Every entry is a **link** (opens in a new tab), its target `routeAfterSwitch(…)`.
+**News in another project** (`useProjectUnread`, see the inbox provider): every other project's row —
+in the dropdown, the drawer and the neutral list — carries `ProjectUnreadBadge` with its unread count,
+and the bar's name (the dropdown toggle, and the static name below `lg` when there is more than one
+membership) carries the **other projects' total** (`.kk-project-switcher__unread`, `flex: none`, so
+the name is what ellipsises; its hidden text „Nepřečtená oznámení v jiných projektech: 2",
+`projectSwitcher.othersUnread`). The current project's own count is never added in — that is the
+bell's; outside a project („Moje projekty") the total covers every project.
 
 **`routeAfterSwitch(currentPath, fromSlug, toSlug)`** (`project/paths.ts`, pure): a **list** page
 (`KEEP_ON_SWITCH`: the library, favorites, albums, labels, tasks, search, saved, map, places,
@@ -8904,9 +8922,10 @@ does the rest); the service worker answers every navigation outside `/api/`, `/h
 Tests: `project/paths.test.ts` (entry rule's three branches + the unusable-last cases,
 `projectPathFor`, prefix parsing, `projectRoleOf`, `routeAfterSwitch`: every kept list page, uid
 pages, query/hash dropped, instance pages), `components/ProjectSwitcher.test.tsx` (static vs
-dropdown, enterable-only, list route kept vs home, `menu={false}`, the drawer variant),
-`pages/ProjectsPage.test.tsx` (normal / inactive / pending / empty, the maintainer link, the tab
-title), the „project switcher in the bar" and „neutral shell outside a project" cases (no project
+dropdown, enterable-only, list route kept vs home, `menu={false}`, the drawer variant, the unread
+marks: the toggle's others-only total, per-row pills, the drawer, the neutral total, Czech plurals,
+nothing while unknown), `pages/ProjectsPage.test.tsx` (normal / inactive / pending / empty, the
+maintainer link, the unread pill, the tab title), the „project switcher in the bar" and „neutral shell outside a project" cases (no project
 chrome on an instance page or a not-member slug, instance-only administration, no tab bar/library
 sections on a phone, the deactivated banner) in `Layout.test.tsx`, `pages/PendingApprovalPage.test.tsx`
 (cs + en), `services/resolve.test.ts`, `legacyEntityOf` in `paths.test.ts`, the drawer's „Projekt" section
