@@ -58,7 +58,7 @@ func runMaintenanceInventory(cmd *cobra.Command, _ []string) error {
 		}
 	}
 	// Deliberately database.New, not openCurrentDB: the inventory is the
-	// release-day "before" snapshot the new binary takes of a database still
+	// upgrade's "before" snapshot the new binary takes of a database still
 	// on the old schema, so it must neither migrate nor refuse a stale one.
 	db, err := database.New(cmd.Context(), cfg.Database)
 	if err != nil {

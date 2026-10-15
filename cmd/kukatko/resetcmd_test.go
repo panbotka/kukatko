@@ -178,14 +178,14 @@ func TestConfirmBucketName(t *testing.T) {
 		{name: "from the flag", flags: resetFlags{confirmStore: "kukatko-dev"}, bucket: "kukatko-dev", want: "kukatko-dev"},
 		{name: "typed at the prompt", bucket: "kukatko-dev", stdin: "kukatko-dev\n", want: "kukatko-dev"},
 		{name: "typed with surrounding space", bucket: "kukatko-dev", stdin: "  kukatko-dev \n", want: "kukatko-dev"},
-		{name: "a wrong name is still returned", bucket: "kukatko-dev", stdin: "kotrzina-photos\n", want: "kotrzina-photos"},
+		{name: "a wrong name is still returned", bucket: "kukatko-dev", stdin: "library-photos\n", want: "library-photos"},
 		{name: "nothing typed", bucket: "kukatko-dev", stdin: "\n", wantErr: errResetBucketNotConfirmed},
 		{name: "closed input", bucket: "kukatko-dev", stdin: "", wantErr: errResetBucketNotConfirmed},
 		{name: "no bucket configured", stdin: "", want: ""},
 		{
 			name:  "no bucket configured, one typed anyway",
-			flags: resetFlags{confirmStore: "kotrzina-photos"},
-			want:  "kotrzina-photos",
+			flags: resetFlags{confirmStore: "library-photos"},
+			want:  "library-photos",
 		},
 	}
 	for _, tt := range tests {
@@ -257,8 +257,8 @@ func TestConfiguredBucket(t *testing.T) {
 		want    string
 	}{
 		{name: "r2 backend", backend: config.StorageBackendR2, bucket: "kukatko-dev", want: "kukatko-dev"},
-		{name: "fs backend with a leftover bucket", backend: config.StorageBackendFS, bucket: "kotrzina-photos"},
-		{name: "unset backend", bucket: "kotrzina-photos"},
+		{name: "fs backend with a leftover bucket", backend: config.StorageBackendFS, bucket: "library-photos"},
+		{name: "unset backend", bucket: "library-photos"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

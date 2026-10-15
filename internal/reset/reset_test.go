@@ -268,7 +268,7 @@ func TestService_checkConfirmation(t *testing.T) {
 		{
 			name:    "right database, wrong bucket",
 			target:  Target{Database: "kukatko", Bucket: "kukatko-dev"},
-			opts:    Options{Confirm: "kukatko", ConfirmBucket: "kotrzina-photos"},
+			opts:    Options{Confirm: "kukatko", ConfirmBucket: "library-photos"},
 			wantErr: ErrBucketConfirmationMismatch,
 		},
 		{
@@ -280,7 +280,7 @@ func TestService_checkConfirmation(t *testing.T) {
 		{
 			name:    "bucket typed at a store that has none",
 			target:  Target{Database: "kukatko"},
-			opts:    Options{Confirm: "kukatko", ConfirmBucket: "kotrzina-photos"},
+			opts:    Options{Confirm: "kukatko", ConfirmBucket: "library-photos"},
 			wantErr: ErrBucketConfirmationMismatch,
 		},
 	}

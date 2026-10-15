@@ -49,7 +49,7 @@ Open **one** document based on what you're touching. Don't read them all preempt
 | Performance (thumbnails, vips, HNSW `ef_search`, indexes) | [`docs/PERF.md`](docs/PERF.md) |
 | A cosine-distance threshold — its value, its measurement, how to re-derive it | [`docs/THRESHOLDS.md`](docs/THRESHOLDS.md) |
 | Restore from backup / disaster recovery | [`docs/RESTORE.md`](docs/RESTORE.md) |
-| A schema migration on production data — rehearsal verdict, inventory/diff, rollback scripts | [`docs/MIGRATION_SAFETY.md`](docs/MIGRATION_SAFETY.md) |
+| A schema migration on existing data — rehearsal method and results, inventory/diff, rollback scripts | [`docs/MIGRATION_SAFETY.md`](docs/MIGRATION_SAFETY.md) |
 | UX decisions and audit | [`docs/UX_AUDIT.md`](docs/UX_AUDIT.md) |
 | Security audit — findings, severities, attack scenarios | [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md) |
 

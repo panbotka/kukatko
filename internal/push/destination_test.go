@@ -152,7 +152,7 @@ func TestIsPublicAddr(t *testing.T) {
 		"169.254.169.254":      false,
 		"fe80::1":              false,
 		"fd7a:115c:a1e0::1":    false, // tailnet IPv6 (ULA)
-		"100.68.61.47":         false, // tailnet IPv4 (CGNAT)
+		"100.101.102.103":      false, // tailnet IPv4 (CGNAT)
 		"0.0.0.0":              false,
 		"::":                   false,
 		"224.0.0.1":            false,
@@ -234,7 +234,7 @@ func TestCheckEndpointHost(t *testing.T) {
 		{endpoint: "https://10.0.0.1/x", refused: true},
 		{endpoint: "https://169.254.169.254/latest/meta-data", refused: true},
 		{endpoint: "https://[fe80::1%25eth0]/x", refused: true},
-		{endpoint: "https://100.68.61.47/x", refused: true},
+		{endpoint: "https://100.101.102.103/x", refused: true},
 		{endpoint: "https://localhost/x", refused: true},
 		{endpoint: "https://LOCALHOST./x", refused: true},
 		{endpoint: "https://box:6490/x", refused: true},

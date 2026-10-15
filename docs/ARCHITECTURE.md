@@ -176,8 +176,8 @@ research ([§17](#17-reference)).
   (see [§8](#8-asynchronni-joby--box-offline)). For the contract see [§6.1](#61-kontrakt-sidecaru).
 - **One call may go elsewhere:** embedding the *search query* is the only sidecar call a person waits
   on, and waiting for a sleeping desktop is not an option, so `embedding.text_url` can point
-  `/embed/text` at a second, always-on instance of the same service in text-only mode (production runs
-  one on the VPS next to the app, ~0.43 s on CPU, cosine agreement with the box 0.999999). Everything
+  `/embed/text` at a second, always-on instance of the same service in text-only mode (e.g. one on the
+  CPU next to the app, ~0.43 s per query, cosine agreement with the GPU instance 0.999999). Everything
   else — images, faces, OCR and the **health probe auto-wake reads** — stays on `embedding.url`.
 - Models: **SigLIP 2 so400m/14 @378** (`ViT-SO400M-14-SigLIP2-378` / `webli`, image+text,
   **1152-dim**, Apache 2.0), **InsightFace `buffalo_l`** (ArcFace, 512-dim — a different model,
@@ -242,9 +242,9 @@ research ([§17](#17-reference)).
 - **Signed URL:** `https://<media_base_url>/<key>?exp=<unix>&sig=<hex HMAC-SHA256>`, the signature covers
   both the key and the expiry. **Two secrets are verified at once** (current + previous), so rotation has no window
   of broken URLs. Default TTL 1 h; every API response carries a freshly signed URL.
-- **The Worker is not part of this repo.** The bucket, the Worker source, its bindings and hostname
-  (`kukatko-media.panbotka.cz`) live in the **infra repo** (`/home/pi/projects/infra`, root module
-  `cloudflare-r2/`) and Terraform deploys them there. Kukátko **stamps** the URL (`internal/storage/sign.go`),
+- **The Worker is not part of this repo.** The bucket, the Worker source, its bindings and hostname live in
+  the deployment's own infrastructure code (the reference deployment keeps them in a separate Terraform repo,
+  root module `cloudflare-r2/`). Kukátko **stamps** the URL (`internal/storage/sign.go`),
   the Worker **verifies** it — two implementations in two repos and two languages, whose divergence
   no build would catch (one extra byte in the signed message = 403 on every photo).
 - **The contract is held by golden vectors:** `internal/storage/testdata/url_signature_vectors.json` (secret,

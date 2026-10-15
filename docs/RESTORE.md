@@ -142,8 +142,8 @@ A dump of a database whose schema is older than **0104** (every release up to an
 `photos.fts` — `ERROR: function unaccent(unknown, text) does not exist` at `CREATE TABLE photos`, and the
 single transaction rolls everything back (found 2026-10-12 by the migration rehearsal,
 [`MIGRATION_SAFETY.md`](MIGRATION_SAFETY.md); 0104 qualifies the call, so dumps taken after it restore
-normally — proven on the production copy). Restore such a dump by hand instead, letting `public` stay on the
-search path — the restored copy is otherwise exact (proven: 21,151 photos, every inventory digest equal):
+normally — proven on a copy of a real library). Restore such a dump by hand instead, letting `public` stay on
+the search path — the restored copy is otherwise exact (proven: every photo, every inventory digest equal):
 
 ```bash
 aws s3 cp s3://<backup-bucket>/db/kukatko-<timestamp>.dump /tmp/old.dump   # or any S3 client

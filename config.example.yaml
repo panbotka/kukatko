@@ -62,7 +62,7 @@ storage:
     # Credentials of an R2 API token. KUKATKO_STORAGE_R2_ACCESS_KEY / _SECRET_KEY.
     access_key: ""
     secret_key: ""
-    # Domain of the edge Worker serving the objects — https://kukatko-media.panbotka.cz.
+    # Domain of the edge Worker serving the objects, e.g. https://media.example.com.
     # Signed URLs are minted under it and handed straight to the browser. The Worker
     # is NOT built here: it, the bucket and this hostname are defined in the infra
     # repo (cloudflare-r2/) and deployed by Terraform. Leave EMPTY (together with

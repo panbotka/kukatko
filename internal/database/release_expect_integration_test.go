@@ -9,15 +9,15 @@ import (
 	"github.com/panbotka/kukatko/internal/inventory"
 )
 
-// TestReleaseExpectList_provenOnTheRealPath replays production's real upgrade
-// path — schema 0099 (0.31.0) to the newest migration — and judges it with the
-// runbook's release-day expect list, the command the owner runs in step 6. The
+// TestReleaseExpectList_provenOnTheRealPath replays the real upgrade path of a
+// pre-tenancy instance — schema 0099 (0.31.0) to the newest migration — and
+// judges it with the documented inventory-diff expect list. The
 // list must leave no difference unexpected, and every entry must allow at
 // least one difference (an entry that matches nothing is stale or too broad).
 //
 // The database reaches 0099 the way a rollback does: a fresh schema migrated
 // to the newest file, then the whole down chain. It is then seeded the way
-// production looks at 0099 — accounts on the old roles (a viewer and an editor
+// a pre-tenancy library looks at 0099 — accounts on the old roles (a viewer and an editor
 // collapse to `user`, a maintainer stays), a session caching a role, a photo
 // in an album — so the digests have rows to compare and role-collapse has
 // accounts to judge.
@@ -65,7 +65,7 @@ func TestReleaseExpectList_provenOnTheRealPath(t *testing.T) {
 	}
 	exp, err := inventory.ParseExpectations(list.expects)
 	if err != nil {
-		t.Fatalf("the runbook's expect list does not parse: %v", err)
+		t.Fatalf("the documented expect list does not parse: %v", err)
 	}
 	result := inventory.Judge(inventory.Diff(snapA, snapB), exp)
 	var report strings.Builder
@@ -73,8 +73,8 @@ func TestReleaseExpectList_provenOnTheRealPath(t *testing.T) {
 		t.Fatalf("writing the diff: %v", err)
 	}
 	if result.Unexpected() > 0 {
-		t.Errorf("the runbook's expect list leaves %d difference(s) of 0099 → %04d unexpected "+
-			"(docs/OPERATIONS.md, release-expect):\n%s", result.Unexpected(), list.to, report.String())
+		t.Errorf("the documented expect list leaves %d difference(s) of 0099 → %04d unexpected "+
+			"(docs/migrations-rollback/README.md, release-expect):\n%s", result.Unexpected(), list.to, report.String())
 	}
 	used := map[string]bool{}
 	for _, d := range result.Differences {

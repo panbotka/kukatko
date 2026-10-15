@@ -193,7 +193,7 @@ type schemaChecker interface {
 // this binary embeds. It returns errSchemaBehind naming both versions and the
 // way out; an up-to-date database (or one ahead of the binary) passes. It never
 // migrates: that is `kukatko migrate`'s job, run once the old server is stopped
-// (docs/OPERATIONS.md, "Upgrade runbook — multi-tenancy").
+// (docs/OPERATIONS.md, "Upgrading — migrations, the inventory and rollback").
 func requireCurrentSchema(ctx context.Context, db schemaChecker) error {
 	status, err := db.SchemaStatus(ctx)
 	if err != nil {

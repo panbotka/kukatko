@@ -168,10 +168,9 @@ to the photo's page is the stage's own corner anchor — the lightbox adds no se
 ## Verification ritual (every commit that touches a page)
 
 1. `npx vitest run <touched test files>` while developing (fast loop).
-2. Throwaway Vite proxy to production, as used for the `/library/*` fix:
-   `web/vite.proxy.mjs` with `changeOrigin: true` at `https://fotky.kotrzina.cz`, port 4390.
-3. Sign in as the maintainer: `op read "op://Pan Botka/Kukatko/password"` (user `panbotka`)
-   with `OP_SERVICE_ACCOUNT_TOKEN` exported from `/home/pi/.openclaw/workspace/.secrets/op_service_account.env`.
+2. Throwaway Vite proxy to a running instance, as used for the `/library/*` fix:
+   `web/vite.proxy.mjs` with `changeOrigin: true` at `https://<instance>`, port 4390.
+3. Sign in as a maintainer of that instance (credentials from your secret store, never from the repo).
 4. Drive `agent-browser`, screenshot each changed tool, confirm: stepper moves the columns,
    photo click opens the lightbox, `Esc` returns, the decision buttons still write.
 5. Delete `web/vite.proxy.mjs`, kill the dev server, `make check`, commit.

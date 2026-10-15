@@ -786,8 +786,8 @@ Everything else below is open as written.
   - **The web UI** (`components/account/ApiTokensCard.tsx` and `PasskeysCard.tsx` on the account page, over
     `web/src/services/auth.ts` and `passkeys.ts`) runs on the session cookie.
   - **`docs/API.md`** describes tokens as "long-lived bearer credentials for non-interactive clients" and
-    documents no flow that mints a token with a token. Nothing in the repo, and nothing in the curating
-    agent's workspace (`~/projects/fotky`), does so.
+    documents no flow that mints a token with a token. Nothing in the repo, and no known API client of
+    the instance, does so.
   - Passkey registration from a token has **no legitimate use at all**: a passkey is created by an
     authenticator in a browser, which already has a session.
 - **Fix options:**
@@ -882,22 +882,20 @@ Everything else below is open as written.
     modern Chrome and Firefox do not, so login CSRF is not currently a practical write. It is listed for
     completeness, not as a live hole.
 - **The precondition — a same-site sibling origin.** The whole finding turns on the attacker controlling, or
-  injecting script into, a page served from a host that shares the instance's registrable domain. In
-  production the instance answers on `fotky.kotrzina.cz` and `kukatko.kotrzina.cz`, so the registrable domain
-  is **`kotrzina.cz`**. Every host under it is same-site to the cookie. From the DNS zone
-  (`panbotka/infra:kotrzina.cz.tf`) and the Traefik labels (`panbotka/vps` docker-compose), the hosts the owner
-  must check are:
-  - `kotrzina.cz` and `hriste.kotrzina.cz` — Cloudflare Pages static sites (`kotrzina`, `kotrzina/kotrzina`).
-  - `pub.kotrzina.cz`, `hospoda.kotrzina.cz` — other VPS-hosted apps on the same box.
-  - `fotky.kotrzina.cz`, `kukatko.kotrzina.cz` — the instance itself (same-origin, not a concern).
-  - `sorter.kotrzina.cz` — the legacy photo-sorter (archived upstream, see the projects index).
-  - `photos-cdn.kotrzina.cz` — the R2 media worker (serves attacker-influenced *content* — user uploads — but
+  injecting script into, a page served from a host that shares the instance's registrable domain (for an
+  instance on `photos.example.org`, every host under **`example.org`**). Every host under it is same-site to
+  the cookie. The hosts an operator must check, found from the DNS zone and the reverse proxy's routes, are
+  typically:
+  - static sites on the bare domain or other subdomains;
+  - other applications hosted on the same domain (often on the same machine);
+  - the instance itself under any of its names (same-origin, not a concern);
+  - the media CDN worker in front of the R2 bucket (serves attacker-influenced *content* — user uploads — but
     as `Content-Disposition: attachment` with a sniffed MIME; it runs no first-party script, yet a stored-XSS
-    there would be same-site to the cookie).
-  - **Any future subdomain of `kotrzina.cz`** inherits the same trust. The passkey relying-party id is already
-    `kotrzina.cz` (whole registrable domain), so the blast radius of a same-site XSS is domain-wide by design.
-  The owner should confirm that **no** host under `kotrzina.cz` either is attacker-controllable or carries an
-  XSS, and treat adding one as a decision that widens this surface.
+    there would be same-site to the cookie);
+  - **any future subdomain**, which inherits the same trust. When the passkey relying-party id is the whole
+    registrable domain, the blast radius of a same-site XSS is domain-wide by design.
+  The operator should confirm that **no** host under the registrable domain either is attacker-controllable or
+  carries an XSS, and treat adding one as a decision that widens this surface.
 - **Scope — every cookie-authenticated unsafe route that decodes JSON without a `Content-Type` gate.** All of
   them are reachable this way; the RBAC guard only decides *which victim role* is needed.
   - `internal/auth` — `POST /auth/login` (public), `/auth/register` (public, gated), `/auth/logout`,
@@ -929,9 +927,8 @@ Everything else below is open as written.
     same-site page cannot set an `Authorization` header on a credentialed simple request, and `ctl`/MCP do not
     use the cookie. No change proposed here touches them.
 - **`web.allowed_origins` / `web.session_secret` are dead (restates SEC-011/SEC-012).** `AllowedOrigins`
-  (`internal/config/config.go:337`) is parsed and set from `KUKATKO_WEB_ALLOWED_ORIGINS` in production
-  (`https://fotky.kotrzina.cz,https://kukatko.kotrzina.cz`) but read by nothing — the docker-compose comment
-  says so outright ("Kukátko only reads this into config today — nothing enforces it yet"). `SessionSecret`
+  (`internal/config/config.go:337`) is parsed — a deployment may well set `KUKATKO_WEB_ALLOWED_ORIGINS` to its
+  instance's origins — but read by nothing: Kukátko only reads it into config, nothing enforces it. `SessionSecret`
   (`:336`) is read by nothing and, since cookies carry a raw random token, protects nothing. Either is the
   natural home of the Origin fallback below, or both should be removed.
 - **Fix options** (none applied in this task):
@@ -966,7 +963,7 @@ Everything else below is open as written.
   it, it is a single middleware with no per-handler churn, and it leaves the SPA, `kukatko ctl`, MCP and the
   public upload page working as they do today. Requiring `application/json` is cheap insurance layered beneath
   it. Until a decision is made, behaviour is unchanged and `SameSite=Strict` remains the sole defence, which is
-  sound **only for as long as every host under `kotrzina.cz` is trusted and XSS-free** — so the "Session
+  sound **only for as long as every host under the instance's registrable domain is trusted and XSS-free** — so the "Session
   lifecycle & CSRF — clean" note below is qualified by this entry. The decision belongs to the product owner.
 
 ---

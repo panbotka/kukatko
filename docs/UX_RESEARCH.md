@@ -14,7 +14,7 @@ neduplikuji ho — kde se potkáváme, odkazuji.
 ## Metoda
 
 - **Kdy:** 5. srpna 2026. **Verze aplikace:** 0.5.1.
-- **Kde:** produkce `kukatko.kotrzina.cz`, ne testovací databáze.
+- **Kde:** produkční instance, ne testovací databáze.
 - **Účet:** `ux-research`, role **Prohlížeč** (viewer). Na zápis vrací RBAC 403; nic
   jsem neobcházel a nepřihlašoval se pod jiným účtem.
 - **Prohlížeč:** Chromium přes `agent-browser`, jedna relace.

@@ -791,8 +791,8 @@ The `array_agg` shape the album index uses is not available here: these are not
 the listing's own aggregation but a lookup of their own, and materialising an
 array per entity to read `[1]` would be strictly more work than the sort.
 
-**Measured** against production (20 659 visible photos, 113 labels, 21 297
-markers, `EXPLAIN (ANALYZE, BUFFERS)` inside the `pgvector` container):
+**Measured** on a real library (~20k visible photos, ~110 labels, ~21k
+markers, `EXPLAIN (ANALYZE, BUFFERS)` inside the database container):
 
 | statement | rows asked for | time | shared blocks |
 | --- | --- | --- | --- |

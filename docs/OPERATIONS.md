@@ -28,7 +28,7 @@ configuration key both here **and** into `config.example.yaml`.
   once, before the server accepts anything. Run `kukatko migrate` ahead of the deploy if that
   downtime matters — **only for a release whose migrations the running binary survives** (0047 is
   one: it only adds an index). **Never for the 0.31.0 → multi-tenant release**: 0.31.0 served against
-  the migrated schema fails every sign-in with 500, see "Upgrade runbook — multi-tenancy"; see
+  the migrated schema fails every sign-in with 500, see "Upgrading — migrations, the inventory and rollback"; see
   `docs/PERF.md` §3),
   `kukatko migrate [--force]` (runs pending migrations on their own and exits). **Only `migrate` and
   `serve` ever change the schema.** Both hold one fixed `pg_advisory_lock` for the whole run, so two
@@ -39,7 +39,7 @@ configuration key both here **and** into `config.example.yaml`.
   migration the binary embeds and exits 1: `the database schema is older than this binary: database is at
   schema N, this binary expects M (K pending migration(s): first … last); run `kukatko migrate` after
   stopping the old server`. `maintenance inventory` is the one exception: it neither migrates nor refuses
-  (it is the release-day "before" snapshot). Before migrating, both migrators look for **other sessions on
+  (it is the upgrade's "before" snapshot). Before migrating, both migrators look for **other sessions on
   the database** in `pg_stat_activity`: every session whose `application_name` starts with `kukatko/` (every
   Kukátko after 0.31.0 announces `kukatko/<version> <instance>` on each connection, overriding a DSN's
   `application_name`), and every other session of the same database user (0.31.0 and older announce none).
@@ -82,7 +82,7 @@ configuration key both here **and** into `config.example.yaml`.
   non-interactive run, `--orphan-sweep` for the leftovers the catalogue never referenced;
   accounts/announcement/instance settings/audit trail/migrations are never touched; see below) and
   **`maintenance inventory`** / **`maintenance inventory-diff`** (the read-only before/after snapshot of an
-  upgrade and its judged diff — `internal/inventory`; **never migrates**; see "Upgrade runbook — multi-tenancy"
+  upgrade and its judged diff — `internal/inventory`; **never migrates**; see "Upgrading — migrations, the inventory and rollback"
   below) and
   **`maintenance nameless-subjects --project <slug>`** (reports — and with `--apply --undo-file` detaches —
   the project's subjects whose name identifies nobody, the importer-minted catch-all; dry run by default,
@@ -234,7 +234,7 @@ configuration key both here **and** into `config.example.yaml`.
   **`kukatko push generate-keys`** (mints a fresh **VAPID key pair** for Web Push — `internal/push`
   `GenerateKeys`; reads no config, touches no DB, so it runs anywhere the binary does). It prints the two
   environment assignments `KUKATKO_PUSH_VAPID_PUBLIC_KEY=…` and `KUKATKO_PUSH_VAPID_PRIVATE_KEY=…` on
-  **stdout** and a reminder on **stderr** — the private key belongs in the environment (1Password → the
+  **stdout** and a reminder on **stderr** — the private key belongs in the environment (your secret store → the
   deployment's env), **never in a committed file** — so `kukatko push generate-keys > vapid.env` captures the
   keys and nothing else. Mint a pair **once per instance**: every browser subscribes against the public key,
   so a new pair silently invalidates every stored subscription and everybody has to allow notifications
@@ -412,8 +412,8 @@ alone. Such a subject cannot be created deliberately: `POST /api/v1/p/<slug>/sub
 digit. One in the catalogue was therefore minted by an importer, and it behaves as a **catch-all**: the
 find-or-create-by-name paths used to key on `people.Slugify`, which is total and answers `subject` for a
 nameless face, so the first unnamed face created one empty-named subject and every unnamed face after it was
-*found* by that same key and assigned to it. On production (2026-08-02) one such subject collected **16 532
-markers** against 4 635 on all real people, sat first in `/people`, and made face assignment unusable.
+*found* by that same key and assigned to it. On a real library one such subject collected more than three
+times as many markers as all real people together, sat first in `/people`, and made face assignment unusable.
 
 The importers now key on `people.NameSlug`, which returns `""` for exactly those names, so a nameless face
 stays unassigned. This command is the repair for the data the old behaviour already wrote.
@@ -451,14 +451,14 @@ It is **not a migration**: it deletes catalogue rows the user might conceivably 
 operator decision taken with the report in hand.
 
 The same repair is on the admin **Údržba** page (`/maintenance`, maintainer-only, `GET`/`POST
-/api/v1/maintenance/nameless-subjects[/detach|/restore]`, see `docs/API.md`), because SSH into the production
+/api/v1/maintenance/nameless-subjects[/detach|/restore]`, see `docs/API.md`), because SSH into a production
 container is a poor place to keep the fix for the one row the user is actually staring at. The HTTP form keeps
 the same contract with the same code: the report is read-only, the apply hands the undo file to the browser as
 a **download** and schedules the detach only once it has gone out (the browser's copy *is* `--undo-file`), and
 the undo takes that file back. The file format is identical (`namelessjob.Undo`), so a file downloaded in the
 browser replays with `--undo` and one written by `--undo-file` uploads to the page. The destructive halves run
-as the `nameless_detach` / `nameless_restore` **jobs** rather than inside the request: detaching production's
-catch-all moves ~111 000 faces into the partial "unassigned faces" HNSW index (migration 0047), which is
+as the `nameless_detach` / `nameless_restore` **jobs** rather than inside the request: detaching a large
+catch-all moves every one of its faces into the partial "unassigned faces" HNSW index (migration 0047), which is
 minutes of index maintenance. Watch the job queue on the same page for progress. The page works on the
 current project (the switcher's; the routes are `/api/v1/p/<slug>/maintenance/nameless-subjects*`), as the
 CLI does with `--project`. Both jobs carry `project_uid` in their payload, and their dedup key is (type, project, subject)
@@ -592,22 +592,63 @@ Deactivate the project first so nobody uploads into it while it goes. If the sto
 report lists the failures), the database is already gone: the leftover objects are what the next
 `maintenance scan` reports as `orphan_project`.
 
-### Upgrade runbook — multi-tenancy
+### Upgrading — migrations, the inventory and rollback
 
-The multi-tenancy migrations (0100 onwards) restructure data that exists only once — the library of
-~21k photos. They were rehearsed on a copy of production (verdict and measurements in
-[`MIGRATION_SAFETY.md`](MIGRATION_SAFETY.md)); this is how a deploy that ships them is checked.
+How an upgrade changes the database, how to check that it lost nothing, and how to go back. Written for any
+operator and any deployment; `<…>` are placeholders. The safety measurements behind it are in
+[`MIGRATION_SAFETY.md`](MIGRATION_SAFETY.md).
 
-**`kukatko maintenance inventory --out <dir> [--storage]`** writes a deterministic snapshot of the
-configured database: `counts.tsv` (every table → rows), `columns.tsv`, `digests.tsv` (an order-independent
-digest per catalogue table over an explicit column allow-list that exists before **and** after the
-tenancy migrations), `photos.tsv` (`uid|file_hash|file_path|file_size|archived_at`) and `users.tsv`
-(`uid|username|role|disabled`). It runs in one read-only transaction and **does not apply migrations** — so
-the *new* binary takes the "before" snapshot of a database still on the old schema (the old release has no
-such command). `--storage` also lists the configured store **once** and writes `storage-missing.tsv` — every
-original absent or of the wrong size; empty is good. Give it a **read-only** key (R2: an API token with
-*Object Read only* on the bucket — it lists and reads, it cannot write). On the production copy it took
-4.75 s and 45 MB RSS on the box (expect ~3–4× that on the VPS).
+**Who migrates.** Only `kukatko serve` (on start) and `kukatko migrate` apply migrations; both hold one
+advisory lock, so two started at once take turns. Every other subcommand that opens the database refuses a
+schema that is behind — `database is at schema N, this binary expects M (K pending migration(s): first … last);
+run kukatko migrate after stopping the old server` — and exits 1 without touching it, so running the **new**
+binary's CLI against a database the **old** release still serves is harmless (releases up to 0.31.0 instead
+migrated as a side effect). `maintenance inventory` and `inventory-diff` are the exceptions: they never
+migrate and never refuse — they exist for exactly that moment.
+
+**Stop the old release before the new one migrates.** A migration is not promised to be backward compatible
+with the release before it. The multi-tenancy chain (0100 onwards) is not: 0.31.0 served against a migrated
+schema fails every sign-in with 500 (`column "subject_uid" does not exist`) while its `/healthz` stays 200.
+So the order of an upgrade is **stop the old server → start the new one** (it migrates on start); a compose
+`up -d` with a changed tag does exactly that (the old container is removed before the new one starts). Before
+migrating, both migrators look for other sessions on the database: `migrate` refuses while another Kukátko (or
+another session of the same database user — how 0.31.0 and older show up) is connected, unless `--force`;
+`serve` logs each one at `ERROR` (`other database client`) and starts anyway. Seeing that line on an upgrade
+means the old server is still connected — and, if the chain is not backward compatible, already broken: stop
+it at once. Pre-migrating with `kukatko migrate` to shorten the outage is only for releases whose migrations
+the running binary survives, and then it needs `--force`, deliberately.
+
+**Lock queueing.** A migration taking `ACCESS EXCLUSIVE` on a table waits for every transaction already
+holding a lock on it, and every request after it waits behind it. A running `pg_dump` holds `ACCESS SHARE` on
+every table for its whole run, so do not upgrade while a database backup runs, and check for long
+transactions right before:
+
+```sql
+SELECT pid, application_name, xact_start, left(query, 60) FROM pg_stat_activity
+WHERE datname = current_database() AND xact_start < now() - interval '10 seconds';
+```
+
+The runner sets no `lock_timeout` on purpose (a timed-out `ALTER` would fail the start and turn the restart
+into a loop). Each applied file logs `migration applied file=… duration_ms=…` — one line per pending file.
+
+**Back up first.** Take a database dump right before the upgrade (`kukatko backup`, or `pg_dump -Fc` of the
+database however your deployment reaches it) and check that it is readable (`pg_restore -l <dump>`). A dump
+taken on a schema before migration 0104 restores only with the `search_path` fix in
+[`RESTORE.md`](RESTORE.md) ("Dumps taken before migration 0104"). Restoring the dump is the last resort: it
+loses every write made since; the down scripts below do not.
+
+#### The inventory — proving an upgrade lost nothing
+
+**`kukatko maintenance inventory --out <dir> [--storage]`** writes a deterministic snapshot of the configured
+database: `counts.tsv` (every table → rows), `columns.tsv`, `digests.tsv` (an order-independent digest per
+catalogue table over an explicit column allow-list that exists before **and** after the tenancy migrations),
+`photos.tsv` (`uid|file_hash|file_path|file_size|archived_at`) and `users.tsv` (`uid|username|role|disabled`).
+It runs in one read-only transaction and **does not apply migrations** — so the *new* binary takes the
+"before" snapshot of a database still on the old schema (the old release may have no such command).
+`--storage` also lists the configured store **once** and writes `storage-missing.tsv` — every original absent
+or of the wrong size; empty is good. Give it a **read-only** store key (on R2: an API token with *Object Read
+only* on the bucket). On a library of ~20k photos it takes ~5 s and ~50 MB RSS without `--storage`. A
+containerised binary that runs as an unprivileged user needs an output directory that user can write.
 
 **`kukatko maintenance inventory-diff <dirA> <dirB> [--expect …]`** prints every difference (unexpected first)
 and **exits 1** when one is not allowed by an `--expect`: a `path.Match` glob over the difference key
@@ -615,253 +656,55 @@ and **exits 1** when one is not allowed by an `--expect`: a `path.Match` glob ov
 `photo:<uid>`, `user-role:<uid>`, `storage-missing:<path>`, …) or the rule `role-collapse` (an account whose
 only change is viewer/curator/editor/admin → `user`). It needs no database.
 
-**The release-day expect list — production's real path, schema 0099 (0.31.0) → the newest migration.** This
-is the **one** authoritative list; every entry is a difference the design makes, nothing else. Proven on a
-fresh production dump (round 2, 2026-10-14, to 0115: 44 differences, 0 unexpected —
-[`MIGRATION_SAFETY.md`](MIGRATION_SAFETY.md)); 0116 and 0117 only add a column to a table this path
-creates, so they add no difference; 0118 adds `instance_settings.footer_text` (the project's footer line,
-backfilled for `v`), 0119 `notifications.params` (nullable, no backfill). The marker names the range it was proven for: **adding a migration fails `make check`**
-(`TestReleaseExpectList_coversTheNewestMigration`) until the new file is classified here (a table, a column,
-nothing), the marker is moved and the integration test `TestReleaseExpectList_provenOnTheRealPath` — which
-replays 0099 → newest on a seeded schema and judges it with exactly this block — passes again.
+**How to read it.** Take inventory A with the new binary while the old release still runs, upgrade, take
+inventory B, diff them with the expect list of the schema range you crossed — for 0099 → newest it is the
+`release-expect` block of [`migrations-rollback/README.md`](migrations-rollback/README.md), which names each
+difference the design makes and nothing else. **Never allow anything else blindly.** On a live instance the
+app keeps writing between A and B, so the live tables drift: `count:jobs`, `count:audit_log`,
+`count:sessions`, `count:notifications`, `count:search_history`, `digest:users` (every visit stamps
+`last_seen_at`) and `digest:api_tokens` (every token call stamps `last_used_at`). Read them, then rerun with
+`--expect` for exactly those: `users.tsv` must show no change but the role collapse, and every catalogue
+difference (`digest:photos`, `digest:album_photos`, `photo:…`) must match an `audit_log` entry written in the
+window (`created_at` after A). An unexplained catalogue difference means stop and roll back.
 
-<!-- release-expect: 0099..0119 -->
-```sh
-docker run --rm --entrypoint /app/kukatko -v /root/inventory:/inv ghcr.io/panbotka/kukatko:<new> \
-  maintenance inventory-diff /inv/A /inv/B \
-  --expect table-added:projects --expect table-added:project_members \
-  --expect table-added:project_invites --expect table-added:storage_rekey_runs \
-  --expect table-added:storage_rekey_derived_failures \
-  --expect 'column-added:*.project_id' --expect column-added:users.last_project_uid \
-  --expect column-removed:announcements.id --expect column-removed:instance_settings.id \
-  --expect column-removed:sessions.role \
-  --expect column-removed:users.approved_at --expect column-removed:users.subject_uid \
-  --expect column-removed:users.last_seen_at --expect column-removed:users.visit_reference_at \
-  --expect column-removed:users.task_digest_at \
-  --expect column-added:instance_settings.footer_text --expect column-added:notifications.params \
-  --expect count:schema_migrations --expect role-collapse
-```
+**After the upgrade**, `kukatko maintenance scan` should report nothing missing for any project, and the
+instance's `/system/projects` should list each project with the member and photo counts inventory A holds.
+A pre-tenancy library becomes the bootstrap project `v` in the store-root layout ("v kořeni úložiště" on
+`/system/projects/v`); moving it under its own prefix is a separate, later step (`storage rekey`, below).
 
-What each entry is: 0100 `projects` (one row, `v`), 0101 `project_members` (one per account — 14 = the
-accounts) and `users.last_project_uid`, 0102 the 18 `project_id` columns and the dropped `id` of the two
-one-row tables, 0103 `sessions.role` and the role collapse (10 × viewer, 1 × editor → `user`; the 3
-maintainers unchanged), 0109 `project_invites`, 0110 the five per-library `users` columns the memberships now
-hold (named one by one: `column-removed:users.*` would also hide an unintended drop of, say,
-`users.password_hash`), 0112 `storage_rekey_runs`, 0115 `storage_rekey_derived_failures`; 0114 drops only the
-`project_id` defaults, which the inventory (names and types) does not see; 0118
-`instance_settings.footer_text` (its backfill writes the one `v` row, which no digest covers); 0119
-`notifications.params` (nullable, no backfill: older notifications keep only their stored text). **Never allow anything else from
-this list blindly.**
+**API clients outside the embedded frontend** must use the project-prefixed routes once the multi-tenant
+release runs: there is no unprefixed catalogue route any more (`GET /api/v1/photos` → `404
+{"error":"not found"}`; `/api/v1/auth/*` stays unprefixed, so sessions and API tokens keep working). Point
+scripts at `/api/v1/p/<slug>/…`, give each `kukatko ctl` context a project (`kukatko ctl context set <name>
+--project <slug>`) and use a ctl binary of the new release; an MCP connector's endpoint is
+`/api/v1/p/<slug>/mcp` ([`MCP.md`](MCP.md)). An open browser tab or installed PWA keeps the old shell until
+the reader accepts the update toast (or reloads once); old bookmarks forward to `/p/<slug>/…`.
 
-**On a live instance** the app keeps writing between A and B, so the live tables drift: `count:jobs`,
-`count:audit_log`, `count:sessions`, `count:notifications`, `count:search_history`, `digest:users` (every
-visit stamps `last_seen_at`) and `digest:api_tokens` (every token call stamps `last_used_at`). Read them, then rerun with `--expect` for exactly those: `users.tsv` must show no
-change but the role collapse, and every catalogue difference (`digest:photos`, `digest:album_photos`,
-`photo:…`) must match an `audit_log` entry written in the window (`created_at` after A). An unexplained
-catalogue difference stops the rollout.
+#### Rollback — the down scripts
 
-**Never migrate under a running 0.31.0.** The chain 0100–0119 is not backward compatible: 0.31.0 served
-against a migrated schema fails every sign-in with 500 (`column "subject_uid" does not exist` — proven on a
-production copy, 2026-10-13) while its `/healthz` stays 200. Which new-binary commands may run against the
-production database **while the 0.31.0 container is still running**:
+Without restoring a backup: [`docs/migrations-rollback/`](migrations-rollback/README.md) holds hand-run down
+scripts for every file of the chain 0100 onwards, run newest first, each in one transaction. They put the
+schema back exactly (inventory A again, with no expectations) and keep every write made since, including the
+sessions the new release created, which the old release then accepts. **The order matters:**
 
-- `maintenance inventory` / `inventory-diff` — yes; this is what they are for (they never migrate).
-- every other subcommand that opens the database (`maintenance scan`, `import dir`, `sidecar …`,
-  `storage …`, `project purge`, `restore …`) — harmless: it refuses with `database is at schema N, this
-  binary expects M` and exits 1 without touching the schema. (Releases up to 0.31.0 instead migrated as a
-  side effect here.)
-- `kukatko migrate` — **no**. It sees 0.31.0's connections (no `application_name`, same user) and refuses;
-  do not override that with `--force`.
-- `kukatko serve` — only after the old container is stopped (step 5). It would start and migrate even with
-  0.31.0 connected, logging every other client at `ERROR` (`other database client`); seeing that line is
-  the sign the old container is already broken — stop it at once.
-
-The only safe order is **stop the old container → start the new one** (it migrates on start). The general
-advice to pre-migrate to shorten the downtime (CLI section above) holds only for releases whose migrations
-are backward compatible with the running binary — and even then `kukatko migrate` refuses while the old
-server is connected, so pre-migrating means `--force`, deliberately. From this release on every Kukátko
-announces `application_name` `kukatko/<version> <instance>`, so the next upgrade's `migrate` recognises the
-running server by name even if it connects as another database user.
-
-#### Production as it really is
-
-The checklist below is written for the production VPS (`ssh root@100.68.61.47`), not for a generic install:
-
-- **The container** is `vps-kukatko-1` (compose project `/root/apps/vps`, `restart: always`,
-  `stop_grace_period: 30s`, no healthcheck), on the docker network `traef`; the database is `kukatko` in the
-  `pgvector` container (user `postgres`). The image runs as `nobody` (uid 65534) and **has no `pg_dump`**.
-- **`kukatko backup` does not run there** — production has no `KUKATKO_BACKUP_*` configuration (it fails with
-  `backup not configured`) and the image no `pg_dump`. The backups that really exist:
-  - **Database:** the `backup` container (`tiredofit/db-backup`, vps repo
-    `roles/apps/files/apps/infra/docker-compose.yml`, `DB04`) dumps every database of `pgvector` as **plain
-    SQL `.sql.gz`** to the S3 prefix `vps-pgvector/` **every 8 hours** (`DEFAULT_BACKUP_INTERVAL: 480`),
-    counted from the container's start — on 2026-10-14 at about **07:10, 15:09 and 23:09 UTC** (Kukátko's
-    dump takes ~30 s). Read the current times from `docker logs backup` before choosing the deploy time.
-  - **Originals:** the Pi's cron `0 4 * * *` runs `~/projects/rpi/scripts/kukatko-backup.sh` — `rclone sync`
-    of R2 `kotrzina-photos` to `s3://kukatko-backup/kotrzina-photos` (versioned, deleted/overwritten objects
-    kept as noncurrent versions for **90 days**; log `/var/log/kukatko-backup.log`, alerts in
-    `rpi/mimir/rules/kukatko-backup.yaml`).
-- **Merging the vps PR *is* the deploy.** A push to `main` of `kozaktomas/vps` runs its `Deploy` workflow on
-  a self-hosted runner: Ansible copies `apps/vps` and its handler runs `docker compose up -d --remove-orphans`
-  in `/root/apps/vps`. Compose pulls the new tag first (a tag missing from the registry aborts before anything
-  is stopped), then **stops and removes the old container before it starts the new one** (event order checked
-  on Compose v5). There is no separate "now deploy" moment — **steps 1–4 must be finished before anyone
-  merges**, and the person merging must know that.
-
-#### Release-day checklist (owner)
-
-In this order; the storage move only at the very end, on another day if you like. **Steps 1–4 happen before
-the vps PR is merged.**
-
-1. **Backup — a fresh on-demand dump, right before the merge.** On the VPS:
+1. **Stop the new server first** — and keep it stopped: a restart policy or the next deploy's `up -d` would
+   start it and re-apply the migrations.
+2. **Run the down chain from the version actually applied**, newest first (the script of a file that was never
+   applied fails, and `|| break` stops the loop there):
 
    ```sh
-   install -d -m 700 /root/kukatko-backup
-   docker exec pgvector pg_dump -U postgres -Fc kukatko > /root/kukatko-backup/pre-tenancy-$(date -u +%Y%m%dT%H%MZ).dump
-   ls -l /root/kukatko-backup/                       # ~425 MB, ~2 min (2026-10-14)
-   docker cp /root/kukatko-backup/pre-tenancy-<ts>.dump pgvector:/tmp/pre.dump
-   docker exec pgvector pg_restore -l /tmp/pre.dump | grep -c 'TABLE DATA'   # readable, non-zero
-   docker exec pgvector rm /tmp/pre.dump
-   ```
-
-   and copy it off the VPS from the Pi (`scp root@100.68.61.47:/root/kukatko-backup/pre-tenancy-<ts>.dump
-   /mnt/nas-botka/kukatko/backups/`). It is a **schema-0099 dump**, so it restores only with the pre-0104
-   `search_path` fix ([`RESTORE.md`](RESTORE.md), "Dumps taken before migration 0104"). **Restoring it on
-   production** (the last resort — prefer the down scripts below, which keep the writes made since):
-
-   ```sh
-   docker stop vps-kukatko-1
-   docker exec pgvector psql -U postgres -c 'ALTER DATABASE kukatko RENAME TO kukatko_failed'   # keep it
-   docker exec pgvector createdb -U postgres kukatko
-   docker cp /root/kukatko-backup/pre-tenancy-<ts>.dump pgvector:/tmp/pre.dump
-   docker exec pgvector pg_restore --no-owner --no-privileges -f - /tmp/pre.dump \
-     | sed "s/^SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public', false);/" \
-     | docker exec -i pgvector psql -U postgres -v ON_ERROR_STOP=1 -d kukatko
-   docker exec pgvector rm /tmp/pre.dump
-   ```
-
-   then revert the vps PR to 0.31.0 (the restored schema is 0099). Restoring the 0099 dump took 3 min 21 s on
-   the box — expect 10–15 min on the VPS. The `backup` container's plain `.sql.gz` (newest file of the
-   `kukatko` database under `vps-pgvector/`) is the fallback: the same `sed`, fed by `zcat <file>.sql.gz`
-   instead of `pg_restore -f -` (check its head first — `zcat … | head -40` — for a `CREATE DATABASE` /
-   `\connect` line).
-2. **Pick the time and check for long transactions.** Not within ~15 minutes of a `backup`-container run
-   (above): 0102 takes `ACCESS EXCLUSIVE` on the catalogue tables and would queue behind its `pg_dump`, and
-   every request behind 0102. Right before the merge:
-   `docker exec pgvector psql -U postgres -d kukatko -c "SELECT pid, application_name, xact_start, left(query, 60) FROM pg_stat_activity WHERE datname = 'kukatko' AND xact_start < now() - interval '10 seconds'"`
-   — nothing but 0.31.0's own short queries, no `pg_dump`.
-3. **Inventory A** with the **new** image, against the production database, still on 0.31.0. The image runs as
-   `nobody`, so the output directory must belong to uid 65534 (otherwise `mkdir /inv/A: permission denied`).
-   The storage check uses the **read-only** R2 token (1Password "Kukatko backup" → `R2`, the one the Pi's
-   sync uses; Object Read only):
-
-   ```sh
-   install -d -o 65534 -g 65534 -m 700 /root/inventory
-   cat > /root/inventory/env <<'EOF'      # chmod 600; delete it after step 6
-   KUKATKO_DATABASE_URL=postgres://postgres:<POSTGRES_PASSWORD>@pgvector:5432/kukatko?sslmode=disable
-   KUKATKO_STORAGE_BACKEND=r2
-   KUKATKO_STORAGE_R2_ENDPOINT=https://6dce888ff2829565506648b8be9cdab3.eu.r2.cloudflarestorage.com
-   KUKATKO_STORAGE_R2_REGION=auto
-   KUKATKO_STORAGE_R2_BUCKET=kotrzina-photos
-   KUKATKO_STORAGE_R2_ACCESS_KEY=<read-only access key>
-   KUKATKO_STORAGE_R2_SECRET_KEY=<read-only secret key>
-   EOF
-   chmod 600 /root/inventory/env
-   docker run --rm --network traef --env-file /root/inventory/env -v /root/inventory:/inv \
-     --entrypoint /app/kukatko ghcr.io/panbotka/kukatko:<new> maintenance inventory --storage --out /inv/A
-   ```
-
-   On the production copy it took ~5 s and 48 MB RSS without `--storage` (the listing of ~190k objects adds
-   to that); it does not migrate. `/inv/A/storage-missing.tsv` must be empty.
-4. **Repoint the API clients — everything outside the embedded frontend.** There is no unprefixed project
-   route any more: `GET /api/v1/photos` and every other catalogue path without `/p/<slug>/` is the API's
-   `404 {"error":"not found"}` (`/api/v1/auth/*` stays unprefixed, so sessions hold). What breaks at the
-   switch, today:
-   - **`~/projects/fotky`** (the curating agent): its `bin/kukatko` is an old ctl (v0.30.0-44, unprefixed
-     routes) and `scripts/api.sh` builds `${SERVER}/api/v1${path}` for `caption-apply.py`,
-     `caption-nouns.py`, `date-apply.py` and both `find-*.py` — every call would 404. Handled by its own Botka
-     task in `fotky` ("Prepare fotky's API clients for Kukátko's project URL prefix (/api/v1/p/v) before the
-     multi-tenancy release", `3a05aa5b`): rebuild `bin/kukatko` from the release, add `/p/v` in `api.sh`. It
-     must be done (or the agent paused) before the merge.
-   - **The Pi's `~/.config/kukatko/ctl.yaml`:** the contexts `prod` and `boxstage` name no project; the new
-     ctl then refuses (`no project selected: run 'kukatko ctl projects use <slug>' or pass --project`). Run
-     `kukatko ctl context set prod --project v` and the same for `boxstage` (tested); an old ctl binary keeps
-     calling unprefixed routes — replace it with the release's.
-   - **MCP** is off in production (no `KUKATKO_MCP_*`), so no connector needs repointing; when it is turned
-     on, its endpoint is `…/api/v1/p/v/mcp` ([`MCP.md`](MCP.md)).
-   - **Browsers:** an open tab or an installed PWA keeps the 0.31.0 shell until the reader accepts the update
-     toast (the service worker parks the new one in "waiting"); that old shell calls unprefixed routes and
-     shows errors. One reload fixes it — say so in the announcement (step 8). Old bookmarks, the PWA's start
-     URL, its share target and mail links all forward to `/p/v/…`.
-5. **Deploy = merge the vps PR** (`ghcr.io/panbotka/kukatko:0.31.0` → the new tag; its body carries the link to
-   this runbook — see the `/release` override below). Watch on the VPS: `docker logs -f vps-kukatko-1` must
-   show the new version starting and **one `migration applied` line per file from 0100 to the newest** (20 for
-   0100 … 0119; rehearsed: 0.65 s on the box, ~2–3 s expected on the VPS, 0102 the longest at ~1 s) and no `other database client` line — one means
-   something still holds a session on the database (the old container?): find it. The outage is the container
-   restart plus that. No `kukatko migrate` beforehand (see above).
-6. **Inventory B** the same way (`--out /inv/B`), then the **diff with the release-day expect list** above; it
-   must exit 0 once the live drift has been read and allowed. Then `shred -u /root/inventory/env`.
-7. **Verify `v`.** The bootstrap project is the whole old library, so check it is whole and reachable:
-   `/system/projects` lists `v` (Veselice), active, with the member count of `users.tsv` and the photo count
-   of inventory A; `/system/projects/v` shows its storage layout as the store root ("v kořeni úložiště").
-   Sign in as an ordinary member: the chooser (or `/` straight into `/p/v/`) opens the library grid, a search,
-   one album, one person, the family tree, a task, the timeline and the map, and `GET /api/v1/auth/me` lists
-   the membership of `v` with its role; one old bookmark (`/albums/<uid>`) forwards to `/p/v/…`.
-   `kukatko maintenance scan` reports nothing missing for `v`. Anything off stops here — roll back below.
-8. **Announce** the release to the members, including the reload, e.g. „Kukátko má novou verzi. Pokud máte
-   Kukátko otevřené v prohlížeči nebo nainstalované jako aplikaci a místo fotek vidíte chyby, stránku jednou
-   obnovte (případně potvrďte nabídku ‚Obnovit')."
-9. **The storage move of `v`** — a separate job, started by hand, any time later; see
-   [the storage move runbook](#kukatko-storage-rekey-slug--the-storage-move-runbook) for its own backup
-   steps (a fresh database dump **and** a hand-run R2 → S3 sync right before it), the duration (plan 6–15 h)
-   and the post-move checks.
-
-#### Rollback
-
-Without restoring a backup: [`docs/migrations-rollback/`](migrations-rollback/README.md) holds the hand-run
-down scripts (newest first, each `psql -1`), proven on the production copy to return inventory A exactly —
-also after the new server has run and created sessions, which 0.31.0 then accepts. **The order matters:**
-
-1. **Stop the new container first:** `docker stop vps-kukatko-1`. With `restart: always` and the new tag still
-   in the compose file, a crash-restart mid-chain — or **any** later vps deploy's `compose up -d` — would start
-   it and **re-apply the migrations**. A manual stop is not undone by the restart policy, but the next
-   `compose up` would undo it, so do not merge anything into the vps repo until step 3.
-2. **Run the down chain from the version actually applied:** read
-   `docker exec pgvector psql -U postgres -d kukatko -Atc 'SELECT max(version) FROM schema_migrations'` and
-   start the loop at that file — a down script of a file that was never applied fails (`0115_down: relation
-   "storage_rekey_runs" does not exist`), and the loop's `|| break` would stop there. The scripts live in the
-   repo, not in the image; copy them to the VPS and run them inside `pgvector`:
-
-   ```sh
-   scp docs/migrations-rollback/01*_down.sql root@100.68.61.47:/root/rollback/   # from the Pi
-   # on the VPS, with N = max(version), newest first:
+   N=$(psql "$DATABASE_URL" -Atc 'SELECT max(version) FROM schema_migrations')
    for f in $(seq -f '%04g' "$N" -1 100); do
-     docker exec -i pgvector psql -U postgres -d kukatko -v ON_ERROR_STOP=1 -1 < /root/rollback/${f}_down.sql || break
+     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f docs/migrations-rollback/${f}_down.sql || break
    done
+   psql "$DATABASE_URL" -Atc 'SELECT max(version) FROM schema_migrations'   # must print 99
    ```
 
-   It must end with `max(version)` = 99. `0102_down` refuses once a second project exists and `0112_down`
-   once the storage move has committed a photo — then the way back is the dump of step 1, not the scripts.
-3. **Revert the vps PR** (the tag back to `ghcr.io/panbotka/kukatko:0.31.0`) and merge the revert: that deploy
-   starts 0.31.0 against the rolled-back schema. Check a sign-in and the library.
-
-#### Owner override for the tenancy release (`/release`)
-
-The owner's `/release` command (gitignored, `.claude/commands/release.md`) stops a release on its own BLOCK
-rules and says "do not work around a BLOCK". **For this release (0.31.0 → the multi-tenant one) its phase 1a
-fires, by design**; the owner overrides it knowingly, or not at all. What fires and why each is accepted:
-
-| `/release` check | What in this chain trips it | Why it is accepted |
-| --- | --- | --- |
-| 1a rollback safety: `DROP COLUMN` | 0102 drops `instance_settings.id` and `announcements.id`; 0103 `sessions.role`; 0110 five `users` columns | The values move into per-project rows and the memberships (inventory diff and a row-by-row membership check: nothing lost). Rollback is the down scripts, not the old image — they put every column back, proven to inventory A exactly. |
-| 1a rollback safety: the previous image no longer serves | 0.31.0 against the migrated schema fails every sign-in (500) — proven | Rolling the image back alone is never the rollback for this release: **stop → down chain → revert** (Rollback above). |
-| 1a rollback safety: dropped constraints/indexes, `SET DEFAULT`/`DROP DEFAULT` | 0102 replaces the `UNIQUE`s of `photos.file_hash`, the `slug`s and the one-row PKs by per-project keys; 0103 the role `CHECK`; 0114 drops the `project_id` defaults | Same: each down script restores the old key, check or default. |
-| 1a lock risk: `CREATE INDEX` without `CONCURRENTLY` on a large table | 0102 (`photos`, `faces`, `embeddings`, `audit_log` …), 0105 (`face_clusters`, `jobs`), 0111 and 0112 (`photos`) | Migrations run in a transaction (no `CONCURRENTLY` possible) **while no server runs** — the old container is stopped first, so nothing waits on them. Measured on the production copy: the whole chain 0.65 s on the box, 0102 324 ms (~1–1.3 s on the VPS). |
-| 1b / 1c config and compose | — | Nothing fires: no new required key (`storage.rekey.per_second` and `ratelimit.invite.*` have defaults), port, volume and env names unchanged. |
-
-The vps PR body must carry the link to this runbook section and say, in short: **steps 1–4 before merging**
-(the merge is the deploy), stop old → start new is what compose does, and the rollback is the down chain (not
-an image revert alone).
+   The scripts ship in the repository, not in the binary or the image; run them from a checkout of the
+   release you are leaving. `0102_down` **refuses** once a project other than the bootstrap project exists,
+   and `0112_down` once a storage move has committed a photo — then the way back is the pre-upgrade dump, not
+   the scripts. What each script does and drops: [`migrations-rollback/README.md`](migrations-rollback/README.md).
+3. **Start the previous release** against the rolled-back schema and check a sign-in and the library.
 
 ### `kukatko storage rekey <slug>` — the storage move (runbook)
 
@@ -972,74 +815,66 @@ unique only within a project. While any project other than the moved ones is sti
 is today: `project.Create` always gives a prefix), the closing sweep, `maintenance scan`'s `root derived`
 and `--root-derived` look at nothing at the root, like the final clean-up of sidecars and `families.yaml`.
 
-**Before you start — pre-move checks.** Run these against the project (here `v`) first; each must return
-**0 rows**:
+**Before you start — pre-move checks.** Run these against the project (`<project uid>` is its `projects.uid`;
+for the bootstrap project `pj0000000000000000veselice`) first; each must return **0 rows**:
 
 ```sql
 -- every row has a size and a SHA-256 the copy can be verified against
 SELECT uid, file_path, file_size, file_hash FROM photos
-WHERE project_id = 'pj0000000000000000veselice'
+WHERE project_id = '<project uid>'
   AND (file_size <= 0 OR file_hash !~ '^[0-9a-f]{64}$');
 -- no original over 5 GiB: a server-side copy cannot take it (ErrTooLargeToCopy),
 -- so such a photo stays in the old layout and the run can never end done
 SELECT uid, file_path, file_size FROM photos
-WHERE project_id = 'pj0000000000000000veselice' AND file_size > 5 * 1024^3;
+WHERE project_id = '<project uid>' AND file_size > 5 * 1024^3;
 ```
 
 A row with no size or a malformed hash fails verification and is left behind; an original over 5 GiB needs
 a multipart copy the move does not do — resolve either before starting.
 
-**When to start.** Only after the multi-tenant release is live and verified — step 7 of the upgrade runbook
-above: inventory B diffed clean, the UI spot-checked. Production has no `kukatko backup` (no backup
-configuration, no `pg_dump` in the image — see "Production as it really is" above), so the backups before the
-move are the two real ones, both taken **right before** starting it:
-
-- **A fresh database dump** on the VPS, the same way as release-day step 1:
-  `docker exec pgvector pg_dump -U postgres -Fc kukatko > /root/kukatko-backup/pre-move-$(date -u +%Y%m%dT%H%MZ).dump`
-  (a post-0104 dump: it restores with plain `pg_restore --no-owner --no-privileges`, no `sed`).
-- **The R2 → S3 sync of the originals, run by hand on the Pi** — not left to the 04:00 cron:
-  `bash ~/projects/rpi/scripts/kukatko-backup.sh >> /var/log/kukatko-backup.log 2>&1` (no extra arguments, so
-  it counts as a backup run; minutes when little changed). Not while the 04:00 run is still going.
+**When to start.** Only once the multi-tenant release runs and has been verified (the inventory diffed clean,
+the library checked — see [Upgrading](#upgrading--migrations-the-inventory-and-rollback) above), and only
+right after two fresh backups: a **database dump** (a post-0104 dump restores with plain `pg_restore
+--no-owner --no-privileges`) and a **backup of the originals** — `kukatko backup` does both; a deployment that
+backs up its bucket some other way should run that sync by hand right before, not leave it to a schedule.
 
 **A rollback of the move is not a restore of the dump.** The move deletes every old root object once its
-copy is verified, so a dump taken before the move names keys that no longer exist in R2. The material for
-going back is the pre-move dump **plus** the root objects' noncurrent versions in the versioned
-`s3://kukatko-backup/kotrzina-photos` (kept **90 days**, and only as complete as the sync that ran just
-before the move). **There is no tool for it**: it would be the dump restored, and every root key's last
-version copied back from S3 into R2 by hand (`aws s3api list-object-versions` + `copy-object` with
-`?versionId=`). In practice a move is never rolled back — a failed one is fixed and `--retry`ed forward; it
-never deletes an original before the row points at a verified copy.
+copy is verified, so a dump taken before the move names keys that no longer exist in the store. Going back
+would need the pre-move dump **plus** every root object copied back from the originals' backup (a versioned
+backup bucket keeps deleted objects as noncurrent versions). **There is no tool for it.** In practice a move
+is never rolled back — a failed one is fixed and `--retry`ed forward; it never deletes an original before the
+row points at a verified copy.
 
-**How long, what it costs.** Each photo is about 22 R2 round-trips from the VPS (stat, copy and verify of the
-original, the row's transaction, up to 9 derived copies and deletes, the delete of the original), one photo
-at a time; `storage.rekey.per_second` (10) makes 35 minutes the floor for `v`'s 21,151 photos / 78.4 GiB. At
-real R2 latencies (30–100 ms per HEAD/DELETE, 100–300 ms per copy) a photo takes ~1–2.5 s: **plan 6–15
-hours** and read the real rate from `/system/projects/v` after five minutes. Cost: ~211k `CopyObject` (Class
-A, $4.50/M ≈ $1, likely inside the free tier), ~42k HEAD (negligible), deletes free, no egress — **under
-$2**. The CDN's edge cache is keyed by path, so moved objects start cold (first views slightly slower).
+**How long, what it costs.** Each photo is about 22 store round-trips (stat, copy and verify of the original,
+the row's transaction, up to 9 derived copies and deletes, the delete of the original), one photo at a time;
+`storage.rekey.per_second` (10) is the ceiling, so 20k photos take at least ~35 minutes. Against a remote R2
+(30–100 ms per HEAD/DELETE, 100–300 ms per copy) a photo takes ~1–2.5 s — for 20k photos **plan 6–15 hours**,
+and read the real rate from `/system/projects/<slug>` after five minutes. On R2 that is ~10 `CopyObject`
+(Class A) per photo, a few HEADs, free deletes and no egress — a couple of dollars for 20k photos. A CDN in
+front of the bucket keyed by path starts cold for moved objects (first views slightly slower).
 
-**The CDN Worker needs no change** — it MACs whatever path it is asked for (no prefix or allow-list logic),
-and the server signs whatever key a row names, so `projects/<uid>/…` validates like a root key — **but this
-was never exercised end-to-end with the real Worker** (the rehearsals moved MinIO without it). So, a few
-minutes into the move, fetch one moved thumbnail **through the CDN**:
+**A media CDN must accept prefixed keys.** The server signs whatever key a row names, so
+`projects/<uid>/…` is signed like a root key; a Worker that verifies the signature over the whole path (as
+the reference Worker does) needs no change, but one with a prefix allow-list would refuse them. A few minutes
+into the move, fetch one moved thumbnail **through the CDN**:
 
 ```sh
-curl -s -H "Authorization: Bearer $TOKEN" 'https://fotky.kotrzina.cz/api/v1/p/v/photos?limit=100&sort=oldest' \
+curl -s -H "Authorization: Bearer $TOKEN" "https://<instance>/api/v1/p/<slug>/photos?limit=100&sort=oldest" \
   | jq -r '[.. | .thumb_url? // empty | select(contains("/projects/"))][0]' > /tmp/url
-curl -sI "$(cat /tmp/url)" | head -5    # https://photos-cdn.kotrzina.cz/projects/pj…/thumb/…  → 200, image/jpeg
+curl -sI "$(cat /tmp/url)" | head -5    # …/projects/pj…/thumb/… → 200, image/jpeg
 ```
 
-(or open the library and check that the tiles of the oldest photos still load). A 403 means the Worker
-refuses prefixed keys: **pause the move** and investigate — the moved rows already point at the new keys.
+(or open the library and check that the tiles of the oldest photos still load). A 403 means the CDN refuses
+prefixed keys: **pause the move** and investigate — the moved rows already point at the new keys.
 
 Then:
 
-1. `kukatko storage rekey v --dry-run` — the counts must match what the library holds (photos, bytes of
+1. `kukatko storage rekey <slug> --dry-run` — the counts must match what the library holds (photos, bytes of
    originals; `kukatko maintenance scan` beforehand should report nothing missing).
-2. Start it at a quiet time (`kukatko storage rekey v`, or the `ctl`/API equivalent). It needs the **running
-   server's worker** — the command only queues the job.
-3. **Watch** it: `/system/projects/v` (the bar and the measured rate — at most `per_second` × 60 photos a
-   minute, on production's R2 more like 25–60 — refresh every 3 s), `--status` (photos moved / total keeps
+2. Start it at a quiet time (`kukatko storage rekey <slug>`, or the `ctl`/API equivalent). It needs the
+   **running server's worker** — the command only queues the job.
+3. **Watch** it: `/system/projects/<slug>` (the bar and the measured rate — at most `per_second` × 60 photos
+   a minute, against a remote R2 more like 25–60 — refresh every 3 s), `--status` (photos moved / total keeps
    climbing), the maintainer's `/jobs` (one `storage_rekey` job, queued/running), and the server log. The
    library stays usable throughout; a photo whose row was just moved is served from its new key.
 4. If it competes with serving, `--pause` (or „Pozastavit" on the page), lower `storage.rekey.per_second`,
@@ -1056,18 +891,16 @@ is 0 — a run with derived failures ends `failed` instead), the sidecar of ever
 sidecars that have their replacement listed under the prefix are deleted (nothing at the root is touched
 while another project still lives there). Then:
 
-1. **Back up the new layout right away:** a fresh database dump (`post-move-<ts>.dump`, as above — its rows
-   name the new keys) and the Pi's sync by hand (`bash ~/projects/rpi/scripts/kukatko-backup.sh`). **That
-   first sync re-copies all ~78 GB through the Pi** (R2 → Pi → S3; the initial full sync took 10,617 s,
-   2 h 57 min) and fires **`KukatkoBackupSlow`** (> 3600 s) — expected, once. Versioning keeps the ~78 GB of
-   deleted root keys as noncurrent versions for 90 days, so the backup bucket doubles to ~156 GB for that
-   time: about $1.8 a month extra, ~$5–6 in total. If you skip the manual run, the 04:00 cron does the same.
+1. **Back up the new layout right away:** a fresh database dump (its rows name the new keys) and a backup of
+   the originals. An incremental sync of the bucket sees every moved object as new, so its first run after the
+   move copies the whole library again (and a versioned backup bucket holds the deleted root keys as
+   noncurrent versions until they expire — plan for twice the library's size there for that time).
 2. Run `kukatko maintenance scan`: `root derived` should be 0 (if not, `maintenance repair --root-derived`);
    anything else still in the root layout is reported as an orphan or legacy object (an object no row named)
    — review it before deleting anything. Its `missing thumbnails` will count **every photo of the project**
    right after the move: the scan looks only in the server's local disk cache, whose entries sit under the old
-   (root) path; the thumbnails themselves moved with the photos and each cache entry is rebuilt on first view
-   (gate III: 94 → 0 after one view of each photo). Not a loss — nothing to repair.
+   (root) path; the thumbnails themselves moved with the photos and each cache entry is rebuilt on first view.
+   Not a loss — nothing to repair.
 
 **What to do with `failed`.** `--status` lists the last errors (`key: message`) and, when photos keep
 derived objects at the root, `derived failed: N`. A run fails when it met more than 100 errors, when its pass
@@ -2236,7 +2069,7 @@ files, one request, streamed — a walk over a disk the server cannot see is not
   (`https://<accountid>.r2.cloudflarestorage.com`), `region` (R2 accepts only `auto`, default),
   `bucket` (**keep it private** — objects are served by an edge Worker that verifies the URL signature),
   `access_key`/`secret_key` (an R2 API token), `media_base_url` (the Worker's domain under which
-  signed URLs are minted — `https://kukatko-media.panbotka.cz`), `url_signing_secret`
+  signed URLs are minted, e.g. `https://media.example.com`), `url_signing_secret`
   (+ `url_signing_secret_previous`) and `url_ttl` (default `1h`, must be positive). Env:
   `KUKATKO_STORAGE_R2_ENDPOINT`/`_REGION`/`_BUCKET`/`_ACCESS_KEY`/
   `_SECRET_KEY`/`_MEDIA_BASE_URL`/`_URL_SIGNING_SECRET`/`_URL_SIGNING_SECRET_PREVIOUS`/`_URL_TTL`.
@@ -2405,8 +2238,8 @@ pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 
   query — the one interactive call — because search degrades to full-text when it expires and text
   results now beat semantic results later. `text_url` (**default empty**) sends *only* `/embed/text`
   to a second instance of the same service and is what makes semantic search work while the box
-  sleeps: production points it at the CPU text-only container next to the app
-  (`KUKATKO_EMBEDDING_TEXT_URL: "http://embeddings-text:8000"`, measured p50 0.43 s — 50× the box's
+  sleeps: point it at a CPU text-only container next to the app
+  (e.g. `KUKATKO_EMBEDDING_TEXT_URL: "http://embeddings-text:8000"`; measured p50 0.43 s — 50× the box's
   0.0086 s and still far inside `text_timeout`, cosine agreement with the box 0.999999), while
   `/embed/image`, `/embed/face` and `/ocr/image` keep going to `url` because a text-only instance
   answers them with 503. Empty means "one host answers everything", which is what an unsplit
@@ -2533,7 +2366,7 @@ pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 
   anybody. The resolved address is what the rate limiters key on, what the audit trail records and what the
   access log's `remote_ip` reports — one value, so a log line and an audit row about the same request name the
   same machine.
-  **Deployment:** the VPS runs the container behind Traefik on a shared Docker network, so the peer address
+  **Deployment:** for a container behind a reverse proxy on a shared Docker network, the peer address
   the app sees is the proxy's `172.x` bridge address — already inside the `private` default, and **no config
   change is needed there**. Check it after any topology change: if `remote_ip` in the access log is the same
   address for every request, the real proxy is outside the trusted set and everyone shares one rate-limit
