@@ -1651,13 +1651,18 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   otherwise does not matter (it reads vectors already in the DB). 503 without a backend, 404 missing subject —
   `{"error":"subject not found"}`, the same for a subject of another project; every candidate is an unassigned
   face of the request's project. Mounted by `server.WithAPI` (`buildCandidatesAPI` in `cmd/kukatko/candidates.go`).
-  **Vector rate limit** (→ 429): one bucket per user (`ratelimit.vector`), then one per project
-  (`ratelimit.vector_project`), inside the curator guard — shared by the three curator vector searches
-  (candidates, the sweep, collection expansion), separate from the browse pair (`/search`, `/similar`).
+  **Heavy vector rate limit** (→ 429): one bucket per user (`ratelimit.heavy_vector`, default 0.1/s,
+  burst 10), then one per project (`ratelimit.heavy_vector_project`, default 0.25/s, burst 20), inside the
+  curator guard — **one** pair of buckets shared by the five routes where a request scans a whole project
+  (`GET /duplicates`, `GET /review/queue`, `GET /faces/sweep`, this one, `GET /albums|labels/{uid}/similar`),
+  so alternating between them buys nothing; separate from the browse pair's (`/search`, `/similar`). The
+  user's bucket is checked first, so a member over their share never spends the project's tokens; an API
+  token flagged unlimited skips both. The 429 is the limiter's usual answer: `Retry-After: 1` and
+  `{"error":"rate limit exceeded"}`. Another project's buckets are never touched.
 - **Recognition sweep API (`/api/v1/p/{project}`, `internal/sweepapi`, curator and above via `RequireCurator`):**
   "go through all named people and find certain matches among unlabelled faces" — a server-side
   fan-out via the **candidate search** (`internal/candidates`) over all subjects, not client-side.
-  `GET /faces/sweep?confidence=<percent-or-distance>&limit=<per-person>` (the curator group's **vector rate
+  `GET /faces/sweep?confidence=<percent-or-distance>&limit=<per-person>` (the **heavy vector rate
   limit** → 429; one request is one whole scan) — over the request's project only:
   its named subjects, its unassigned faces. `confidence`: a value
   `>1` (max 100) is a **confidence percentage** → mapped to the cosine distance `1 - percent/100`
@@ -1680,7 +1685,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   (`buildSweepAPI` in `cmd/kukatko/sweep.go`), sharing `candidates.Service` with the candidates endpoint.
 - **Expand-a-collection API (`/api/v1/p/{project}`, `internal/expandapi`, curator and above via `RequireCurator`):**
   "find photos similar to a whole album / label" — filling out a half-tagged collection. `GET /albums/{uid}/similar`
-  and `GET /labels/{uid}/similar` (the curator group's **vector rate limit** → 429) with query
+  and `GET /labels/{uid}/similar` (the **heavy vector rate limit** → 429) with query
   `?threshold=&limit=` (`threshold` = max cosine distance,
   default `expand.max_distance` = 0.20, i.e. 80 % similarity — re-derived for SigLIP 2, it was 0.30 under
   CLIP ViT-L-14 (see [`THRESHOLDS.md`](THRESHOLDS.md)); `limit` default `expand.limit`, cap
@@ -1761,7 +1766,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   and the minority of hard questions is deliberate, since an all-easy game turns the player into a rubber
   stamp. Running out of one tier fills from the other, and a rebuild whose window came back empty rotates to
   the next one, so the queue only reports "nothing" for a genuinely empty library. `GET
-  /review/queue?source=both|people|labels&limit=N` (source empty → `both`, unknown → 400; limit empty/0 →
+  /review/queue?source=both|people|labels&limit=N` (the **heavy vector rate limit** → 429, inside the curator
+  guard — a rebuild runs the sweep, the expansion and the duplicate scan; source empty → `both`, unknown → 400; limit empty/0 →
   `review.round_size`, cap 100, non-numeric/negative → 400) → `{questions:[{id,kind:
   "face"|"label"|"place"|"duplicate"|"outlier",tier?:"sure"|"band",confidence,photo,subject?,face_index?,
   bbox?{relative,pixel},action?("create_marker"|"assign_person"),marker_uid?,label?,
@@ -3166,7 +3172,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   still audited (`library.reset`, written in the truncation's own transaction), so it shows up in `GET /audit`
   like everything else.
 - **Duplicates API (`/api/v1/p/{project}`, `internal/duplicatesapi` + `internal/duplicates`, editor/admin via
-  `RequireWrite`):** `GET /duplicates?limit=&offset=` → `{groups,total,limit,offset,next_offset}`
+  `RequireWrite`):** `GET /duplicates?limit=&offset=` (the **heavy vector rate limit** → 429, inside the
+  write guard — every page is a fresh scan of the whole project; the merge is not throttled by it)
+  → `{groups,total,limit,offset,next_offset}`
   groups of likely duplicates **within the request's project** (the pHash candidates and the embedding
   neighbours are both the project's; the same picture in two projects is never a group) from pHash Hamming distance (`duplicate.phash_max_diff`,
   banded-LSH) **and/or** embedding cosine distance (`duplicate.embedding_max_dist`, HNSW), merged by

@@ -8,11 +8,31 @@ import (
 	"github.com/panbotka/kukatko/internal/ratelimit"
 )
 
-// newVectorThrottle returns the middleware that throttles a group of
-// vector-search routes: one token-bucket per acting user (ratelimit.vector),
-// then one per project (ratelimit.vector_project). Every route the middleware
-// returned by one call guards draws on the same two limiters, so a caller cannot
-// multiply its budget by spreading itself over the group's endpoints.
+// newVectorThrottle returns the middleware that throttles the browse pair of
+// vector searches (GET /search, GET /photos/{uid}/similar): one token-bucket
+// per acting user (ratelimit.vector), then one per project
+// (ratelimit.vector_project). See userThenProjectThrottle for the order and the
+// exemption.
+func newVectorThrottle(cfg *config.Config) func(http.Handler) http.Handler {
+	return userThenProjectThrottle(cfg.RateLimit.Vector, cfg.RateLimit.VectorProject)
+}
+
+// newHeavyVectorThrottle returns the middleware that throttles the routes
+// where one request scans a whole project's vectors — the duplicate groups,
+// the review game's queue, the recognition sweep, the per-subject candidate
+// search and the collection expansion: one token-bucket per acting user
+// (ratelimit.heavy_vector), then one per project
+// (ratelimit.heavy_vector_project). The serve command builds it once and hands
+// the same middleware to all five routes, so they share one budget.
+func newHeavyVectorThrottle(cfg *config.Config) func(http.Handler) http.Handler {
+	return userThenProjectThrottle(cfg.RateLimit.HeavyVector, cfg.RateLimit.HeavyVectorProject)
+}
+
+// userThenProjectThrottle returns a middleware over two fresh limiters: one
+// keyed by the acting user (perUser), then one keyed by the request's project
+// (perProject). Every route the returned middleware guards draws on the same two
+// limiters, so a caller cannot multiply its budget by spreading itself over the
+// group's endpoints.
 //
 // The user's bucket is checked first, deliberately: a person over their own
 // share is refused without touching the project's bucket, so one member cannot
@@ -20,12 +40,12 @@ import (
 // unlimited (auth.RateLimitExempt) skips both. The middleware must be mounted
 // inside the route's auth guard — the keys are the identity and the project the
 // guard resolved.
-func newVectorThrottle(cfg *config.Config) func(http.Handler) http.Handler {
-	perUser := userThrottle(cfg.RateLimit.Vector)
-	perProject := ratelimit.New(cfg.RateLimit.VectorProject.RatePerSec, cfg.RateLimit.VectorProject.Burst).
+func userThenProjectThrottle(perUser, perProject config.RateLimitRule) func(http.Handler) http.Handler {
+	userLimit := userThrottle(perUser)
+	projectLimit := ratelimit.New(perProject.RatePerSec, perProject.Burst).
 		KeyedMiddlewareExcept(projectRateKey, auth.RateLimitExempt)
 	return func(next http.Handler) http.Handler {
-		return perUser(perProject(next))
+		return userLimit(projectLimit(next))
 	}
 }
 

@@ -220,6 +220,10 @@ func TestLoad_defaults(t *testing.T) {
 		{"ratelimit.vector.burst", cfg.RateLimit.Vector.Burst, 100},
 		{"ratelimit.vector_project.rate_per_sec", cfg.RateLimit.VectorProject.RatePerSec, 20.0},
 		{"ratelimit.vector_project.burst", cfg.RateLimit.VectorProject.Burst, 400},
+		{"ratelimit.heavy_vector.rate_per_sec", cfg.RateLimit.HeavyVector.RatePerSec, 0.1},
+		{"ratelimit.heavy_vector.burst", cfg.RateLimit.HeavyVector.Burst, 10},
+		{"ratelimit.heavy_vector_project.rate_per_sec", cfg.RateLimit.HeavyVectorProject.RatePerSec, 0.25},
+		{"ratelimit.heavy_vector_project.burst", cfg.RateLimit.HeavyVectorProject.Burst, 20},
 		{"upload_links.max_file_size_mb", cfg.UploadLinks.MaxFileSizeMB, 1024},
 		{"upload_links.max_uploads_per_link", cfg.UploadLinks.MaxUploadsPerLink, 2000},
 		{"upload_links.default_days", cfg.UploadLinks.DefaultDays, 30},
@@ -492,6 +496,8 @@ func TestLoad_rateLimitEnvOverride(t *testing.T) {
 	t.Setenv("KUKATKO_RATELIMIT_TILES_RATE_PER_SEC", "0")
 	t.Setenv("KUKATKO_RATELIMIT_INVITE_BURST", "7")
 	t.Setenv("KUKATKO_RATELIMIT_VECTOR_PROJECT_BURST", "9")
+	t.Setenv("KUKATKO_RATELIMIT_HEAVY_VECTOR_RATE_PER_SEC", "0")
+	t.Setenv("KUKATKO_RATELIMIT_HEAVY_VECTOR_PROJECT_BURST", "3")
 	t.Setenv("KUKATKO_RATELIMIT_GEOCODE_PROJECT_RATE_PER_SEC", "0")
 
 	cfg, err := Load("")
@@ -509,6 +515,12 @@ func TestLoad_rateLimitEnvOverride(t *testing.T) {
 	}
 	if cfg.RateLimit.VectorProject.Burst != 9 {
 		t.Errorf("ratelimit.vector_project.burst = %d, want 9", cfg.RateLimit.VectorProject.Burst)
+	}
+	if cfg.RateLimit.HeavyVector.RatePerSec != 0 {
+		t.Errorf("ratelimit.heavy_vector.rate_per_sec = %v, want 0 (disabled)", cfg.RateLimit.HeavyVector.RatePerSec)
+	}
+	if cfg.RateLimit.HeavyVectorProject.Burst != 3 {
+		t.Errorf("ratelimit.heavy_vector_project.burst = %d, want 3", cfg.RateLimit.HeavyVectorProject.Burst)
 	}
 	if cfg.RateLimit.GeocodeProject.RatePerSec != 0 {
 		t.Errorf("ratelimit.geocode_project.rate_per_sec = %v, want 0 (disabled)",

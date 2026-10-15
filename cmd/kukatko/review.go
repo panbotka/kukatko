@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
@@ -33,10 +35,12 @@ import (
 // the one assign state machine, the organize store for label attaches and the
 // feedback store for rejections. The leaderboard aggregates the review-tagged
 // audit rows straight from the shared pool. The curator and auth guards are
-// supplied via authAPI so reviewapi stays decoupled from auth's wiring.
+// supplied via authAPI so reviewapi stays decoupled from auth's wiring;
+// rateLimit is the heavy vector throttle (newHeavyVectorThrottle) the queue
+// shares with the other routes that scan a whole project.
 func buildReviewAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
-	matchSvc *facematch.Service,
+	matchSvc *facematch.Service, rateLimit func(http.Handler) http.Handler,
 ) *reviewapi.API {
 	sweepSvc := sweep.New(sweep.Config{
 		Subjects:    people.NewStore(db.Pool()),
@@ -93,6 +97,7 @@ func buildReviewAPI(
 		Leaderboard:    review.NewLeaderboardStore(db.Pool()),
 		RequireCurator: authAPI.RequireCurator,
 		RequireAuth:    authAPI.RequireAuth,
+		RateLimit:      rateLimit,
 	})
 }
 

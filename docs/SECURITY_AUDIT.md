@@ -1328,7 +1328,12 @@ below is open; each is an attack scenario with the mitigation that closes it and
   **per-user bucket and then a per-project bucket** (`ratelimit.vector` 5/s burst 100,
   `ratelimit.vector_project` 20/s burst 400), mounted inside the auth guard; the browse pair and the
   curator trio each have their own pair of buckets. A token an admin marked unlimited skips them, as it
-  skips every per-user limiter. *Residue:* the geocode caches' capacity is shared, so a busy project can
+  skips every per-user limiter. *Follow-up (review III, finding 12, 2026-10-15):* the curator trio's
+  bucket was still the browse burst of 100, and `GET /duplicates` and `GET /review/queue` — each a
+  whole-project scan per request — had no limit at all. All five now share one **heavy** pair
+  (`ratelimit.heavy_vector` 0.1/s burst 10, `ratelimit.heavy_vector_project` 0.25/s burst 20), mounted
+  inside the route's guard (`TestNewHeavyVectorThrottle_burstAcrossRoutes` in `cmd/kukatko`, the
+  `TestRateLimit_*` wiring tests in `internal/duplicatesapi` and `internal/reviewapi`). *Residue:* the geocode caches' capacity is shared, so a busy project can
   evict another's entries (bounded by its geocode bucket — it costs that project credits, not the other's
   data). *Tests:* `TestGeocode_projectShareLeavesTheInstanceBudget`, `TestGeocode_cacheIsPerProject`
   (`internal/mapsapi`), `TestNewVectorThrottle_userThenProject` (`cmd/kukatko`), and the

@@ -975,17 +975,27 @@ ratelimit:
   geocode_project:
     rate_per_sec: 3
     burst: 10
-  # The vector-search routes (GET /search, /photos/{uid}/similar,
-  # /albums|labels/{uid}/similar, POST /subjects/{uid}/candidates, GET
-  # /faces/sweep) — keyed by the acting user, then by the project. /search also
-  # serves every page of a filtered listing, so the bursts are generous; a token
-  # an admin marked unlimited skips both.
+  # The browse vector searches (GET /search, /photos/{uid}/similar) — keyed by
+  # the acting user, then by the project. /search also serves every page of a
+  # filtered listing, so the bursts are generous; a token an admin marked
+  # unlimited skips both (and the heavy pair below).
   vector:
     rate_per_sec: 5
     burst: 100
   vector_project:
     rate_per_sec: 20
     burst: 400
+  # The routes where one request scans a whole project (GET /duplicates, GET
+  # /review/queue, GET /faces/sweep, POST /subjects/{uid}/candidates, GET
+  # /albums|labels/{uid}/similar) — one shared budget, keyed by the acting user,
+  # then by the project. Each is an explicit action: ten in a row covers
+  # scrolling the duplicates list, then one every ten seconds.
+  heavy_vector:
+    rate_per_sec: 0.1
+    burst: 10
+  heavy_vector_project:
+    rate_per_sec: 0.25
+    burst: 20
   # The public upload-link routes (GET /u/{code} and its upload), per client IP.
   # These count requests, not files: the page sends one file per request (the
   # burst covers a camera roll), a script up to 50. max_uploads_per_link bounds files.

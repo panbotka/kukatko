@@ -33,6 +33,7 @@ import (
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/trash"
+	"github.com/panbotka/kukatko/internal/vectors"
 	"github.com/panbotka/kukatko/internal/version"
 	"github.com/panbotka/kukatko/internal/worker"
 )
@@ -403,25 +404,24 @@ func buildServices(
 	}
 	api := &projectAPI{
 		photos: photoAPI.RegisterRoutes, clusters: clusterAPI.RegisterRoutes, maps: mapsAPI.RegisterRoutes,
-		bulk:       buildBulkAPI(cfg, db, authAPI, exports.sidecar, enqueuer).RegisterRoutes,
-		duplicates: buildDuplicatesAPI(cfg, db, authAPI, vectorStore).RegisterRoutes,
-		process:    processAPI.RegisterRoutes, imports: buildImportAPI(db, authAPI).RegisterRoutes,
+		bulk:    buildBulkAPI(cfg, db, authAPI, exports.sidecar, enqueuer).RegisterRoutes,
+		process: processAPI.RegisterRoutes, imports: buildImportAPI(db, authAPI).RegisterRoutes,
 		upload: uploads.upload, uploadLinks: uploads.uploadLinks, users: authAPI.RegisterProjectRoutes,
 		maintenance: maintenanceAPI.RegisterProjectRoutes,
 	}
 	opts := slices.Concat([]server.Option{ // the instance-wide groups; the rest mount with projectRoutes
 		server.WithAPI(authAPI.RegisterInstanceRoutes), server.WithAPI(uploads.public),
 		server.WithAPI(jobAPI.RegisterRoutes), server.WithAPI(maintenanceAPI.RegisterInstanceRoutes),
-	}, discoveryAPIOptions(api, cfg, db, authAPI, mediaStore, matchSvc),
+	}, discoveryAPIOptions(api, cfg, db, authAPI, mediaStore, matchSvc, vectorStore),
 		readAPIOptions(api, cfg, db, authAPI, mediaStore, exports))
 	return opts, api, backgroundServices{worker: jobWorker, trash: trashSvc}, nil
 }
 
 // discoveryAPIOptions fills api with the project-scoped groups that need the
 // config, the pool, the auth guard and the media store together: the
-// editor-only discovery APIs riding the vector indexes (per-subject candidates,
-// the recognition sweep, collection expansion, the review game and
-// repeated-marker review), the MCP server that lets an AI agent drive the
+// editor-only discovery APIs riding the vector indexes (duplicate groups,
+// per-subject candidates, the recognition sweep, collection expansion, the
+// review game and repeated-marker review), the MCP server that lets an AI agent drive the
 // library, and — the one read here open to everybody — the people index's
 // subject avatars, which are in this group because rendering one needs the
 // config's derived-media cache path. It returns the one instance-wide group
@@ -432,16 +432,19 @@ func buildServices(
 // off unless mcp.enabled is set.
 func discoveryAPIOptions(
 	api *projectAPI, cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
-	matchSvc *facematch.Service,
+	matchSvc *facematch.Service, vectorStore *vectors.Store,
 ) []server.Option {
-	// The curator's three vector searches share one pair of buckets (per user,
-	// per project) of their own, so a reader browsing similar photos never eats
-	// the budget of the curator's sweep, nor the other way round.
-	vectorLimit := newVectorThrottle(cfg)
-	api.candidates = buildCandidatesAPI(cfg, db, authAPI, mediaStore, vectorLimit).RegisterRoutes
-	api.sweep = buildSweepAPI(cfg, db, authAPI, mediaStore, vectorLimit).RegisterRoutes
-	api.expand = buildExpandAPI(cfg, db, authAPI, mediaStore, vectorLimit).RegisterRoutes
-	api.review = buildReviewAPI(cfg, db, authAPI, mediaStore, matchSvc).RegisterRoutes
+	// The five routes where one request scans a whole project's vectors share
+	// one pair of buckets (per user, per project), apart from the browse pair's,
+	// so a reader browsing similar photos never eats the budget of a curator's
+	// sweep, nor the other way round, and a curator cannot dodge the brake by
+	// alternating between them.
+	heavyLimit := newHeavyVectorThrottle(cfg)
+	api.duplicates = buildDuplicatesAPI(cfg, db, authAPI, vectorStore, heavyLimit).RegisterRoutes
+	api.candidates = buildCandidatesAPI(cfg, db, authAPI, mediaStore, heavyLimit).RegisterRoutes
+	api.sweep = buildSweepAPI(cfg, db, authAPI, mediaStore, heavyLimit).RegisterRoutes
+	api.expand = buildExpandAPI(cfg, db, authAPI, mediaStore, heavyLimit).RegisterRoutes
+	api.review = buildReviewAPI(cfg, db, authAPI, mediaStore, matchSvc, heavyLimit).RegisterRoutes
 	// Repeated-marker review shares the same assign state machine, so a marker
 	// detached there is detached exactly as it is on the photo detail.
 	api.dupMarkers = buildDupMarkersAPI(db, authAPI, matchSvc).RegisterRoutes

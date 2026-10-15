@@ -65,6 +65,12 @@ type Config struct {
 	// RequireAuth guards the read-only leaderboard endpoint; nil means no guard
 	// (tests only).
 	RequireAuth func(http.Handler) http.Handler
+	// RateLimit throttles GET /review/queue — a rebuild runs the sweep, the
+	// collection expansion and the duplicate scan over the whole project. It is
+	// mounted inside RequireCurator (it keys on the identity and the project the
+	// guard resolved); answers and the leaderboard are not throttled by it. Nil
+	// means no throttle (tests only).
+	RateLimit func(http.Handler) http.Handler
 }
 
 // API carries the handlers' dependencies.
@@ -73,6 +79,7 @@ type API struct {
 	leaderboard    Leaderboarder
 	requireCurator func(http.Handler) http.Handler
 	requireAuth    func(http.Handler) http.Handler
+	rateLimit      func(http.Handler) http.Handler
 }
 
 // NewAPI wires the review game endpoints from cfg.
@@ -86,20 +93,26 @@ func NewAPI(cfg Config) *API {
 	if authn == nil {
 		authn = passthrough
 	}
+	limit := cfg.RateLimit
+	if limit == nil {
+		limit = passthrough
+	}
 	return &API{
 		service:        cfg.Service,
 		leaderboard:    cfg.Leaderboard,
 		requireCurator: write,
 		requireAuth:    authn,
+		rateLimit:      limit,
 	}
 }
 
 // RegisterRoutes mounts the review game endpoints on r (already scoped to
-// /api/v1): the mutating queue/answer endpoints behind the curator guard, the
+// /api/v1): the mutating queue/answer endpoints behind the curator guard (the
+// queue also behind the heavy vector throttle, inside the guard), the
 // read-only leaderboard behind the lighter auth guard.
 func (a *API) RegisterRoutes(r chi.Router) {
 	guarded := r.With(a.requireCurator)
-	guarded.Get("/review/queue", a.handleQueue)
+	guarded.With(a.rateLimit).Get("/review/queue", a.handleQueue)
 	guarded.Post("/review/answer", a.handleAnswer)
 	r.With(a.requireAuth).Get("/review/leaderboard", a.handleLeaderboard)
 }

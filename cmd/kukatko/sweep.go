@@ -18,8 +18,8 @@ import (
 // drift. Concurrency and the subject cap come from cfg.Sweep; a nil logger falls back
 // to slog.Default(), which obs.Setup has already pointed at the app's JSON logger.
 // The curator guard is supplied via authAPI so sweepapi stays decoupled from auth;
-// rateLimit is the curator group's vector throttle (newVectorThrottle), shared
-// with the candidate search and the collection expansion.
+// rateLimit is the heavy vector throttle (newHeavyVectorThrottle), shared with
+// the other routes that scan a whole project.
 func buildSweepAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
 	rateLimit func(http.Handler) http.Handler,

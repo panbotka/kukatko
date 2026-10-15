@@ -20,9 +20,9 @@ import (
 // the expand service (which votes each of an album's or a label's members' embedding
 // neighbours together) behind its curator endpoints. The media store stamps
 // the candidate photos' URLs; the curator guard is supplied via authAPI so the
-// expandapi package stays decoupled from auth's wiring. rateLimit is the curator
-// group's vector throttle (newVectorThrottle), shared with the candidate search
-// and the sweep.
+// expandapi package stays decoupled from auth's wiring. rateLimit is the heavy
+// vector throttle (newHeavyVectorThrottle), shared with the other routes that
+// scan a whole project.
 func buildExpandAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
 	rateLimit func(http.Handler) http.Handler,

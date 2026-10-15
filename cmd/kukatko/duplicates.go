@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
@@ -20,14 +22,17 @@ import (
 // even while the embeddings box is offline. The feedback store supplies the pairs
 // the user settled as "not duplicates", which the scan drops so a dismissed pair
 // stays gone across re-scans. The write guard is supplied via authAPI so
-// duplicatesapi stays decoupled from auth's wiring.
+// duplicatesapi stays decoupled from auth's wiring. rateLimit is the heavy
+// vector throttle (newHeavyVectorThrottle) the listing shares with the other
+// routes that scan a whole project; the merge is not throttled by it.
 func buildDuplicatesAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, vectorStore *vectors.Store,
+	rateLimit func(http.Handler) http.Handler,
 ) *duplicatesapi.API {
 	merge := dupmerge.NewService(db.Pool())
 	if !cfg.Duplicate.Enabled {
 		return duplicatesapi.NewAPI(duplicatesapi.Config{
-			Service: nil, Merge: merge, RequireWrite: authAPI.RequireWrite,
+			Service: nil, Merge: merge, RequireWrite: authAPI.RequireWrite, RateLimit: rateLimit,
 		})
 	}
 	photoStore := photos.NewStore(db.Pool())
@@ -40,6 +45,6 @@ func buildDuplicatesAPI(
 		EmbeddingMaxDist: cfg.Duplicate.EmbeddingMaxDist,
 	})
 	return duplicatesapi.NewAPI(duplicatesapi.Config{
-		Service: svc, Merge: merge, RequireWrite: authAPI.RequireWrite,
+		Service: svc, Merge: merge, RequireWrite: authAPI.RequireWrite, RateLimit: rateLimit,
 	})
 }

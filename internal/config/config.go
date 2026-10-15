@@ -177,16 +177,23 @@ type RateLimitConfig struct {
 	// starve the others of credits. A non-positive RatePerSec leaves only the
 	// instance-wide cap.
 	GeocodeProject RateLimitRule `mapstructure:"geocode_project"`
-	// Vector caps the routes that run a vector search — GET /search, GET
-	// /photos/{uid}/similar, GET /albums|labels/{uid}/similar, POST
-	// /subjects/{uid}/candidates and GET /faces/sweep — keyed by the acting user.
-	// The browse pair (search, similar) and the curator trio each draw on
-	// buckets of their own under this one rule.
+	// Vector caps the browse pair of vector searches — GET /search and GET
+	// /photos/{uid}/similar — keyed by the acting user.
 	Vector RateLimitRule `mapstructure:"vector"`
 	// VectorProject caps the same routes keyed by the request's project, after
 	// the per-user bucket, so the members of one project together cannot hog the
 	// database's vector index and the embedding sidecar every project shares.
 	VectorProject RateLimitRule `mapstructure:"vector_project"`
+	// HeavyVector caps the routes where one request walks a whole project's
+	// vectors (or many subjects' worth of them) — GET /duplicates, GET
+	// /review/queue, GET /faces/sweep, POST /subjects/{uid}/candidates and GET
+	// /albums|labels/{uid}/similar — keyed by the acting user. All five draw on
+	// one bucket, so spreading over them buys nothing.
+	HeavyVector RateLimitRule `mapstructure:"heavy_vector"`
+	// HeavyVectorProject caps the same routes keyed by the request's project,
+	// after the per-user bucket, so one project's curators together cannot keep
+	// the shared database busy with whole-library scans.
+	HeavyVectorProject RateLimitRule `mapstructure:"heavy_vector_project"`
 	// UploadLink caps the public upload-link routes (GET /u/{code} and its
 	// one-file-per-request upload) per client IP. They are open to anybody who
 	// holds a link, so this is the per-person brake.
@@ -1696,6 +1703,15 @@ func setFairnessDefaults(v *viper.Viper) {
 	v.SetDefault("ratelimit.vector.burst", 100)
 	v.SetDefault("ratelimit.vector_project.rate_per_sec", 20)
 	v.SetDefault("ratelimit.vector_project.burst", 400)
+	// Each heavy vector request scans a whole project (or every named person in
+	// it), and every one is an explicit action: a page of duplicate groups, a
+	// round of the review game, one sweep or one candidate search. Ten in a row
+	// covers scrolling through the duplicates list; after that one every ten
+	// seconds is still faster than a person reviews the results.
+	v.SetDefault("ratelimit.heavy_vector.rate_per_sec", 0.1)
+	v.SetDefault("ratelimit.heavy_vector.burst", 10)
+	v.SetDefault("ratelimit.heavy_vector_project.rate_per_sec", 0.25)
+	v.SetDefault("ratelimit.heavy_vector_project.burst", 20)
 }
 
 // setUploadLinkDefaults registers the upload links' caps and their two request

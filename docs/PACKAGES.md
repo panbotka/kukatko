@@ -3270,7 +3270,7 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   candidate ever comes from another project however close its face sits), `internal/candidatesapi/`
   (a curator-and-above HTTP API over the candidate search: the `Service` interface (satisfied by `candidates.Service`),
   `NewAPI(Config{Service,RequireCurator,RateLimit})`+`RegisterRoutes` mounts `POST /subjects/{uid}/candidates`
-  behind `RequireCurator` and then the vector throttle `RateLimit` (inside the guard; nil = none); the body `{threshold?,limit?}` is **optional** (empty → defaults),
+  behind `RequireCurator` and then the heavy vector throttle `RateLimit` (inside the guard; nil = none); the body `{threshold?,limit?}` is **optional** (empty → defaults),
   `DisallowUnknownFields` + 64 KiB, a negative `threshold`/`limit` → 400; 503 without a backend, 404 missing
   subject (`people.ErrSubjectNotFound`) — the same fixed `subject not found` body for a subject of another
   project, searched in the request's project (`auth.ProjectUIDFromContext`); mounted in `serve` (`buildCandidatesAPI` in
@@ -3306,7 +3306,7 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   subjects), `internal/sweepapi/`
   (a curator-and-above HTTP API over the sweep: the `Service` interface (satisfied by `*sweep.Service`),
   `NewAPI(Config{Service,RequireCurator,RateLimit})` (nil RequireCurator/RateLimit → pass-through) +
-  `RegisterRoutes` mounts `GET /faces/sweep` behind `RequireCurator` and then the vector throttle; `parseConfidence` (percent-or-distance → distance, floor
+  `RegisterRoutes` mounts `GET /faces/sweep` behind `RequireCurator` and then the heavy vector throttle; `parseConfidence` (percent-or-distance → distance, floor
   `0.01`, default 75 %) + `parseLimit`, errors → 400; streams **NDJSON** via the `stream` helper, which
   sets the headers (`application/x-ndjson`, `Cache-Control: no-store`) **lazily** at the first line and
   **flushes** after each one (`http.Flusher`, propagated through `internal/metrics` `statusRecorder.Flush`);
@@ -3351,7 +3351,7 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   with two methods `Album`/`Label(ctx,projectUID,uid,req)`, `NewAPI(Config{Service,RequireCurator,RateLimit})` +
   `RegisterRoutes` mounts
   `GET /albums/{uid}/similar` and `GET /labels/{uid}/similar` behind `RequireCurator` then the vector
-  throttle `RateLimit` (nil = none; `cmd/kukatko` hands the three curator APIs one shared `newVectorThrottle`) (they lead into the
+  throttle `RateLimit` (nil = none; `cmd/kukatko` hands the five whole-project routes one shared `newHeavyVectorThrottle`) (they lead into the
   album/label curation a curator owns); both share `respond` +
   `finder`, differing only in the not-found sentinel; `parseRequest` reads the query `?threshold=&limit=` (empty →
   default, non-numeric / negative → 400); 503 without a backend, 404 missing album/label
@@ -3758,8 +3758,9 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   `internal/reviewapi`'s `TestLeaderboardRoute_isPerProject` proves it over HTTP with `projecttest`),
   `internal/reviewapi/`
   (an HTTP API over the review game: the `Service` interface (satisfied by `*review.Service`) and `Leaderboarder`
-  (satisfied by `*review.LeaderboardStore`), `NewAPI(Config{Service,Leaderboard,RequireCurator,RequireAuth})`
-  (nil guards → pass-through) + `RegisterRoutes` mounts `GET /review/queue` and `POST /review/answer`
+  (satisfied by `*review.LeaderboardStore`), `NewAPI(Config{Service,Leaderboard,RequireCurator,RequireAuth,RateLimit})`
+  (nil guards/throttle → pass-through) + `RegisterRoutes` mounts `GET /review/queue` (then the heavy vector
+  throttle `RateLimit`, inside the guard) and `POST /review/answer`
   behind **`RequireCurator`** (curator and above — they mutate the library) and `GET /review/leaderboard` behind **`RequireAuth`**
   (only aggregates → any logged-in user, even a viewer); the queue reads `?source=` (empty → `both`,
   `review.ParseSource` → 400 on anything else) and `?limit=` (empty → default,
@@ -6046,8 +6047,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `ErrTooFewMembers`/`ErrKeeperNotInGroup`/`ErrPhotoNotFound`/`ErrKeeperNotFound`/`ErrCrossKindGroup`), `internal/duplicatesapi/`
   (an editor/admin HTTP API over duplicate detection and resolution: the interfaces `Service` (`FindGroups`, satisfied by
   `*duplicates.Service`, **nil → 503**) and `MergeService` (`Merge`/`Preview`, satisfied by `*dupmerge.Service`,
-  **nil → 503**); `NewAPI(Config{Service,Merge,RequireWrite})`+`RegisterRoutes` mounts `GET /duplicates`
-  and `POST /duplicates/merge` behind `RequireWrite` (listing: `limit`≤100/`offset`, invalid → 400, a failed scan
+  **nil → 503**); `NewAPI(Config{Service,Merge,RequireWrite,RateLimit})`+`RegisterRoutes` mounts `GET /duplicates`
+  and `POST /duplicates/merge` behind `RequireWrite`, the listing then behind the heavy vector throttle
+  `RateLimit` (inside the guard; nil = none — every page is a whole-project scan) (listing: `limit`≤100/`offset`, invalid → 400, a failed scan
   → 500; merge: a bad group → 400 — including one mixing a video with a still (`ErrCrossKindGroup`), whose
   reason is passed through to the body — a member outside the request's project, the keeper included,
   foreign or missing alike → **404 `{"error":"photo not found"}`**, one body naming no uid, nothing
@@ -6414,11 +6416,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (8192), so it needs no external goroutine; mounted on `POST /upload` (ingest), `POST /photos/bulk`
   (bulkapi), `POST /import/*` (importapi) and `GET /map/tiles/...` (mapsapi) — the limits come from the
   `ratelimit.*` config; login and geocode have their own limiters (geocode now *uses* this package: a
-  per-project limiter in front of a one-key instance limiter). The vector-search routes (`photoapi`'s
-  search/similar, `candidatesapi`, `expandapi`, `sweepapi`) are throttled by `cmd/kukatko`'s
-  `newVectorThrottle`: a per-user `KeyedMiddlewareExcept` wrapped around a per-project one
-  (`ratelimit.vector`, `ratelimit.vector_project`), so a member over their own share never spends the
-  project's tokens. `KeyedMiddleware(keyFn)` is the same
+  per-project limiter in front of a one-key instance limiter). The browse vector searches (`photoapi`'s
+  search/similar) are throttled by `cmd/kukatko`'s `newVectorThrottle`: a per-user
+  `KeyedMiddlewareExcept` wrapped around a per-project one (`ratelimit.vector`, `ratelimit.vector_project`),
+  so a member over their own share never spends the project's tokens. The five whole-project routes
+  (`duplicatesapi`'s listing, `reviewapi`'s queue, `candidatesapi`, `expandapi`, `sweepapi`) share one
+  `newHeavyVectorThrottle` built the same way from `ratelimit.heavy_vector`/`heavy_vector_project`. `KeyedMiddleware(keyFn)` is the same
   middleware with the bucket key chosen by the caller instead of the IP; `Middleware` is now
   `KeyedMiddleware(clientIP)`. It exists for `POST /photos/{uid}/comments`, which is throttled **per user**
   and therefore mounted *inside* the auth guard (the principal is only on the context once auth has run) — a

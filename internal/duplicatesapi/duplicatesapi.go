@@ -50,11 +50,13 @@ type API struct {
 	service      Service
 	merge        MergeService
 	requireWrite func(http.Handler) http.Handler
+	rateLimit    func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. A nil Service is valid (the list
 // endpoint answers 503) as is a nil Merge (the merge endpoint answers 503);
-// RequireWrite is required.
+// RequireWrite is required; a nil RateLimit leaves the listing unthrottled
+// (tests only).
 type Config struct {
 	// Service finds duplicate groups; nil means detection is not configured.
 	Service Service
@@ -62,20 +64,29 @@ type Config struct {
 	Merge MergeService
 	// RequireWrite guards the endpoints for editors and admins.
 	RequireWrite func(http.Handler) http.Handler
+	// RateLimit throttles the listing — every page is a fresh scan of the whole
+	// project's hashes and embeddings. It is mounted inside RequireWrite (it
+	// keys on the identity and the project the guard resolved); the merge is
+	// not throttled by it.
+	RateLimit func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{service: cfg.Service, merge: cfg.Merge, requireWrite: cfg.RequireWrite}
+	limit := cfg.RateLimit
+	if limit == nil {
+		limit = func(next http.Handler) http.Handler { return next }
+	}
+	return &API{service: cfg.Service, merge: cfg.Merge, requireWrite: cfg.RequireWrite, rateLimit: limit}
 }
 
 // RegisterRoutes mounts the duplicates endpoints onto r, which the caller has
 // scoped under the API base path (for example /api/v1):
 //
-//	GET  /duplicates        RequireWrite  list duplicate groups (query: limit, offset)
-//	POST /duplicates/merge  RequireWrite  resolve a group by merging into its keeper
+//	GET  /duplicates        RequireWrite + RateLimit  list duplicate groups (query: limit, offset)
+//	POST /duplicates/merge  RequireWrite              resolve a group by merging into its keeper
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.requireWrite).Get("/duplicates", a.handleList)
+	r.With(a.requireWrite, a.rateLimit).Get("/duplicates", a.handleList)
 	r.With(a.requireWrite).Post("/duplicates/merge", a.handleMerge)
 }
 

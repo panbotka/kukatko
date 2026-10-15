@@ -2306,8 +2306,9 @@ pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 
   enabled requires a valid MAC + at least one target (`broadcast_addr`/`interface`).
 - **Rate-limit keys (`ratelimit.*`, `internal/ratelimit`):** per-client-IP token-bucket limits on
   heavy endpoints. Sections `upload`/`bulk`/`comment`/`tiles`/`upload_link`/`upload_link_per_link`/`invite`/
-  `geocode_project`/`vector`/`vector_project`/`member_add`, each `{rate_per_sec, burst}`; defaults 5/30, 2/10,
-  0.5/10, 50/200, 2/60, 10/300, 2/60, 3/10, 5/100, 20/400, 0.05/10; `rate_per_sec ≤ 0` disables the rule (middleware no-op). Env e.g.
+  `geocode_project`/`vector`/`vector_project`/`heavy_vector`/`heavy_vector_project`/`member_add`, each
+  `{rate_per_sec, burst}`; defaults 5/30, 2/10, 0.5/10, 50/200, 2/60, 10/300, 2/60, 3/10, 5/100, 20/400,
+  0.1/10, 0.25/20, 0.05/10; `rate_per_sec ≤ 0` disables the rule (middleware no-op). Env e.g.
   `KUKATKO_RATELIMIT_UPLOAD_RATE_PER_SEC`. **`comment` (POST `/photos/{uid}/comments`) is keyed by the
   authenticated user**, not by IP (`Limiter.KeyedMiddleware`, mounted *inside* the auth guard so the
   principal is on the context): a household shares one address, and throttling everyone's conversation
@@ -2322,12 +2323,22 @@ pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 
   instance's tokens; `0` leaves only the instance cap. The geocode caches are keyed by project too.
   **`vector`** (default 5/s, burst 100, keyed by the acting user) and **`vector_project`** (default 20/s,
   burst 400, keyed by the project, checked after the user's bucket) throttle the routes that run a vector
-  search: `GET /search` and `GET /photos/{uid}/similar` share one pair of buckets, and the curator's
-  `POST /subjects/{uid}/candidates`, `GET /faces/sweep` and `GET /albums|labels/{uid}/similar` share
-  another. `/search` also serves every page of a filtered listing, so the defaults sit far above what a
-  family browsing its library sends (a fling through results is a few requests a second); they exist
-  so one member or one project cannot hog the vector index and the sidecar the whole instance shares.
-  An API token flagged unlimited skips both. **`upload_link`** (default 2/60) throttles the public upload-link routes
+  search one photo at a time: `GET /search` and `GET /photos/{uid}/similar` share one pair of buckets.
+  `/search` also serves every page of a filtered listing, so the defaults sit far above what a family
+  browsing its library sends (a fling through results is a few requests a second); they exist so one
+  member or one project cannot hog the vector index and the sidecar the whole instance shares.
+  **`heavy_vector`** (default 0.1/s, burst 10, keyed by the acting user, env e.g.
+  `KUKATKO_RATELIMIT_HEAVY_VECTOR_RATE_PER_SEC`) and **`heavy_vector_project`** (default 0.25/s, burst 20,
+  keyed by the project, checked after the user's bucket) throttle the routes where **one request scans a
+  whole project**: `GET /duplicates` (every page re-runs the pHash + embedding scan), `GET /review/queue`
+  (a rebuild runs the sweep, the expansion and the duplicate scan), `GET /faces/sweep`, `POST
+  /subjects/{uid}/candidates` and `GET /albums|labels/{uid}/similar` — all five share **one** pair of
+  buckets, so alternating between them buys nothing. Every one is an explicit action (a page of groups, a
+  round of the game, one sweep or search), so ten in a row covers scrolling the duplicates list and one
+  every ten seconds after that is still faster than a person reviews the results; without it one curator
+  could run a hundred whole-library sweeps back to back and slow every other project on the shared
+  database. A `POST /duplicates/merge` or a review answer is not throttled by it. An API token flagged
+  unlimited skips both pairs. **`upload_link`** (default 2/60) throttles the public upload-link routes
   (`GET /u/{code}` and its upload) per client IP, ahead of the code lookup; **`upload_link_per_link`**
   (default 10/300) throttles the uploads through **one link**, keyed by the link whoever sends them — the
   brake on a link that leaked to somebody with many addresses. Both count **requests**, not files: the
