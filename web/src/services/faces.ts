@@ -1,4 +1,4 @@
-import { ApiError } from './auth'
+import { ApiError, retryAfterOf } from './auth'
 import { type Bbox } from './people'
 import { type Photo } from './photos'
 import { apiPath } from './api'
@@ -42,7 +42,7 @@ async function postJSON<T>(path: string, body: unknown, signal?: AbortSignal): P
     signal,
   })
   if (!res.ok) {
-    throw new ApiError(res.status, await readErrorMessage(res))
+    throw new ApiError(res.status, await readErrorMessage(res), retryAfterOf(res))
   }
   return (await res.json()) as T
 }

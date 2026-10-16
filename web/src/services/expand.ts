@@ -1,4 +1,4 @@
-import { ApiError } from './auth'
+import { ApiError, retryAfterOf } from './auth'
 import { type Photo } from './photos'
 import { apiPath } from './api'
 
@@ -35,7 +35,7 @@ async function readErrorMessage(res: Response): Promise<string> {
 async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(apiPath(path), { credentials: 'same-origin', signal })
   if (!res.ok) {
-    throw new ApiError(res.status, await readErrorMessage(res))
+    throw new ApiError(res.status, await readErrorMessage(res), retryAfterOf(res))
   }
   return (await res.json()) as T
 }

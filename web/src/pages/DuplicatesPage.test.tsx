@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
 import { REVIEW_GRID_SCOPE } from '../lib/gridDensity'
@@ -11,6 +11,7 @@ import {
   type DuplicatesResponse,
   type MergeResult,
 } from '../services/duplicates'
+import { elapseRateLimitWait, rateLimited } from '../test/rateLimit'
 
 import { DuplicatesPage } from './DuplicatesPage'
 
@@ -103,6 +104,10 @@ beforeEach(async () => {
   window.localStorage.clear()
   fetchMock.mockReset()
   mergeMock.mockReset()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('DuplicatesPage', () => {
@@ -340,6 +345,49 @@ describe('DuplicatesPage', () => {
     expect(await screen.findByRole('img', { name: 'ph_more.jpg' })).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'ph_keep.jpg' })).toBeInTheDocument()
     expect(screen.queryByText('Could not load more duplicates.')).not.toBeInTheDocument()
+  })
+
+  it('waits out a 429 on the first page and loads it on the retry', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    fetchMock
+      .mockRejectedValueOnce(rateLimited())
+      .mockResolvedValueOnce(page([group('g1', 'ph_keep', 'ph_dup')]))
+    renderPage()
+
+    // A calm "wait a moment", never the generic failure state.
+    expect(await screen.findByTestId('rate-limit-notice')).toHaveTextContent(
+      'Too many requests at once',
+    )
+    expect(screen.queryByText('Failed to load duplicates.')).not.toBeInTheDocument()
+
+    await elapseRateLimitWait()
+    expect(await screen.findByRole('img', { name: 'ph_keep.jpg' })).toBeInTheDocument()
+    expect(screen.queryByTestId('rate-limit-notice')).not.toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the list when "load more" hits a 429 and appends the retried page', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) })
+    fetchMock
+      .mockResolvedValueOnce(page([group('g1', 'ph_keep', 'ph_dup')], 20))
+      .mockRejectedValueOnce(rateLimited())
+      .mockResolvedValueOnce(page([group('g2', 'ph_more', 'ph_copy')]))
+    renderPage()
+    await screen.findByRole('img', { name: 'ph_keep.jpg' })
+
+    await user.click(screen.getByRole('button', { name: 'Load more' }))
+
+    expect(await screen.findByTestId('rate-limit-notice')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'ph_keep.jpg' })).toBeInTheDocument()
+    expect(screen.queryByText('Could not load more duplicates.')).not.toBeInTheDocument()
+
+    await elapseRateLimitWait()
+    expect(await screen.findByRole('img', { name: 'ph_more.jpg' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'ph_keep.jpg' })).toBeInTheDocument()
+    expect(screen.queryByTestId('rate-limit-notice')).not.toBeInTheDocument()
+    // The retry asked for the same page again.
+    expect(fetchMock).toHaveBeenNthCalledWith(3, { limit: 20, offset: 20 })
   })
 
   it('locks every group while a dry-run is in flight, before the modal appears', async () => {

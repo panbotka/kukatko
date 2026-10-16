@@ -1331,7 +1331,7 @@ below is open; each is an attack scenario with the mitigation that closes it and
   skips every per-user limiter. *Follow-up (review III, finding 12, 2026-10-15):* the curator trio's
   bucket was still the browse burst of 100, and `GET /duplicates` and `GET /review/queue` — each a
   whole-project scan per request — had no limit at all. All five now share one **heavy** pair
-  (`ratelimit.heavy_vector` 0.1/s burst 10, `ratelimit.heavy_vector_project` 0.25/s burst 20), mounted
+  (`ratelimit.heavy_vector` 0.1/s burst 20, `ratelimit.heavy_vector_project` 0.25/s burst 40), mounted
   inside the route's guard (`TestNewHeavyVectorThrottle_burstAcrossRoutes` in `cmd/kukatko`, the
   `TestRateLimit_*` wiring tests in `internal/duplicatesapi` and `internal/reviewapi`). *Residue:* the geocode caches' capacity is shared, so a busy project can
   evict another's entries (bounded by its geocode bucket — it costs that project credits, not the other's

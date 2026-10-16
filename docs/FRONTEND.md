@@ -4833,7 +4833,8 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   via `GridSkeleton`, an error with retry; a failed **„načíst další"** (any `offset > 0`) never touches
   `status` — the groups loaded so far stay put and the failure is reported inline under the button
   (`duplicates.moreError`), the button itself being the retry, exactly as `usePaginatedPhotos`/`TrashPage`
-  do with `moreError`; a dry-run in flight locks **every** group's actions (a page-level busy, not
+  do with `moreError`; a 429 (first page or „načíst další") is waited out, never reported as a failure — see
+  „Waiting out the heavy vector rate limit (429)"; a dry-run in flight locks **every** group's actions (a page-level busy, not
   `busyGroupId === group.id`), because until the preview resolves there is no modal or backdrop and a
   click on another group would overwrite `busyGroupId` and discard the merge already under way;
   each card offers **„Porovnat vedle sebe"** → `DupComparePage`,
@@ -8709,6 +8710,46 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
   lookup or the drop fails; the language follows the account), and a
   "written as A, not honoured as B" case per key in `AnnouncementBanner`, `WhatsNewPanel`, `reviewRounds`,
   `ReviewPage`, `gridScroll`, `useGridScrollMemory`, `accountLanguage` and `LanguageSwitcher` tests.
+
+## Waiting out the heavy vector rate limit (429)
+
+The five routes where one request scans a whole project — `GET /duplicates`, `GET /review/queue`,
+`GET /faces/sweep`, `POST /subjects/{uid}/candidates`, `GET /albums|labels/{uid}/similar` — share one
+per-user and one per-project token bucket (`ratelimit.heavy_vector*`, see `docs/OPERATIONS.md`). An empty
+bucket answers `429` + `Retry-After: 1`. **A page calling one of them never shows that as a failure**: it
+says "Moc požadavků najednou — zkusím to znovu za chvíli." and retries on its own.
+
+- **`services/auth.ts`** — `ApiError` carries an optional `retryAfterSeconds`; `retryAfterOf(res)` reads the
+  `Retry-After` header (seconds or an HTTP date). The five services (`duplicates`, `review`, `recognition`,
+  `faces`, `expand`) hand it to every `ApiError` they throw.
+- **`lib/rateLimit.ts`** (pure) — `isRateLimited(err)` (an `ApiError` with status 429) and
+  `rateLimitDelayMs(err, attempt)`: 2 s doubling per refusal in a row, never below the server's
+  `Retry-After`, never above 30 s; `RATE_LIMIT_MAX_RETRIES` = 6 (≈1.5 min, several refills of the bucket).
+  `Retry-After: 1` is only "not this second" — the bucket refills one token every ten seconds — so the
+  backoff, not the header, sets the pace and the page never hammers the server. Tests: `rateLimit.test.ts`.
+- **`hooks/useRateLimitRetry.ts`** — `{ waiting, handle(err, retry), reset() }`, one instance per independent
+  request. `handle` schedules `retry` on a 429 under the cap and answers `true` (the page renders the notice
+  and nothing else); for any other error, or once the cap is spent, it clears `waiting` and answers `false`
+  (the page shows its ordinary failure state). `reset` on success and before a user-started request replaces
+  the one being waited for; the timer dies with the component. Tests: `useRateLimitRetry.test.tsx`.
+- **`components/RateLimitNotice.tsx`** — the notice: an info `Alert` with a spinner, `errors.rateLimited` +
+  the reassurance `errors.rateLimitedHint` (`variant="inline"`: one small line), `role="status"` — no danger
+  tint and no retry button, because the retry is already scheduled.
+- **Per page** — `DuplicatesPage`: the first page keeps its `GridSkeleton` under the notice and refetches
+  through `useReloadKey`; a 429 on **„načíst další"** keeps every group already shown, keeps the button busy,
+  shows the inline notice under it and asks for the **same offset** again (a second hook instance).
+  `DupComparePage`: the notice replaces the spinner; the retry bumps the queue's `reloadKey`.
+  `ExpandPage` and `FacesPage`: the notice replaces the "searching" line; the retry repeats the same
+  search, a search the user (or the URL) starts resets the run (`startSearch`). `Candidates` (the subject
+  page's „Možná je i zde"): the notice under the button, reset when the subject changes. `RecognitionPage`:
+  `useSweepReview` exposes `rateLimited` and keeps `phase: 'scanning'` while waiting; **Zrušit** cancels the
+  scheduled retry. `ReviewPage`: `useReviewGame` exposes `rateLimited` and does **not** latch `loadError` on
+  a 429 — the retry bumps its `reloadKey`, which re-runs the refill effect; the loading stage shows the notice
+  instead of the spinner; a source switch or **Zkusit znovu** resets the run. 503 (detection off / sidecar
+  unavailable) and every other error keep their existing messages. Tests: a mocked 429 that recovers on the
+  retry in `DuplicatesPage` (first page and "load more" keeping the list), `DupComparePage`, `ExpandPage`,
+  `FacesPage`, `Candidates`, `RecognitionPage` and `ReviewPage` tests (fake timers with
+  `shouldAdvanceTime`, the helpers `test/rateLimit.ts`: `rateLimited()`, `elapseRateLimitWait()`).
 
 ## API paths
 

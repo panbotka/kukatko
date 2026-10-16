@@ -123,15 +123,44 @@ export interface AuthSession {
  */
 export class ApiError extends Error {
   readonly status: number
+  /**
+   * The server's `Retry-After` hint in seconds, when the response carried one
+   * (a 429 from a rate limiter does). Read it through {@link retryAfterOf}.
+   */
+  readonly retryAfterSeconds?: number
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, retryAfterSeconds?: number) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.retryAfterSeconds = retryAfterSeconds
     // The one place every failed response passes: a project that vanished
     // under an open page is noticed here (see services/projectGone).
     reportApiError(status, message)
   }
+}
+
+/**
+ * The `Retry-After` header of a response in whole seconds, or `undefined` when
+ * it is absent or unreadable. Both forms the header may take are understood: a
+ * number of seconds and an HTTP date (counted from now, never below zero).
+ * Hand the result to {@link ApiError} so a page can wait out a 429 for as long
+ * as the server asked.
+ */
+export function retryAfterOf(res: Response): number | undefined {
+  const raw = res.headers.get('Retry-After')
+  if (raw === null || raw.trim() === '') {
+    return undefined
+  }
+  const seconds = Number(raw)
+  if (Number.isFinite(seconds)) {
+    return Math.max(0, seconds)
+  }
+  const at = Date.parse(raw)
+  if (Number.isNaN(at)) {
+    return undefined
+  }
+  return Math.max(0, Math.ceil((at - Date.now()) / 1000))
 }
 
 /**

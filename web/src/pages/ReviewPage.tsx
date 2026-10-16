@@ -18,6 +18,7 @@ import { AuthContext } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { Icon, type IconName } from '../components/Icon'
 import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
+import { RateLimitNotice } from '../components/RateLimitNotice'
 import { BreatherCard } from '../components/review/ReviewBreather'
 import { ReviewDuplicate } from '../components/review/ReviewDuplicate'
 import { ReviewFacePair, ReviewFaceZoom } from '../components/review/ReviewFacePair'
@@ -924,11 +925,17 @@ export function ReviewPage() {
   } else if (stage === 'loading') {
     // The only unavoidable wait: the first round (or one the player outran).
     // Everything else is prefetched behind the between-rounds card.
+    // A 429 from the heavy vector throttle is waited out here too: the hook
+    // retries on its own, the player is only told why it takes a moment.
     body = (
       <div className="review-game__center">
-        <Spinner animation="border" role="status">
-          <span className="visually-hidden">{t('review.loading')}</span>
-        </Spinner>
+        {game.rateLimited ? (
+          <RateLimitNotice className="mb-0" />
+        ) : (
+          <Spinner animation="border" role="status">
+            <span className="visually-hidden">{t('review.loading')}</span>
+          </Spinner>
+        )}
       </div>
     )
   } else if (stage === 'error') {

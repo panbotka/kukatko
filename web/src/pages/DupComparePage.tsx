@@ -15,11 +15,13 @@ import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
 import { CompareStage } from '../components/duplicates/CompareStage'
 import { DiffTable } from '../components/duplicates/DiffTable'
 import { MergeConfirmModal } from '../components/duplicates/MergeConfirmModal'
+import { RateLimitNotice } from '../components/RateLimitNotice'
 import '../components/duplicates/compare.css'
 import { useAuth } from '../auth/AuthContext'
 import { useComparePair } from '../hooks/useComparePair'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { useRateLimitRetry } from '../hooks/useRateLimitRetry'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useSyncZoom } from '../hooks/useSyncZoom'
 import { formatBytes, formatDateTime } from '../lib/format'
@@ -92,6 +94,13 @@ export function DupComparePage() {
   const [status, setStatus] = useState<Status>('loading')
   // Bumped to re-run the mount-only queue fetch after a failed load.
   const [reloadKey, reloadQueue] = useReloadKey()
+  // A 429 from the heavy vector throttle keeps the spinner, says the server
+  // needs a moment and bumps `reloadKey` on its own when the wait is over.
+  const {
+    waiting: rateLimitWaiting,
+    handle: handleLoadError,
+    reset: resetRateLimit,
+  } = useRateLimitRetry()
   const [pairs, setPairs] = useState<ComparePair[]>([])
   const [index, setIndex] = useState(0)
   const [pending, setPending] = useState<PendingMerge | null>(null)
@@ -116,10 +125,11 @@ export function DupComparePage() {
         setPairs(queue)
         const found = queue.findIndex((p) => p.id === startAt)
         setIndex(found >= 0 ? found : 0)
+        resetRateLimit()
         setStatus('ready')
       })
       .catch((err: unknown) => {
-        if (controller.signal.aborted) {
+        if (controller.signal.aborted || handleLoadError(err, reloadQueue)) {
           return
         }
         setStatus(err instanceof ApiError && err.status === 503 ? 'unavailable' : 'error')
@@ -314,7 +324,7 @@ export function DupComparePage() {
 
       {status === 'loading' && (
         <CompareCentre>
-          <Spinner animation="border" />
+          {rateLimitWaiting ? <RateLimitNotice className="mb-0" /> : <Spinner animation="border" />}
         </CompareCentre>
       )}
 

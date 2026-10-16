@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next'
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
@@ -7,12 +7,15 @@ import { useTranslation } from 'react-i18next'
 
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
+import { RateLimitNotice } from '../components/RateLimitNotice'
 import { DuplicateGroupCard } from '../components/duplicates/DuplicateGroupCard'
 import { MergeConfirmModal } from '../components/duplicates/MergeConfirmModal'
 import { GridDensityControl } from '../components/library/GridDensityControl'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridDensity } from '../hooks/useGridDensity'
+import { useRateLimitRetry } from '../hooks/useRateLimitRetry'
+import { useReloadKey } from '../hooks/useReloadKey'
 import { REVIEW_GRID_SCOPE } from '../lib/gridDensity'
 import { ApiError } from '../services/auth'
 import {
@@ -72,38 +75,58 @@ export function DuplicatesPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [resultMessage, setResultMessage] = useState<string | null>(null)
 
-  // load fetches the page at the given offset, replacing the list on the first
-  // page and appending afterwards. Status reflects the initial load only: a
-  // failed append keeps the page `ready` with every group loaded so far and is
-  // reported inline through `moreError` instead (the same way the library grid
-  // and the trash handle it), so one bad "load more" never wipes the list the
-  // user is halfway through reviewing.
-  const load = useCallback(async (offset: number, signal?: AbortSignal) => {
-    try {
-      const res = await fetchDuplicates({ limit: PAGE_SIZE, offset }, signal)
-      setGroups((prev) => (offset === 0 ? res.groups : [...prev, ...res.groups]))
-      setNextOffset(res.next_offset)
-      setMoreError(false)
-      setStatus('ready')
-    } catch (err) {
-      if (signal?.aborted === true) {
-        return
-      }
-      if (offset > 0) {
-        setMoreError(true)
-        return
-      }
-      setStatus(err instanceof ApiError && err.status === 503 ? 'unavailable' : 'error')
-    }
-  }, [])
-
+  // The first page loads on mount and again whenever `reloadKey` is bumped (an
+  // explicit retry, or the rate-limit retry below). A 429 is not a failure: the
+  // page keeps its loading state, says it is waiting for the server and retries
+  // on its own (useRateLimitRetry); only another error, or a 429 that outlasts
+  // the retries, lands in the error state.
+  const [reloadKey, reload] = useReloadKey()
+  const { waiting: firstWaiting, handle: handleFirstError, reset: resetFirst } = useRateLimitRetry()
   useEffect(() => {
     const controller = new AbortController()
-    void load(0, controller.signal)
+    fetchDuplicates({ limit: PAGE_SIZE, offset: 0 }, controller.signal)
+      .then((res) => {
+        setGroups(res.groups)
+        setNextOffset(res.next_offset)
+        setMoreError(false)
+        resetFirst()
+        setStatus('ready')
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted || handleFirstError(err, reload)) {
+          return
+        }
+        setStatus(err instanceof ApiError && err.status === 503 ? 'unavailable' : 'error')
+      })
     return () => {
       controller.abort()
     }
-  }, [load])
+  }, [reloadKey, reload, handleFirstError, resetFirst])
+
+  // A failed "load more" keeps the page `ready` with every group loaded so far
+  // and is reported inline through `moreError` instead (the same way the library
+  // grid and the trash handle it), so one bad page never wipes the list the user
+  // is halfway through reviewing. A 429 there keeps the button busy, says the
+  // server needs a moment, and asks for the same page again on its own.
+  const { waiting: moreWaiting, handle: handleMoreError, reset: resetMore } = useRateLimitRetry()
+  const fetchMore = async (offset: number) => {
+    try {
+      const res = await fetchDuplicates({ limit: PAGE_SIZE, offset })
+      setGroups((prev) => [...prev, ...res.groups])
+      setNextOffset(res.next_offset)
+      resetMore()
+    } catch (err) {
+      if (
+        handleMoreError(err, () => {
+          void fetchMore(offset)
+        })
+      ) {
+        return
+      }
+      setMoreError(true)
+    }
+    setLoadingMore(false)
+  }
 
   const loadMore = () => {
     if (nextOffset === null || loadingMore) {
@@ -111,9 +134,7 @@ export function DuplicatesPage() {
     }
     setLoadingMore(true)
     setMoreError(false)
-    void load(nextOffset).finally(() => {
-      setLoadingMore(false)
-    })
+    void fetchMore(nextOffset)
   }
 
   // remove drops a group from the view by id (after merge or dismiss).
@@ -225,6 +246,8 @@ export function DuplicatesPage() {
         </Alert>
       )}
 
+      {status === 'loading' && firstWaiting && <RateLimitNotice />}
+
       {status === 'loading' && <GridSkeleton />}
 
       {status === 'unavailable' && <Alert variant="warning">{t('duplicates.unavailable')}</Alert>}
@@ -233,8 +256,9 @@ export function DuplicatesPage() {
         <ErrorState
           title={t('duplicates.error')}
           onRetry={() => {
+            resetFirst()
             setStatus('loading')
-            void load(0)
+            reload()
           }}
         />
       )}
@@ -264,6 +288,7 @@ export function DuplicatesPage() {
           </Button>
           {/* The button above doubles as the retry: the failed page can simply
               be requested again, with the groups already loaded left in place. */}
+          {moreWaiting && <RateLimitNotice variant="inline" />}
           {moreError && <div className="text-danger small mt-2">{t('duplicates.moreError')}</div>}
         </div>
       )}

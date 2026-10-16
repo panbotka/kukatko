@@ -21,7 +21,9 @@
     "overflow": "Další akce"
   },
   "errors": {
-    "retry": "Zkusit znovu"
+    "retry": "Zkusit znovu",
+    "rateLimited": "Moc požadavků najednou — zkusím to znovu za chvíli.",
+    "rateLimitedHint": "Prohledávání celé knihovny je náročné, proto ho server dávkuje. Nic se nerozbilo, stačí chvíli počkat."
   },
   "footer": {
     "github": "GitHub",

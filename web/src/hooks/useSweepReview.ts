@@ -18,6 +18,8 @@ import {
   streamSweep,
 } from '../services/recognition'
 
+import { useRateLimitRetry } from './useRateLimitRetry'
+
 /** Where the sweep is in its lifecycle. */
 export type SweepPhase = 'idle' | 'scanning' | 'done'
 
@@ -44,6 +46,11 @@ export interface SweepReview {
   people: PersonState[]
   actionError: SweepActionError | null
   confirmAll: ConfirmAllProgress | null
+  /**
+   * The sweep hit the server's rate limit and is waiting to start again on its
+   * own; {@link phase} stays `scanning` meanwhile.
+   */
+  rateLimited: boolean
   scan: (params: SweepParams) => void
   cancel: () => void
   confirm: (subjectUid: string, candidate: Candidate) => void
@@ -101,54 +108,92 @@ export function useSweepReview(): SweepReview {
   // Abort an in-flight scan when the page unmounts.
   useEffect(() => () => abortRef.current?.abort(), [])
 
-  const scan = useCallback((params: SweepParams) => {
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
-    cancelAllRef.current = true
-    runningAllRef.current = false
-    setPhase('scanning')
-    setProgress(null)
-    setSummary(null)
-    setAllPeople([])
-    setActionError(null)
-    setConfirmAll(null)
+  // A 429 from the heavy vector throttle (the stream is refused before its first
+  // line) keeps the sweep `scanning` and starts it again on its own; a scan the
+  // user starts, or a cancel, forgets the wait.
+  const {
+    waiting: rateLimited,
+    handle: handleScanError,
+    reset: resetRateLimit,
+  } = useRateLimitRetry()
 
-    streamSweep(
-      params,
-      (message) => {
-        switch (message.type) {
-          case 'progress':
-            setProgress(message.progress)
-            break
-          case 'person':
-            setAllPeople((prev) => [
-              ...prev,
-              { subject: message.person.subject, items: toReviewItems(message.person.candidates) },
-            ])
-            break
-          case 'summary':
-            setSummary(message.summary)
-            break
-        }
-      },
-      controller.signal,
-    )
-      .then(() => {
-        setPhase('done')
-      })
-      .catch((err: unknown) => {
-        setPhase('done')
-        if (err instanceof DOMException && err.name === 'AbortError') {
-          return
-        }
-        setActionError({ kind: 'scan', count: 1 })
-      })
-  }, [])
+  const runScan = useCallback(
+    function run(params: SweepParams) {
+      abortRef.current?.abort()
+      const controller = new AbortController()
+      abortRef.current = controller
+      cancelAllRef.current = true
+      runningAllRef.current = false
+      setPhase('scanning')
+      setProgress(null)
+      setSummary(null)
+      setAllPeople([])
+      setActionError(null)
+      setConfirmAll(null)
+
+      streamSweep(
+        params,
+        (message) => {
+          switch (message.type) {
+            case 'progress':
+              setProgress(message.progress)
+              break
+            case 'person':
+              setAllPeople((prev) => [
+                ...prev,
+                {
+                  subject: message.person.subject,
+                  items: toReviewItems(message.person.candidates),
+                },
+              ])
+              break
+            case 'summary':
+              setSummary(message.summary)
+              break
+          }
+        },
+        controller.signal,
+      )
+        .then(() => {
+          resetRateLimit()
+          setPhase('done')
+        })
+        .catch((err: unknown) => {
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            setPhase('done')
+            return
+          }
+          if (
+            handleScanError(err, () => {
+              run(params)
+            })
+          ) {
+            return
+          }
+          setPhase('done')
+          setActionError({ kind: 'scan', count: 1 })
+        })
+    },
+    [handleScanError, resetRateLimit],
+  )
+
+  const scan = useCallback(
+    (params: SweepParams) => {
+      resetRateLimit()
+      runScan(params)
+    },
+    [resetRateLimit, runScan],
+  )
 
   const cancel = useCallback(() => {
     abortRef.current?.abort()
-  }, [])
+    // Waiting out a 429 has no request to abort: cancel the scheduled retry and
+    // end the scan by hand.
+    if (rateLimited) {
+      resetRateLimit()
+      setPhase('done')
+    }
+  }, [rateLimited, resetRateLimit])
 
   // confirmOne flips a card to done optimistically, then assigns; on failure it marks
   // the card errored (so it stays actionable and can be retried) and reports the miss.
@@ -270,6 +315,7 @@ export function useSweepReview(): SweepReview {
     people,
     actionError,
     confirmAll,
+    rateLimited,
     scan,
     cancel,
     confirm,

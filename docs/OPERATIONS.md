@@ -2308,7 +2308,7 @@ pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 
   heavy endpoints. Sections `upload`/`bulk`/`comment`/`tiles`/`upload_link`/`upload_link_per_link`/`invite`/
   `geocode_project`/`vector`/`vector_project`/`heavy_vector`/`heavy_vector_project`/`member_add`, each
   `{rate_per_sec, burst}`; defaults 5/30, 2/10, 0.5/10, 50/200, 2/60, 10/300, 2/60, 3/10, 5/100, 20/400,
-  0.1/10, 0.25/20, 0.05/10; `rate_per_sec ≤ 0` disables the rule (middleware no-op). Env e.g.
+  0.1/20, 0.25/40, 0.05/10; `rate_per_sec ≤ 0` disables the rule (middleware no-op). Env e.g.
   `KUKATKO_RATELIMIT_UPLOAD_RATE_PER_SEC`. **`comment` (POST `/photos/{uid}/comments`) is keyed by the
   authenticated user**, not by IP (`Limiter.KeyedMiddleware`, mounted *inside* the auth guard so the
   principal is on the context): a household shares one address, and throttling everyone's conversation
@@ -2327,18 +2327,26 @@ pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 
   `/search` also serves every page of a filtered listing, so the defaults sit far above what a family
   browsing its library sends (a fling through results is a few requests a second); they exist so one
   member or one project cannot hog the vector index and the sidecar the whole instance shares.
-  **`heavy_vector`** (default 0.1/s, burst 10, keyed by the acting user, env e.g.
-  `KUKATKO_RATELIMIT_HEAVY_VECTOR_RATE_PER_SEC`) and **`heavy_vector_project`** (default 0.25/s, burst 20,
+  **`heavy_vector`** (default 0.1/s, burst 20, keyed by the acting user, env e.g.
+  `KUKATKO_RATELIMIT_HEAVY_VECTOR_RATE_PER_SEC`) and **`heavy_vector_project`** (default 0.25/s, burst 40,
   keyed by the project, checked after the user's bucket) throttle the routes where **one request scans a
   whole project**: `GET /duplicates` (every page re-runs the pHash + embedding scan), `GET /review/queue`
   (a rebuild runs the sweep, the expansion and the duplicate scan), `GET /faces/sweep`, `POST
   /subjects/{uid}/candidates` and `GET /albums|labels/{uid}/similar` — all five share **one** pair of
   buckets, so alternating between them buys nothing. Every one is an explicit action (a page of groups, a
-  round of the game, one sweep or search), so ten in a row covers scrolling the duplicates list and one
-  every ten seconds after that is still faster than a person reviews the results; without it one curator
-  could run a hundred whole-library sweeps back to back and slow every other project on the shared
-  database. A `POST /duplicates/merge` or a review answer is not throttled by it. An API token flagged
-  unlimited skips both pairs. **`upload_link`** (default 2/60) throttles the public upload-link routes
+  round of the game, one sweep or search); one every ten seconds is still faster than a person reviews the
+  results, and without it one curator could run a hundred whole-library sweeps back to back and slow every
+  other project on the shared database. **Why the burst is 20, not the original 10:** the duplicates page
+  asks for 20 groups at a time and every "load more" re-runs the whole scan, so a curator paging a library
+  of a few hundred groups (300 = 15 requests, plus a visit to the compare view) predictably ran out at the
+  eleventh page and then waited ten seconds per page. Twenty covers ~400 groups in one sitting; the steady
+  rate — the actual brake on back-to-back scans — is unchanged, and the project's burst was doubled with
+  it so one member's burst still leaves the rest of the project room. Caching the scan between pages (or
+  exempting `offset > 0`, which without a cache would be a free pass to the full scan) was the alternative;
+  it costs invalidation on every merge and dismissal for a gain the larger burst already gives. When the
+  limit is hit anyway, the pages say so calmly and retry on their own (`hooks/useRateLimitRetry`, backoff
+  2 s doubling to at most 30 s, six tries) instead of showing a failure. A `POST /duplicates/merge` or a
+  review answer is not throttled by it. An API token flagged unlimited skips both pairs. **`upload_link`** (default 2/60) throttles the public upload-link routes
   (`GET /u/{code}` and its upload) per client IP, ahead of the code lookup; **`upload_link_per_link`**
   (default 10/300) throttles the uploads through **one link**, keyed by the link whoever sends them — the
   brake on a link that leaked to somebody with many addresses. Both count **requests**, not files: the

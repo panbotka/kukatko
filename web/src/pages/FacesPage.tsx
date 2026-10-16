@@ -8,6 +8,7 @@ import { CandidateResults } from '../components/faces/CandidateResults'
 import { CandidateSearchForm } from '../components/faces/CandidateSearchForm'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
+import { RateLimitNotice } from '../components/RateLimitNotice'
 import { Icon } from '../components/Icon'
 import { CandidateDecisions } from '../components/review/CandidateDecisions'
 import { candidateStage } from '../components/review/candidateStage'
@@ -17,6 +18,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridDensity } from '../hooks/useGridDensity'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useLightbox } from '../hooks/useLightbox'
+import { useRateLimitRetry } from '../hooks/useRateLimitRetry'
 import { useSubjectName } from '../hooks/useSubjectName'
 import { useSubjects } from '../hooks/useSubjects'
 import {
@@ -103,22 +105,56 @@ export function FacesPage() {
     result === null ? null : result.candidates,
   )
 
-  const runSearch = useCallback((uid: string, percent: number, cap: number) => {
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
-    setState({ status: 'loading' })
-    searchCandidates(uid, { threshold: percentToDistance(percent), limit: cap }, controller.signal)
-      .then((res) => {
-        setState({ status: 'ready', result: res })
-      })
-      .catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === 'AbortError') {
-          return
-        }
-        setState({ status: 'error' })
-      })
-  }, [])
+  // A 429 from the heavy vector throttle keeps the search `loading`, says the
+  // server needs a moment and repeats the same search on its own. A search the
+  // user starts (or the URL restores) begins a fresh run — see startSearch.
+  const {
+    waiting: rateLimitWaiting,
+    handle: handleSearchError,
+    reset: resetRateLimit,
+  } = useRateLimitRetry()
+
+  const runSearch = useCallback(
+    function search(uid: string, percent: number, cap: number) {
+      abortRef.current?.abort()
+      const controller = new AbortController()
+      abortRef.current = controller
+      setState({ status: 'loading' })
+      searchCandidates(
+        uid,
+        { threshold: percentToDistance(percent), limit: cap },
+        controller.signal,
+      )
+        .then((res) => {
+          resetRateLimit()
+          setState({ status: 'ready', result: res })
+        })
+        .catch((err: unknown) => {
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            return
+          }
+          if (
+            handleSearchError(err, () => {
+              search(uid, percent, cap)
+            })
+          ) {
+            return
+          }
+          setState({ status: 'error' })
+        })
+    },
+    [handleSearchError, resetRateLimit],
+  )
+
+  // startSearch is runSearch for a search somebody asked for: it forgets any
+  // rate-limit wait of the previous one first, so its retries start afresh.
+  const startSearch = useCallback(
+    (uid: string, percent: number, cap: number) => {
+      resetRateLimit()
+      runSearch(uid, percent, cap)
+    },
+    [resetRateLimit, runSearch],
+  )
 
   // Abort an in-flight search when leaving the page.
   useEffect(() => () => abortRef.current?.abort(), [])
@@ -132,9 +168,9 @@ export function FacesPage() {
     autoRan.current = true
     const uid = searchParams.get('subject')
     if (uid !== null && uid !== '') {
-      runSearch(uid, thresholdPercent, limit)
+      startSearch(uid, thresholdPercent, limit)
     }
-  }, [searchParams, thresholdPercent, limit, runSearch])
+  }, [searchParams, thresholdPercent, limit, startSearch])
 
   const selectSubject = useCallback(
     (uid: string | null) => {
@@ -175,8 +211,8 @@ export function FacesPage() {
       { replace: true },
     )
     setFocusedKey(null)
-    runSearch(subjectUid, thresholdPercent, limit)
-  }, [subjectUid, thresholdPercent, limit, runSearch, setSearchParams])
+    startSearch(subjectUid, thresholdPercent, limit)
+  }, [subjectUid, thresholdPercent, limit, startSearch, setSearchParams])
 
   const selectTab = useCallback(
     (tab: FilterTab) => {
@@ -350,7 +386,9 @@ export function FacesPage() {
         />
       )}
 
-      {state.status === 'loading' && (
+      {state.status === 'loading' && rateLimitWaiting && <RateLimitNotice />}
+
+      {state.status === 'loading' && !rateLimitWaiting && (
         <div className="d-flex align-items-center gap-2 py-5 justify-content-center text-secondary">
           <Spinner animation="border" role="status" size="sm" />
           <span>{t('faceSearch.loading')}</span>

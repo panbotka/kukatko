@@ -2,13 +2,14 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { type ExpandCandidate, type ExpandResult } from '../services/expand'
 import { type AlbumSummary, type LabelCount } from '../services/organize'
 import { type Photo } from '../services/photos'
+import { elapseRateLimitWait, rateLimited } from '../test/rateLimit'
 
 import { ExpandPage } from './ExpandPage'
 
@@ -131,6 +132,10 @@ beforeEach(async () => {
   bulkMock.mockReset()
 })
 
+afterEach(() => {
+  vi.useRealTimers()
+})
+
 describe('ExpandPage', () => {
   it('runs the URL-restored search with the percent converted to a distance', async () => {
     searchMock.mockResolvedValue(makeResult('album', 'al1', [candidate('p1', 0.92, 3)]))
@@ -144,6 +149,32 @@ describe('ExpandPage', () => {
       { threshold: 0.3, limit: 50 },
       expect.any(AbortSignal),
     )
+  })
+
+  it('waits out a 429 and shows the results the retried search found', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    searchMock
+      .mockRejectedValueOnce(rateLimited())
+      .mockResolvedValueOnce(makeResult('album', 'al1', [candidate('p1', 0.92, 3)]))
+    renderPage('/expand?type=album&source=al1')
+
+    expect(await screen.findByTestId('rate-limit-notice')).toHaveTextContent(
+      'Too many requests at once',
+    )
+    expect(screen.queryByText(i18n.t('expand.error.search'))).not.toBeInTheDocument()
+
+    await elapseRateLimitWait()
+    expect(await screen.findByRole('link', { name: 'p1.jpg' })).toBeInTheDocument()
+    expect(screen.queryByTestId('rate-limit-notice')).not.toBeInTheDocument()
+    expect(searchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('still reports any other search failure as an error', async () => {
+    searchMock.mockRejectedValue(new Error('boom'))
+    renderPage('/expand?type=album&source=al1')
+
+    expect(await screen.findByText(i18n.t('expand.error.search'))).toBeInTheDocument()
+    expect(screen.queryByTestId('rate-limit-notice')).not.toBeInTheDocument()
   })
 
   it('renders tiles with similarity and match-count badges and the vote-rule summary', async () => {

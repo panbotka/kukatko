@@ -21,7 +21,9 @@
     "overflow": "More actions"
   },
   "errors": {
-    "retry": "Try again"
+    "retry": "Try again",
+    "rateLimited": "Too many requests at once — trying again in a moment.",
+    "rateLimitedHint": "Scanning the whole library is expensive, so the server paces it. Nothing is broken; it just needs a moment."
   },
   "footer": {
     "github": "GitHub",

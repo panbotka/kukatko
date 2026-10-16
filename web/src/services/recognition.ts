@@ -1,4 +1,4 @@
-import { ApiError } from './auth'
+import { ApiError, retryAfterOf } from './auth'
 import { type Candidate, type CandidateCounts } from './faces'
 import { type Subject } from './people'
 import { apiPath } from './api'
@@ -95,7 +95,7 @@ export async function streamSweep(
     signal,
   })
   if (!res.ok) {
-    throw new ApiError(res.status, await readErrorMessage(res))
+    throw new ApiError(res.status, await readErrorMessage(res), retryAfterOf(res))
   }
   if (res.body === null) {
     return

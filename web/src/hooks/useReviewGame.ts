@@ -39,6 +39,7 @@ import {
   type ReviewSource,
 } from '../services/review'
 
+import { useRateLimitRetry } from './useRateLimitRetry'
 import { useReloadKey } from './useReloadKey'
 
 /**
@@ -190,6 +191,12 @@ export interface ReviewGame {
   fetching: boolean
   /** True when the last queue fetch failed (offline, server error). */
   loadError: boolean
+  /**
+   * True while a queue fetch the server refused with a 429 waits to be retried
+   * on its own; {@link loadError} stays false meanwhile, so the page keeps its
+   * loading stage and says the server needs a moment.
+   */
+  rateLimited: boolean
   /** True when the server has nothing new to ask. */
   exhausted: boolean
   /**
@@ -320,6 +327,14 @@ export function useReviewGame(source: ReviewSource = 'both', user?: string): Rev
   // Bumped when a fetch has to be re-driven from the outside — a response that
   // arrived for a source the player has already left behind.
   const [reloadKey, reload] = useReloadKey()
+  // A 429 on the queue fetch (the heavy vector throttle) is waited out rather
+  // than latched as a load error: the retry bumps `reloadKey`, which re-runs the
+  // refill effect below.
+  const {
+    waiting: rateLimited,
+    handle: handleQueueError,
+    reset: resetRateLimit,
+  } = useRateLimitRetry()
 
   // The queue's source of truth. State only mirrors it for rendering: two
   // answers can land within one render (arrow keys at speed), and reading the
@@ -426,13 +441,16 @@ export function useReviewGame(source: ReviewSource = 'both', user?: string): Rev
         answeredRef.current = res.answered
       }
       setLoadError(false)
-    } catch {
-      setLoadError(true)
+      resetRateLimit()
+    } catch (err) {
+      if (!handleQueueError(err, reload)) {
+        setLoadError(true)
+      }
     } finally {
       fetchingRef.current = false
       setFetching(false)
     }
-  }, [commitQueue, commitRound, reload, source])
+  }, [commitQueue, commitRound, reload, source, handleQueueError, resetRateLimit])
 
   // A changed source starts the game over: the cards in hand are about the kind
   // of question the player just turned off, so they go rather than get filtered.
@@ -449,11 +467,12 @@ export function useReviewGame(source: ReviewSource = 'both', user?: string): Rev
     setSummary(null)
     setExhausted(false)
     setLoadError(false)
+    resetRateLimit()
     setReason(undefined)
     setRemaining(0)
     setLastAnswer(null)
     setUndoError(false)
-  }, [source, commitQueue, commitRound])
+  }, [source, commitQueue, commitRound, resetRateLimit])
 
   // Initial load and background refills fall out of the same rule: whenever the
   // local queue has run out and nothing says stop, fetch the next round. It runs
@@ -734,9 +753,10 @@ export function useReviewGame(source: ReviewSource = 'both', user?: string): Rev
   }, [doUndo])
 
   const retryLoad = useCallback(() => {
+    resetRateLimit()
     setLoadError(false)
     setExhausted(false)
-  }, [])
+  }, [resetRateLimit])
 
   const retryFailed = useCallback(() => {
     const toRetry = failedRef.current
@@ -817,6 +837,7 @@ export function useReviewGame(source: ReviewSource = 'both', user?: string): Rev
     remaining,
     fetching,
     loadError,
+    rateLimited,
     exhausted,
     reason,
     failed,

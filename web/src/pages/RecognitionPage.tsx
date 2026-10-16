@@ -6,6 +6,7 @@ import { useSearchParams } from 'react-router-dom'
 
 import { EmptyState } from '../components/EmptyState'
 import { Icon } from '../components/Icon'
+import { RateLimitNotice } from '../components/RateLimitNotice'
 import { GridDensityControl } from '../components/library/GridDensityControl'
 import { PersonSweepCard } from '../components/recognition/PersonSweepCard'
 import { CandidateDecisions } from '../components/review/CandidateDecisions'
@@ -222,6 +223,8 @@ export function RecognitionPage() {
           </ToolSubmit>
         )}
       </ToolSearchForm>
+
+      {scanning && review.rateLimited && <RateLimitNotice />}
 
       {scanning && review.progress !== null && (
         <div className="mb-4" data-testid="sweep-progress">

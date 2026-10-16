@@ -2,12 +2,13 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 import { REVIEW_GRID_SCOPE } from '../../lib/gridDensity'
 import { type Candidate, type CandidateResult } from '../../services/faces'
 import { type Photo } from '../../services/photos'
+import { elapseRateLimitWait, rateLimited } from '../../test/rateLimit'
 
 import { Candidates } from './Candidates'
 
@@ -97,6 +98,10 @@ beforeEach(async () => {
   assignMock.mockReset().mockResolvedValue(undefined)
 })
 
+afterEach(() => {
+  vi.useRealTimers()
+})
+
 describe('Candidates', () => {
   it('does not search on mount — the expensive search waits for the button', () => {
     renderSection()
@@ -117,6 +122,27 @@ describe('Candidates', () => {
       { threshold: 0.5, limit: 60 },
       expect.any(AbortSignal),
     )
+  })
+
+  it('waits out a 429 and renders the cards the retried search found', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    searchMock
+      .mockRejectedValueOnce(rateLimited())
+      .mockResolvedValueOnce(makeResult([makeCandidate('p1', 'create_marker')]))
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) })
+    renderSection()
+
+    await user.click(screen.getByRole('button', { name: /Find suggestions/i }))
+
+    expect(await screen.findByTestId('rate-limit-notice')).toHaveTextContent(
+      'Too many requests at once',
+    )
+    expect(screen.queryByText(i18n.t('candidates.error'))).not.toBeInTheDocument()
+
+    await elapseRateLimitWait()
+    expect(await screen.findByTestId('candidate-card')).toBeInTheDocument()
+    expect(screen.queryByTestId('rate-limit-notice')).not.toBeInTheDocument()
+    expect(searchMock).toHaveBeenCalledTimes(2)
   })
 
   it('confirms a candidate through the assign path, drops the card, and reloads', async () => {

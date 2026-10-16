@@ -9,7 +9,7 @@ import {
   useNavigate,
   useSearchParams,
 } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
@@ -35,6 +35,7 @@ import {
 import { declarations, readCss, ruleBody } from '../test/css'
 import { frameRatio, loadImageAs } from '../test/imageFrame'
 import { expectChosenToggle } from '../test/toggle'
+import { elapseRateLimitWait, rateLimited } from '../test/rateLimit'
 
 import { ReviewPage } from './ReviewPage'
 
@@ -283,6 +284,10 @@ beforeEach(async () => {
   unconfirmFaceMock.mockReset().mockResolvedValue(undefined)
   unconfirmDuplicateMock.mockReset().mockResolvedValue(undefined)
   assignFaceMock.mockReset()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('ReviewPage', () => {
@@ -976,6 +981,26 @@ describe('ReviewPage', () => {
       expect(answerMock).toHaveBeenCalledWith('q1', 'yes')
     })
     expect(screen.getByTestId('review-undo')).toBeDisabled()
+  })
+
+  it('waits out a 429 on the queue and asks the question the retry brings', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    queueMock
+      .mockRejectedValueOnce(rateLimited())
+      .mockResolvedValueOnce(makeQueue([faceQuestion('q1', 'Alice')]))
+    renderPage()
+
+    expect(await screen.findByTestId('rate-limit-notice')).toHaveTextContent(
+      'Too many requests at once',
+    )
+    expect(screen.queryByTestId('review-load-error')).not.toBeInTheDocument()
+
+    await elapseRateLimitWait()
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('Alice')
+    })
+    expect(screen.queryByTestId('rate-limit-notice')).not.toBeInTheDocument()
+    expect(queueMock).toHaveBeenCalledTimes(2)
   })
 
   it('reports a failed queue fetch and retries on demand', async () => {

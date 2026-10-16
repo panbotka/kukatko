@@ -2,12 +2,13 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext } from '../auth/AuthContext'
 import i18n from '../i18n'
 import type { DuplicateGroup, DuplicatesResponse, MergeResult } from '../services/duplicates'
 import type { PhotoDetail } from '../services/photos'
+import { elapseRateLimitWait, rateLimited } from '../test/rateLimit'
 
 import { DupComparePage } from './DupComparePage'
 
@@ -154,6 +155,10 @@ beforeEach(async () => {
     Promise.resolve({ photo_uid: uid, width: 100, height: 100, orientation: 1, faces: [] }),
   )
   dismissMock.mockResolvedValue(undefined)
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('what the candidates are', () => {
@@ -461,6 +466,24 @@ describe('failures', () => {
     expect(
       await screen.findByText('Duplicate detection is disabled in the server configuration.'),
     ).toBeInTheDocument()
+  })
+
+  it('waits out a 429 instead of failing, and builds the queue on the retry', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    fetchMock
+      .mockRejectedValueOnce(rateLimited())
+      .mockResolvedValueOnce(page([group('g1', 'ph_keep', 'ph_dup')]))
+    renderPage()
+
+    expect(await screen.findByTestId('rate-limit-notice')).toHaveTextContent(
+      'Too many requests at once',
+    )
+    expect(screen.queryByText('Failed to load duplicates.')).not.toBeInTheDocument()
+
+    await elapseRateLimitWait()
+    await waitForPair()
+    expect(screen.queryByTestId('rate-limit-notice')).not.toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('reports a pair whose photos will not load, rather than half a table', async () => {

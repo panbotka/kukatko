@@ -1709,9 +1709,9 @@ func setFairnessDefaults(v *viper.Viper) {
 	// covers scrolling through the duplicates list; after that one every ten
 	// seconds is still faster than a person reviews the results.
 	v.SetDefault("ratelimit.heavy_vector.rate_per_sec", 0.1)
-	v.SetDefault("ratelimit.heavy_vector.burst", 10)
+	v.SetDefault("ratelimit.heavy_vector.burst", 20)
 	v.SetDefault("ratelimit.heavy_vector_project.rate_per_sec", 0.25)
-	v.SetDefault("ratelimit.heavy_vector_project.burst", 20)
+	v.SetDefault("ratelimit.heavy_vector_project.burst", 40)
 }
 
 // setUploadLinkDefaults registers the upload links' caps and their two request

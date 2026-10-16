@@ -1,4 +1,4 @@
-import { ApiError } from './auth'
+import { ApiError, retryAfterOf } from './auth'
 import { apiPath } from './api'
 
 /** Why a group's members were detected as duplicates of each other. */
@@ -113,7 +113,7 @@ export async function fetchDuplicates(
     signal,
   })
   if (!res.ok) {
-    throw new ApiError(res.status, await readErrorMessage(res))
+    throw new ApiError(res.status, await readErrorMessage(res), retryAfterOf(res))
   }
   return (await res.json()) as DuplicatesResponse
 }
@@ -137,7 +137,7 @@ export async function mergeDuplicates(
     signal,
   })
   if (!res.ok) {
-    throw new ApiError(res.status, await readErrorMessage(res))
+    throw new ApiError(res.status, await readErrorMessage(res), retryAfterOf(res))
   }
   return (await res.json()) as MergeResult
 }

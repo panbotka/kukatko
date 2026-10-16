@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { useCandidateReview } from '../../hooks/useCandidateReview'
 import { useGridDensity } from '../../hooks/useGridDensity'
 import { useLightbox } from '../../hooks/useLightbox'
+import { useRateLimitRetry } from '../../hooks/useRateLimitRetry'
 import { candidateKey, isActionable } from '../../lib/candidateReview'
 import {
   distanceToPercent,
@@ -19,6 +20,7 @@ import { type CandidateResult, searchCandidates } from '../../services/faces'
 import { CandidateCard } from '../faces/CandidateCard'
 import { EmptyState } from '../EmptyState'
 import { Icon } from '../Icon'
+import { RateLimitNotice } from '../RateLimitNotice'
 import { GridDensityControl } from '../library/GridDensityControl'
 import { CandidateDecisions } from '../review/CandidateDecisions'
 import { candidateStage } from '../review/candidateStage'
@@ -76,35 +78,58 @@ export function Candidates({ subjectUid, onAssigned }: CandidatesProps) {
     result === null ? null : result.candidates,
   )
 
+  // A 429 from the heavy vector throttle keeps the search `loading`, says the
+  // server needs a moment and repeats it on its own; a press of the button
+  // starts a fresh run.
+  const {
+    waiting: rateLimitWaiting,
+    handle: handleSearchError,
+    reset: resetRateLimit,
+  } = useRateLimitRetry()
+
+  const runSearch = useCallback(
+    function run() {
+      abortRef.current?.abort()
+      const controller = new AbortController()
+      abortRef.current = controller
+      setState({ status: 'loading' })
+      searchCandidates(
+        subjectUid,
+        { threshold: percentToDistance(THRESHOLD_DEFAULT_PERCENT), limit: SEARCH_LIMIT },
+        controller.signal,
+      )
+        .then((res) => {
+          resetRateLimit()
+          setState({ status: 'ready', result: res })
+        })
+        .catch((err: unknown) => {
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            return
+          }
+          if (handleSearchError(err, run)) {
+            return
+          }
+          setState({ status: 'error' })
+        })
+    },
+    [subjectUid, handleSearchError, resetRateLimit],
+  )
+
   const search = useCallback(() => {
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
-    setState({ status: 'loading' })
-    searchCandidates(
-      subjectUid,
-      { threshold: percentToDistance(THRESHOLD_DEFAULT_PERCENT), limit: SEARCH_LIMIT },
-      controller.signal,
-    )
-      .then((res) => {
-        setState({ status: 'ready', result: res })
-      })
-      .catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === 'AbortError') {
-          return
-        }
-        setState({ status: 'error' })
-      })
-  }, [subjectUid])
+    resetRateLimit()
+    runSearch()
+  }, [resetRateLimit, runSearch])
 
   // Walking from one person to the next reuses this page: re-arm the section (back to
-  // the button) for the new subject, and abort any search still in flight.
+  // the button) for the new subject, and abort any search still in flight (or any
+  // rate-limit retry still waiting).
   useEffect(() => {
     setState({ status: 'idle' })
     return () => {
       abortRef.current?.abort()
+      resetRateLimit()
     }
-  }, [subjectUid])
+  }, [subjectUid, resetRateLimit])
 
   // A confirmed card leaves the list, a rejected one is already gone: show only the
   // faces still awaiting a verdict (or whose confirm errored and can be retried).
@@ -225,6 +250,7 @@ export function Candidates({ subjectUid, onAssigned }: CandidatesProps) {
       {state.status === 'idle' && (
         <p className="text-secondary small mb-0">{t('candidates.idleHint')}</p>
       )}
+      {state.status === 'loading' && rateLimitWaiting && <RateLimitNotice className="mb-0" />}
       {state.status === 'error' && (
         <p className="text-secondary small mb-0">{t('candidates.error')}</p>
       )}

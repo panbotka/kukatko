@@ -988,14 +988,15 @@ ratelimit:
   # The routes where one request scans a whole project (GET /duplicates, GET
   # /review/queue, GET /faces/sweep, POST /subjects/{uid}/candidates, GET
   # /albums|labels/{uid}/similar) — one shared budget, keyed by the acting user,
-  # then by the project. Each is an explicit action: ten in a row covers
-  # scrolling the duplicates list, then one every ten seconds.
+  # then by the project. Each is an explicit action: twenty in a row covers
+  # paging a few hundred duplicate groups (every page re-runs the scan), then
+  # one every ten seconds. The project's burst stays twice a member's.
   heavy_vector:
     rate_per_sec: 0.1
-    burst: 10
+    burst: 20
   heavy_vector_project:
     rate_per_sec: 0.25
-    burst: 20
+    burst: 40
   # The public upload-link routes (GET /u/{code} and its upload), per client IP.
   # These count requests, not files: the page sends one file per request (the
   # burst covers a camera roll), a script up to 50. max_uploads_per_link bounds files.

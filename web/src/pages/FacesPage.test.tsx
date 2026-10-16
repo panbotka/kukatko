@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, useLocation } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
 import { REVIEW_GRID_SCOPE } from '../lib/gridDensity'
@@ -9,6 +9,7 @@ import { type Candidate, type CandidateResult } from '../services/faces'
 import { type SubjectCount } from '../services/people'
 import { type Photo } from '../services/photos'
 import { frameRatio, loadImageAs } from '../test/imageFrame'
+import { elapseRateLimitWait, rateLimited } from '../test/rateLimit'
 
 import { FacesPage } from './FacesPage'
 
@@ -132,6 +133,10 @@ beforeEach(async () => {
   assignMock.mockReset().mockResolvedValue(undefined)
 })
 
+afterEach(() => {
+  vi.useRealTimers()
+})
+
 describe('FacesPage states', () => {
   it('shows the idle empty state and runs no search before one is asked for', async () => {
     renderPage('/faces')
@@ -143,6 +148,24 @@ describe('FacesPage states', () => {
     searchMock.mockResolvedValue(makeResult([], { reason: 'no_faces' }))
     renderPage('/faces?subject=su_1')
     expect(await screen.findByText('This person has no faces yet')).toBeInTheDocument()
+  })
+
+  it('waits out a 429 and shows the candidates the retried search found', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    searchMock
+      .mockRejectedValueOnce(rateLimited())
+      .mockResolvedValueOnce(makeResult([makeCandidate('p1', 'create_marker')]))
+    renderPage('/faces?subject=su_1')
+
+    expect(await screen.findByTestId('rate-limit-notice')).toHaveTextContent(
+      'Too many requests at once',
+    )
+    expect(screen.queryByText(i18n.t('faceSearch.error.search'))).not.toBeInTheDocument()
+
+    await elapseRateLimitWait()
+    expect(await screen.findByTestId('candidate-card')).toBeInTheDocument()
+    expect(screen.queryByTestId('rate-limit-notice')).not.toBeInTheDocument()
+    expect(searchMock).toHaveBeenCalledTimes(2)
   })
 
   it('shows a zero-match state hinting at a lower threshold', async () => {

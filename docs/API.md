@@ -1666,13 +1666,14 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `{"error":"subject not found"}`, the same for a subject of another project; every candidate is an unassigned
   face of the request's project. Mounted by `server.WithAPI` (`buildCandidatesAPI` in `cmd/kukatko/candidates.go`).
   **Heavy vector rate limit** (→ 429): one bucket per user (`ratelimit.heavy_vector`, default 0.1/s,
-  burst 10), then one per project (`ratelimit.heavy_vector_project`, default 0.25/s, burst 20), inside the
+  burst 20), then one per project (`ratelimit.heavy_vector_project`, default 0.25/s, burst 40), inside the
   curator guard — **one** pair of buckets shared by the five routes where a request scans a whole project
   (`GET /duplicates`, `GET /review/queue`, `GET /faces/sweep`, this one, `GET /albums|labels/{uid}/similar`),
   so alternating between them buys nothing; separate from the browse pair's (`/search`, `/similar`). The
   user's bucket is checked first, so a member over their share never spends the project's tokens; an API
   token flagged unlimited skips both. The 429 is the limiter's usual answer: `Retry-After: 1` and
-  `{"error":"rate limit exceeded"}`. Another project's buckets are never touched.
+  `{"error":"rate limit exceeded"}`. Another project's buckets are never touched. The SPA pages that call
+  these routes wait a 429 out themselves (a calm notice and an automatic retry, `hooks/useRateLimitRetry`).
 - **Recognition sweep API (`/api/v1/p/{project}`, `internal/sweepapi`, curator and above via `RequireCurator`):**
   "go through all named people and find certain matches among unlabelled faces" — a server-side
   fan-out via the **candidate search** (`internal/candidates`) over all subjects, not client-side.

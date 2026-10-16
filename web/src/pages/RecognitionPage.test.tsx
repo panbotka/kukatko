@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
 import { REVIEW_GRID_SCOPE } from '../lib/gridDensity'
@@ -9,6 +9,7 @@ import { type Candidate } from '../services/faces'
 import { type Photo } from '../services/photos'
 import { type Subject } from '../services/people'
 import { type SweepMessage } from '../services/recognition'
+import { elapseRateLimitWait, rateLimited } from '../test/rateLimit'
 
 import { RecognitionPage } from './RecognitionPage'
 
@@ -110,6 +111,10 @@ beforeEach(async () => {
   assignMock.mockReset().mockResolvedValue(undefined)
 })
 
+afterEach(() => {
+  vi.useRealTimers()
+})
+
 describe('RecognitionPage', () => {
   it('renders live progress and person cards while the scan is running', async () => {
     const alice = makeSubject('su_alice', 'Alice')
@@ -128,6 +133,38 @@ describe('RecognitionPage', () => {
     expect(screen.getByText('2 / 3')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Alice' })).toBeInTheDocument()
     expect(screen.getByTestId('candidate-card')).toBeInTheDocument()
+  })
+
+  it('waits out a 429 and runs the sweep on the retry', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const alice = makeSubject('su_alice', 'Alice')
+    streamMock.mockRejectedValueOnce(rateLimited()).mockImplementationOnce((_params, onMessage) => {
+      onMessage(personMessage(alice, [makeCandidate('p1')]))
+      onMessage(summaryMessage())
+      return Promise.resolve()
+    })
+
+    renderPage()
+    startScan()
+
+    expect(await screen.findByTestId('rate-limit-notice')).toHaveTextContent(
+      'Too many requests at once',
+    )
+    expect(screen.queryByText(i18n.t('recognition.error.scan'))).not.toBeInTheDocument()
+
+    await elapseRateLimitWait()
+    expect(await screen.findByRole('heading', { name: 'Alice' })).toBeInTheDocument()
+    expect(screen.queryByTestId('rate-limit-notice')).not.toBeInTheDocument()
+    expect(streamMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('still reports any other scan failure as an error', async () => {
+    streamMock.mockRejectedValue(new Error('boom'))
+    renderPage()
+    startScan()
+
+    expect(await screen.findByText(i18n.t('recognition.error.scan'))).toBeInTheDocument()
+    expect(screen.queryByTestId('rate-limit-notice')).not.toBeInTheDocument()
   })
 
   it('drops a person card when its last candidate is cleared', async () => {

@@ -7,6 +7,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
+import { RateLimitNotice } from '../components/RateLimitNotice'
 import { ExpandResults } from '../components/expand/ExpandResults'
 import { ExpandSearchForm } from '../components/expand/ExpandSearchForm'
 import { Icon } from '../components/Icon'
@@ -20,6 +21,7 @@ import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridKeyboardNavigation } from '../hooks/useGridKeyboardNavigation'
 import { useLightbox } from '../hooks/useLightbox'
+import { useRateLimitRetry } from '../hooks/useRateLimitRetry'
 import {
   clampExpandLimit,
   clampExpandThresholdPercent,
@@ -123,30 +125,59 @@ export function ExpandPage() {
   // displayed list is the response minus this set, so the scroll never jumps.
   const [removedUids, setRemovedUids] = useState<ReadonlySet<string>>(new Set())
   const [rejectError, setRejectError] = useState(false)
+  // A 429 from the heavy vector throttle keeps the search `loading`, says the
+  // server needs a moment and repeats the same search on its own. A search the
+  // user starts (or the URL restores) begins a fresh run — see startSearch.
+  const {
+    waiting: rateLimitWaiting,
+    handle: handleSearchError,
+    reset: resetRateLimit,
+  } = useRateLimitRetry()
 
-  const runSearch = useCallback((k: ExpandKind, uid: string, percent: number, cap: number) => {
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
-    setState({ status: 'loading' })
-    setRejectError(false)
-    searchSimilar(
-      k,
-      uid,
-      { threshold: expandThresholdDistance(percent), limit: cap },
-      controller.signal,
-    )
-      .then((result) => {
-        setRemovedUids(new Set())
-        setState({ status: 'ready', result })
-      })
-      .catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === 'AbortError') {
-          return
-        }
-        setState({ status: 'error' })
-      })
-  }, [])
+  const runSearch = useCallback(
+    function search(k: ExpandKind, uid: string, percent: number, cap: number) {
+      abortRef.current?.abort()
+      const controller = new AbortController()
+      abortRef.current = controller
+      setState({ status: 'loading' })
+      setRejectError(false)
+      searchSimilar(
+        k,
+        uid,
+        { threshold: expandThresholdDistance(percent), limit: cap },
+        controller.signal,
+      )
+        .then((result) => {
+          resetRateLimit()
+          setRemovedUids(new Set())
+          setState({ status: 'ready', result })
+        })
+        .catch((err: unknown) => {
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            return
+          }
+          if (
+            handleSearchError(err, () => {
+              search(k, uid, percent, cap)
+            })
+          ) {
+            return
+          }
+          setState({ status: 'error' })
+        })
+    },
+    [handleSearchError, resetRateLimit],
+  )
+
+  // startSearch is runSearch for a search somebody asked for: it forgets any
+  // rate-limit wait of the previous one first, so its retries start afresh.
+  const startSearch = useCallback(
+    (k: ExpandKind, uid: string, percent: number, cap: number) => {
+      resetRateLimit()
+      runSearch(k, uid, percent, cap)
+    },
+    [resetRateLimit, runSearch],
+  )
 
   // Abort an in-flight search when leaving the page.
   useEffect(() => () => abortRef.current?.abort(), [])
@@ -160,9 +191,9 @@ export function ExpandPage() {
     autoRan.current = true
     const uid = searchParams.get('source')
     if (uid !== null && uid !== '') {
-      runSearch(kindFromParam(searchParams.get('type')), uid, thresholdPercent, limit)
+      startSearch(kindFromParam(searchParams.get('type')), uid, thresholdPercent, limit)
     }
-  }, [searchParams, thresholdPercent, limit, runSearch])
+  }, [searchParams, thresholdPercent, limit, startSearch])
 
   const handleSearch = useCallback(() => {
     if (sourceUid === null || sourceUid === '') {
@@ -179,8 +210,8 @@ export function ExpandPage() {
       },
       { replace: true },
     )
-    runSearch(kind, sourceUid, thresholdPercent, limit)
-  }, [kind, sourceUid, thresholdPercent, limit, runSearch, setSearchParams])
+    startSearch(kind, sourceUid, thresholdPercent, limit)
+  }, [kind, sourceUid, thresholdPercent, limit, startSearch, setSearchParams])
 
   const handleKindChange = useCallback((next: ExpandKind) => {
     setKind(next)
@@ -388,7 +419,9 @@ export function ExpandPage() {
         />
       )}
 
-      {state.status === 'loading' && (
+      {state.status === 'loading' && rateLimitWaiting && <RateLimitNotice />}
+
+      {state.status === 'loading' && !rateLimitWaiting && (
         <div className="d-flex align-items-center gap-2 py-5 justify-content-center text-secondary">
           <Spinner animation="border" role="status" size="sm" />
           <span>{t('expand.loading')}</span>
