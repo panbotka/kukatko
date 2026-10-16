@@ -69,12 +69,12 @@ describe('members service', () => {
     async (status) => {
       const fetchMock = answer(jsonResponse({ status: 'accepted', error: 'whatever' }, status))
 
-      await expect(addMember('jana@example.cz', 'viewer')).resolves.toBeUndefined()
+      await expect(addMember('jana@example.org', 'viewer')).resolves.toBeUndefined()
 
       const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
       expect(url).toBe('/api/v1/p/v/members')
       expect(init.method).toBe('POST')
-      expect(init.body).toBe(JSON.stringify({ identifier: 'jana@example.cz', role: 'viewer' }))
+      expect(init.body).toBe(JSON.stringify({ identifier: 'jana@example.org', role: 'viewer' }))
     },
   )
 
@@ -83,12 +83,12 @@ describe('members service', () => {
     async (status) => {
       const fetchMock = answer(jsonResponse({ status: 'accepted', error: 'whatever' }, status))
 
-      await expect(withdrawMember('jana@example.cz')).resolves.toBeUndefined()
+      await expect(withdrawMember('jana@example.org')).resolves.toBeUndefined()
 
       const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
       expect(url).toBe('/api/v1/p/v/members/withdraw')
       expect(init.method).toBe('POST')
-      expect(init.body).toBe(JSON.stringify({ identifier: 'jana@example.cz' }))
+      expect(init.body).toBe(JSON.stringify({ identifier: 'jana@example.org' }))
     },
   )
 

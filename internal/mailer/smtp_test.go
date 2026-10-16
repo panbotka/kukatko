@@ -83,7 +83,7 @@ func TestNewSMTP_validation(t *testing.T) {
 func TestNewSMTP_errorNamesTheProblem(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewSMTP(SMTPConfig{Host: "smtp.example.com", FromAddress: "a@b.cz", Encryption: "ssl"})
+	_, err := NewSMTP(SMTPConfig{Host: "smtp.example.com", FromAddress: "a@example.org", Encryption: "ssl"})
 	if err == nil || !strings.Contains(err.Error(), `"ssl"`) {
 		t.Fatalf("NewSMTP error = %v, want it to name the unknown mode", err)
 	}

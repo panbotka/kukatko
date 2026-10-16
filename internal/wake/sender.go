@@ -41,7 +41,7 @@ type Sender interface {
 // udpSender broadcasts the magic packet as a UDP datagram to broadcastAddr via
 // mdlayher/wol's UDP client. This is the default path and needs no elevated
 // privileges; broadcastAddr should be the target subnet's broadcast address
-// (for example "192.168.1.255:9").
+// (for example "192.0.2.255:9").
 type udpSender struct {
 	broadcastAddr string
 }

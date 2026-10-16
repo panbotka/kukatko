@@ -319,12 +319,12 @@ describe('MembersPage', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Přidat člena' })
     await user.type(
       within(dialog).getByLabelText('Uživatelské jméno nebo e-mail (přesně)'),
-      ' petr@example.cz ',
+      ' petr@example.org ',
     )
     await user.selectOptions(within(dialog).getByLabelText('Role'), 'editor')
     await user.click(within(dialog).getByRole('button', { name: 'Přidat' }))
 
-    expect(addMock).toHaveBeenCalledWith('petr@example.cz', 'editor')
+    expect(addMock).toHaveBeenCalledWith('petr@example.org', 'editor')
     expect(
       await within(dialog).findByText(
         'Pokud takový účet existuje, byl přidán. V seznamu se objeví, až projekt poprvé otevře.',
@@ -351,11 +351,11 @@ describe('MembersPage', () => {
     expect(within(dialog).queryByLabelText('Role')).not.toBeInTheDocument()
     await user.type(
       within(dialog).getByLabelText('Uživatelské jméno nebo e-mail (přesně)'),
-      'petr@example.cz',
+      'petr@example.org',
     )
     await user.click(within(dialog).getByRole('button', { name: 'Zrušit přidání' }))
 
-    expect(withdrawMock).toHaveBeenCalledWith('petr@example.cz')
+    expect(withdrawMock).toHaveBeenCalledWith('petr@example.org')
     expect(addMock).not.toHaveBeenCalled()
     expect(
       await within(dialog).findByText(

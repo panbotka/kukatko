@@ -47,7 +47,7 @@ func TestValidateEmail(t *testing.T) {
 		wantErr error
 	}{
 		{name: "plain address", input: "jan@example.com", wantErr: nil},
-		{name: "subdomain", input: "jan@mail.example.co.uk", wantErr: nil},
+		{name: "subdomain", input: "jan@mail.example.org", wantErr: nil},
 		{name: "plus tag and dots", input: "jan.novak+kukatko@example.com", wantErr: nil},
 		{name: "placeholder domain is valid", input: "jan@kukatko.invalid", wantErr: nil},
 		{name: "empty", input: "", wantErr: ErrInvalidEmail},

@@ -128,7 +128,7 @@ func normalizeEmail(email string) string {
 // already normalized address.
 //
 // The grammar comes from net/mail, but parsing alone is too generous for a
-// stored account address: it accepts a display-name form ("Jan <jan@x.cz>") and
+// stored account address: it accepts a display-name form ("Jan <jan@example.org>") and
 // a quoted local part that may hold spaces, neither of which is what an
 // administrator meant to type into an address field. Requiring the parse to give
 // back the input unchanged rules both out. A dotless domain is refused too —

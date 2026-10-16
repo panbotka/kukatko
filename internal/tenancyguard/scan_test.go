@@ -15,11 +15,11 @@ import (
 func scanSource(t *testing.T, body string) []string {
 	t.Helper()
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "/root/p/x.go", "package p\n\n"+body, parser.SkipObjectResolution)
+	file, err := parser.ParseFile(fset, "/src/p/x.go", "package p\n\n"+body, parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	findings := ScanFiles(fset, "/root", []*ast.File{file})
+	findings := ScanFiles(fset, "/src", []*ast.File{file})
 	got := make([]string, 0, len(findings))
 	for _, f := range findings {
 		if f.Path != "p/x.go" {
@@ -325,11 +325,11 @@ func TestScanFiles_origin(t *testing.T) {
 	t.Parallel()
 	fset := token.NewFileSet()
 	src := "package p\n\nconst listSQL = `SELECT uid\nFROM photos`\n\nfunc f() { q(listSQL) }\n"
-	file, err := parser.ParseFile(fset, "/root/p/x.go", src, parser.SkipObjectResolution)
+	file, err := parser.ParseFile(fset, "/src/p/x.go", src, parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	findings := ScanFiles(fset, "/root", []*ast.File{file})
+	findings := ScanFiles(fset, "/src", []*ast.File{file})
 	if len(findings) != 1 || findings[0].Key() != "p/x.go:6" || findings[0].Origin != "p/x.go:4" {
 		t.Fatalf("findings = %+v, want one at p/x.go:6 from p/x.go:4", findings)
 	}

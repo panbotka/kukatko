@@ -320,9 +320,9 @@ func TestNew(t *testing.T) {
 		{name: "disabled with garbage keys", cfg: Config{PublicKey: "x", PrivateKey: "y"}, wantNoop: true},
 		{name: "enabled and complete", cfg: Config{Enabled: true, PublicKey: keys.PublicKey,
 			PrivateKey: keys.PrivateKey, Subject: "https://kukatko.example.org"}},
-		{name: "enabled without keys", cfg: Config{Enabled: true, Subject: "mailto:a@b.cz"}, wantErr: true},
+		{name: "enabled without keys", cfg: Config{Enabled: true, Subject: "mailto:a@example.org"}, wantErr: true},
 		{name: "enabled with a bad subject", cfg: Config{Enabled: true, PublicKey: keys.PublicKey,
-			PrivateKey: keys.PrivateKey, Subject: "a@b.cz"}, wantErr: true},
+			PrivateKey: keys.PrivateKey, Subject: "a@example.org"}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

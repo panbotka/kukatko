@@ -118,9 +118,13 @@ remote_ensure_golangci_lint() {
 
 # remote_gate bootstraps the toolchain if needed and runs the gate. It runs on
 # the box, in the synced copy of the tree, with <cache> shared by every workspace.
+# <file-list> is the tracked-file list computed on this side: the synced copy
+# has no .git, so the privacy guard (internal/privacyguard) reads it instead of
+# `git ls-files`.
 remote_gate() {
   local cache="$1"
   local toolchain="$cache/toolchain"
+  export KUKATKO_PRIVACY_FILES="$2"
   mkdir -p "$toolchain/bin"
 
   # Everything the run downloads lives under the one cache root, so re-runs reuse
@@ -152,7 +156,7 @@ remote_gate() {
 }
 
 if [[ "${1:-}" == "--remote" ]]; then
-  remote_gate "${2:?--remote needs the cache root}"
+  remote_gate "${2:?--remote needs the cache root}" "${3:?--remote needs the file list}"
   exit 0
 fi
 
@@ -263,12 +267,20 @@ rsync -a --delete --info=stats1 -e "ssh ${SSH_OPTS[*]}" \
   "${RSYNC_FILTERS[@]}" ./ "$HOST:$REMOTE_SRC/" ||
   die "syncing the working tree to $HOST failed — the gate did NOT run; use: make check"
 
+# The privacy guard scans what git tracks, and the box has no .git: ship the
+# list beside the workspace (never inside it, so the synced tree stays a copy).
+FILE_LIST="$(mktemp)"
+trap 'rm -f "$FILE_LIST"' EXIT
+git -c core.quotePath=false ls-files >"$FILE_LIST" || die "git ls-files failed — the gate did NOT run; use: make check"
+rsync -a -e "ssh ${SSH_OPTS[*]}" "$FILE_LIST" "$HOST:$REMOTE_ROOT/$WORKSPACE/privacy-files.txt" ||
+  die "syncing the file list to $HOST failed — the gate did NOT run; use: make check"
+
 # --- run the gate -----------------------------------------------------------
 # $HOME is escaped so the remote shell expands it; the workspace path is ours.
 started=$SECONDS
 status=0
 ssh "${SSH_OPTS[@]}" "$HOST" \
-  "cd \"\$HOME/$REMOTE_SRC\" && exec ./scripts/check-on-box.sh --remote \"\$HOME/$REMOTE_ROOT\"" ||
+  "cd \"\$HOME/$REMOTE_SRC\" && exec ./scripts/check-on-box.sh --remote \"\$HOME/$REMOTE_ROOT\" \"\$HOME/$REMOTE_ROOT/$WORKSPACE/privacy-files.txt\"" ||
   status=$?
 elapsed=$((SECONDS - started))
 

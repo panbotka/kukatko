@@ -938,7 +938,7 @@ optional YAML file with environment overrides — prefix `KUKATKO_`, dots become
 Upload from the browser (or from an Android share sheet), or point the CLI at a folder:
 
 ```bash
-kukatko import dir --project v /mnt/photos/2019
+kukatko import dir --project v /srv/photos/2019
 ```
 
 It imports into the one project `--project` names, walks the directory recursively, uploads through the same pipeline as a browser upload, and

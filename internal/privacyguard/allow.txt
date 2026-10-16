@@ -1,0 +1,19 @@
+# The privacy guard's allow-list: lines the guard flags that deliberately hold
+# no private data — a synthetic fixture, a documented placeholder that happens
+# to look real. One `path:line reason` per line, path relative to the
+# repository root, line = the line the guard reports. `#` starts a comment.
+#
+# Never allow-list real private data: remove it from the file instead (see
+# docs/OPERATIONS.md, "Privacy guard"). A stale entry — its line no longer
+# holds a finding — fails the gate, so move or drop the entry with the text.
+#
+# An entry must excuse a GENERIC rule's finding. A line that only a private
+# pattern (.secrets/privacy-patterns.txt) flags cannot be allow-listed: CI and
+# the build box have no pattern file, so the entry would be stale there — and a
+# private hit is real data anyway. Rewrite the line.
+
+docs/SECURITY_AUDIT.md:583 the audit's SSRF finding quotes the private-range test URL it was confirmed with
+docs/specs/task-21ad6d50-eefa-473c-a37d-67902f1268f0.md:8 the privacy guard's own spec names the secret-reference rule's prefix
+docs/specs/task-21ad6d50-eefa-473c-a37d-67902f1268f0.md:17 the privacy guard's own spec quotes its synthetic ssh-target probe
+docs/specs/task-2bcb897b-d985-40d2-a60d-1ef2e6dbc875.md:35 Anthropic's published connector-review mailbox, a public address
+docs/superpowers/specs/2026-09-12-mcp-oauth-design.md:78 Anthropic's published connector-review mailbox, a public address

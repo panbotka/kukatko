@@ -478,7 +478,7 @@ type WakeConfig struct {
 	// for example "aa:bb:cc:dd:ee:ff". Required when Enabled.
 	MAC string `mapstructure:"mac"`
 	// BroadcastAddr is the UDP broadcast destination for the magic packet, for
-	// example "192.168.1.255:9". Used when Interface is empty.
+	// example "192.0.2.255:9". Used when Interface is empty.
 	BroadcastAddr string `mapstructure:"broadcast_addr"`
 	// Interface is the local NIC name to emit a raw Ethernet magic frame on (for
 	// example "eth0"); it requires CAP_NET_RAW. Empty selects the UDP broadcast

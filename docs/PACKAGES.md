@@ -7796,6 +7796,35 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     and fails on every reference not in its (empty) `allowedBootstrapReferences`; the migrations, the
     rekey runbook, the stores' tests and the test fixtures may still name `v`.
 
+- **Privacy guard (`internal/privacyguard`):** the repository is public, so private data in it is a
+  red `make check` (a plain test, no build tag), not a leak. Operator view — what is checked, how to
+  allow-list, how to write a spec without private values — in `docs/OPERATIONS.md` ("Privacy guard").
+  - `Files(ctx, root)` (`scan.go`) is `git ls-files` (or, when `KUKATKO_PRIVACY_FILES` names one, a
+    file list — the build box's synced copy has no `.git`) plus a walk of `docs/specs/`, tracked or
+    not: a task's spec sits there uncommitted while the task runs. It stats git's index so a cached
+    pass of `go test` is invalidated by a `git add`; the walk's directory reads invalidate it on a
+    new spec.
+  - `Check(root, files, rules)` reads each file on one worker per CPU (missing, symlinked and binary
+    files skipped) and `CheckText` reports one `Finding` per (line, rule). A `Rule` has a `Hint`
+    literal (a file or line without it is never handed to the regexp — the generic patterns have no
+    literal prefix, and Go's regexp is slow on those) and a `Benign(line, start, end)` that judges a
+    candidate in its context (a documentation IP, a version token, a reserved domain, a longer run
+    of digit groups). A rule first runs over the whole text and only a rule that matched somewhere
+    runs line by line: the repository (~3.7k files, 158 rules) scans in ~2 s on the Pi.
+  - `GenericRules()` (`rules.go`) are the committed rules, each with a one-line `Reason`; their
+    patterns are spelled (`-{5}`, `op:/{2}`) so their own source passes them, and
+    `TestGenericRules_sourceIsClean` holds the file and its test to that. `LoadPrivateRules(path)`
+    (`private.go`) reads `.secrets/privacy-patterns.txt` into rules named `private pattern #<line>`;
+    a missing file is `found == false` (the test logs it and runs the generic rules alone), an
+    invalid line is `ErrPrivatePattern` naming the line only — regexp's own message would quote it.
+  - `Finding.String()` is `path:line: <rule>` — never the text. `ParseAllowList`/`Judge`
+    (`allow.go`) mirror the tenancy guard's: `path:line reason`, one entry excusing every rule on
+    its line, an unused entry stale. A line only a private pattern flags cannot be allow-listed: the
+    entry would be stale wherever the pattern file is absent.
+  - `TestRepository_noPrivateData` (`repo_test.go`) is the guard; the unit tests build their hits
+    from pieces (`"ssh someone" + "@somehost"`) and run `Files` over a throwaway `git init` tree for
+    the untracked-spec case.
+
 - **Upgrade inventory (`internal/inventory`):** the before/after check of an upgrade that migrates data,
   behind `kukatko maintenance inventory` / `inventory-diff` (runbook in `docs/OPERATIONS.md`, first use in
   `docs/MIGRATION_SAFETY.md`). `Collect(ctx, pool, dir, store)` reads inside **one `READ ONLY REPEATABLE READ`

@@ -176,7 +176,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   must send a real one: a missing (create), blank or syntactically invalid address → **400** (`auth: email must be a valid address`).
   The address is normalised on the way in — surrounding whitespace trimmed, **domain lower-cased**,
   local part left exactly as typed (RFC 5321 leaves its meaning to the receiving host) — and capped at
-  **254 bytes**. Rejected are a display-name form (`Jan <jan@example.cz>`), an address with inner
+  **254 bytes**. Rejected are a display-name form (`Jan <jan@example.org>`), an address with inner
   whitespace, and a dotless domain (`jan@localhost`), none of which an account here could receive mail
   at. **Two accounts may share an address**: a household mailbox is a real arrangement, so there is no
   unique constraint. The `PATCH` *replaces* the profile, so an update that omits `email` clears it and

@@ -63,7 +63,7 @@ describe('resolveMarkdownLink', () => {
       href: '/api/v1/photos/x/download',
     })
     expect(resolveMarkdownLink('#user-content-fn-1', ORIGIN).kind).toBe('page')
-    expect(resolveMarkdownLink('mailto:a@b.cz', ORIGIN).kind).toBe('page')
+    expect(resolveMarkdownLink('mailto:a@example.org', ORIGIN).kind).toBe('page')
   })
 })
 

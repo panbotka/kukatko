@@ -3045,8 +3045,8 @@ families and never fails the whole scrape.
   ~11 minutes on the ARM dev box — and the default aborts a healthy run mid-test as if it failed;
   the R2-backend tests additionally want `KUKATKO_TEST_S3_ENDPOINT` — without it they are skipped,
   see `docs/DEVELOPMENT.md`), `check` (the gate = `docs-budget` + `fmt-check` + `lint` +
-  `web-typecheck` + `test`; **rewrites nothing**, after a successful run `git status --short` is
-  empty), `check-box` (that same gate, executed on the build box — see below),
+  `web-typecheck` + `test` — `test` includes the tenancy and privacy guards; **rewrites nothing**,
+  after a successful run `git status --short` is empty), `check-box` (that same gate, executed on the build box — see below),
   `build` (frontend build + `CGO_ENABLED=0` → `bin/kukatko`), `dev` (smart rebuild + run on
   `:6480` via `scripts/dev.sh`, `DEV_ARGS=--force` for a full rebuild), `dev-storage`
   (`scripts/dev-storage.sh` — the local MinIO the dev runtime *and* the S3 integration tests share:
@@ -3127,6 +3127,63 @@ the same target remotely, streaming the output back.
   (remote cache dir relative to the remote `$HOME`, default `.cache/kukatko-check`),
   `KUKATKO_BOX_SLOTS` (default 4), `KUKATKO_BOX_WAKE_TIMEOUT`, `KUKATKO_BOX_LOCK_WAIT`
   (default 1800 s of waiting for a busy workspace).
+- **No `.git` there — the Pi ships the file list.** The privacy guard (below) scans what git
+  tracks; the synced copy has no history, so the script writes `git ls-files` to
+  `~/.cache/kukatko-check/<workspace>/privacy-files.txt` (beside the synced tree, never inside it)
+  and the remote half points `KUKATKO_PRIVACY_FILES` at it. `docs/specs/` is walked on the box as
+  it is here, so an untracked spec is checked too. The box has no `.secrets/`, so it runs the
+  generic rules only.
+
+### Privacy guard — no private data in the public repository
+
+The repository is public, and agents had repeatedly committed private data: production hosts and
+addresses, private paths, live URLs, real names. `internal/privacyguard` makes that a red gate
+instead of a leak. It is a plain Go test (`TestRepository_noPrivateData`), so `make check` (via
+`test`), `make check-box` and CI all run it; it takes about 2 s.
+
+- **What is scanned:** every file `git ls-files` lists (binaries — a NUL byte in the first 8 kB —
+  skipped, a deleted-but-tracked file skipped) **plus every file under `docs/specs/`, tracked or
+  not**: Botka writes a task's spec there before the task commits it, so a private value in a new
+  spec fails the gate before the commit, not after. Outside a git work tree the test fails, unless
+  `KUKATKO_PRIVACY_FILES` names a file list (one path per line) — that is how the box runs it.
+- **What is reported:** `path:line: <rule name>` — never the matched text, never a private pattern.
+  CI logs are public too.
+- **Generic rules** (`rules.go`, committed, no private value in them; each has a one-line reason):
+  `ssh-target` (an `ssh`/`scp`/`sftp`/`rsync` command with a `user` + `@` + `host` target, or a
+  scp-style target with `:/path` right after the host; an example domain and GitHub's clone
+  address are fine), `home-path` (`/home/<user>/…`), `mount-path` (`/mnt/<…>`),
+  `secret-reference` (a password-manager `op:` URI), `private-key` (a PEM private-key header),
+  `ipv4-address` (outside 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24, loopback, `0.0.0.0`,
+  the limited broadcast and the cloud metadata address; a range with a prefix length below 32
+  and a `Product/1.2.3.4` version token are not addresses; `_test.go` and `*.test.*` files are
+  synthetic and skipped),
+  `r2-account-endpoint` (an R2 endpoint with a real account id), `email-address` (anything but the
+  RFC 2606 names — `example.org`/`.com`/`.net`, `.example`, `.test`, `.invalid`, `.localhost` —,
+  `users.noreply.github.com`, a `noreply` mailbox and GitHub's clone user) and `phone-number`
+  (`+<country> …` or the Czech `NNN NNN NNN` form; a run of more digit groups is no number).
+- **Private rules** come from the gitignored `.secrets/privacy-patterns.txt`: one Go (RE2)
+  regular expression per line — the `grep -E` syntax works —, `#` lines are comments. A hit is
+  named `private pattern #<line in that file>`; an invalid line fails the test naming only its
+  line number. The file exists only on the Pi; where it is absent (CI, the build box) the test
+  says so with `t.Log` and runs the generic rules — that is not a skip. Extend it with every new
+  private value you learn about.
+- **Allow-list:** `internal/privacyguard/allow.txt`, `path:line reason` per line like the tenancy
+  guard's. Only for lines that are deliberately synthetic or quote a *public* value (an audit
+  finding's test URL, a vendor's published mailbox). A stale entry — its line no longer holds a
+  finding — fails, so an edit above the line means moving the entry. **A line only a private
+  pattern flags cannot be allow-listed** (the entry would be stale wherever the pattern file is
+  absent) — and it is real data anyway.
+- **When it fires on real data:** do not allow-list it. Save the removed text to the private backup
+  directory named in the pattern file's header (outside the repository), then rewrite the line
+  with a placeholder (`<instance>`, `<project uid>`, `<user>@<host>`) or a synthetic value (an
+  `example.org` address, a documentation-range IP).
+- **Writing a spec (or any doc) without private values:** name things by role, not by value —
+  "the production host", "the box", "the backup bucket", `<instance>`, `<project uid>`; use
+  `example.org`/`.test` addresses, 192.0.2.x addresses and `/srv/…`-style paths in examples; keep
+  people's names, hosts, URLs and paths in the task's private context (Botka notes, `.secrets/`,
+  the NAS), never in `docs/specs/`. Run `go test ./internal/privacyguard/` before committing.
+- **Tests of the guard itself** build their hits from pieces (`"ssh someone" + "@somehost"`), so
+  the guard's own source passes it; `TestGenericRules_sourceIsClean` holds `rules.go` to that.
 
 ## Docker image — container build and publishing to GHCR
 

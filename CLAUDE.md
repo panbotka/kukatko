@@ -151,6 +151,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/places` — cache of reverse-geocoded places (side table `photo_places`)
 - `internal/placesapi` — `GET /places` (hierarchy of countries → cities with counts)
 - `internal/placesjob` — worker handler `places` (reverse geocode, rate-limited due to credits)
+- `internal/privacyguard` — the `make check` guard against private data: every tracked text file plus every file under `docs/specs/` (tracked or not) against generic rules (SSH targets, home/mount paths, secret refs, key headers, non-documentation IPs, real e-mails, phone numbers) and the gitignored `.secrets/privacy-patterns.txt`; reports `path:line: rule` only, never the text; `allow.txt` for synthetic lines, stale entries fail
 - `internal/processapi` — maintainer-only `/process/*` backfills (embeddings, faces, clusters, places)
 - `internal/processing` — what has already been computed about **one** photo (evidence first, queue second) + scheduling the one step it missed
 - `internal/project` — projects (independent libraries of one instance): the table's store, slug rules + reserved words, the fixed bootstrap project `v` (`BootstrapUID`), storage prefix `projects/<uid>/` for created ones, usage; the membership (`project_members`: per-project role ladder without maintainer, last-admin guard); every mutation audited in its transaction, actor passed in (no `internal/auth`)
@@ -219,8 +220,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - **`CLAUDE.md` holds only rules and a signpost.** Descriptive details belong in `docs/`.
   The 300-line limit is enforced by `make docs-budget`. Don't circumvent it — move text to the right document.
 - For Go code **use the `golang-developer` skill**.
-- **`.golangci.yml` is strict.** Don't weaken it. `//nolint` only
-  with justification.
+- **`.golangci.yml` is strict.** Don't weaken it. `//nolint` only with justification.
 - **Tests are mandatory for every change:** unit tests for logic; **integration tests** for DB/HTTP
   against a real test DB. New behavior = new/updated tests. Goal: an extensible app that the next
   iteration won't break. Details in `docs/ARCHITECTURE.md` §19.
@@ -246,9 +246,9 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - The DB is **already provisioned** in shared Postgres (pgvector 0.8.1 + unaccent).
 - Read the DSN from the gitignored **`.secrets/db.env`**: `KUKATKO_DATABASE_URL` (app),
   `KUKATKO_TEST_DATABASE_URL` (integration tests, DB `kukatko_test`, safe to truncate). `MAPY_API_KEY` too.
-- **The repo is public — nothing private goes in.** Never commit secrets (`.secrets/`, `*.local.yaml`,
-  `.env*` are gitignored), nor production specifics: hosts/IPs, SSH targets, container/bucket/vault
-  names, private (NAS) paths, live URLs or uids, real people's names or data. Use placeholders
+- **The repo is public — nothing private goes in** (`internal/privacyguard` fails `make check` on it). Never commit
+  secrets (`.secrets/`, `*.local.yaml`, `.env*` are gitignored) nor production specifics: hosts/IPs, SSH targets,
+  container/bucket/vault names, private (NAS) paths, live URLs or uids, real people's names or data. Use placeholders
   (`<instance>`, `<project uid>`); private context stays outside the repo — task specs and commit messages included.
 - Migrations = SQL in `embed.FS` (`internal/database/migrations/NNNN_name.sql`), auto-applied at
   startup in ascending version order, each in its own transaction, idempotently recorded in the

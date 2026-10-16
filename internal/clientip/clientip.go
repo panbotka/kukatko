@@ -230,8 +230,8 @@ func parseHeaderAddr(value string) (string, bool) {
 }
 
 // normalize strips an IPv6 zone and unwraps an IPv4-mapped IPv6 address, so the
-// same machine yields the same key whether it appears as "::ffff:10.0.0.1",
-// "10.0.0.1" or "fe80::1%eth0".
+// same machine yields the same key whether it appears as "::ffff:192.0.2.1",
+// "192.0.2.1" or "fe80::1%eth0".
 func normalize(addr netip.Addr) netip.Addr {
 	return addr.Unmap().WithZone("")
 }

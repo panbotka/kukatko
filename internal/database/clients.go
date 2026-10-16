@@ -93,7 +93,7 @@ func (c Client) Kukatko() bool {
 }
 
 // String describes the client for a log line or an operator's terminal, e.g.
-// `pid 4242 "kukatko/0.32.0 1a2b3c4d" user kukatko from 172.18.0.5 since
+// `pid 4242 "kukatko/0.32.0 1a2b3c4d" user kukatko from 192.0.2.5 since
 // 2026-10-14T09:00:00Z`. An unnamed client says so, because that is what an old
 // Kukátko release looks like.
 func (c Client) String() string {
