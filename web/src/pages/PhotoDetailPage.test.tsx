@@ -4372,7 +4372,7 @@ describe('the chrome hint stylesheet', () => {
  */
 describe.each([
   ['en', 'No location stored.', 'Nobody here yet.', 'Say what you know about this one…'],
-  ['cs', 'Poloha není uložená.', 'Zatím tu není nikdo.', 'Napiš, co o tomhle víš…'],
+  ['cs', 'Poloha není uložená.', 'Zatím tu není nikdo.', 'Napište, co o tomhle víte…'],
 ])('PhotoDetailPage wording on a clip (%s)', (lng, noLocation, noPeople, commentPrompt) => {
   beforeEach(async () => {
     await i18n.changeLanguage(lng)

@@ -107,7 +107,7 @@ func TestMessage(t *testing.T) {
 		msg.ProjectUID != "pj1" {
 		t.Fatalf("message = %+v", msg)
 	}
-	if msg.Text.Title != "Pan Botka tě přidal(a) k úkolu: Kdy to bylo?" || msg.Link != "/tasks/pt1" {
+	if msg.Text.Title != "Pan Botka vás přidal(a) k úkolu: Kdy to bylo?" || msg.Link != "/tasks/pt1" {
 		t.Fatalf("text %+v, link %q", msg.Text, msg.Link)
 	}
 	mail := msg.Mail(notifydeliver.Recipient{Email: "anna@example.test", DisplayName: "Anna"},

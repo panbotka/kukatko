@@ -191,9 +191,9 @@ func TestCreate_asksEveryoneButTheCreator(t *testing.T) {
 
 	got := f.sentNotifications(t)
 	want := []sent{
-		{user: annaUID, title: "Pan Botka tě přidal(a) k úkolu: Kdy to bylo?", body: "Otevři úkol a odpověz.",
+		{user: annaUID, title: "Pan Botka vás přidal(a) k úkolu: Kdy to bylo?", body: "Otevřete úkol a odpovězte.",
 			link: "/p/" + project.BootstrapSlug + "/tasks/" + task.UID, inApp: true},
-		{user: bedrichUID, title: "Pan Botka tě přidal(a) k úkolu: Kdy to bylo?", body: "Otevři úkol a odpověz.",
+		{user: bedrichUID, title: "Pan Botka vás přidal(a) k úkolu: Kdy to bylo?", body: "Otevřete úkol a odpovězte.",
 			link: "/p/" + project.BootstrapSlug + "/tasks/" + task.UID, inApp: true},
 	}
 	if !reflect.DeepEqual(got, want) {

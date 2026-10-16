@@ -290,7 +290,7 @@ func TestRenderTaskAssigned(t *testing.T) {
 	}{
 		{
 			name: "czech", lang: LanguageCzech, who: " Anna ", title: " Kdy to bylo? ",
-			want: Text{Title: "Anna tě přidal(a) k úkolu: Kdy to bylo?", Body: "Otevři úkol a odpověz."},
+			want: Text{Title: "Anna vás přidal(a) k úkolu: Kdy to bylo?", Body: "Otevřete úkol a odpovězte."},
 		},
 		{
 			name: "english", lang: LanguageEnglish, who: "Anna", title: "Kdy to bylo?",
@@ -298,11 +298,11 @@ func TestRenderTaskAssigned(t *testing.T) {
 		},
 		{
 			name: "unknown language reads as czech", lang: "de", who: "Anna", title: "Kdy?",
-			want: Text{Title: "Anna tě přidal(a) k úkolu: Kdy?", Body: "Otevři úkol a odpověz."},
+			want: Text{Title: "Anna vás přidal(a) k úkolu: Kdy?", Body: "Otevřete úkol a odpovězte."},
 		},
 		{
 			name: "nobody named, czech", lang: LanguageCzech, who: "  ", title: "Kdy?",
-			want: Text{Title: "Někdo tě přidal(a) k úkolu: Kdy?", Body: "Otevři úkol a odpověz."},
+			want: Text{Title: "Někdo vás přidal(a) k úkolu: Kdy?", Body: "Otevřete úkol a odpovězte."},
 		},
 		{
 			name: "nobody named, english", lang: LanguageEnglish, who: "", title: "Kdy?",
@@ -310,7 +310,7 @@ func TestRenderTaskAssigned(t *testing.T) {
 		},
 		{
 			name: "untitled", lang: LanguageCzech, who: "Anna", title: " ",
-			want: Text{Title: "Anna tě přidal(a) k úkolu: (bez názvu)", Body: "Otevři úkol a odpověz."},
+			want: Text{Title: "Anna vás přidal(a) k úkolu: (bez názvu)", Body: "Otevřete úkol a odpovězte."},
 		},
 		{
 			name: "untitled, english", lang: LanguageEnglish, who: "Anna", title: "",
@@ -319,8 +319,8 @@ func TestRenderTaskAssigned(t *testing.T) {
 		{
 			name: "overlong title is cut", lang: LanguageCzech, who: "Anna", title: long,
 			want: Text{
-				Title: "Anna tě přidal(a) k úkolu: " + strings.Repeat("x", MaxTaskTitleLen-1) + "…",
-				Body:  "Otevři úkol a odpověz.",
+				Title: "Anna vás přidal(a) k úkolu: " + strings.Repeat("x", MaxTaskTitleLen-1) + "…",
+				Body:  "Otevřete úkol a odpovězte.",
 			},
 		},
 	}
@@ -382,26 +382,26 @@ func TestRenderCommentMention(t *testing.T) {
 		{
 			name: "photo with a title, czech", lang: LanguageCzech, who: " Anna ", place: MentionPlacePhoto,
 			title: "Pouť 1987", excerpt: " Hele @Tomáš, víš to? ",
-			want: Text{Title: "Anna tě zmínil(a) v komentáři u fotky Pouť 1987", Body: "Hele @Tomáš, víš to?"},
+			want: Text{Title: "Anna vás zmínil(a) v komentáři u fotky Pouť 1987", Body: "Hele @Tomáš, víš to?"},
 		},
 		{
 			name: "photo without a title, czech", lang: LanguageCzech, who: "Anna", place: MentionPlacePhoto,
 			excerpt: "Hele",
-			want:    Text{Title: "Anna tě zmínil(a) v komentáři u fotky", Body: "Hele"},
+			want:    Text{Title: "Anna vás zmínil(a) v komentáři u fotky", Body: "Hele"},
 		},
 		{
 			name: "task, czech", lang: LanguageCzech, who: "Anna", place: MentionPlaceTask, title: "Kdy to bylo?",
 			excerpt: "V roce 1987.",
-			want:    Text{Title: "Anna tě zmínil(a) v komentáři u úkolu Kdy to bylo?", Body: "V roce 1987."},
+			want:    Text{Title: "Anna vás zmínil(a) v komentáři u úkolu Kdy to bylo?", Body: "V roce 1987."},
 		},
 		{
 			name: "task without a title, nobody named, czech", lang: LanguageCzech, who: " ", place: MentionPlaceTask,
-			want: Text{Title: "Někdo tě zmínil(a) v komentáři u úkolu (bez názvu)"},
+			want: Text{Title: "Někdo vás zmínil(a) v komentáři u úkolu (bez názvu)"},
 		},
 		{
 			name: "album, czech", lang: LanguageCzech, who: "Anna", place: MentionPlaceAlbum, title: "Svatba 1987",
 			excerpt: "Kdo tam ještě byl?",
-			want:    Text{Title: "Anna tě zmínil(a) v komentáři u alba Svatba 1987", Body: "Kdo tam ještě byl?"},
+			want:    Text{Title: "Anna vás zmínil(a) v komentáři u alba Svatba 1987", Body: "Kdo tam ještě byl?"},
 		},
 		{
 			name: "album without a title, english", lang: LanguageEnglish, who: "Anna", place: MentionPlaceAlbum,
@@ -422,11 +422,11 @@ func TestRenderCommentMention(t *testing.T) {
 		},
 		{
 			name: "unknown language reads as czech", lang: "de", who: "Anna", place: MentionPlaceTask, title: "Kdy?",
-			want: Text{Title: "Anna tě zmínil(a) v komentáři u úkolu Kdy?"},
+			want: Text{Title: "Anna vás zmínil(a) v komentáři u úkolu Kdy?"},
 		},
 		{
 			name: "overlong photo title is cut", lang: LanguageCzech, who: "Anna", place: MentionPlacePhoto, title: long,
-			want: Text{Title: "Anna tě zmínil(a) v komentáři u fotky " + strings.Repeat("x", MaxTaskTitleLen-1) + "…"},
+			want: Text{Title: "Anna vás zmínil(a) v komentáři u fotky " + strings.Repeat("x", MaxTaskTitleLen-1) + "…"},
 		},
 	}
 	for _, tt := range tests {

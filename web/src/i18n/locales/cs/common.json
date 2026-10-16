@@ -575,36 +575,36 @@
     },
     "notifications": {
       "title": "Notifikace",
-      "intro": "Kukátko ti může dát vědět přímo v aplikaci (zvoneček nahoře), do telefonu, do počítače nebo e-mailem — třeba když tě někdo označí na fotce.",
+      "intro": "Kukátko vám může dát vědět přímo v aplikaci (zvoneček nahoře), do telefonu, do počítače nebo e-mailem — třeba když vás někdo označí na fotce.",
       "loading": "Načítám nastavení oznámení…",
       "instanceOff": "Push notifikace nejsou na této instanci zapnuté, takže je do zařízení dostávat nejde. E-maily níž platí dál.",
       "pushTitle": "Push do zařízení",
       "browser": {
         "title": "Tento prohlížeč",
-        "scope": "Tenhle přepínač platí jen pro prohlížeč, ve kterém jsi právě teď. Na každém telefonu nebo počítači, kde chceš oznámení dostávat, je musíš zapnout zvlášť.",
+        "scope": "Tenhle přepínač platí jen pro prohlížeč, ve kterém jste právě teď. Na každém telefonu nebo počítači, kde chcete oznámení dostávat, je musíte zapnout zvlášť.",
         "on": "V tomhle prohlížeči jsou oznámení zapnutá.",
         "off": "V tomhle prohlížeči jsou oznámení vypnutá.",
         "turnOn": "Zapnout v tomhle prohlížeči",
         "turnOff": "Vypnout v tomhle prohlížeči",
-        "failed": "Změna se nepovedla. Zkus to prosím později.",
-        "blocked": "Tenhle prohlížeč oznámení pro Kukátko zablokoval, takže je stránka zapnout nemůže. Povol je v nastavení webu přímo v prohlížeči (obvykle pod ikonou vedle adresy stránky) a stránku pak načti znovu.",
-        "unsupported": "Tenhle prohlížeč oznámení přijímat neumí. Zkus aktuální Chrome, Firefox nebo Edge, případně telefon.",
-        "iosInstall": "Na iPhonu a iPadu chodí oznámení jen do nainstalované aplikace: otevři Kukátko v Safari, zvol Sdílet → Přidat na plochu a oznámení zapni až tam.",
-        "noWorker": "Oznámení teď na téhle stránce nejde nastavit. Načti stránku znovu a zkus to ještě jednou."
+        "failed": "Změna se nepovedla. Zkuste to prosím později.",
+        "blocked": "Tenhle prohlížeč oznámení pro Kukátko zablokoval, takže je stránka zapnout nemůže. Povolte je v nastavení webu přímo v prohlížeči (obvykle pod ikonou vedle adresy stránky) a stránku pak načtěte znovu.",
+        "unsupported": "Tenhle prohlížeč oznámení přijímat neumí. Zkuste aktuální Chrome, Firefox nebo Edge, případně telefon.",
+        "iosInstall": "Na iPhonu a iPadu chodí oznámení jen do nainstalované aplikace: otevřete Kukátko v Safari, zvolte Sdílet → Přidat na plochu a oznámení zapněte až tam.",
+        "noWorker": "Oznámení teď na téhle stránce nejde nastavit. Načtěte stránku znovu a zkuste to ještě jednou."
       },
       "kindsTitle": "O čem mi dávat vědět",
-      "kindsScope": "Tyhle volby patří k tvému účtu: v aplikaci je uvidíš pod zvonečkem, push platí na všech zařízeních, kde máš oznámení zapnutá, e-mail chodí na adresu z tvého účtu.",
+      "kindsScope": "Tyhle volby patří k vašemu účtu: v aplikaci je uvidíte pod zvonečkem, push platí na všech zařízeních, kde máte oznámení zapnutá, e-mail chodí na adresu z vašeho účtu.",
       "channels": {
         "inApp": "V aplikaci",
         "push": "Push",
         "email": "E-mail"
       },
       "switchLabel": "{{kind}} — {{channel}}",
-      "defaultOffHint": "Ve výchozím stavu je všechno vypnuté — zapni si jen to, o co stojíš.",
+      "defaultOffHint": "Ve výchozím stavu je všechno vypnuté — zapněte si jen to, o co stojíte.",
       "unavailable": {
         "push": "Push notifikace nejsou na této instanci zapnuté.",
         "emailOff": "E-maily nejsou na této instanci zapnuté.",
-        "emailMissing": "Doplň si e-mail v účtu."
+        "emailMissing": "Doplňte si e-mail v účtu."
       },
       "kinds": {
         "tagged": "Když mě někdo označí na fotce",
@@ -613,14 +613,14 @@
         "task_assigned": "Když mě někdo přidá k úkolu",
         "comment_mention": "Když mě někdo zmíní v komentáři"
       },
-      "saveError": "Volbu se nepodařilo uložit. Zkus to prosím znovu.",
+      "saveError": "Volbu se nepodařilo uložit. Zkuste to prosím znovu.",
       "prefsLoadError": "Volby oznámení se nepodařilo načíst.",
       "devices": {
         "title": "Zařízení, která dostávají oznámení",
-        "hint": "Všechny prohlížeče, kde máš pro svůj účet zapnutá oznámení. To, které už nepoužíváš, můžeš odebrat.",
+        "hint": "Všechny prohlížeče, kde máte pro svůj účet zapnutá oznámení. To, které už nepoužíváte, můžete odebrat.",
         "empty": "Zatím žádné zařízení oznámení nedostává.",
         "loadError": "Zařízení se nepodařilo načíst.",
-        "removeError": "Zařízení se nepodařilo odebrat. Zkus to prosím znovu.",
+        "removeError": "Zařízení se nepodařilo odebrat. Zkuste to prosím znovu.",
         "confirmTitle": "Vypnout oznámení na tomhle zařízení?",
         "confirmBody": "{{name}} přestane dostávat oznámení. Znovu je jde zapnout přímo na tom zařízení.",
         "confirmAction": "Odebrat"
@@ -727,39 +727,39 @@
     },
     "subject": {
       "title": "Kdo jsem v knihovně",
-      "hint": "V každém projektu, kde jsi členem, si můžeš vybrat osobu z jeho knihovny, která jsi ty. Díky tomu ti appka v tom projektu umí ukázat fotky, na kterých jsi, a ve vyhledávání funguje person:me.",
-      "publishWarning": "Pozor: až osobu vybereš, bude se u všech tvých komentářů zobrazovat její profilová fotka — uvidí ji každý, kdo si fotku otevře. Značka „soukromá osoba“ dnes nic neskrývá.",
+      "hint": "V každém projektu, kde jste členem, si můžete vybrat osobu z jeho knihovny, která jste vy. Díky tomu vám appka v tom projektu umí ukázat fotky, na kterých jste, a ve vyhledávání funguje person:me.",
+      "publishWarning": "Pozor: až osobu vyberete, bude se u všech vašich komentářů zobrazovat její profilová fotka — uvidí ji každý, kdo si fotku otevře. Značka „soukromá osoba“ dnes nic neskrývá.",
       "clear": "Zrušit propojení",
       "unknownPerson": "Propojená osoba už v knihovně není.",
-      "error": "Propojení se nepodařilo uložit. Zkus to prosím znovu.",
+      "error": "Propojení se nepodařilo uložit. Zkuste to prosím znovu.",
       "pickLabelIn": "Najít osobu v projektu {{project}}",
       "clearIn": "Zrušit propojení v projektu {{project}}",
-      "noProjects": "Zatím nejsi schváleným členem žádného projektu, takže tu není koho vybrat."
+      "noProjects": "Zatím nejste schváleným členem žádného projektu, takže tu není koho vybrat."
     },
     "picture": {
       "title": "Moje fotka",
-      "hint": "To, co tě zastupuje všude, kde jsi podepsaný — u komentářů i v účtu v liště. Nahraj obrázek, vyber fotku z knihovny, nebo to nech na obličeji osoby, se kterou máš účet propojený.",
+      "hint": "To, co vás zastupuje všude, kde jste podepsaní — u komentářů i v účtu v liště. Nahrajte obrázek, vyberte fotku z knihovny, nebo to nechte na obličeji osoby, se kterou máte účet propojený.",
       "source": {
-        "upload": "Ukazuje se obrázek, který jsi nahrál.",
-        "photo": "Ukazuje se fotka, kterou jsi vybral z knihovny.",
-        "subject": "Ukazuje se obličej osoby, se kterou máš účet propojený.",
-        "none": "Ukazuje se první písmeno tvého jména."
+        "upload": "Ukazuje se obrázek, který jste nahráli.",
+        "photo": "Ukazuje se fotka, kterou jste vybrali z knihovny.",
+        "subject": "Ukazuje se obličej osoby, se kterou máte účet propojený.",
+        "none": "Ukazuje se první písmeno vašeho jména."
       },
       "upload": "Nahrát obrázek",
       "pick": "Vybrat z knihovny",
       "clear": "Odstranit fotku",
       "clearToFace": "Odstranit a vrátit se ke svému obličeji",
-      "formats": "JPEG, PNG nebo WebP, nejvýš {{megabytes}} MB. Ořízne se na čtverec a uloží zmenšená; soubor, který pošleš, se nikde nenechává.",
+      "formats": "JPEG, PNG nebo WebP, nejvýš {{megabytes}} MB. Ořízne se na čtverec a uloží zmenšená; soubor, který pošlete, se nikde nenechává.",
       "pickTitle": "Vybrat fotku",
       "searchLabel": "Hledat v knihovně",
       "searchPlaceholder": "Jméno, místo, rok…",
       "searching": "Hledám…",
-      "searchError": "Knihovnu se nepodařilo prohledat. Zkus to prosím znovu.",
+      "searchError": "Knihovnu se nepodařilo prohledat. Zkuste to prosím znovu.",
       "noMatches": "Tomu nic neodpovídá.",
-      "errorFormat": "Ten soubor se nepodařilo přečíst jako obrázek. Zkus JPEG, PNG nebo WebP.",
+      "errorFormat": "Ten soubor se nepodařilo přečíst jako obrázek. Zkuste JPEG, PNG nebo WebP.",
       "errorTooLarge": "Ten obrázek je moc velký.",
-      "errorPrivate": "Soukromá nebo skrytá fotka nemůže být profilová — viděl by ji každý, kdo si přečte tvoje komentáře.",
-      "errorGeneric": "Fotku se nepodařilo uložit. Zkus to prosím znovu."
+      "errorPrivate": "Soukromá nebo skrytá fotka nemůže být profilová — viděl by ji každý, kdo si přečte vaše komentáře.",
+      "errorGeneric": "Fotku se nepodařilo uložit. Zkuste to prosím znovu."
     }
   },
   "activity": {
@@ -1197,9 +1197,9 @@
         "wildcard": "Hvězdička je zástupný znak v textové hodnotě."
       },
       "note": {
-        "personMe": "je osoba, kterou jsi ty — podle nastavení na Mém účtu.",
-        "familyMe": "je tvoje vlastní rodina, podle osoby nastavené na Mém účtu.",
-        "uploaderMe": "jsi ty,",
+        "personMe": "je osoba, kterou jste vy — podle nastavení na Mém účtu.",
+        "familyMe": "je vaše vlastní rodina, podle osoby nastavené na Mém účtu.",
+        "uploaderMe": "jste vy,",
         "uploaderNone": "jsou importované fotky.",
         "datedNo": "je seznam všech nedatovaných — i těch, u kterých datum nikdo nikdy neznal."
       },
@@ -1239,7 +1239,7 @@
         "uid": "Jedna fotka podle svého ID (nebo podle ID z původního katalogu). Najde ji i archivovanou nebo skrytou."
       }
     },
-    "personMeUnlinked": "Filtr me (person:me, family:me) hledá osobu, kterou jsi ty — a tvůj účet zatím žádnou osobu nemá nastavenou, takže nic nenašel.",
+    "personMeUnlinked": "Filtr me (person:me, family:me) hledá osobu, kterou jste vy — a váš účet zatím žádnou osobu nemá nastavenou, takže nic nenašel.",
     "personMeUnlinkedLink": "Nastavit na Mém účtu"
   },
   "globalSearch": {
@@ -1282,8 +1282,8 @@
     "placeholder": "Hledat fotky, lidi, alba, štítky",
     "dialogLabel": "Globální hledání",
     "clear": "Vymazat hledání",
-    "idle": "Začni psát a prohledej celou knihovnu.",
-    "error": "Hledání selhalo. Zkus to prosím znovu.",
+    "idle": "Začněte psát a prohledejte celou knihovnu.",
+    "error": "Hledání selhalo. Zkuste to prosím znovu.",
     "seeAll": "Hledat „{{query}}“ mezi všemi fotkami",
     "legend": {
       "navigate": "Pohyb",
@@ -1315,9 +1315,9 @@
       "face": "Stav obličeje; jediná hodnota je new (nepřiřazený)",
       "faces": "Počet obličejů: ano/ne, číslo nebo rozsah",
       "family": "Fotky osoby, jejích potomků a jejich partnerů",
-      "favorite": "Tvoje oblíbené (ano/ne)",
+      "favorite": "Vaše oblíbené (ano/ne)",
       "filename": "Původní název souboru",
-      "flag": "Tvoje značka: pick, reject nebo eye",
+      "flag": "Vaše značka: pick, reject nebo eye",
       "fps": "Počet snímků za sekundu u videa",
       "geo": "Má fotka GPS souřadnice? (ano/ne)",
       "hidden": "Fotky skryté z knihovny (ano/ne)",
@@ -1335,7 +1335,7 @@
       "person": "Fotky s člověkem nebo zvířetem",
       "portrait": "Na výšku (ano/ne)",
       "private": "Soukromé fotky (ano/ne)",
-      "rating": "Tvoje hodnocení hvězdičkami, 0–5",
+      "rating": "Vaše hodnocení hvězdičkami, 0–5",
       "sound": "Video se zvukovou stopou (ano/ne)",
       "square": "Čtvercové (ano/ne)",
       "streaming": "Video připravené k plynulému přehrávání (ano/ne)",
@@ -1358,18 +1358,18 @@
     "delete": "Smazat",
     "loading": "Načítání uložených hledání…",
     "error": "Uložená hledání se nepodařilo načíst.",
-    "actionError": "Akce se nezdařila. Zkus to prosím znovu.",
+    "actionError": "Akce se nezdařila. Zkuste to prosím znovu.",
     "confirmTitle": "Smazat uložené hledání?",
     "confirmDelete": "Smazat uložené hledání „{{name}}“?",
     "deleteConfirm": "Smazat uložené hledání",
     "empty": {
       "title": "Zatím žádná uložená hledání",
-      "hint": "Ulož si aktuální pohled a rychle se k němu vrátíš."
+      "hint": "Uložte si aktuální pohled a rychle se k němu vrátíte."
     },
     "edit": {
       "titleNew": "Uložit pohled",
       "titleEdit": "Přejmenovat uložené hledání",
-      "error": "Nepodařilo se uložit. Zkontroluj jméno a zkus to znovu.",
+      "error": "Nepodařilo se uložit. Zkontrolujte jméno a zkuste to znovu.",
       "name": "Jméno",
       "cancel": "Zrušit",
       "save": "Uložit",
@@ -1406,7 +1406,7 @@
     "photoCount_other": "{{count}} fotek",
     "empty": {
       "title": "Zatím žádná alba",
-      "hint": "Vytvoř album a začni seskupovat své fotky."
+      "hint": "Vytvořte album a začněte seskupovat své fotky."
     },
     "tabs": {
       "album": "Moje alba",
@@ -1429,14 +1429,14 @@
     },
     "noMatches": {
       "title": "Nic tu neodpovídá",
-      "hint": "Zkus jinou sekci nebo jiný název.",
-      "hintFiltered": "Zkus jinou sekci, jiný název, nebo zapni „I prázdná“.",
+      "hint": "Zkuste jinou sekci nebo jiný název.",
+      "hintFiltered": "Zkuste jinou sekci, jiný název, nebo zapněte „I prázdná“.",
       "reset": "Zrušit filtry"
     },
     "edit": {
       "titleNew": "Nové album",
       "titleEdit": "Upravit album",
-      "error": "Nepodařilo se uložit. Zkontroluj název a zkus to znovu.",
+      "error": "Nepodařilo se uložit. Zkontrolujte název a zkuste to znovu.",
       "name": "Název",
       "description": "Popis",
       "private": "Soukromé",
@@ -1449,7 +1449,7 @@
     "error": "Toto album se nepodařilo načíst.",
     "missing": "Toto album už neexistuje.",
     "missingHint": "Nejspíš bylo smazáno. Auditní log na smazané věci odkazuje dál — je to záznam o té změně.",
-    "actionError": "Akce se nezdařila. Zkus to prosím znovu.",
+    "actionError": "Akce se nezdařila. Zkuste to prosím znovu.",
     "edit": "Upravit",
     "comments": "Komentáře",
     "commentsToggle": "Komentáře k albu ({{count}})",
@@ -1462,7 +1462,7 @@
     "deleteConfirm": "Smazat album",
     "empty": {
       "title": "Toto album nemá žádné fotky",
-      "hint": "Přidej fotky z knihovny tak, že je vybereš a zvolíš toto album."
+      "hint": "Přidejte fotky z knihovny tak, že je vyberete a zvolíte toto album."
     },
     "faces": "Obličeje ({{n}})",
     "uploadLink": "Sdílet odkaz pro nahrávání"
@@ -1475,7 +1475,7 @@
     "error": "Frontu fotek se nepodařilo načíst.",
     "close": "Zavřít",
     "photoAlt": "Fotka s obličeji k pojmenování",
-    "noSuggestion": "Bez návrhu — pojmenuj na detailu fotky",
+    "noSuggestion": "Bez návrhu — pojmenujte na detailu fotky",
     "confirmRow": "Potvrdit {{name}}",
     "dismissRow": "Přeskočit obličej {{number}}",
     "confirmAll": "Potvrdit vše ({{n}})",
@@ -1505,7 +1505,7 @@
     "submit": "Doporučit",
     "save": "Uložit",
     "cancel": "Zrušit",
-    "error": "Doporučení se nepodařilo uložit. Vyber den nejdéle za rok a zkus to znovu."
+    "error": "Doporučení se nepodařilo uložit. Vyberte den nejdéle za rok a zkuste to znovu."
   },
   "labels": {
     "title": "Štítky",
@@ -1514,7 +1514,7 @@
     "delete": "Smazat",
     "loading": "Načítání štítků…",
     "error": "Štítky se nepodařilo načíst.",
-    "actionError": "Akce se nezdařila. Zkus to prosím znovu.",
+    "actionError": "Akce se nezdařila. Zkuste to prosím znovu.",
     "cloud": "Štítky",
     "actions": "Akce štítku „{{name}}“",
     "photoCount_one": "{{count}} fotka",
@@ -1533,7 +1533,7 @@
     },
     "noMatches": {
       "title": "Žádný štítek neodpovídá",
-      "hint": "Zkus jiné jméno.",
+      "hint": "Zkuste jiné jméno.",
       "reset": "Zrušit hledání"
     },
     "group": {
@@ -1549,12 +1549,12 @@
     "deleteConfirm": "Smazat štítek",
     "empty": {
       "title": "Zatím žádné štítky",
-      "hint": "Vytvoř štítek a začni označovat své fotky."
+      "hint": "Vytvořte štítek a začněte označovat své fotky."
     },
     "edit": {
       "titleNew": "Nový štítek",
       "titleEdit": "Upravit štítek",
-      "error": "Nepodařilo se uložit. Zkontroluj jméno a zkus to znovu.",
+      "error": "Nepodařilo se uložit. Zkontrolujte jméno a zkuste to znovu.",
       "name": "Jméno",
       "priority": "Priorita",
       "cancel": "Zrušit",
@@ -1574,7 +1574,7 @@
     "missingHint": "Nejspíš byl smazán. Auditní log na smazané věci odkazuje dál — je to záznam o té změně.",
     "empty": {
       "title": "Žádné fotky s tímto štítkem",
-      "hint": "Připoj tento štítek k fotkám a uvidíš je tady."
+      "hint": "Připojte tento štítek k fotkám a uvidíte je tady."
     }
   },
   "tasks": {
@@ -1583,7 +1583,7 @@
     "add": {
       "new": "Nová otázka",
       "existing": "Přidat k otázce",
-      "noneOpen": "Žádná otevřená otázka. Založ novou."
+      "noneOpen": "Žádná otevřená otázka. Založte novou."
     },
     "loading": "Načítám úkoly…",
     "error": "Úkoly se nepodařilo načíst.",
@@ -1592,14 +1592,14 @@
     "count_many": "{{count}} úkolu",
     "count_other": "{{count}} úkolů",
     "loadMore": "Načíst další",
-    "waitingBadge_one": "{{count}} úkol čeká na tebe",
-    "waitingBadge_few": "{{count}} úkoly čekají na tebe",
-    "waitingBadge_many": "{{count}} úkolu čeká na tebe",
-    "waitingBadge_other": "{{count}} úkolů čeká na tebe",
+    "waitingBadge_one": "{{count}} úkol čeká na vás",
+    "waitingBadge_few": "{{count}} úkoly čekají na vás",
+    "waitingBadge_many": "{{count}} úkolu čeká na vás",
+    "waitingBadge_other": "{{count}} úkolů čeká na vás",
     "chipCount": "{{label}} ({{count}})",
     "empty": {
       "title": "Žádné úkoly",
-      "hint": "Úkol je otázka nad skupinou fotek. Označ fotky v knihovně a zeptej se."
+      "hint": "Úkol je otázka nad skupinou fotek. Označte fotky v knihovně a zeptejte se."
     },
     "filters": {
       "open": "Otevřené",
@@ -1633,7 +1633,7 @@
     },
     "new": {
       "who": "Komu",
-      "whoHint": "Koho se ptáš, nebo komu úkol předáváš. Kdo úkol zakládá, je na něm vždy.",
+      "whoHint": "Koho se ptáte, nebo komu úkol předáváte. Kdo úkol zakládá, je na něm vždy.",
       "stateQuestion": "někdo má odpovědět",
       "stateWorking": "někdo to má udělat",
       "noPhotos": "Úkol bez fotek; fotky jde přidat i později."
@@ -1642,7 +1642,7 @@
   "taskDetail": {
     "back": "Úkoly",
     "missing": "Úkol neexistuje",
-    "missingHint": "Nejspíš byl smazaný. Zkus seznam úkolů.",
+    "missingHint": "Nejspíš byl smazaný. Zkuste seznam úkolů.",
     "error": "Úkol se nepodařilo načíst.",
     "opened": "Založil {{name}}",
     "someone": "někdo",
@@ -1719,7 +1719,7 @@
         "placeholder": "Např. 1936",
         "add": "Přidat možnost",
         "remove": "Odebrat možnost {{text}}",
-        "full": "Víc než 5 možností nejde. Odeber některou, pokud chceš jinou."
+        "full": "Víc než 5 možností nejde. Odeberte některou, pokud chcete jinou."
       }
     },
     "answers": {
@@ -1727,7 +1727,7 @@
       "approve": "Schvaluji",
       "sendBack": "Vrátit k přepracování",
       "handOverHint": "Odpověď zároveň předá úkol agentovi.",
-      "failed": "Odpověď se nepodařilo odeslat. Zkus to znovu, nebo napiš do diskuse."
+      "failed": "Odpověď se nepodařilo odeslat. Zkuste to znovu, nebo napište do diskuse."
     }
   },
   "places": {
@@ -1748,14 +1748,14 @@
     },
     "emptyPhotos": {
       "title": "Žádné fotky z tohoto místa",
-      "hint": "Zkus upravit filtry."
+      "hint": "Zkuste upravit filtry."
     }
   },
   "favorites": {
     "title": "Oblíbené",
     "empty": {
       "title": "Zatím žádné oblíbené",
-      "hint": "Klepni na srdíčko u fotky a přidej ji mezi oblíbené."
+      "hint": "Klepněte na srdíčko u fotky a přidejte ji mezi oblíbené."
     }
   },
   "favorite": {
@@ -1782,10 +1782,10 @@
     "title_other": "Upravit {{count}} fotek",
     "loading": "Načítání…",
     "loadError": "Alba a štítky se nepodařilo načíst.",
-    "applyError": "Hromadná úprava se nezdařila. Zkus to prosím znovu.",
+    "applyError": "Hromadná úprava se nezdařila. Zkuste to prosím znovu.",
     "createError": "«{{name}}» se nepodařilo vytvořit: {{message}}",
     "createdButApplyFailed": "Nová alba a štítky se vytvořily, jen přiřazení fotek selhalo: {{message}}",
-    "noOps": "Vyber alespoň jednu změnu.",
+    "noOps": "Vyberte alespoň jednu změnu.",
     "sections": {
       "organize": "Zařazení",
       "metadata": "Metadata",
@@ -1796,8 +1796,8 @@
     "removeAlbums": "Odebrat z alb",
     "addLabels": "Přidat štítky",
     "removeLabels": "Odebrat štítky",
-    "filterAlbums": "Piš pro filtrování alb…",
-    "filterLabels": "Piš pro filtrování štítků…",
+    "filterAlbums": "Pište pro filtrování alb…",
+    "filterLabels": "Pište pro filtrování štítků…",
     "description": {
       "label": "Popis",
       "noChange": "— beze změny —",
@@ -1817,8 +1817,8 @@
       "hint": "Jen katalog — původní soubory ani jejich EXIF se nemění.",
       "unknown": "Datum je neznámé",
       "unknownHint": "Fotkám se odebere datum. Dosavadní hodnota se uchová a v detailu fotky ji jde vrátit zpět.",
-      "pickDecade": "Vyber desetiletí…",
-      "invalid": "Vyplň datum pořízení podle zvolené přesnosti.",
+      "pickDecade": "Vyberte desetiletí…",
+      "invalid": "Vyplňte datum pořízení podle zvolené přesnosti.",
       "phrase": {
         "day": "{{value}}",
         "month": "{{value}}",
@@ -1833,7 +1833,7 @@
       "clear": "Vymazat",
       "lat": "Zeměpisná šířka",
       "lng": "Zeměpisná délka",
-      "invalid": "Zadej platnou zeměpisnou šířku a délku."
+      "invalid": "Zadejte platnou zeměpisnou šířku a délku."
     },
     "archive": {
       "label": "Archiv",
@@ -1846,7 +1846,7 @@
       "noChange": "— beze změny —",
       "hide": "Skrýt z knihovny",
       "unhide": "Vrátit do knihovny",
-      "hint": "Skryté fotky zůstávají v albech a štítcích. Najdeš je hledáním hidden:yes."
+      "hint": "Skryté fotky zůstávají v albech a štítcích. Najdete je hledáním hidden:yes."
     },
     "favorite": {
       "label": "Oblíbené",
@@ -1881,10 +1881,10 @@
       "unfavorite": "Odebrat z oblíbených"
     },
     "confirm": {
-      "body_one": "Změna se dotkne {{count}} fotky. Zkontroluj přehled výše a potvrď.",
-      "body_few": "Změna se dotkne {{count}} fotek najednou. Zkontroluj přehled výše a potvrď.",
-      "body_many": "Změna se dotkne {{count}} fotek najednou. Zkontroluj přehled výše a potvrď.",
-      "body_other": "Změna se dotkne {{count}} fotek najednou. Zkontroluj přehled výše a potvrď.",
+      "body_one": "Změna se dotkne {{count}} fotky. Zkontrolujte přehled výše a potvrďte.",
+      "body_few": "Změna se dotkne {{count}} fotek najednou. Zkontrolujte přehled výše a potvrďte.",
+      "body_many": "Změna se dotkne {{count}} fotek najednou. Zkontrolujte přehled výše a potvrďte.",
+      "body_other": "Změna se dotkne {{count}} fotek najednou. Zkontrolujte přehled výše a potvrďte.",
       "takenAt_one": "Nastavit {{date}} pro {{count}} fotku? Jejich dosavadní datum pořízení se přepíše.",
       "takenAt_few": "Nastavit {{date}} pro {{count}} fotky? Jejich dosavadní datum pořízení se přepíše.",
       "takenAt_many": "Nastavit {{date}} pro {{count}} fotky? Jejich dosavadní datum pořízení se přepíše.",
@@ -1916,8 +1916,8 @@
   "download": {
     "zip": "Stáhnout ZIP",
     "zipPending": "Připravuji ZIP…",
-    "zipError": "Stahování se nepodařilo připravit. Zkus to prosím znovu.",
-    "zipTooMany": "Příliš mnoho fotek na jedno stažení. Vyber jich méně a zkus to znovu."
+    "zipError": "Stahování se nepodařilo připravit. Zkuste to prosím znovu.",
+    "zipTooMany": "Příliš mnoho fotek na jedno stažení. Vyberte jich méně a zkuste to znovu."
   },
   "selection": {
     "label": "Akce výběru",
@@ -1995,12 +1995,12 @@
       "placeholder": "Co je s těmito fotkami? (nepovinné)",
       "send": "Odeslat",
       "sending": "Odesílám…",
-      "sent_one": "Do diskuse jsi vložil {{count}} fotku.",
-      "sent_few": "Do diskuse jsi vložil {{count}} fotky.",
-      "sent_many": "Do diskuse jsi vložil {{count}} fotky.",
-      "sent_other": "Do diskuse jsi vložil {{count}} fotek.",
-      "failed": "Komentář se nepodařilo odeslat. Zkus to prosím znovu.",
-      "tooMany": "Do jednoho komentáře se vejde jen {{fits}} z {{count}} vybraných fotek. Zmenši výběr nebo zkrať zprávu.",
+      "sent_one": "Do diskuse jste vložili {{count}} fotku.",
+      "sent_few": "Do diskuse jste vložili {{count}} fotky.",
+      "sent_many": "Do diskuse jste vložili {{count}} fotky.",
+      "sent_other": "Do diskuse jste vložili {{count}} fotek.",
+      "failed": "Komentář se nepodařilo odeslat. Zkuste to prosím znovu.",
+      "tooMany": "Do jednoho komentáře se vejde jen {{fits}} z {{count}} vybraných fotek. Zmenšete výběr nebo zkraťte zprávu.",
       "more": "+{{count}}"
     }
   },
@@ -2019,7 +2019,7 @@
     "open": "Klávesové zkratky",
     "title": "Klávesové zkratky",
     "close": "Zavřít",
-    "helpHint": "Kdykoli stiskni ? pro zobrazení této nápovědy.",
+    "helpHint": "Kdykoli stiskněte ? pro zobrazení této nápovědy.",
     "groups": {
       "global": "Globální",
       "grid": "Mřížka fotek",
@@ -2225,7 +2225,7 @@
     "error": "Lidi se nepodařilo načíst.",
     "empty": {
       "title": "Zatím žádní lidé",
-      "hint": "Pojmenuj nějaké skupiny obličejů a začni budovat své lidi."
+      "hint": "Pojmenujte nějaké skupiny obličejů a začněte budovat své lidi."
     },
     "noCover": "Bez náhledu",
     "private": "Soukromé",
@@ -2254,8 +2254,8 @@
     },
     "noMatches": {
       "title": "Nikdo tu neodpovídá",
-      "hint": "Zkus jiný druh.",
-      "hintFiltered": "Zkus jiné jméno, nebo jiný druh."
+      "hint": "Zkuste jiný druh.",
+      "hintFiltered": "Zkuste jiné jméno, nebo jiný druh."
     }
   },
   "subject": {
@@ -2296,7 +2296,7 @@
     },
     "edit": {
       "title": "Upravit osobu",
-      "error": "Nepodařilo se uložit. Zkontroluj jméno a zkus to znovu.",
+      "error": "Nepodařilo se uložit. Zkontrolujte jméno a zkuste to znovu.",
       "name": "Jméno",
       "nickname": "Přezdívka",
       "nicknameHelp": "Nepovinné. Jak se té osobě doopravdy říká — podle přezdívky se dá vyhledávat stejně jako podle jména.",
@@ -2315,7 +2315,7 @@
     "merge": {
       "action": "Sloučit s jinou osobou",
       "title": "Sloučit osoby",
-      "pickHint": "Vyber osobu, do které se {{name}} sloučí. Přejdou na ni všechny fotky, obličeje i dřívější rozhodnutí.",
+      "pickHint": "Vyberte osobu, do které se {{name}} sloučí. Přejdou na ni všechny fotky, obličeje i dřívější rozhodnutí.",
       "pickLabel": "Sloučit do…",
       "roleSource": "Bude smazána",
       "roleKeeper": "Zůstane",
@@ -2327,7 +2327,7 @@
       "confirm": "Sloučit",
       "cancel": "Zrušit",
       "back": "Zpět na výběr",
-      "error": "Sloučení se nepodařilo. Zkus to prosím znovu.",
+      "error": "Sloučení se nepodařilo. Zkuste to prosím znovu.",
       "merged": "{{source}} sloučena do osoby {{keeper}}."
     },
     "move": {
@@ -2414,10 +2414,10 @@
   },
   "clusters": {
     "title": "Skupiny obličejů",
-    "subtitle": "Nepojmenované skupiny stejného obličeje — pojmenuj celou skupinu naráz.",
+    "subtitle": "Nepojmenované skupiny stejného obličeje — pojmenujte celou skupinu naráz.",
     "loading": "Načítání skupin obličejů…",
     "error": "Skupiny obličejů se nepodařilo načíst.",
-    "actionError": "Akce se nezdařila. Zkus to prosím znovu.",
+    "actionError": "Akce se nezdařila. Zkuste to prosím znovu.",
     "preparing": "Hotových skupin: {{ready}} · na pozadí se jich připravuje ještě {{pending}}",
     "refresh": "Načíst znovu",
     "loadMore": "Načíst další",
@@ -2428,7 +2428,7 @@
     },
     "grouping": {
       "title": "Hledáme skupiny obličejů…",
-      "hint": "Na pozadí právě porovnáváme nepojmenované obličeje. Chvíli to trvá — za moment to zkus načíst znovu."
+      "hint": "Na pozadí právě porovnáváme nepojmenované obličeje. Chvíli to trvá — za moment to zkuste načíst znovu."
     },
     "representative": "Reprezentativní obličej",
     "sample": "Ukázkový obličej",
@@ -2438,13 +2438,13 @@
     "size_many": "{{count}} obličeje",
     "size_other": "{{count}} obličejů",
     "nameAs": "Pojmenovat jako {{name}} ({{confidence}} %)",
-    "nameLabel": "Pojmenuj tuto skupinu",
+    "nameLabel": "Pojmenujte tuto skupinu",
     "namePlaceholder": "Nové nebo existující jméno…",
     "name": "Pojmenovat skupinu"
   },
   "recognition": {
     "title": "Rozpoznávání",
-    "subtitle": "Projdi všechny pojmenované osoby a najdi jisté shody mezi neoznačenými obličeji — pak seznam odbavuj osobu po osobě.",
+    "subtitle": "Projděte všechny pojmenované osoby a najděte jisté shody mezi neoznačenými obličeji — pak seznam odbavujte osobu po osobě.",
     "form": {
       "confidenceLabel": "Jistota",
       "confidenceValue": "{{percent}} %",
@@ -2472,7 +2472,7 @@
       "alreadyDone_few": "{{count}} už přiřazené",
       "alreadyDone_many": "{{count}} už přiřazených",
       "alreadyDone_other": "{{count}} už přiřazených",
-      "capped": "Zobrazeno {{shown}} z {{total}} osob — zpřísni jistotu nebo spusť znovu."
+      "capped": "Zobrazeno {{shown}} z {{total}} osob — zpřísněte jistotu nebo spusťte znovu."
     },
     "person": {
       "actionable_one": "{{count}} k potvrzení",
@@ -2487,15 +2487,15 @@
       "cancelConfirmAll": "Zastavit"
     },
     "idle": {
-      "title": "Spusť prohledání",
-      "hint": "Nastav, jak jisté shody chceš, a spusť prohledání — u každé osoby se hledají podobné tváře mezi neoznačenými obličeji."
+      "title": "Spusťte prohledání",
+      "hint": "Nastavte, jak jisté shody chcete, a spusťte prohledání — u každé osoby se hledají podobné tváře mezi neoznačenými obličeji."
     },
     "empty": {
       "title": "Není co potvrzovat",
       "hint": "Při této jistotě jsou všechny obličeje přiřazené."
     },
     "error": {
-      "scan": "Prohledání selhalo. Zkus to znovu.",
+      "scan": "Prohledání selhalo. Zkuste to znovu.",
       "confirm": "Potvrzení obličeje selhalo.",
       "reject": "Zamítnutí obličeje selhalo.",
       "confirmAll_one": "{{count}} potvrzení se nepodařilo.",
@@ -2506,16 +2506,16 @@
   },
   "faceSearch": {
     "title": "Najít osobu",
-    "subtitle": "Najdi tuhle osobu na fotkách, kde ještě není označená, a rychle potvrzuj nebo zamítej.",
+    "subtitle": "Najděte tuhle osobu na fotkách, kde ještě není označená, a rychle potvrzujte nebo zamítejte.",
     "loading": "Prohledávám fotky… může to chvíli trvat.",
     "tabEmpty": "V téhle záložce nic není.",
     "idle": {
-      "title": "Vyber osobu a spusť hledání",
-      "hint": "Vyber osobu nahoře a klikni na Hledat — najdeme obličeje, které se jí podobají, ale nejsou pojmenované."
+      "title": "Vyberte osobu a spusťte hledání",
+      "hint": "Vyberte osobu nahoře a klikněte na Hledat — najdeme obličeje, které se jí podobají, ale nejsou pojmenované."
     },
     "noFaces": {
       "title": "Tahle osoba zatím nemá obličeje",
-      "hint": "Nejdřív u téhle osoby pojmenuj pár obličejů, ať je podle čeho hledat."
+      "hint": "Nejdřív u téhle osoby pojmenujte pár obličejů, ať je podle čeho hledat."
     },
     "noEmbeddings": {
       "title": "Chybí otisky obličejů",
@@ -2523,12 +2523,12 @@
     },
     "zero": {
       "title": "Žádné nové obličeje",
-      "hint": "Nic dalšího se nenašlo. Zkus snížit práh shody — hledání se tím rozšíří."
+      "hint": "Nic dalšího se nenašlo. Zkuste snížit práh shody — hledání se tím rozšíří."
     },
     "form": {
       "subjectHeading": "Osoba",
-      "subjectLabel": "Vyber osobu k hledání",
-      "subjectNone": "Vyber osobu, kterou chceš hledat.",
+      "subjectLabel": "Vyberte osobu k hledání",
+      "subjectNone": "Vyberte osobu, kterou chcete hledat.",
       "subjectSelected": "Hledá se: {{name}}",
       "thresholdLabel": "Práh shody",
       "thresholdValue": "{{percent}} %",
@@ -2566,7 +2566,7 @@
       "noEmbeddingNote_many": "{{count}} obličejů téhle osoby nemá otisk, hledá se bez nich.",
       "noEmbeddingNote_other": "{{count}} obličejů téhle osoby nemá otisk, hledá se bez nich.",
       "sourceCappedNote": "Osoba má hodně označených fotek, hledalo se z {{used}} z nich rovnoměrně rozložených napříč — jeden dotaz nesmí růst s velikostí knihovny.",
-      "cappedNote": "Shod bylo víc, než se dá najednou zobrazit; ukazujeme {{count}} nejbližších. Potvrď je a spusť hledání znovu."
+      "cappedNote": "Shod bylo víc, než se dá najednou zobrazit; ukazujeme {{count}} nejbližších. Potvrďte je a spusťte hledání znovu."
     },
     "card": {
       "photoAlt": "Fotka s kandidátským obličejem",
@@ -2587,9 +2587,9 @@
       "progress": "Potvrzuji {{current}} / {{total}} — zrušit"
     },
     "error": {
-      "search": "Hledání se nepodařilo. Zkus to prosím znovu.",
-      "confirm": "Potvrzení se nepodařilo. Zkus to prosím znovu.",
-      "reject": "Zamítnutí se nepodařilo. Zkus to prosím znovu.",
+      "search": "Hledání se nepodařilo. Zkuste to prosím znovu.",
+      "confirm": "Potvrzení se nepodařilo. Zkuste to prosím znovu.",
+      "reject": "Zamítnutí se nepodařilo. Zkuste to prosím znovu.",
       "confirmAll_one": "{{count}} potvrzení se nepodařilo.",
       "confirmAll_few": "{{count}} potvrzení se nepodařila.",
       "confirmAll_many": "{{count}} potvrzení se nepodařilo.",
@@ -2598,18 +2598,18 @@
   },
   "candidates": {
     "title": "Možná je i zde",
-    "subtitle": "Neotagované fotky, kde tuto osobu poznáváme podle podoby obličeje — potvrď, nebo odmítni.",
+    "subtitle": "Neotagované fotky, kde tuto osobu poznáváme podle podoby obličeje — potvrďte, nebo odmítněte.",
     "search": "Najít návrhy",
     "searching": "Hledám…",
     "rerun": "Hledat znovu",
     "reviewAll": "Otevřít celý nástroj",
-    "idleHint": "Hledání je náročné, tak neběží samo. Spusť ho tlačítkem.",
-    "error": "Návrhy se nepodařilo načíst. Zkus to prosím znovu.",
-    "confirmError": "Přiřazení se nepodařilo. Zkus to prosím znovu.",
-    "rejectError": "Odmítnutí se nepodařilo. Zkus to prosím znovu.",
+    "idleHint": "Hledání je náročné, tak neběží samo. Spusťte ho tlačítkem.",
+    "error": "Návrhy se nepodařilo načíst. Zkuste to prosím znovu.",
+    "confirmError": "Přiřazení se nepodařilo. Zkuste to prosím znovu.",
+    "rejectError": "Odmítnutí se nepodařilo. Zkuste to prosím znovu.",
     "noFaces": {
       "title": "Tato osoba zatím nemá obličeje",
-      "hint": "Nejdřív u této osoby pojmenuj pár obličejů, ať je z čeho vycházet."
+      "hint": "Nejdřív u této osoby pojmenujte pár obličejů, ať je z čeho vycházet."
     },
     "noEmbeddings": {
       "title": "Obličeje zatím nemají embedding",
@@ -2617,7 +2617,7 @@
     },
     "zero": {
       "title": "Žádné nové návrhy",
-      "hint": "Nic dalšího se nenašlo. Širší záběr zkus v celém nástroji."
+      "hint": "Nic dalšího se nenašlo. Širší záběr zkuste v celém nástroji."
     },
     "allReviewed": "Všechny návrhy jsou vyřízené."
   },
@@ -2629,7 +2629,7 @@
     "toggle": "Zobrazit obličeje",
     "hide": "Skrýt obličeje",
     "unnamed": "Nepojmenovaný obličej {{index}}",
-    "assignError": "Přiřazení se nepodařilo uložit. Zkus to prosím znovu.",
+    "assignError": "Přiřazení se nepodařilo uložit. Zkuste to prosím znovu.",
     "confirmAll": {
       "idle": "Potvrdit vše ({{n}})",
       "progress": "Potvrzuji {{current}} / {{total}} — zastavit",
@@ -2639,7 +2639,7 @@
       "failed_other": "{{count}} obličejů se nepodařilo potvrdit — zůstaly bez jména."
     },
     "panel": {
-      "title": "Pojmenuj tento obličej",
+      "title": "Pojmenujte tento obličej",
       "assignedTo": "Přiřazeno k {{name}}",
       "close": "Zavřít",
       "unassign": "Odebrat osobu",
@@ -2669,7 +2669,7 @@
   },
   "outliersPage": {
     "title": "Možné chyby",
-    "subtitle": "Vyber osobu a Kukátko seřadí její obličeje od nejpodezřelejšího. Rozhoduješ ty — samo nikdy nic neodebere.",
+    "subtitle": "Vyberte osobu a Kukátko seřadí její obličeje od nejpodezřelejšího. Rozhodujete vy — samo nikdy nic neodebere.",
     "loading": "Načítání obličejů…",
     "selectAll": "Vybrat vše",
     "bulkUnassign_one": "Odebrat {{count}} obličej",
@@ -2680,7 +2680,7 @@
     "bulkCancel": "Zastavit",
     "form": {
       "subjectHeading": "Osoba",
-      "subjectLabel": "Vyber osobu",
+      "subjectLabel": "Vyberte osobu",
       "subjectHint_one": "{{count}} obličej",
       "subjectHint_few": "{{count}} obličeje",
       "subjectHint_many": "{{count}} obličeje",
@@ -2702,7 +2702,7 @@
       "noEmbedding_few": "{{count}} obličeje nemají embedding, a tak je nelze zkontrolovat — byly rozpoznané, když byl výpočetní stroj offline. V tomhle seznamu nejsou.",
       "noEmbedding_many": "{{count}} obličejů nemá embedding, a tak je nelze zkontrolovat — byly rozpoznané, když byl výpočetní stroj offline. V tomhle seznamu nejsou.",
       "noEmbedding_other": "{{count}} obličejů nemá embedding, a tak je nelze zkontrolovat — byly rozpoznané, když byl výpočetní stroj offline. V tomhle seznamu nejsou.",
-      "capped": "Zobrazeno je prvních {{count}} nejpodezřelejších. Zvyš práh, ať se seznam zúží.",
+      "capped": "Zobrazeno je prvních {{count}} nejpodezřelejších. Zvyšte práh, ať se seznam zúží.",
       "notMeaningful": "Příliš málo obličejů pro spolehlivé seřazení — z pár obličejů žádný nevyčnívá."
     },
     "card": {
@@ -2713,23 +2713,23 @@
       "question": "Je to chyba?",
       "removed": "Odebráno",
       "confirmed": "Potvrzeno jako správné",
-      "failed": "Nepodařilo se uložit. Zkus to znovu.",
+      "failed": "Nepodařilo se uložit. Zkuste to znovu.",
       "unassign": "Ano, odebrat",
       "confirm": "Ne, je to {{name}}",
       "noMarker": "Tenhle obličej není navázaný na značku, takže ho nelze odebrat."
     },
     "idle": {
-      "title": "Vyber osobu",
-      "hint": "Vyber člověka a uvidíš jeho obličeje seřazené od nejpodezřelejšího."
+      "title": "Vyberte osobu",
+      "hint": "Vyberte člověka a uvidíte jeho obličeje seřazené od nejpodezřelejšího."
     },
     "empty": {
       "title": "Nic podezřelého",
-      "hint": "Při tomhle prahu žádný obličej nevyčnívá. Sniž práh, ať uvidíš víc."
+      "hint": "Při tomhle prahu žádný obličej nevyčnívá. Snižte práh, ať uvidíte víc."
     },
     "error": {
       "load": "Obličeje se nepodařilo načíst.",
-      "unassign": "Obličej se nepodařilo odebrat. Zkus to prosím znovu.",
-      "confirm": "Potvrzení se nepodařilo uložit. Zkus to prosím znovu.",
+      "unassign": "Obličej se nepodařilo odebrat. Zkuste to prosím znovu.",
+      "confirm": "Potvrzení se nepodařilo uložit. Zkuste to prosím znovu.",
       "bulk_one": "{{count}} obličej se nepodařilo odebrat.",
       "bulk_few": "{{count}} obličeje se nepodařilo odebrat.",
       "bulk_many": "{{count}} obličejů se nepodařilo odebrat.",
@@ -2780,11 +2780,11 @@
       "count_other": "{{count}} komentářů",
       "loading": "Načítání komentářů…",
       "loadFailed": "Komentáře se nepodařilo načíst.",
-      "empty": "Napiš, co o tomhle víš…",
-      "placeholder": "Napiš komentář…",
+      "empty": "Napište, co o tomhle víte…",
+      "placeholder": "Napište komentář…",
       "inputLabel": "Nový komentář",
       "submit": "Odeslat komentář",
-      "submitHint": "Enter odešle, Shift+Enter odřádkuje. Funguje Markdown: **tučně**, `kód`, [odkaz](url). Napiš @ a zmíň někoho.",
+      "submitHint": "Enter odešle, Shift+Enter odřádkuje. Funguje Markdown: **tučně**, `kód`, [odkaz](url). Napište @ a zmiňte někoho.",
       "send": "Odeslat",
       "handOverHint": "Odešle komentář a předá úkol agentovi (Ctrl/Cmd+Shift+Enter)",
       "edit": "Upravit",
@@ -2796,9 +2796,9 @@
       "deleteBody": "Komentář zmizí a vrátit to nejde.",
       "edited": "upraveno",
       "unknownAuthor": "Smazaný uživatel",
-      "throttled": "Moment — komentáře jdou moc rychle po sobě. Zkus to za chvilku.",
+      "throttled": "Moment — komentáře jdou moc rychle po sobě. Zkuste to za chvilku.",
       "forbidden": "Tenhle komentář už upravit ani smazat nejde.",
-      "failed": "Komentář se nepodařilo uložit. Zkus to prosím znovu.",
+      "failed": "Komentář se nepodařilo uložit. Zkuste to prosím znovu.",
       "referenced": "Fotky zmíněné v komentáři",
       "refPhoto": "Fotka {{uid}}",
       "moreRefs_one": "a {{count}} další fotka",
@@ -2810,7 +2810,7 @@
         "loading": "Načítání lidí…",
         "noMatch": "Nikdo takový tu není",
         "of": "Zmínka: {{name}}",
-        "you": "Zmínka: {{name}} (to jsi ty)",
+        "you": "Zmínka: {{name}} (to jste vy)",
         "gone": "{{name}} — účet už neexistuje"
       }
     },
@@ -2861,7 +2861,7 @@
       "copyright": "Autorská práva",
       "license": "Licence",
       "keywords": "Klíčová slova",
-      "keywordsPlaceholder": "Přidej klíčové slovo",
+      "keywordsPlaceholder": "Přidejte klíčové slovo",
       "keywordsHelp": "Enter nebo čárka přidá klíčové slovo, Backspace v prázdném poli smaže poslední.",
       "removeKeyword": "Odebrat klíčové slovo: {{name}}",
       "scan": "Sken",
@@ -2875,15 +2875,15 @@
       "fileName": "Soubor",
       "placeSearch": "Najít místo podle názvu",
       "placeSearchPlaceholder": "např. Veselí nad Moravou",
-      "placeSearchHelp": "Napiš název místa a vyber z nabídky; souřadnice se doplní samy.",
+      "placeSearchHelp": "Napište název místa a vyberte z nabídky; souřadnice se doplní samy.",
       "placeSearching": "Hledám místa…",
       "placeNoMatch": "Žádné místo tomu neodpovídá.",
-      "placeSearchUnavailable": "Vyhledávání míst není dostupné. Souřadnice můžeš zadat ručně nebo klepnout na mapu.",
-      "placeSearchError": "Hledání míst se nezdařilo. Zkus to prosím znovu.",
+      "placeSearchUnavailable": "Vyhledávání míst není dostupné. Souřadnice můžete zadat ručně nebo klepnout na mapu.",
+      "placeSearchError": "Hledání míst se nezdařilo. Zkuste to prosím znovu.",
       "coordinates": "Souřadnice",
       "coordinatesPlaceholder": "49.1234, 16.5678",
-      "coordinatesHelp": "Klepni na mapu nebo přetáhni značku, nebo zadej souřadnice (např. 49.1234, 16.5678 nebo 49°7'24.2\"N 16°34'12.5\"E).",
-      "coordinatesInvalid": "Nerozpoznané souřadnice. Použij desetinné stupně, DMS nebo stupně a desetinné minuty.",
+      "coordinatesHelp": "Klepněte na mapu nebo přetáhněte značku, nebo zadejte souřadnice (např. 49.1234, 16.5678 nebo 49°7'24.2\"N 16°34'12.5\"E).",
+      "coordinatesInvalid": "Nerozpoznané souřadnice. Použijte desetinné stupně, DMS nebo stupně a desetinné minuty.",
       "clearLocation": "Vymazat polohu",
       "location": "Poloha",
       "editField": "Upravit: {{field}}",
@@ -2891,15 +2891,15 @@
       "edit": "Upravit",
       "save": "Uložit",
       "cancel": "Zrušit",
-      "saveError": "Uložení se nezdařilo. Zkontroluj zadané hodnoty.",
+      "saveError": "Uložení se nezdařilo. Zkontrolujte zadané hodnoty.",
       "locationEstimatedMarker": "odhad",
       "locationEstimatedTitle": "Odhad podle fotek z téhož dne, ne změřená poloha",
       "locationEstimatedHelp": "Odhad podle fotek z téhož dne.",
       "acceptLocation": "Potvrdit odhad",
-      "acceptLocationHelp": "Označí polohu za tvoje rozhodnutí, přestane se zobrazovat jako odhad.",
+      "acceptLocationHelp": "Označí polohu za vaše rozhodnutí, přestane se zobrazovat jako odhad.",
       "discardLocation": "Zahodit odhad",
       "discardLocationHelp": "Zůstane bez polohy a odhad se už znovu nedoplní.",
-      "locationActionFailed": "Polohu se nepodařilo uložit. Zkus to prosím znovu.",
+      "locationActionFailed": "Polohu se nepodařilo uložit. Zkuste to prosím znovu.",
       "titlePrompt": "Třeba „Vánoce u babičky“",
       "descriptionPrompt": "Co se tu děje a proč to stojí za zapamatování",
       "notesPrompt": "Cokoli, co si k tomu chcete poznamenat",
@@ -3045,9 +3045,9 @@
       "hide": "Skrýt z knihovny",
       "show": "Vrátit do knihovny",
       "badge": "Skryto z knihovny",
-      "hideHint": "Skrýt z knihovny — zůstane v albech, štítcích i mezi oblíbenými. Zpátky to najdeš hledáním hidden:yes.",
+      "hideHint": "Skrýt z knihovny — zůstane v albech, štítcích i mezi oblíbenými. Zpátky to najdete hledáním hidden:yes.",
       "showHint": "Vrátit zpátky do knihovny",
-      "hidden": "Skryto z knihovny. Zpátky to najdeš hledáním hidden:yes.",
+      "hidden": "Skryto z knihovny. Zpátky to najdete hledáním hidden:yes.",
       "shown": "Je zase v knihovně",
       "error": "Akci se nepodařilo provést."
     },
@@ -3265,12 +3265,12 @@
     "handing": "Předávám do telefonu…",
     "nextBatch": "Sdílet dávku {{index}} z {{total}}",
     "progress": "Sdíleno {{done}} z {{total}} dávek",
-    "error": "Sdílení se nepodařilo připravit. Zkus to prosím znovu.",
-    "tooManyError": "Příliš mnoho fotek na jedno sdílení. Vyber jich méně a zkus to znovu.",
+    "error": "Sdílení se nepodařilo připravit. Zkuste to prosím znovu.",
+    "tooManyError": "Příliš mnoho fotek na jedno sdílení. Vyberte jich méně a zkuste to znovu.",
     "fileError_one": "Fotku {{name}} se nepodařilo načíst.",
     "fileError_few": "{{count}} fotky se nepodařilo načíst, mezi nimi {{name}}.",
     "fileError_other": "{{count}} fotek se nepodařilo načíst, mezi nimi {{name}}.",
-    "sheetError": "Sdílení se nepodařilo otevřít. Zkus to prosím znovu."
+    "sheetError": "Sdílení se nepodařilo otevřít. Zkuste to prosím znovu."
   },
   "slideshow": {
     "start": "Promítání",
@@ -3291,7 +3291,7 @@
     "videoPreparing": "Video se zpracovává",
     "empty": {
       "title": "Žádné fotky k promítání",
-      "hint": "Uprav nebo zruš filtry, případně přidej fotky."
+      "hint": "Upravte nebo zrušte filtry, případně přidejte fotky."
     },
     "error": {
       "load": "Fotky se nepodařilo načíst.",
@@ -3381,14 +3381,14 @@
         "body": "Na úvodní stránce Kukátka je nově doporučené album {{album}}."
       },
       "taskAssigned": {
-        "title": "{{name}} tě přidal(a) k úkolu: {{title}}",
-        "body": "Otevři úkol a odpověz."
+        "title": "{{name}} vás přidal(a) k úkolu: {{title}}",
+        "body": "Otevřete úkol a odpovězte."
       },
       "commentMention": {
-        "photo": "{{name}} tě zmínil(a) v komentáři u fotky",
-        "photoTitled": "{{name}} tě zmínil(a) v komentáři u fotky {{title}}",
-        "task": "{{name}} tě zmínil(a) v komentáři u úkolu {{title}}",
-        "album": "{{name}} tě zmínil(a) v komentáři u alba {{title}}"
+        "photo": "{{name}} vás zmínil(a) v komentáři u fotky",
+        "photoTitled": "{{name}} vás zmínil(a) v komentáři u fotky {{title}}",
+        "task": "{{name}} vás zmínil(a) v komentáři u úkolu {{title}}",
+        "album": "{{name}} vás zmínil(a) v komentáři u alba {{title}}"
       }
     },
     "back": "Zpět do knihovny",
@@ -3421,8 +3421,8 @@
     "loading": "Načítám oznámení…",
     "error": "Oznámení se nepodařilo načíst.",
     "empty": "Zatím tu nejsou žádná oznámení.",
-    "emptyHint": "Která oznámení ti mají chodit sem, si vybereš v nastavení účtu.",
-    "emptyUnread": "Všechno máš přečtené.",
+    "emptyHint": "Která oznámení vám mají chodit sem, si vyberete v nastavení účtu.",
+    "emptyUnread": "Všechno máte přečtené.",
     "unread": "Nepřečtené",
     "filterLabel": "Která oznámení zobrazit",
     "filterAll": "Všechna",
@@ -4041,7 +4041,7 @@
       "cache": "Náhledy a odvozené soubory",
       "free": "Volné místo",
       "total": "Celková kapacita",
-      "note": "Vlastní disk serveru. Když originály leží v objektovém úložišti, není tu skoro nic — kolik váží knihovna, najdeš v sekci Knihovna výše."
+      "note": "Vlastní disk serveru. Když originály leží v objektovém úložišti, není tu skoro nic — kolik váží knihovna, najdete v sekci Knihovna výše."
     },
     "actions": {
       "title": "Rychlé akce:",
@@ -4056,7 +4056,7 @@
       "unavailable": "Nedostupné",
       "error": "Chyba",
       "unknown": "Zatím nevyužito",
-      "keyRejectedHint": "mapy.com odmítá přístupový klíč (vypršel, byl zrušen, nebo došly kredity). Mapa zůstane bez podkladů, dokud klíč nevyměníš v konzoli mapy.com.",
+      "keyRejectedHint": "mapy.com odmítá přístupový klíč (vypršel, byl zrušen, nebo došly kredity). Mapa zůstane bez podkladů, dokud klíč nevyměníte v konzoli mapy.com.",
       "checkedAt": "Naposledy ověřeno",
       "detailTitle": "Hlášení mapy.com"
     },
@@ -4140,28 +4140,28 @@
   },
   "settings": {
     "title": "Nastavení projektu",
-    "intro": "Tady se nastavuje, kdo si smí založit účet v tomhle projektu, jaké slovo k tomu potřebuje a čím ho Kukátko přivítá. Nic se neukládá, dokud to neuložíš.",
+    "intro": "Tady se nastavuje, kdo si smí založit účet v tomhle projektu, jaké slovo k tomu potřebuje a čím ho Kukátko přivítá. Nic se neukládá, dokud to neuložíte.",
     "loading": "Načítání nastavení…",
     "loadFailed": "Nastavení se nepodařilo načíst.",
     "save": "Uložit nastavení",
     "saved": "Nastavení bylo uloženo.",
     "saveFailed": "Nastavení se nepodařilo uložit.",
     "discard": "Zahodit změny",
-    "unsavedHint": "Máš neuložené změny.",
+    "unsavedHint": "Máte neuložené změny.",
     "lastSaved": "Naposledy uloženo: {{when}}",
     "registration": {
       "title": "Registrace",
       "enabledLabel": "Povolit vlastní registraci",
       "enabledHelp": "Když je zapnutá, registrační stránka projektu (odkaz níže) nabídne založení účtu. Nový účet i tak čeká na schválení správcem projektu.",
       "secretLabel": "Sdílené heslo pro registraci",
-      "secretHelp": "Tohle slovo drží cizí lidi venku — při registraci ho musí každý napsat. Počítá se s tím, že ho zná celá rodina, proto je tady čitelně: potřebuješ ho přečíst a říct dál.",
+      "secretHelp": "Tohle slovo drží cizí lidi venku — při registraci ho musí každý napsat. Počítá se s tím, že ho zná celá rodina, proto je tady čitelně: potřebujete ho přečíst a říct dál.",
       "secretRequired": "Registraci nelze zapnout, dokud je sdílené heslo prázdné.",
       "reveal": "Zobrazit",
       "hide": "Skrýt",
       "regenerate": "Vygenerovat nové",
       "regenerateHelp": "Vygeneruje nové náhodné slovo. Platit začne až po uložení; staré pak přestane fungovat.",
       "pageLabel": "Registrační stránka projektu",
-      "pageHelp": "Tenhle odkaz pošli těm, kdo se mají zaregistrovat, spolu se sdíleným heslem pro registraci."
+      "pageHelp": "Tenhle odkaz pošlete těm, kdo se mají zaregistrovat, spolu se sdíleným heslem pro registraci."
     },
     "welcome": {
       "title": "Uvítání",
@@ -4185,7 +4185,7 @@
     },
     "leave": {
       "title": "Odejít bez uložení?",
-      "body": "V nastavení máš neuložené změny. Když teď odejdeš, přijdeš o ně.",
+      "body": "V nastavení máte neuložené změny. Když teď odejdete, přijdete o ně.",
       "confirm": "Odejít bez uložení",
       "cancel": "Zůstat tady"
     },
@@ -4358,7 +4358,7 @@
       "hide": "Skrýt detaily",
       "payload": "Detaily",
       "links": "Odkazy",
-      "moreLinks": "Zbytek ({{n}}) najdeš v datech níže.",
+      "moreLinks": "Zbytek ({{n}}) najdete v datech níže.",
       "userAgent": "User agent"
     },
     "changes": {
@@ -4526,17 +4526,17 @@
       "queueHint": "Teď tu žádné otázky nejsou. Nové se objeví, jakmile přibudou fotky nebo návrhy.",
       "checkAgain": "Zkusit znovu",
       "noPeopleTitle": "Zatím tu nejsou lidé",
-      "noPeopleHint": "Hra se teď ptá jen na lidi, ale nikdo tu není pojmenovaný. Pojmenuj někoho, nebo se nech ptát na štítky.",
+      "noPeopleHint": "Hra se teď ptá jen na lidi, ale nikdo tu není pojmenovaný. Pojmenujte někoho, nebo se nechte ptát na štítky.",
       "noLabelsTitle": "Zatím tu nejsou štítky",
-      "noLabelsHint": "Hra se teď ptá jen na štítky, ale žádný štítek zatím nemá fotky — nebo jsou všechny na stránce Štítky z třídění vypnuté. Založ štítek, zapni ho zpátky, nebo se nech ptát na lidi.",
+      "noLabelsHint": "Hra se teď ptá jen na štítky, ale žádný štítek zatím nemá fotky — nebo jsou všechny na stránce Štítky z třídění vypnuté. Založte štítek, zapněte ho zpátky, nebo se nechte ptát na lidi.",
       "sourceOffPeopleTitle": "Otázky na lidi jsou vypnuté",
-      "sourceOffPeopleHint": "Tahle instance se v třídicí hře na lidi neptá — zapínají se v konfiguraci (review.kind_shares). Zkus se nechat ptát na štítky.",
+      "sourceOffPeopleHint": "Tahle instance se v třídicí hře na lidi neptá — zapínají se v konfiguraci (review.kind_shares). Zkuste se nechat ptát na štítky.",
       "sourceOffLabelsTitle": "Otázky na štítky jsou vypnuté",
-      "sourceOffLabelsHint": "Tahle instance se v třídicí hře na štítky neptá — zapínají se v konfiguraci (review.kind_shares). Zkus se nechat ptát na lidi.",
+      "sourceOffLabelsHint": "Tahle instance se v třídicí hře na štítky neptá — zapínají se v konfiguraci (review.kind_shares). Zkuste se nechat ptát na lidi.",
       "queuePeopleTitle": "Pro lidi teď není co posuzovat",
-      "queuePeopleHint": "Žádná fotka nesedí do pásma nejistoty. Zkus to po dalším nahrání, nebo se nech ptát na štítky.",
+      "queuePeopleHint": "Žádná fotka nesedí do pásma nejistoty. Zkuste to po dalším nahrání, nebo se nechte ptát na štítky.",
       "queueLabelsTitle": "Pro štítky teď není co posuzovat",
-      "queueLabelsHint": "Žádná fotka nesedí do pásma nejistoty. Zkus to po dalším nahrání, nebo se nech ptát na lidi.",
+      "queueLabelsHint": "Žádná fotka nesedí do pásma nejistoty. Zkuste to po dalším nahrání, nebo se nechte ptát na lidi.",
       "askPeople": "Ptát se na lidi",
       "askLabels": "Ptát se na štítky",
       "askBoth": "Ptát se na oboje"
@@ -4553,7 +4553,7 @@
       "undo": "Odpověď se nepodařilo vrátit."
     },
     "duplicate": {
-      "hint": "Porovnej obě fotky vedle sebe. Nic se nesloučí — jen si poznamenáme tvůj názor.",
+      "hint": "Porovnejte obě fotky vedle sebe. Nic se nesloučí — jen si poznamenáme váš názor.",
       "altFirst": "První fotka z dvojice",
       "altSecond": "Druhá fotka z dvojice",
       "dimensions": "{{width}} × {{height}} px"
@@ -4571,7 +4571,7 @@
       "daily": "Dnešní mix",
       "position": "{{position}}/{{size}}"
     },
-    "comboTitle": "Kolik odpovědí máš v řadě. Nevím sérii přeruší.",
+    "comboTitle": "Kolik odpovědí máte v řadě. Nevím sérii přeruší.",
     "streakTitle_one": "{{count}} den v řadě s odpovědí",
     "streakTitle_few": "{{count}} dny v řadě s odpovědí",
     "streakTitle_many": "{{count}} dne v řadě s odpovědí",
@@ -4599,7 +4599,7 @@
     "session": {
       "eyebrow": "konec hry",
       "title": "Díky za třídění!",
-      "mosaic": "Fotky, které máš za sebou",
+      "mosaic": "Fotky, které máte za sebou",
       "close": "Zavřít"
     }
   },
@@ -4625,7 +4625,7 @@
   },
   "whatsNew": {
     "title": "Co je nového",
-    "since": "Od tvé poslední návštěvy {{date}}",
+    "since": "Od vaší poslední návštěvy {{date}}",
     "dismiss": "Zavřít shrnutí",
     "photos_one": "{{count}} nová fotka",
     "photos_few": "{{count}} nové fotky",
@@ -4641,10 +4641,10 @@
     "more_few": "a {{count}} další",
     "more_many": "a {{count}} dalšího",
     "more_other": "a {{count}} dalších",
-    "minePhotos_one": "{{count}} nová fotka, na které jsi ty",
-    "minePhotos_few": "{{count}} nové fotky, na kterých jsi ty",
-    "minePhotos_many": "{{count}} nové fotky, na kterých jsi ty",
-    "minePhotos_other": "{{count}} nových fotek, na kterých jsi ty",
+    "minePhotos_one": "{{count}} nová fotka, na které jste vy",
+    "minePhotos_few": "{{count}} nové fotky, na kterých jste vy",
+    "minePhotos_many": "{{count}} nové fotky, na kterých jste vy",
+    "minePhotos_other": "{{count}} nových fotek, na kterých jste vy",
     "albumsCount_one": "{{count}} nové album",
     "albumsCount_few": "{{count}} nová alba",
     "albumsCount_many": "{{count}} nového alba",
@@ -4655,45 +4655,45 @@
     "peopleCount_other": "{{count}} nově pojmenovaných lidí",
     "expand": "Podrobnosti",
     "collapse": "Skrýt podrobnosti",
-    "tasks_one": "{{count}} úkol čeká na tebe",
-    "tasks_few": "{{count}} úkoly čekají na tebe",
-    "tasks_many": "{{count}} úkolu čeká na tebe",
-    "tasks_other": "{{count}} úkolů čeká na tebe"
+    "tasks_one": "{{count}} úkol čeká na vás",
+    "tasks_few": "{{count}} úkoly čekají na vás",
+    "tasks_many": "{{count}} úkolu čeká na vás",
+    "tasks_other": "{{count}} úkolů čeká na vás"
   },
   "welcome": {
-    "title": "Vítej v Kukátku",
+    "title": "Vítejte v Kukátku",
     "close": "Zavřít uvítání",
     "skip": "Přeskočit",
     "next": "Pokračovat",
     "done": "Hotovo",
     "person": {
-      "hint": "Vyber osobu z knihovny, která jsi ty. Appka ti pak umí ukázat fotky, na kterých jsi, a ve vyhledávání funguje person:me. Dokud volbu nepotvrdíš, nic se neuloží.",
-      "publishWarning": "Pozor: až osobu vybereš, bude se u všech tvých komentářů zobrazovat její profilová fotka — uvidí ji každý, kdo si fotku otevře.",
+      "hint": "Vyberte osobu z knihovny, která jste vy. Appka vám pak umí ukázat fotky, na kterých jste, a ve vyhledávání funguje person:me. Dokud volbu nepotvrdíte, nic se neuloží.",
+      "publishWarning": "Pozor: až osobu vyberete, bude se u všech vašich komentářů zobrazovat její profilová fotka — uvidí ji každý, kdo si fotku otevře.",
       "searchLabel": "Najít osobu",
-      "searchPlaceholder": "Zadej jméno",
+      "searchPlaceholder": "Zadejte jméno",
       "noMatches": "Nikdo takový v knihovně není.",
       "confirm": "Potvrdit",
       "done": "Hotovo",
       "change": "Vybrat jinou osobu",
-      "linkedTo": "Tvůj účet je propojený s osobou {{name}}.",
+      "linkedTo": "Váš účet je propojený s osobou {{name}}.",
       "unknownPerson": "Propojená osoba už v knihovně není.",
-      "error": "Propojení se nepodařilo uložit. Zkus to prosím znovu."
+      "error": "Propojení se nepodařilo uložit. Zkuste to prosím znovu."
     }
   },
   "pushPrompt": {
-    "title": "Chceš dostávat oznámení?",
-    "body": "Kukátko ti dá vědět, když tě někdo označí na fotce.",
-    "later": "Oznámení můžeš kdykoli zapnout nebo vypnout v nastavení.",
+    "title": "Chcete dostávat oznámení?",
+    "body": "Kukátko vám dá vědět, když vás někdo označí na fotce.",
+    "later": "Oznámení můžete kdykoli zapnout nebo vypnout v nastavení.",
     "notNow": "Teď ne",
     "turnOn": "Zapnout oznámení",
     "close": "Zavřít dotaz na oznámení",
     "understood": "Rozumím",
     "enabled": "Oznámení jsou zapnutá.",
-    "blocked": "Prohlížeč oznámení pro Kukátko zablokoval. Tahle stránka se už znovu zeptat nemůže — povolit je musíš v nastavení webu přímo v prohlížeči (obvykle pod ikonou vedle adresy stránky).",
-    "failed": "Oznámení se nepodařilo zapnout. Zkus to prosím později v nastavení."
+    "blocked": "Prohlížeč oznámení pro Kukátko zablokoval. Tahle stránka se už znovu zeptat nemůže — povolit je musíte v nastavení webu přímo v prohlížeči (obvykle pod ikonou vedle adresy stránky).",
+    "failed": "Oznámení se nepodařilo zapnout. Zkuste to prosím později v nastavení."
   },
   "pwa": {
-    "offline": "Jsi offline. Kukátko se otevře, ale fotky a knihovna potřebují připojení.",
+    "offline": "Jste offline. Kukátko se otevře, ale fotky a knihovna potřebují připojení.",
     "update": {
       "message": "Je k dispozici nová verze Kukátka.",
       "action": "Načíst znovu",

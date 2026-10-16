@@ -205,8 +205,8 @@ func TestPhotoComment_announcesEveryMentionButTheWriter(t *testing.T) {
 	link := "/p/" + project.BootstrapSlug + "/photos/" + photo.UID + "?panel=info#comment-" + c.UID
 	excerpt := "Hele @Anna, @Bedřich, @já, @Nováček a @Vypnutý — víte, kdo to je?"
 	want := []sent{
-		{user: annaUID, title: "Pan Botka tě zmínil(a) v komentáři u fotky Pouť 1987", body: excerpt, link: link, inApp: true},
-		{user: bedrichUID, title: "Pan Botka tě zmínil(a) v komentáři u fotky Pouť 1987", body: excerpt, link: link, inApp: true},
+		{user: annaUID, title: "Pan Botka vás zmínil(a) v komentáři u fotky Pouť 1987", body: excerpt, link: link, inApp: true},
+		{user: bedrichUID, title: "Pan Botka vás zmínil(a) v komentáři u fotky Pouť 1987", body: excerpt, link: link, inApp: true},
 	}
 	if got := f.sentNotifications(t); !reflect.DeepEqual(got, want) {
 		t.Fatalf("notifications = %+v, want %+v", got, want)
@@ -226,7 +226,7 @@ func TestTaskComment_linksToTheTask(t *testing.T) {
 		writerUID, project.BootstrapUID)
 	c := f.comment(t, comments.TaskSubject("pt-one"), "@[Anna](user:us-anna) víš to?")
 
-	want := []sent{{user: annaUID, title: "Pan Botka tě zmínil(a) v komentáři u úkolu Kdy to bylo?",
+	want := []sent{{user: annaUID, title: "Pan Botka vás zmínil(a) v komentáři u úkolu Kdy to bylo?",
 		body: "@Anna víš to?", link: "/p/" + project.BootstrapSlug + "/tasks/pt-one#comment-" + c.UID, inApp: true}}
 	if got := f.sentNotifications(t); !reflect.DeepEqual(got, want) {
 		t.Fatalf("notifications = %+v, want %+v", got, want)
@@ -246,7 +246,7 @@ func TestAlbumComment_linksToTheAlbum(t *testing.T) {
 		project.BootstrapUID)
 	c := f.comment(t, comments.AlbumSubject("al-one"), "@[Anna](user:us-anna) kdo tam ještě byl?")
 
-	want := []sent{{user: annaUID, title: "Pan Botka tě zmínil(a) v komentáři u alba Svatba 1987",
+	want := []sent{{user: annaUID, title: "Pan Botka vás zmínil(a) v komentáři u alba Svatba 1987",
 		body: "@Anna kdo tam ještě byl?", link: "/p/" + project.BootstrapSlug + "/albums/al-one?panel=comments#comment-" + c.UID, inApp: true}}
 	if got := f.sentNotifications(t); !reflect.DeepEqual(got, want) {
 		t.Fatalf("notifications = %+v, want %+v", got, want)
@@ -287,7 +287,7 @@ func TestEdit_announcesOnlyTheNewMention(t *testing.T) {
 	if len(got) != 2 || got[0].user != annaUID || got[1].user != bedrichUID {
 		t.Fatalf("notifications = %+v, want one for Anna (the create) and one for Bedřich (the edit)", got)
 	}
-	if got[0].title != "Pan Botka tě zmínil(a) v komentáři u fotky" {
+	if got[0].title != "Pan Botka vás zmínil(a) v komentáři u fotky" {
 		t.Errorf("untitled photo title = %q", got[0].title)
 	}
 }

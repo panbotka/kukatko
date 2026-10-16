@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
  * "0" summons nobody — so callers can drop it in unconditionally.
  *
  * The number is what a sighted reader sees; a screen reader gets the sentence
- * instead ("3 úkoly čekají na tebe"), because a bare digit read out after
+ * instead ("3 úkoly čekají na vás"), because a bare digit read out after
  * „Úkoly" would be noise. The `title` repeats the sentence for a hover.
  *
  * `over` places it on the corner of its (relatively positioned) parent — the

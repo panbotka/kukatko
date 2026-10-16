@@ -6738,9 +6738,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     the plural rule — `Čeká na vás 1 úkol`, `Čekají na vás 3 úkoly`), one line per listed task with its
     state in the queue's own words (`čeká na odpověď`/`pracuje se`/`ke schválení`, an unknown state printed
     as it is) and its absolute link, `…a dalších M úkolů.` when the list was cut, and the link to
-    `/tasks?waiting=1`. It is formal like every mail, although the queue in the app says „na tebe".
+    `/tasks?waiting=1`. It is formal like every mail, and like the queue in the app („na vás").
     **One register for every e-mail:** all templates speak the formal „vy" (`Dobrý den,`, „vás", „můžete"),
-    since a mail may reach somebody the sender does not know; the app UI keeps its own voice.
+    since a mail may reach somebody the sender does not know; the Czech app UI speaks it too.
     `templates_register_test.go` renders every template and fails on an informal word („Ahoj", „tě", „ti",
     „můžeš", „sis"…) in a subject or body, and on a greeting that names the recipient.
     The sixth, `RenderUsernameChanged` (`UsernameChangedData{DisplayName,Username,SignInURL}`), tells somebody an
@@ -7022,7 +7022,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     link is the album's page), **`KindTaskAssigned`** ("somebody put you on a task", no photos, the
     link is the task's page) and **`KindCommentMention`** ("somebody mentioned you in a comment", no
     photos, the link is the thread scrolled to the comment; `RenderCommentMention(lang, who, MentionPlace,
-    title, excerpt)` — „<who> tě zmínil(a) v komentáři u fotky <title>" / „u úkolu <title>", the photo
+    title, excerpt)` — „<who> vás zmínil(a) v komentáři u fotky <title>" / „u úkolu <title>", the photo
     named only when it has a title, the excerpt as the body) — in a
     package registry in display order, each with the **channels** it is delivered through
     (`AllChannels()`: **`ChannelInApp`** `in_app`, **`ChannelPush`**, **`ChannelEmail`**, in that order) —
@@ -7068,7 +7068,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     count)`** ("Označili vás na dalších fotkách", "Přibyly 3 další fotky, na kterých vás označili."), used
     only beside at least one album notification. **`RenderAlbumFeatured(Language, title)`** ("Nové
     doporučené album: Pouť 2026", the title cut at `MaxAlbumNameLen`) and **`RenderTaskAssigned(Language,
-    who, title)`** ("Pan Botka tě přidal(a) k úkolu: Kdy to bylo?" / "Otevři úkol a odpověz."; English
+    who, title)`** ("Pan Botka vás přidal(a) k úkolu: Kdy to bylo?" / "Otevřete úkol a odpovězte."; English
     "Anna added you to the task: …"; the asker's name trimmed, a blank one "Někdo"/"Somebody", the task's
     title cut at `MaxTaskTitleLen` (100) by the shared `shorten`, a blank one untitled).
   - **Owner-scoped reads.** `Get(ctx, ownerUID, uid)`, `MarkRead` and `Photos` all filter by owner, and a
@@ -7296,7 +7296,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   actor (a NULL `added_by` is joined by acting, not asked), never the person who asked themselves,
   never a disabled or unapproved account. Whether the person wants the kind at all is
   `notifydeliver.Deliver`'s per-account question (every channel off by default). The message:
-  `KindTaskAssigned`, `notification.RenderTaskAssigned` ("Pan Botka tě přidal(a) k úkolu: Kdy to
+  `KindTaskAssigned`, `notification.RenderTaskAssigned` ("Pan Botka vás přidal(a) k úkolu: Kdy to
   bylo?"), `ProjectUID` = the task's project, `Link` = **`TaskPath(uid)`** (`/tasks/<uid>`, stored under
   `/p/<slug>` by `notifydeliver`), no photographs, and the `task_assigned` mail
   (`mailer.TaskAssignedData{DisplayName, Who, Title, URL}`) with the absolute task link. The daily

@@ -294,7 +294,7 @@ const MaxTaskTitleLen = 100
 
 // RenderTaskAssigned builds the "somebody put you on a task" notification: who
 // asked (by name) and the task's title, in lang (anything but English reads
-// as Czech). The headline is the whole message — "Anna tě přidal(a) k úkolu:
+// as Czech). The headline is the whole message — "Anna vás přidal(a) k úkolu:
 // Kdy to bylo?" — so a lock screen says who and what; the line under it is the
 // call to open the task. The asking person's name is trimmed and, when blank
 // (an account since deleted), replaced by "Někdo"/"Somebody"; the title is cut
@@ -318,8 +318,8 @@ func RenderTaskAssigned(lang Language, who, title string) Text {
 		asker = "Někdo"
 	}
 	return Text{
-		Title:  asker + " tě přidal(a) k úkolu: " + name,
-		Body:   "Otevři úkol a odpověz.",
+		Title:  asker + " vás přidal(a) k úkolu: " + name,
+		Body:   "Otevřete úkol a odpovězte.",
 		Params: params,
 	}
 }
@@ -375,7 +375,7 @@ func RenderCommentMention(lang Language, who string, place MentionPlace, title, 
 	if writer == "" {
 		writer = "Někdo"
 	}
-	return Text{Title: writer + " tě zmínil(a) v komentáři u " + mentionPlace(lang, place, title),
+	return Text{Title: writer + " vás zmínil(a) v komentáři u " + mentionPlace(lang, place, title),
 		Body: strings.TrimSpace(excerpt), Params: params}
 }
 

@@ -5,10 +5,10 @@ import { EmptyState } from './EmptyState'
 
 describe('EmptyState', () => {
   it('renders the title and the hint', () => {
-    render(<EmptyState title="Zatím žádná alba" hint="Vytvoř album a začni." />)
+    render(<EmptyState title="Zatím žádná alba" hint="Vytvořte album a začněte." />)
 
     expect(screen.getByText('Zatím žádná alba')).toBeInTheDocument()
-    expect(screen.getByText('Vytvoř album a začni.')).toBeInTheDocument()
+    expect(screen.getByText('Vytvořte album a začněte.')).toBeInTheDocument()
   })
 
   it('omits the hint when none is given', () => {

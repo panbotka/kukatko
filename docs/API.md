@@ -1454,7 +1454,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   was since deleted has no entry; the client shows the token's own name. `mentions` is always an array.
   **Mentioning somebody announces it**: every freshly mentioned account other than the writer gets the
   **`comment_mention` notification** in the comment's transaction (`internal/mentionnotify`, through the
-  channels they chose — all off by default): „Pan Botka tě zmínil(a) v komentáři u fotky Pouť 1987" (the
+  channels they chose — all off by default): „Pan Botka vás zmínil(a) v komentáři u fotky Pouť 1987" (the
   photo's title, or bare „u fotky" when it has none) with the comment's excerpt (mention tokens read as
   `@Name`, cut at 140 characters) under it, linking to `/photos/{uid}?panel=info#comment-{commentUID}` —
   the viewer with its drawer open, scrolled to the comment. **Nobody is told about a private, hidden or
@@ -2669,7 +2669,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   it is the caller's `waiting_on_me` count from `GET /tasks/summary` (open, the reader on it, somebody else
   acted last), because a question asked a fortnight ago is still theirs to answer and one asked yesterday
   that they have already answered is not. It is what gives the work queue a way to reach somebody who
-  never opens the task list; the panel draws it as "3 úkoly čekají na tebe", a link to `/tasks?waiting=1`.
+  never opens the task list; the panel draws it as "3 úkoly čekají na vás", a link to `/tasks?waiting=1`.
   (Until 2026-09-20 it counted `question`-state tasks opened since the visit, the reader's own excluded —
   a number that said nothing about whose move it was.) The **comment** count
   stays photo threads only, even though both threads now live in one table — a task's thread is answered

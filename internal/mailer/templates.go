@@ -281,10 +281,10 @@ type TasksWaitingDigestData struct {
 }
 
 // RenderTasksWaitingDigest builds the once-a-day message listing the open tasks
-// whose move is the recipient's. It is a pure function of d. Like every mail it
-// speaks formally ("na vás čekají"), even though the task queue in the app says
-// "na tebe": a mail may reach somebody the sender does not know, and one voice
-// across all of them reads better than a voice per template.
+// whose move is the recipient's. It is a pure function of d. Like every mail —
+// and like the Czech app UI — it speaks formally ("na vás čekají"): a mail may
+// reach somebody the sender does not know, and one voice everywhere reads
+// better than a voice per screen.
 func RenderTasksWaitingDigest(d TasksWaitingDigestData) Rendered {
 	lines := []string{
 		greeting,

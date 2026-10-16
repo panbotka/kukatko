@@ -297,4 +297,4 @@ commit. Always, at the end of every task, in this order:
 - **Photo book** — deliberately not built. Public sharing / share links are not a priority.
 
 ## Language
-Code, comments, commits, identifiers **in English**. UI texts via i18n (cs default, en).
+Code, comments, commits, identifiers **in English**. UI texts via i18n (cs default, en). **Czech speaks formally (vykání)**, in the UI as in e-mails — `i18n/formalRegister.test.ts` guards it.

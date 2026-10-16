@@ -332,7 +332,7 @@ here.
   albums link to `/albums/{uid}` and people to `/people/{uid}` via the shared `DigestLine`, which after the
   server's 6 links appends a plain **non-linked** `whatsNew.more` tail (no page lists "albums created since
   Tuesday"); comments are a count, not a link. **The questions line is drawn last and is a link**
-  (`/tasks?waiting=1`, key `whatsNew.tasks` = „3 úkoly čekají na tebe" / "3 tasks wait on you"): every
+  (`/tasks?waiting=1`, key `whatsNew.tasks` = „3 úkoly čekají na vás" / "3 tasks wait on you"): every
   other line reports what happened, that one asks something of the reader — since 2026-09-20 the queue's own
   `waiting_on_me` count (open, the reader on it, somebody else acted last), not bounded by the visit, so a
   question asked a fortnight ago is still on the line and one they already answered is not. It goes quiet
@@ -6296,7 +6296,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   all, empty, error, Czech) and the phone row in `Layout.test.tsx`;
   `WaitingBadge` (`components/tasks/WaitingBadge.tsx`) = the count as a small `danger` pill
   (`.kk-waiting-badge`, `--over` pins it to the corner of the hamburger); renders **nothing for zero**, the
-  digit is `aria-hidden` and a visually-hidden sentence (`tasks.waitingBadge`, „3 úkoly čekají na tebe")
+  digit is `aria-hidden` and a visually-hidden sentence (`tasks.waitingBadge`, „3 úkoly čekají na vás")
   is what a screen reader gets, repeated as the `title`;
   `useAnnouncement(slug)` = a poller of the project `slug`'s announcement over `fetchAnnouncement`
   (`GET /p/<slug>/announcement`) for `AnnouncementBanner`: the answer is kept with its slug, so a switch reads
@@ -8093,7 +8093,12 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `cloneInstance({saveMissing})`, plural rendering 1/3/5, a language switch rewrites the visible text) +
   `maintainerHidden.test.ts` (no cs/en string names the system administrator — „správce systému",
   "maintainer", „systémová role" in any declension — unless its key is on the `MAINTAINER_ONLY` allow-list
-  of strings rendered only for a maintainer, each with its reason; a stale entry fails)),
+  of strings rendered only for a maintainer, each with its reason; a stale entry fails) +
+  `formalRegister.test.ts` (**the Czech UI speaks formally — vykání — like every e-mail**: no cs string
+  holds an informal pronoun or verb as a whole word — tě/tebe/ti/tvůj…, jsi, máš, můžeš, chceš and the
+  common singular imperatives such as napiš/vyber/zkus —, a second-person-singular verb in
+  „-eš/-íš/-áš", nor opens with a singular imperative in „-ej/-uj/-ni/-ij"; false positives such as „váš"
+  or „obličej" sit on the `ALLOWED_WORDS` list with their reasons, and a word nothing trips over fails)),
   `styles/viewTransition.css` (**the grid ⇄ viewer morph's choreography** — imported last in `main.tsx`, and
   inert in any browser without the API, which simply drops an unknown pseudo element. Its rules:
   `[data-kk-morph] { view-transition-name: kk-morph }` (the mark `useMorphMark` paints — see

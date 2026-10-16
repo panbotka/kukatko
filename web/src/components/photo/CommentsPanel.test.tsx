@@ -497,6 +497,6 @@ describe('CommentsPanel', () => {
     await i18n.changeLanguage('cs')
     renderPanel()
 
-    expect(await screen.findByText('Napiš, co o tomhle víš…')).toBeInTheDocument()
+    expect(await screen.findByText('Napište, co o tomhle víte…')).toBeInTheDocument()
   })
 })

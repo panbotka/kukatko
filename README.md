@@ -479,7 +479,7 @@ rebuilt? — and the only person who knows is usually not the person editing the
   scan it for; each row is striped in the colour of its state so the queue can be scanned before it is
   read. **The queue tells you where you stand:** the Úkoly entry in the navigation (and the „Procházet"
   toggle it sits under, and the hamburger on a phone) wears a badge with the number of tasks waiting on
-  you, the „Co je nového" digest says „3 úkoly čekají na tebe" and links straight to them, the filter chips
+  you, the „Co je nového" digest says „3 úkoly čekají na vás" and links straight to them, the filter chips
   carry their counts, and the listing pages by fifty with a „Načíst další" button. A photograph that belongs to an open task says so on its own page, so the
   question finds you even when the link did not.
 - **You are put on a question by answering it.** Opening a task, replying in its thread or moving it
@@ -496,7 +496,7 @@ rebuilt? — and the only person who knows is usually not the person editing the
   `kukatko ctl tasks create --state working --assign <user-uid>`.
 - **Being asked is a notification.** Switch on „Když mě někdo přidá k úkolu" in your notification
   settings (in the app, as a push, by e-mail — all off until you choose) and every time somebody puts you
-  on a task, at its opening or later, you get „Pan Botka tě přidal(a) k úkolu: Kdy to bylo?", one tap to
+  on a task, at its opening or later, you get „Pan Botka vás přidal(a) k úkolu: Kdy to bylo?", one tap to
   the task. It never tells you about putting yourself on one, never repeats itself for a task you are
   already on (asked or by having acted), and it is separate from the daily digest of tasks waiting for
   you, which keeps its own switch.

@@ -14,11 +14,11 @@ function renderState(ui: React.ReactElement) {
 
 describe('ErrorState', () => {
   it('renders the message as an alert with the hint', () => {
-    renderState(<ErrorState title="Nepodařilo se načíst" hint="Zkontroluj připojení." />)
+    renderState(<ErrorState title="Nepodařilo se načíst" hint="Zkontrolujte připojení." />)
 
     const root = screen.getByRole('alert')
     expect(root).toHaveTextContent('Nepodařilo se načíst')
-    expect(screen.getByText('Zkontroluj připojení.')).toBeInTheDocument()
+    expect(screen.getByText('Zkontrolujte připojení.')).toBeInTheDocument()
   })
 
   it('omits the hint when none is given', () => {
