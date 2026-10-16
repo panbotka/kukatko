@@ -3259,17 +3259,16 @@
     "logout": "Sign out"
   },
   "projectSwitcher": {
-    "heading": "Project",
-    "current": "Project {{name}}",
-    "title": "Project {{name}} — switch to another",
-    "switchTo": "Switch to the project {{name}}",
-    "all": "All projects…",
-    "allTitle": "Show all your projects",
-    "choose": "My projects",
-    "chooseTitle": "Open one of your projects",
+    "leave": "Switch library",
+    "leaveTitle": "Leave this library and pick another",
     "unread_one": "{{count}} unread notification",
     "unread_other": "{{count}} unread notifications",
     "othersUnread": "Unread notifications in other projects: {{count}}"
+  },
+  "projectIdentity": {
+    "title": "The library of the project {{name}}",
+    "neutral": "Kukátko",
+    "neutralTitle": "To your library"
   },
   "notFound": {
     "title": "Page not found",

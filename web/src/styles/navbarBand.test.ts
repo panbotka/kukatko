@@ -71,14 +71,14 @@ describe('the navbar band between the drawer and a roomy container', () => {
   })
 })
 
-describe('the project switcher’s width', () => {
+describe('the project identity’s width', () => {
   it('is the one item of the bar that shrinks, never below a readable stub', () => {
-    const base = declarations(ruleBody(css, /\.kk-project-switcher(?=\s*\{)/) ?? '')
+    const base = declarations(ruleBody(css, /\.kk-project-identity(?=\s*\{)/) ?? '')
     expect(base.get('min-width')).toBe('0')
-    const name = declarations(ruleBody(css, /\.kk-project-switcher__name(?=\s*\{)/) ?? '')
+    const name = declarations(ruleBody(css, /\.kk-project-identity__name(?=\s*\{)/) ?? '')
     expect(name.get('text-overflow')).toBe('ellipsis')
-    const lg = ruleBody(css, /@media \(min-width: 992px\)(?=\s*\{)/, /\.kk-project-switcher/)
-    const atLg = declarations(ruleBody(lg ?? '', /\.kk-project-switcher(?=\s*\{)/) ?? '')
+    const lg = ruleBody(css, /@media \(min-width: 992px\)(?=\s*\{)/, /\.kk-project-identity/)
+    const atLg = declarations(ruleBody(lg ?? '', /\.kk-project-identity(?=\s*\{)/) ?? '')
     expect(atLg.get('flex')).toBe('0 1 auto')
     expect(atLg.get('min-width')).toBe('3.5rem')
     expect(atLg.get('max-width')).toBe('14rem')

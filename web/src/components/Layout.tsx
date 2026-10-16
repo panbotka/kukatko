@@ -17,6 +17,7 @@ import { LIBRARY_PATH } from '../lib/libraryView'
 import { bareVersion } from '../lib/version'
 import { useNeutralChrome, useProjectPath, useProjectSlug } from '../project/ProjectContext'
 import { stripProjectPrefix } from '../project/paths'
+import { useLeaveProject } from '../project/useLeaveProject'
 import { useWaitingOnMe } from '../tasks/TaskSummaryContext'
 
 import { AnnouncementBanner } from './AnnouncementBanner'
@@ -28,6 +29,7 @@ import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
 import { MOBILE_MENU_ID, MobileNavDrawer } from './MobileNavDrawer'
 import { MobileTabBar } from './MobileTabBar'
 import { NotificationBell } from './notifications/NotificationBell'
+import { ProjectUnreadBadge } from './notifications/ProjectUnreadBadge'
 import {
   ACCOUNT_ITEM,
   adminItems,
@@ -38,6 +40,7 @@ import {
   type NavGroup,
   pathMatches,
   PRIMARY_ITEMS,
+  PROJECTS_ITEM,
   REVIEW_ITEM,
   STATS_ITEM,
   TASKS_PATH,
@@ -45,7 +48,7 @@ import {
   UPLOAD_ITEM,
 } from './navItems'
 import { PersonAvatar } from './PersonAvatar'
-import { ProjectSwitcher } from './ProjectSwitcher'
+import { ProjectIdentity } from './ProjectIdentity'
 import { PushPrompt } from './push/PushPrompt'
 import { SearchCommand } from './search/SearchCommand'
 import { WaitingBadge } from './tasks/WaitingBadge'
@@ -139,11 +142,21 @@ import { WelcomeModal } from './welcome/WelcomeModal'
  * the band would return with the next item. The drawer does not care how many
  * items there are, and on a touch screen it is the better navigation anyway.
  *
+ * **Switching projects is leaving one** (the way a streaming service's
+ * "who's watching" works): the bar leads with the current project as a calm
+ * identity ({@link ProjectIdentity} — a link to its library, no menu), and the
+ * user menu carries one "Switch library" entry to the chooser at `/projects`,
+ * the one place a project is picked. The entry is offered only when there is
+ * somewhere else to go ({@link useLeaveProject}); the unread notifications
+ * waiting in the other projects ride on it and on the avatar that opens the
+ * menu (on a phone, on the hamburger), and the chooser's tiles break them
+ * down per project.
+ *
  * **Outside a project the shell is neutral** ({@link useNeutralChrome}): on an
  * instance page (`/account`, `/system…`, `/maintenance`) and on a `/p/<slug>`
  * the account may not enter, the context's project is only the entry rule's
- * fallback, so nothing of it is drawn — no project name (the switcher becomes
- * the way *into* a project), no library navigation, search, bell or tab bar,
+ * fallback, so nothing of it is drawn — no project name (the bar wears the
+ * neutral app title, a link to `/`), no library navigation, search, bell or tab bar,
  * no announcement banner and no welcome. What stays is what belongs to the
  * account and the instance: the user menu with the account, the instance's own
  * administration and sign-out. A maintainer inside a deactivated project gets
@@ -204,6 +217,9 @@ export function Layout({ children }: { children?: ReactNode }) {
   const tools = toolsGroup({ canCurate, canWrite })
   // The tasks count belongs to the project; a neutral shell wears none.
   const waiting = neutral ? 0 : waitingOnMe
+  // "Switch library" and the news waiting behind it, in the other projects.
+  const leave = useLeaveProject()
+  const othersUnread = leave.offered ? leave.othersUnread : 0
 
   // Close the collapsed menu on every navigation, whatever control was tapped
   // (top-level link, group dropdown item, or user menu item all change the
@@ -363,13 +379,13 @@ export function Layout({ children }: { children?: ReactNode }) {
               showTrigger={!drawerNav}
             />
           )}
-          {/* Where the reader stands: the current project's name, and on `lg`+
-              a menu of the others when there are others. It is the one item of
-              the row that gives way to a long name (it shrinks and ellipsises,
-              see `.kk-project-switcher`). Below `lg` it is the name alone, at
-              the leading edge the phone row otherwise leaves empty; switching
-              there is the drawer's first section. */}
-          <ProjectSwitcher variant="bar" menu={!drawerNav} />
+          {/* Where the reader stands: the current project's name, a link to its
+              library — never a menu (switching is the user menu's "Switch
+              library"). It is the one item of the row that gives way to a long
+              name (it shrinks and ellipsises, see `.kk-project-identity`); below
+              `lg` it takes the leading edge the phone row otherwise leaves
+              empty. */}
+          <ProjectIdentity />
           {/* The inline bar is the `lg`+ navigation only: below that the same
               items are the drawer's, so rendering both would duplicate every
               link in the DOM. */}
@@ -421,13 +437,22 @@ export function Layout({ children }: { children?: ReactNode }) {
                     // pushes the menu past the container on a narrow desktop.
                     title={
                       <span className="d-inline-flex align-items-center gap-2">
-                        <PersonAvatar
-                          name={user.display_name || user.username}
-                          userUid={user.uid}
-                          className="kk-avatar--sm"
-                        />
+                        {/* The other projects' news rides on the picture's
+                            corner, so it costs the bar no width. */}
+                        <span className="kk-user-menu__picture">
+                          <PersonAvatar
+                            name={user.display_name || user.username}
+                            userUid={user.uid}
+                            className="kk-avatar--sm"
+                          />
+                          <ProjectUnreadBadge
+                            count={othersUnread}
+                            label={t('projectSwitcher.othersUnread', { count: othersUnread })}
+                            className="kk-project-unread--over"
+                          />
+                        </span>
                         {/* Out of sight (not out of the accessible name) in
-                            the 992–1399px band, where the project switcher
+                            the 992–1399px band, where the project's name
                             took its width; see `.kk-user-menu__name`. */}
                         <span className="kk-user-menu__name">
                           {user.display_name || user.username}
@@ -436,6 +461,27 @@ export function Layout({ children }: { children?: ReactNode }) {
                     }
                     id="user-menu"
                   >
+                    {/* Leaving the project for the chooser leads the menu: it
+                        is about which library the account is in, before
+                        anything about the account itself. */}
+                    {leave.offered && (
+                      <>
+                        <NavDropdown.Item
+                          as={Link}
+                          to={PROJECTS_ITEM.to}
+                          title={t(PROJECTS_ITEM.titleKey)}
+                          className="d-flex align-items-center gap-2"
+                        >
+                          <Icon name={PROJECTS_ITEM.icon} />
+                          <span className="flex-grow-1">{t(PROJECTS_ITEM.labelKey)}</span>
+                          <ProjectUnreadBadge
+                            count={othersUnread}
+                            label={t('projectSwitcher.othersUnread', { count: othersUnread })}
+                          />
+                        </NavDropdown.Item>
+                        <NavDropdown.Divider />
+                      </>
+                    )}
                     {renderMenuItem(ACCOUNT_ITEM)}
                     {/* The photos the signed-in person is on. It hangs off the
                         user menu because it is a fact about them, not another
@@ -507,6 +553,15 @@ export function Layout({ children }: { children?: ReactNode }) {
           >
             <span className="navbar-toggler-icon" />
             <WaitingBadge count={waiting} over />
+            {/* The other projects' news, on the opposite corner from the
+                tasks count: "Switch library" is inside the drawer. */}
+            {drawerNav && (
+              <ProjectUnreadBadge
+                count={othersUnread}
+                label={t('projectSwitcher.othersUnread', { count: othersUnread })}
+                className="kk-project-unread--over-start"
+              />
+            )}
           </Navbar.Toggle>
         </Container>
       </Navbar>

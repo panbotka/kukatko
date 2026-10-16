@@ -482,10 +482,12 @@ body {
   }
 }
 
-/* ---- The project switcher (`ProjectSwitcher`) ----------------------------
+/* ---- The project identity (`ProjectIdentity`) ----------------------------
  *
- * The current project's name leads the bar, right after the search button. It
- * is the one item of the row allowed to give way: everything else keeps its
+ * The current project leads the bar, right after the search button: a small
+ * square with its initial and its name, a link to the project's library — a
+ * calm identity, not a menu (switching is the user menu's "Switch library").
+ * It is the one item of the row allowed to give way: everything else keeps its
  * content width (`min-width: auto`), so when the row is tight the name shrinks
  * and ellipsises — the full name stays in the `title` — instead of pushing the
  * user menu past the container. Below `lg` it takes whatever the phone row
@@ -493,42 +495,35 @@ body {
  * them onto a second line); from `lg` it is its own width, capped at 14rem and
  * never squeezed below 3.5rem. Every box between the row and the text needs
  * `min-width: 0`, or the ellipsis never gets a chance. */
-.kk-project-switcher {
+.kk-project-identity {
+  display: flex;
   flex: 1 1 0;
-  flex-wrap: nowrap;
+  gap: var(--kk-space-2);
+  align-items: center;
   min-width: 0;
+  padding-block: 0.5rem;
   color: var(--kk-text);
   font-weight: 600;
+  text-decoration: none;
 }
 
-.kk-project-switcher__item,
-.kk-project-switcher__toggle {
-  min-width: 0;
-}
-
-.kukatko-navbar .kk-project-switcher__toggle {
-  display: flex;
-  align-items: center;
+.kk-project-identity:hover,
+.kk-project-identity:focus-visible {
   color: var(--kk-text);
+  text-decoration: underline;
 }
 
-.kk-project-switcher__name {
+/* The chooser's stand-in, small: a rounded square rather than the disc a
+   person wears, so the project never reads as an account. */
+.kk-project-identity__mark {
+  border-radius: var(--kk-radius-tile);
+}
+
+.kk-project-identity__name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.kk-project-switcher--static {
-  display: flex;
-  align-items: center;
-}
-
-/* The other projects' unread total beside the name: never squeezed, so the
-   name is what gives way. */
-.kk-project-switcher__unread {
-  flex: none;
-  margin-inline-start: 0.375rem;
 }
 
 /* A project's unread pill in a menu, drawer row or chooser card. */
@@ -536,18 +531,45 @@ body {
   flex: none;
 }
 
+/* The other projects' unread total on a corner — of the user menu's picture,
+   or (start corner) of the hamburger, opposite the tasks count — so it costs
+   the bar no width. */
+.kk-user-menu__picture {
+  position: relative;
+  display: inline-flex;
+}
+
+.kk-project-unread--over {
+  position: absolute;
+  top: -0.375rem;
+  right: -0.5rem;
+}
+
+/* On the hamburger it is a bare dot: the tasks count already wears a numbered
+   pill on the other corner, and two numbers side by side read as one. The
+   count stays in the badge's sentence and on the drawer's "Switch library"
+   row. Through the toggler, to outrank `.kk-waiting-badge`'s pill sizing,
+   which comes later in this file. */
+.navbar-toggler .kk-project-unread--over-start {
+  position: absolute;
+  top: 0.25rem;
+  left: 0.25rem;
+  width: 0.625rem;
+  min-width: 0;
+  height: 0.625rem;
+  padding: 0;
+}
+
+.navbar-toggler .kk-project-unread--over-start > [aria-hidden='true'] {
+  display: none;
+}
+
 @media (min-width: 992px) {
-  .kk-project-switcher {
+  .kk-project-identity {
     flex: 0 1 auto;
     min-width: 3.5rem;
     max-width: 14rem;
-  }
-
-  /* 2px a side under the links' 0.5rem: what "Veselice" needed to fit whole in
-     the 1200–1399px band, where the bar's glyphs are back (measured). Scoped
-     through `.navbar-nav` to outrank Bootstrap's `.navbar-expand-lg` padding. */
-  .kukatko-navbar .navbar-nav .kk-project-switcher__toggle {
-    padding-inline: 0.375rem;
+    margin-inline-end: 0.375rem;
   }
 }
 
@@ -789,12 +811,18 @@ a.kk-chooser__tile:focus-visible .kk-chooser__picture {
   }
 }
 
-/* The width the switcher costs is paid by the user menu's display name in the
- * band where the row is tight (measured with a maintainer — the widest role —
- * and a real name: see `docs/FRONTEND.md`). The avatar stays, and the name is
- * hidden visually only, so the toggle's accessible name is still the person's.
- * From 1400px the container has the room and the name comes back. */
+/* The width the project's name costs is paid by the user menu's display name
+ * in the band where the row is tight (measured with a maintainer — the widest
+ * role — and a real name: see `docs/FRONTEND.md`). The avatar stays, and the
+ * name is hidden visually only, so the toggle's accessible name is still the
+ * person's. The project's small mark goes too (it is decorative, the name
+ * beside it says the same), so the project's name fits whole. From 1400px the
+ * container has the room and both come back. */
 @media (min-width: 992px) and (max-width: 1399.98px) {
+  .kk-project-identity__mark {
+    display: none;
+  }
+
   .kk-user-menu__name {
     position: absolute;
     width: 1px;
@@ -1318,23 +1346,6 @@ a.kk-chooser__tile:focus-visible .kk-chooser__picture {
 .kk-navdrawer__link--cta:hover,
 .kk-navdrawer__link--cta:focus-visible {
   background-color: var(--kk-accent-solid-hover);
-}
-
-/* The drawer's „Projekt" section: the current project's name as a line of text
-   (not a row — there is nowhere to go), the role badges of the other projects
-   pushed to the row's end like the tasks count. */
-.kk-navdrawer__project {
-  margin: 0;
-  padding: var(--kk-space-1) var(--kk-space-3);
-  overflow: hidden;
-  color: var(--kk-text);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.kk-navdrawer__link .kk-project-switcher__role {
-  margin-inline-start: auto;
 }
 
 /* A fixed glyph column keeps every label starting on the same vertical line. */

@@ -7,8 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { CAPABILITIES_DEFAULT, CapabilitiesContext } from '../capabilities/CapabilitiesContext'
 import i18n from '../i18n'
+import {
+  NOTIFICATION_INBOX_DEFAULT,
+  NotificationInboxContext,
+} from '../notifications/NotificationInboxContext'
 import { ProjectContext, type ProjectContextValue } from '../project/ProjectContext'
 import type { ProjectMembership } from '../services/auth'
+import type { UnreadByProject } from '../services/notifications'
 import { TaskSummaryContext } from '../tasks/TaskSummaryContext'
 import { declarations, readCss, ruleBody } from '../test/css'
 
@@ -93,13 +98,14 @@ const TWO_PROJECTS = [member('v', 'Veselice'), member('rodina', 'Rodina')]
 /**
  * Renders the shell with a few real destinations, starting at `path`. With
  * `projects` the shell runs inside a project (the first one), as the app does;
- * without, there is no project context and the switcher is absent.
+ * without, there is no project context and "Switch library" is not offered.
  */
 function renderShell(
   value: AuthContextValue,
   path = '/p/v',
   caps = CAPABILITIES_DEFAULT,
   projects?: ProjectMembership[],
+  unreadByProject: UnreadByProject | null = null,
 ) {
   const routes = (
     <MemoryRouter initialEntries={[path]}>
@@ -111,6 +117,7 @@ function renderShell(
           <Route path="/p/v/people" element={<div>people page</div>} />
           <Route path="/p/rodina" element={<div>rodina home</div>} />
           <Route path="/p/rodina/albums" element={<div>rodina albums</div>} />
+          <Route path="/projects" element={<div>chooser page</div>} />
           <Route path="/login" element={<div>login page</div>} />
         </Route>
       </Routes>
@@ -130,11 +137,15 @@ function renderShell(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={value}>
         <CapabilitiesContext.Provider value={caps}>
-          {project === null ? (
-            routes
-          ) : (
-            <ProjectContext.Provider value={project}>{routes}</ProjectContext.Provider>
-          )}
+          <NotificationInboxContext.Provider
+            value={{ ...NOTIFICATION_INBOX_DEFAULT, unread: 0, unreadByProject }}
+          >
+            {project === null ? (
+              routes
+            ) : (
+              <ProjectContext.Provider value={project}>{routes}</ProjectContext.Provider>
+            )}
+          </NotificationInboxContext.Provider>
         </CapabilitiesContext.Provider>
       </AuthContext.Provider>
     </I18nextProvider>,
@@ -169,50 +180,58 @@ afterEach(() => {
 })
 
 describe('MobileNavDrawer', () => {
-  it('leads with the project: its name, the other projects and the chooser', async () => {
+  it('lists no projects: "Switch library" leads the account block instead', async () => {
     const user = userEvent.setup()
     renderShell(auth(), '/p/v/albums', CAPABILITIES_DEFAULT, TWO_PROJECTS)
     const drawer = await openDrawer(user)
 
-    const project = within(drawer).getByRole('region', { name: 'Project' })
-    // The first block of the drawer, before the everyday one.
-    const main = within(drawer).getByRole('region', { name: 'Main' })
-    expect(
-      project.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeGreaterThan(0)
-    expect(within(project).getByText('Veselice')).toBeInTheDocument()
-    // Albums is a list every project has, so switching keeps it.
-    expect(within(project).getByRole('link', { name: /Rodina/ })).toHaveAttribute(
-      'href',
-      '/p/rodina/albums',
-    )
-    expect(within(project).getByRole('link', { name: 'All projects…' })).toHaveAttribute(
-      'href',
-      '/projects',
-    )
+    // The old „Projekt" section, with a row per other project, is gone.
+    expect(within(drawer).queryByRole('region', { name: 'Project' })).not.toBeInTheDocument()
+    expect(within(drawer).queryByRole('link', { name: /Rodina/ })).not.toBeInTheDocument()
+    expect(within(drawer).queryByText('Veselice')).not.toBeInTheDocument()
+    const account = within(drawer).getByRole('region', { name: 'Account' })
+    const leave = within(account).getByRole('link', { name: 'Switch library' })
+    expect(leave).toHaveAttribute('href', '/projects')
+    // The first row of the account block, as it leads the desktop user menu.
+    expect(within(account).getAllByRole('link')[0]).toBe(leave)
   })
 
-  it('closes when a project row is followed', async () => {
+  it('wears the other projects’ unread total on "Switch library"', async () => {
+    const user = userEvent.setup()
+    renderShell(auth(), '/p/v/albums', CAPABILITIES_DEFAULT, TWO_PROJECTS, {
+      'p-v': 9,
+      'p-rodina': 4,
+    })
+    const drawer = await openDrawer(user)
+
+    const leave = within(drawer).getByRole('link', { name: /Switch library/ })
+    const marker = within(leave).getByTestId('project-unread')
+    expect(marker).toHaveTextContent('4')
+    expect(
+      within(marker).getByText('Unread notifications in other projects: 4'),
+    ).toBeInTheDocument()
+  })
+
+  it('closes when "Switch library" is followed', async () => {
     const user = userEvent.setup()
     renderShell(auth(), '/p/v/albums', CAPABILITIES_DEFAULT, TWO_PROJECTS)
     const drawer = await openDrawer(user)
 
-    await user.click(within(drawer).getByRole('link', { name: /Rodina/ }))
+    await user.click(within(drawer).getByRole('link', { name: 'Switch library' }))
 
-    expect(await screen.findByText('rodina albums')).toBeInTheDocument()
+    expect(await screen.findByText('chooser page')).toBeInTheDocument()
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
   })
 
-  it('names a lone project without offering a switch', async () => {
+  it('offers no switch to an account with a lone project', async () => {
     const user = userEvent.setup()
     renderShell(auth(), '/p/v', CAPABILITIES_DEFAULT, [member('v', 'Veselice')])
     const drawer = await openDrawer(user)
 
-    const project = within(drawer).getByRole('region', { name: 'Project' })
-    expect(within(project).getByText('Veselice')).toBeInTheDocument()
-    expect(within(project).queryByRole('link')).not.toBeInTheDocument()
+    expect(within(drawer).queryByRole('link', { name: 'Switch library' })).not.toBeInTheDocument()
+    expect(within(drawer).getByRole('link', { name: 'My account' })).toBeInTheDocument()
   })
 
   it('opens the hamburger as a dismissible drawer, not an inline collapse', async () => {
@@ -313,13 +332,11 @@ describe('MobileNavDrawer', () => {
     renderShell(auth({ isMaintainer: true }), '/p/v', CAPABILITIES_DEFAULT, TWO_PROJECTS)
     const drawer = await openDrawer(user)
 
-    // The whole navbar, drawer-shaped: the project switcher first, then the
-    // everyday block, browse, the editor's tools and the account block that
-    // replaces the user menu — administration included, at the end of it
-    // exactly as the desktop menu carries it.
+    // The whole navbar, drawer-shaped: the everyday block, browse, the
+    // editor's tools and the account block that replaces the user menu —
+    // "Switch library" leading it and administration at the end of it,
+    // exactly as the desktop menu carries them. No project is listed.
     expect(drawerHrefs(drawer)).toEqual([
-      '/p/rodina',
-      '/projects',
       '/p/v',
       '/p/v/albums',
       '/p/v/labels',
@@ -341,6 +358,7 @@ describe('MobileNavDrawer', () => {
       '/p/v/upload-links',
       '/p/v/duplicates',
       '/p/v/trash',
+      '/projects',
       '/account',
       '/p/v/stats',
       '/p/v/help',

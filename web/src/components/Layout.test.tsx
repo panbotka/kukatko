@@ -7,8 +7,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { CAPABILITIES_DEFAULT, CapabilitiesContext } from '../capabilities/CapabilitiesContext'
 import i18n from '../i18n'
+import {
+  NOTIFICATION_INBOX_DEFAULT,
+  NotificationInboxContext,
+} from '../notifications/NotificationInboxContext'
 import { ProjectContext, type ProjectContextValue } from '../project/ProjectContext'
 import type { ProjectMembership } from '../services/auth'
+import type { UnreadByProject } from '../services/notifications'
 import { TaskSummaryContext, type TaskSummaryState } from '../tasks/TaskSummaryContext'
 
 import { Layout } from './Layout'
@@ -908,14 +913,28 @@ describe('the tasks-waiting badge', () => {
   })
 })
 
-describe('the project switcher in the bar', () => {
+describe('the project in the bar, and leaving it', () => {
   /** An approved editor membership of the active project `slug`. */
-  function member(slug: string, name: string): ProjectMembership {
-    return { uid: `p-${slug}`, slug, name, active: true, role: 'editor', approved: true }
+  function member(
+    slug: string,
+    name: string,
+    extra: Partial<ProjectMembership> = {},
+  ): ProjectMembership {
+    return { uid: `p-${slug}`, slug, name, active: true, role: 'editor', approved: true, ...extra }
   }
 
-  /** The shell inside the first of `projects`, at `path`. */
-  function renderInProject(projects: ProjectMembership[], path = '/p/v/people') {
+  /**
+   * The shell inside the first of `projects`, at `path`, with `unreadByProject`
+   * as the inbox's per-project counts.
+   */
+  function renderInProject(
+    projects: ProjectMembership[],
+    {
+      path = '/p/v/people',
+      value = auth(),
+      unreadByProject = null,
+    }: { path?: string; value?: AuthContextValue; unreadByProject?: UnreadByProject | null } = {},
+  ) {
     const project: ProjectContextValue = {
       project: projects[0],
       projects,
@@ -925,59 +944,131 @@ describe('the project switcher in the bar', () => {
     }
     return render(
       <I18nextProvider i18n={i18n}>
-        <AuthContext.Provider value={auth()}>
+        <AuthContext.Provider value={value}>
           <CapabilitiesContext.Provider value={CAPABILITIES_DEFAULT}>
-            <ProjectContext.Provider value={project}>
-              <MemoryRouter initialEntries={[path]}>
-                <Routes>
-                  <Route element={<Layout />}>
-                    <Route path={path} element={<div>page content</div>} />
-                  </Route>
-                </Routes>
-              </MemoryRouter>
-            </ProjectContext.Provider>
+            <NotificationInboxContext.Provider
+              value={{ ...NOTIFICATION_INBOX_DEFAULT, unread: 0, unreadByProject }}
+            >
+              <ProjectContext.Provider value={project}>
+                <MemoryRouter initialEntries={[path]}>
+                  <Routes>
+                    <Route element={<Layout />}>
+                      <Route path={path} element={<div>page content</div>} />
+                    </Route>
+                  </Routes>
+                </MemoryRouter>
+              </ProjectContext.Provider>
+            </NotificationInboxContext.Provider>
           </CapabilitiesContext.Provider>
         </AuthContext.Provider>
       </I18nextProvider>,
     )
   }
 
-  it('leads the bar with the project, a menu of the others', async () => {
-    const user = userEvent.setup()
-    const { container } = renderInProject([member('v', 'Veselice'), member('rodina', 'Rodina')])
+  const TWO = [member('v', 'Veselice'), member('rodina', 'Rodina')]
 
-    const toggle = screen.getByRole('button', { name: 'Veselice' })
-    expect(toggle).toHaveClass('dropdown-toggle')
+  it('leads the bar with the project as a link to its library, not a menu', () => {
+    const { container } = renderInProject(TWO)
+
+    const identity = screen.getByTestId('project-identity')
+    expect(identity.tagName).toBe('A')
+    expect(identity).toHaveAttribute('href', '/p/v')
+    expect(identity).toHaveTextContent('Veselice')
+    expect(identity).toHaveAttribute('title', 'The library of the project Veselice')
+    expect(identity).not.toHaveClass('dropdown-toggle')
+    expect(screen.queryByRole('button', { name: /Veselice/ })).not.toBeInTheDocument()
     // The leading block: before every link of the inline bar.
     const collapse = container.querySelector('.navbar-collapse')
     if (collapse === null) {
       throw new Error('the inline bar is not rendered')
     }
-    expect(precedes(toggle, collapse)).toBe(true)
+    expect(precedes(identity, collapse)).toBe(true)
+  })
 
-    await user.click(toggle)
-    expect(await screen.findByRole('link', { name: /Rodina/ })).toHaveAttribute(
+  it('lists no other project in the bar, and leads the user menu with "Switch library"', async () => {
+    const user = userEvent.setup()
+    renderInProject(TWO)
+
+    // No other project's name anywhere in the closed bar.
+    const bar = document.querySelector<HTMLElement>('nav.navbar')
+    if (bar === null) {
+      throw new Error('the navbar is not rendered')
+    }
+    expect(within(bar).queryByText('Rodina')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /User One/ }))
+
+    const leave = await screen.findByRole('link', { name: 'Switch library' })
+    expect(leave).toHaveAttribute('href', '/projects')
+    expect(leave).toHaveAttribute('title', 'Leave this library and pick another')
+    // The first entry of the menu, ahead of the account.
+    expect(precedes(leave, screen.getByRole('link', { name: 'My account' }))).toBe(true)
+    // The menu names no other project either: picking happens on the chooser.
+    expect(screen.queryByRole('link', { name: /Rodina/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'All projects…' })).not.toBeInTheDocument()
+  })
+
+  it('offers no switch to an account with one enterable project', async () => {
+    const user = userEvent.setup()
+    // A second membership still waiting for approval is not somewhere to go.
+    renderInProject([member('v', 'Veselice'), member('rodina', 'Rodina', { approved: false })])
+
+    expect(screen.getByTestId('project-identity')).toHaveTextContent('Veselice')
+    await user.click(screen.getByRole('button', { name: /User One/ }))
+    expect(await screen.findByRole('link', { name: 'My account' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Switch library' })).not.toBeInTheDocument()
+  })
+
+  it('offers the switch to the system administrator even with one project', async () => {
+    const user = userEvent.setup()
+    renderInProject([member('v', 'Veselice')], { value: auth({ isMaintainer: true }) })
+
+    await user.click(screen.getByRole('button', { name: /User One/ }))
+    expect(await screen.findByRole('link', { name: 'Switch library' })).toHaveAttribute(
       'href',
-      '/p/rodina/people',
+      '/projects',
     )
-    expect(screen.getByRole('link', { name: 'All projects…' })).toHaveAttribute('href', '/projects')
   })
 
-  it('is the bare name for a single project', () => {
-    renderInProject([member('v', 'Veselice')])
+  it('marks the other projects’ unread news on the user menu and on the switch', async () => {
+    const user = userEvent.setup()
+    renderInProject([...TWO, member('skola', 'Škola')], {
+      // The current project's own news is the bell's, not counted here.
+      unreadByProject: { 'p-v': 7, 'p-rodina': 2, 'p-skola': 1 },
+    })
 
-    const switcher = screen.getByTestId('project-switcher')
-    expect(switcher).toHaveTextContent('Veselice')
-    expect(switcher.querySelector('.dropdown-toggle')).toBeNull()
+    const toggle = screen.getByRole('button', { name: /User One/ })
+    const marker = within(toggle).getByTestId('project-unread')
+    expect(marker).toHaveTextContent('3')
+    expect(marker).toHaveClass('kk-project-unread--over')
+    expect(within(marker).getByText('Unread notifications in other projects: 3')).toHaveClass(
+      'visually-hidden',
+    )
+    await user.click(toggle)
+    const leave = await screen.findByRole('link', { name: /Switch library/ })
+    expect(within(leave).getByTestId('project-unread')).toHaveTextContent('3')
   })
 
-  it('is the bare name on a phone, where the drawer does the switching', () => {
+  it('draws no unread marker without news elsewhere, nor with nowhere to switch', () => {
+    const { unmount } = renderInProject(TWO, { unreadByProject: { 'p-v': 4 } })
+    expect(screen.queryByTestId('project-unread')).not.toBeInTheDocument()
+    unmount()
+
+    // News in a project the account cannot enter is not offered as a switch.
+    renderInProject([member('v', 'Veselice'), member('rodina', 'Rodina', { active: false })], {
+      unreadByProject: { 'p-rodina': 5 },
+    })
+    expect(screen.queryByTestId('project-unread')).not.toBeInTheDocument()
+  })
+
+  it('is the bare identity on a phone, the news on the hamburger', () => {
     mockViewport(true)
-    renderInProject([member('v', 'Veselice'), member('rodina', 'Rodina')])
+    renderInProject(TWO, { unreadByProject: { 'p-rodina': 2 } })
 
-    const switcher = screen.getByTestId('project-switcher')
-    expect(switcher).toHaveTextContent('Veselice')
-    expect(screen.queryByRole('button', { name: 'Veselice' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('project-identity')).toHaveAttribute('href', '/p/v')
+    const hamburger = screen.getByRole('button', { name: 'Open the menu' })
+    const marker = within(hamburger).getByTestId('project-unread')
+    expect(marker).toHaveTextContent('2')
+    expect(marker).toHaveClass('kk-project-unread--over-start')
   })
 
   it('keeps the account name in the user menu’s accessible name', () => {
@@ -1046,12 +1137,18 @@ describe('the neutral shell outside a project', () => {
     for (const name of ['Library', 'Albums', 'Labels', 'Upload']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     }
-    // The switcher is the way into a project instead.
-    const toggle = screen.getByRole('button', { name: 'My projects' })
-    await user.click(toggle)
-    expect(await screen.findByRole('link', { name: 'Veselice' })).toHaveAttribute('href', '/p/v')
-    expect(screen.getByRole('link', { name: 'Rodina' })).toHaveAttribute('href', '/p/rodina')
-    expect(screen.getByRole('link', { name: 'All projects…' })).toHaveAttribute('href', '/projects')
+    // A neutral title instead, the way back in through the entry rule.
+    const identity = screen.getByTestId('project-identity')
+    expect(identity).toHaveTextContent(/^Kukátko$/)
+    expect(identity).toHaveAttribute('href', '/')
+    expect(screen.queryByText('My projects')).not.toBeInTheDocument()
+    // Picking a project is the chooser's, from the user menu.
+    await user.click(screen.getByRole('button', { name: /User One/ }))
+    expect(await screen.findByRole('link', { name: 'Switch library' })).toHaveAttribute(
+      'href',
+      '/projects',
+    )
+    expect(screen.queryByRole('link', { name: 'Rodina' })).not.toBeInTheDocument()
   })
 
   it("keeps the account and the instance's own administration, drops the project's", async () => {
@@ -1076,7 +1173,11 @@ describe('the neutral shell outside a project', () => {
     await user.click(screen.getByRole('button', { name: 'Open the menu' }))
     const drawer = await screen.findByRole('dialog')
     expect(within(drawer).queryByRole('link', { name: 'Albums' })).not.toBeInTheDocument()
-    expect(within(drawer).getByRole('link', { name: 'Veselice' })).toHaveAttribute('href', '/p/v')
+    expect(within(drawer).queryByRole('link', { name: 'Veselice' })).not.toBeInTheDocument()
+    expect(within(drawer).getByRole('link', { name: 'Switch library' })).toHaveAttribute(
+      'href',
+      '/projects',
+    )
     expect(within(drawer).getByRole('link', { name: 'My account' })).toBeInTheDocument()
   })
 

@@ -2671,8 +2671,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     caller has in **each project they are in standing in** — `notifystanding.MemberSQL`: an approved
     membership whose identity is not withheld, an enabled account, an active project — ordered by project
     uid. A project with nothing unread is absent, so an account with no news gets `{projects: []}`. The
-    one inbox read that spans projects: the bell counts only the project the reader is in, so the project
-    switcher, the phone drawer and the chooser `/projects` mark the *other* projects with it (push and
+    one inbox read that spans projects: the bell counts only the project the reader is in, so the user
+    menu's „Přepnout projekt", the phone drawer and the chooser `/projects` mark the *other* projects with it (push and
     e-mail are off by default, so the inbox is most people's only channel). **No other project is ever
     named**: a removed, pending or withheld membership, or a deactivated project, drops out even though
     its notifications are still stored — the count tells nothing about a project the caller cannot enter

@@ -229,13 +229,12 @@ the same way, by its slug in the URL (`/api/v1/p/<project>/…`).
   system pages, a page that does not exist — wear no project's name, menu or banner. A dead invitation
   link says it is no longer valid and to ask whoever sent it for a new one.
 - **Which project you are in is always on screen.** The project's name leads the top bar (and the
-  phone menu, and the browser tab's title). In more than one project it opens a menu of the others:
-  switching keeps the page you were on when it is a list — albums stay albums, the people stay the
-  people — and opens the other library's home when you were looking at one photo, album or person.
-  *Všechny projekty…* leads to `/projects`, a "who's watching" picker: one large picture per
-  library — its featured album's cover or its newest photo — the one you visited last first, with
-  its description, your role and its unread notifications; the ones you cannot open yet say why, and
-  switched-off projects wait in a collapsed section below.
+  browser tab's title) and takes you to its library. Switching works like leaving a profile:
+  *Přepnout projekt* in the account menu (and the phone menu) leads to `/projects`, a "who's watching"
+  picker — and a small red mark on your picture says news is waiting in another project. The picker
+  shows one large picture per library — its featured album's cover or its newest photo — the one you
+  visited last first, with its description, your role and its unread notifications; the ones you
+  cannot open yet say why, and switched-off projects wait in a collapsed section below.
 - **Správce systému — the system administrator — runs the projects.** Under *Projekty* in the user
   menu (`/system/projects`) every project of the instance is one row: its name and slug, whether it is
   active, its members, photos and the size of its originals, and its limits. *Nový projekt* founds

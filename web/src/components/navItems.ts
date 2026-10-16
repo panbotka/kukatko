@@ -433,16 +433,17 @@ export const HELP_ITEM: NavEntry = {
 }
 
 /**
- * The project chooser, the last entry of the project switcher (the bar's
- * dropdown and the drawer's first section). It is an instance page, so the
- * shell's `useProjectPath` leaves it as it is — `/projects`, never under a
- * project.
+ * "Switch library": leaving the project for the chooser, the one place a
+ * project is picked. It hangs off the account menu (the bar's user dropdown
+ * and the drawer's account section), offered only when there is somewhere
+ * else to go (`useLeaveProject`). It is an instance page, so the shell's
+ * `useProjectPath` leaves it as it is — `/projects`, never under a project.
  */
 export const PROJECTS_ITEM: NavEntry = {
   to: PROJECTS_PATH,
-  labelKey: 'projectSwitcher.all',
-  titleKey: 'projectSwitcher.allTitle',
-  icon: 'folder2-open',
+  labelKey: 'projectSwitcher.leave',
+  titleKey: 'projectSwitcher.leaveTitle',
+  icon: 'arrow-left-right',
 }
 
 /**

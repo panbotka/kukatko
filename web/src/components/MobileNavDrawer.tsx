@@ -8,6 +8,7 @@ import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { LIBRARY_PATH } from '../lib/libraryView'
 import { bareVersion } from '../lib/version'
 import { useNeutralChrome, useProjectPath } from '../project/ProjectContext'
+import { useLeaveProject } from '../project/useLeaveProject'
 import { useWaitingOnMe } from '../tasks/TaskSummaryContext'
 
 import { Icon } from './Icon'
@@ -21,13 +22,14 @@ import {
   type NavEntry,
   type NavGroup,
   PRIMARY_ITEMS,
+  PROJECTS_ITEM,
   REVIEW_ITEM,
   STATS_ITEM,
   TASKS_PATH,
   toolsGroup,
   UPLOAD_ITEM,
 } from './navItems'
-import { ProjectSwitcher } from './ProjectSwitcher'
+import { ProjectUnreadBadge } from './notifications/ProjectUnreadBadge'
 import { WaitingBadge } from './tasks/WaitingBadge'
 
 /**
@@ -77,10 +79,12 @@ interface DrawerSection {
  * bar's two admin dropdowns. Its rows are gated one by one (`adminItems`), so an
  * admin who is not a maintainer gets the two governance rows and nothing else.
  *
- * **The project comes first**: a „Projekt" section ({@link ProjectSwitcher}'s
- * drawer variant) names the library every row below opens in and, for an
- * account with more than one membership, lists the other enterable projects and
- * „Všechny projekty…" as rows of their own.
+ * **Switching projects is leaving one**: there is no list of projects here.
+ * The account block opens with „Přepnout projekt", the row to the chooser at
+ * `/projects` — offered only when there is somewhere else to go
+ * ({@link useLeaveProject}) and wearing the other projects' unread total —
+ * exactly as the desktop user menu does. The current project's name is the
+ * bar's leading identity, above the drawer.
  *
  * Mounted by {@link Layout} only below the breakpoint, so the desktop DOM keeps a
  * single set of nav links; navigating closes it (both via `Layout`'s pathname
@@ -118,6 +122,8 @@ export function MobileNavDrawer({
   // The administration rows of the account block, per-item gated exactly as the
   // desktop user menu gates them; empty means the group is not rendered at all.
   const admin = adminItems({ isAdmin, isMaintainer, instanceOnly: neutral })
+  // "Switch library", and the news waiting in the other projects.
+  const leave = useLeaveProject()
 
   // Each of the bar's dropdowns becomes one section, unfolded, behind the very
   // same role gate — a closed gate drops the whole section, exactly as it drops
@@ -179,10 +185,6 @@ export function MobileNavDrawer({
         <Offcanvas.Title id={TITLE_ID}>{t('nav.menu')}</Offcanvas.Title>
       </Offcanvas.Header>
       <Offcanvas.Body className="kk-navdrawer__body">
-        {/* The project leads: which library every row below opens in, and —
-            with more than one membership — the way to the others, as plain
-            rows (a dropdown inside a drawer would be a menu in a menu). */}
-        <ProjectSwitcher variant="drawer" onNavigate={onHide} />
         {sections.map((section) => (
           <section
             key={section.id}
@@ -206,6 +208,21 @@ export function MobileNavDrawer({
             <h2 id="kk-navdrawer-account" className="kk-navdrawer__heading">
               {t('nav.sections.account')}
             </h2>
+            {leave.offered && (
+              <NavLink
+                to={PROJECTS_ITEM.to}
+                title={t(PROJECTS_ITEM.titleKey)}
+                className="kk-navdrawer__link"
+                onClick={onHide}
+              >
+                <Icon name={PROJECTS_ITEM.icon} className="kk-navdrawer__icon" />
+                <span className="kk-navdrawer__label">{t(PROJECTS_ITEM.labelKey)}</span>
+                <ProjectUnreadBadge
+                  count={leave.othersUnread}
+                  label={t('projectSwitcher.othersUnread', { count: leave.othersUnread })}
+                />
+              </NavLink>
+            )}
             {renderRow(ACCOUNT_ITEM)}
             {myPhotos && renderRow(myPhotos)}
             {!neutral && renderRow(STATS_ITEM)}

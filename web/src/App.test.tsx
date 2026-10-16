@@ -755,8 +755,8 @@ describe('routing — projects', () => {
       await waitFor(() => {
         expect(screen.getByTestId('pathname')).toHaveTextContent(path)
       })
-      // The switcher is the way into a project, not the fallback project's name.
-      expect(await screen.findByTestId('project-switcher')).toHaveTextContent(/^My projects$/)
+      // A neutral title, not the fallback project's name.
+      expect(await screen.findByTestId('project-identity')).toHaveTextContent(/^Kukátko$/)
       expect(screen.queryByRole('link', { name: 'Albums' })).not.toBeInTheDocument()
       // The chrome names no project; the account page's own content may (its
       // "who am I" card has a row per project, each naming it).

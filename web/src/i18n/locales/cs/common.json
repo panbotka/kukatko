@@ -3427,19 +3427,18 @@
     "logout": "Odhlásit se"
   },
   "projectSwitcher": {
-    "heading": "Projekt",
-    "current": "Projekt {{name}}",
-    "title": "Projekt {{name}} — přepnout do jiného",
-    "switchTo": "Přepnout do projektu {{name}}",
-    "all": "Všechny projekty…",
-    "allTitle": "Zobrazit všechny vaše projekty",
-    "choose": "Moje projekty",
-    "chooseTitle": "Otevřít některý z vašich projektů",
+    "leave": "Přepnout projekt",
+    "leaveTitle": "Opustit tento projekt a vybrat jiný",
     "unread_one": "{{count}} nepřečtené oznámení",
     "unread_few": "{{count}} nepřečtená oznámení",
     "unread_many": "{{count}} nepřečteného oznámení",
     "unread_other": "{{count}} nepřečtených oznámení",
     "othersUnread": "Nepřečtená oznámení v jiných projektech: {{count}}"
+  },
+  "projectIdentity": {
+    "title": "Knihovna projektu {{name}}",
+    "neutral": "Kukátko",
+    "neutralTitle": "Do vaší knihovny"
   },
   "notFound": {
     "title": "Stránka nenalezena",

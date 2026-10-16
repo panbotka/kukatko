@@ -159,9 +159,10 @@ here.
   (53px left) and in the 1248px collapse at 1400px (233px left) — nothing wraps, nothing scrolls, and the
   document stays exactly as wide as the viewport at every width. The badge takes no margin of its own so it
   costs only its 17px plus the link's `gap`. Guarded by the "tasks-waiting
-  badge" cases in `Layout.test.tsx` and `MobileNavDrawer.test.tsx`. **Since 2026-10-12 the project
-  switcher leads the bar** and the user menu shows only its avatar from 992 to 1399px to pay for it —
-  the re-measured budget is under "Projects in the address bar" below,
+  badge" cases in `Layout.test.tsx` and `MobileNavDrawer.test.tsx`. **Since 2026-10-12 the project's
+  name leads the bar** (since 2026-10-16 as `ProjectIdentity`, no longer a switcher) and the user menu
+  shows only its avatar from 992 to 1399px to pay for it — the re-measured budget is under "Projects in
+  the address bar" below,
   `MobileNavDrawer` (**the phone menu, as a real drawer** — `components/MobileNavDrawer.tsx`, rendered by
   `Layout` only below the navbar's `lg` breakpoint — a phone's menu, and a portrait tablet's — and opened by
   the hamburger, whose `aria-controls` points at
@@ -171,9 +172,10 @@ here.
   react-bootstrap `Offcanvas` (`placement="end"`), so sliding, the backdrop (tap outside = dismiss), Escape,
   the focus trap and the body scroll-lock come from Bootstrap; the header adds a labelled close button
   (`nav.closeMenu`) and the title `nav.menu`. The body is **labelled sections**, each a `<section>` +
-  `<h2>` heading (so it is a named `region` for assistive tech and for tests): **Projekt** first
-  (`ProjectSwitcher variant="drawer"`, see "Projects in the address bar"), then **Hlavní**
-  (`nav.sections.main` — Knihovna/Alba/Štítky/Hledání + Třídění and Nahrát when `canCurate`,
+  `<h2>` heading (so it is a named `region` for assistive tech and for tests): **Hlavní** first
+  (`nav.sections.main` — Knihovna/Alba/Štítky/Hledání + Třídění and Nahrát when `canCurate`;
+  no project section since 2026-10-16, „Přepnout projekt" leads **Účet** instead, see "Projects in
+  the address bar" —
   the last keeping the bar's filled CTA look), **Procházet**, **Nástroje** (the same per-item
   `toolsGroup()` as the bar, dropped when it comes back `null`),
   and **Účet** (`nav.sections.account` — Můj účet, Nápověda, the
@@ -6182,8 +6184,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `unreadByProject` (`fetchUnreadByProject`, the instance-level `GET /notifications/unread-by-project`,
   keyed by project uid, a project with none absent; either fetch may fail without hiding the other's
   badge; kept across a project switch — it is the same in every project — and cleared on sign-out).
-  `useProjectUnread()` turns it into `(projectUid) => count` (0 when unknown) for the switcher, the
-  drawer and `ProjectsPage`, which draw it through **`ProjectUnreadBadge`**
+  `useProjectUnread()` turns it into `(projectUid) => count` (0 when unknown) for `useLeaveProject`
+  (the others' total on the user menu, „Přepnout projekt" and the hamburger) and `ProjectsPage`, which
+  draw it through **`ProjectUnreadBadge`**
   (`components/notifications/ProjectUnreadBadge.tsx`): the bell's red pill (`kk-waiting-badge
   kk-project-unread`, `badgeText`), nothing for 0, the numeral `aria-hidden` and a visually hidden
   sentence („2 nepřečtená oznámení", `projectSwitcher.unread` plural; or a caller's `label`) so the
@@ -8820,8 +8823,8 @@ effect's dependencies, so a project change aborts, clears and refetches.
 
 **Neutral chrome outside a project** (`useNeutralChrome()` = a provider is mounted and `inAddress` is
 false: an instance page, or a `/p/:slug` that is `pending`/`inactive`/`not-member`). The context's project there is
-only the entry rule's fallback, so `Layout` draws nothing of it: no project name (the switcher becomes
-„Moje projekty", below), no library navigation, search palette, bell, waiting badge or tab bar, no
+only the entry rule's fallback, so `Layout` draws nothing of it: no project name (the bar's identity is
+the neutral title „Kukátko", below), no library navigation, search palette, bell, waiting badge or tab bar, no
 announcement banner, no welcome or push prompt; the user menu keeps **Můj účet**, the instance's own
 administration (`adminItems({…, instanceOnly: true})` — maintenance, system, projects, accounts; never a
 project's import, members, audit or settings) and sign-out, and `MobileNavDrawer` the same (no library
@@ -8831,7 +8834,7 @@ sections, no statistics or help). **A deactivated project the maintainer opened*
 ho zapnete ve správě projektu." with the last words a link to `/system/projects/<slug>`,
 `projectDeactivated.banner`); it renders only when `inAddress` and `project.active === false`.
 
-**A project switch remounts every page.** `ProjectGate` renders `<Outlet key={slug} />`. The switcher
+**A project switch remounts every page.** `ProjectGate` renders `<Outlet key={slug} />`. `switchProject`
 keeps the reader on a list page (`KEEP_ON_SWITCH`: `/p/a/albums` → `/p/b/albums`), and Back/Forward
 moves between projects the same way; both match the same route element at the same place, so without
 the key React kept the page — its state, and effects keyed on the page's own inputs, never on the
@@ -8845,8 +8848,8 @@ header providers refetch on `useProjectSlug()` (above), `useAnnouncement` tags i
 `CapabilitiesProvider` holds instance facts only, the command palette resets on close and refetches its
 history on open; no module-level cache holds project data. Browser storage that names a library's
 content is keyed by the project (see *Browser storage*). **The upload queue is cancelled by a switch,
-not carried over:** the page remounts, which aborts the files in flight and drops the queued ones; the
-switcher is a link, so `useLeaveGuard` first asks "Odejít během nahrávání?" exactly as for any other way
+not carried over:** the page remounts, which aborts the files in flight and drops the queued ones; „Přepnout
+projekt" is a link, so `useLeaveGuard` first asks "Odejít během nahrávání?" exactly as for any other way
 out — Back/Forward included (`App.uploadBack.test.tsx`). Carrying the batch on into the old project
 behind the reader's back was the alternative; it was rejected because the queue, its progress and the
 album filing all live in the page, which is gone, and a silent upload into a project the reader has left
@@ -8910,24 +8913,30 @@ notifications wears `ProjectUnreadBadge` in the picture's corner (only enterable
 counted). No membership at all is an `EmptyState` „Nejste členem žádného projektu. Požádejte správce
 projektu o pozvánku."; a single enterable project never reaches the page (the entry rule enters it).
 
-**The header switcher** (`components/ProjectSwitcher.tsx`). It reads `ProjectContext` directly and
-renders nothing outside a provider or for an account with no project. `variant="bar"` sits in the
-navbar's leading block, right after the search button: the current project's name — a
-`Dropdown` (`#project-switcher`) when the account has **more than one membership**, listing the
-other *enterable* projects (name + role badge) and, after a divider, **Všechny projekty…** →
-`/projects` (`PROJECTS_ITEM` in `navItems.ts`, icon `folder2-open`); with **exactly one** membership
-it is static text (`.navbar-text`, no caret, no menu). Below `lg` the shell passes `menu={false}`: a
-navbar dropdown cannot float there, so the phone row shows the bare name at its otherwise empty
-leading edge and switching is the drawer's first section (`variant="drawer"`: a „Projekt" `<section>`
-with the name as text, then the other projects and „Všechny projekty…" as ordinary rows that close
-the drawer). Every entry is a **link** (opens in a new tab), its target `routeAfterSwitch(…)`.
-**News in another project** (`useProjectUnread`, see the inbox provider): every other project's row —
-in the dropdown, the drawer and the neutral list — carries `ProjectUnreadBadge` with its unread count,
-and the bar's name (the dropdown toggle, and the static name below `lg` when there is more than one
-membership) carries the **other projects' total** (`.kk-project-switcher__unread`, `flex: none`, so
-the name is what ellipsises; its hidden text „Nepřečtená oznámení v jiných projektech: 2",
-`projectSwitcher.othersUnread`). The current project's own count is never added in — that is the
-bell's; outside a project („Moje projekty") the total covers every project.
+**Switching is leaving** (2026-10-16; before, a dropdown of the other projects led the bar). Like a
+streaming service's "who's watching", a project is picked in one place only — the chooser above — and
+the shell offers the way back to it rather than a list of its own. **`ProjectIdentity`**
+(`components/ProjectIdentity.tsx`) leads the navbar, right after the search button: a calm identity, a
+**link to the project's library** (`/p/<slug>`, `title` „Knihovna projektu <name>",
+`projectIdentity.title`) — the project's initial in a small rounded square on its `avatarTone` colour
+(`.kk-project-identity__mark`, `aria-hidden`, the chooser's stand-in) and its name — with no caret, no
+menu and no other project. Outside a provider, and for an account with no project, it renders nothing;
+in the neutral shell it is the neutral title „Kukátko" (`projectIdentity.neutral`), a link to `/`,
+where the entry rule picks the project (or the chooser). **„Přepnout projekt"** (en „Switch library",
+`PROJECTS_ITEM` in `navItems.ts`, icon `arrow-left-right`, `title` „Opustit tento projekt a vybrat
+jiný") → `/projects` is the **first entry of the user menu** (then a divider) and the **first row of
+the drawer's Účet section**. It is offered only when there is somewhere else to go —
+**`project/useLeaveProject.ts`**: more than one *enterable* membership (approved, active), or the
+system administrator — and never outside a provider. **News in another project** (`useProjectUnread`)
+moves with it: `useLeaveProject().othersUnread` sums the unread counts of the enterable projects the
+reader is not in (every enterable project in the neutral shell — the context's project there is only a
+fallback; never the current project, whose count is the bell's) and `ProjectUnreadBadge` draws it, with
+the hidden sentence „Nepřečtená oznámení v jiných projektech: 2" (`projectSwitcher.othersUnread`), on
+the **avatar's corner** of the user-menu toggle (`.kk-user-menu__picture` + `.kk-project-unread--over`,
+absolute, so it costs no width), on the „Přepnout projekt" item and drawer row, and below `lg` on the
+**hamburger's start corner** as a bare dot (`.kk-project-unread--over-start`: the tasks count's
+numbered pill already sits on the other corner, and two numbers side by side read as one). Nothing is
+drawn when the switch is not offered. The per-project counts are the chooser's tiles' alone.
 
 **`routeAfterSwitch(currentPath, fromSlug, toSlug)`** (`project/paths.ts`, pure): a **list** page
 (`KEEP_ON_SWITCH`: the library, favorites, albums, labels, tasks, search, saved, map, places,
@@ -8937,24 +8946,23 @@ person and its tree, task, notification, `/people/clusters`), as is any other pa
 the slideshow), an instance page (`/account`, `/account/activity` — „my activity" is instance-level)
 or an address outside `fromSlug` → the destination's home `/p/<to>`. The query and hash are dropped:
 filters name uids as often as free text. `ProjectProvider.switchProject(slug)` navigates through the
-same function. `ProjectContextValue.inAddress` is the flag the switcher reads: the address names the
-project and the account may enter it. When it is false (the neutral shell) there is no current project
-to name, so the switcher is **„Moje projekty"** (`projectSwitcher.choose`) — a dropdown of every
-enterable project, each opening at its home, plus „Všechny projekty…"; a plain link to `/projects` below
-`lg` or without any enterable project; in the drawer a „Moje projekty" section of the same rows.
+same function (Back/Forward keep the same rule). `ProjectContextValue.inAddress` is the flag
+`ProjectIdentity` and `useLeaveProject` read: the address names the project and the account may enter
+it. When it is false (the neutral shell) there is no current project to name.
 
-**Width** (Chromium over the real `Layout`, maintainer „Tomáš Novák", Czech labels, 3 tasks
-waiting, 2026-10-12). The bar had ~11px of slack left at 1200px, so the switcher pays its way: the
-user menu's display name is hidden **visually only** between 992 and 1399.98px
-(`.kk-user-menu__name`, clipped — the toggle keeps it as its accessible name; the avatar stays), and
-the switcher is the one item of the row that may shrink (`flex: 0 1 auto; min-width: 3.5rem;
-max-width: 14rem`, `min-width: 0` down to the ellipsised `.kk-project-switcher__name`, full name in
-the `title`), with 6px inline padding instead of the links' 8px. Result: one 53px row, no container
-or document overflow at 992/1100/1200/1280/1366/1400/1600px; „Veselice" with its caret is 83px and
-whole at every width (static, one membership: 59px); a long name gets 96px at 992, 84px at
-1200–1399 and 165px from 1400 before it ellipsises. Below `lg` the name takes what the row leaves
-beside the bell and the hamburger (`flex: 1 1 0`, never wraps them). Guarded by the „project
-switcher's width" cases in `styles/navbarBand.test.ts`.
+**Width** (Chromium over the real `Layout` against the box staging stack, maintainer, Czech labels, a
+task waiting, 2026-10-16). The project's name pays its way as the switcher did: the user menu's display
+name is hidden **visually only** between 992 and 1399.98px (`.kk-user-menu__name`, clipped — the toggle
+keeps it as its accessible name; the avatar stays), and so is the identity's decorative mark
+(`.kk-project-identity__mark { display: none }` in the same band: with it „Veselice" ellipsised to
+78px at 1200–1399). The identity is the one item of the row that may shrink (`flex: 0 1 auto;
+min-width: 3.5rem; max-width: 14rem`, `min-width: 0` down to the ellipsised
+`.kk-project-identity__name`, full name in the `title`). Result: one 53px row ending 12px inside the
+container (its padding) at 992/1199/1200/1399/1400/1440px, „Veselice" whole everywhere (59px in the
+band, 91px with the mark from 1400px), slack before the bell 31px at 992–1199, 19px at 1200–1399 and
+115px at 1440 with the display name back. Below `lg` the identity takes what the row leaves beside the
+bell and the hamburger (`flex: 1 1 0`, never wraps them). Guarded by the „project identity's width"
+cases in `styles/navbarBand.test.ts`.
 
 **PWA:** `start_url` stays `/` (the entry rule
 does the rest); the service worker answers every navigation outside `/api/`, `/healthz`,
@@ -8962,14 +8970,15 @@ does the rest); the service worker answers every navigation outside `/api/`, `/h
 
 Tests: `project/paths.test.ts` (entry rule's three branches + the unusable-last cases,
 `projectPathFor`, prefix parsing, `projectRoleOf`, `routeAfterSwitch`: every kept list page, uid
-pages, query/hash dropped, instance pages), `components/ProjectSwitcher.test.tsx` (static vs
-dropdown, enterable-only, list route kept vs home, `menu={false}`, the drawer variant, the unread
-marks: the toggle's others-only total, per-row pills, the drawer, the neutral total, Czech plurals,
-nothing while unknown), `pages/ProjectsPage.test.tsx` (normal / inactive / pending / empty, the
-maintainer link, the unread pill, the tab title), the „project switcher in the bar" and „neutral shell outside a project" cases (no project
+pages, query/hash dropped, instance pages), `components/ProjectIdentity.test.tsx` (a link to the
+library, no menu or other project, the neutral title, nothing without a provider, Czech),
+`pages/ProjectsPage.test.tsx` (normal / inactive / pending / empty, the
+maintainer link, the unread pill, the tab title), the „project in the bar, and leaving it" cases (the identity leads, no project list, „Switch library"
+first in the user menu, offered only with a second enterable project or to the maintainer, the others-only
+unread total on the avatar and the item, the hamburger's dot) and „neutral shell outside a project" cases (no project
 chrome on an instance page or a not-member slug, instance-only administration, no tab bar/library
 sections on a phone, the deactivated banner) in `Layout.test.tsx`, `pages/PendingApprovalPage.test.tsx`
-(cs + en), `services/resolve.test.ts`, `legacyEntityOf` in `paths.test.ts`, the drawer's „Projekt" section
+(cs + en), `services/resolve.test.ts`, `legacyEntityOf` in `paths.test.ts`, the drawer's „Přepnout projekt" row (no project list, the unread total, closes on follow)
 and enumeration in `MobileNavDrawer.test.tsx`, `switchProject` in `ProjectProvider.test.tsx`, `project/ProjectProvider.test.tsx` (current
 project from the URL, predicates from the project role, the maintainer, `not-member`, `pending` — and
 `not-member` for a pending or approved membership of a deactivated project —, the maintainer entering a
