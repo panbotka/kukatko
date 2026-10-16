@@ -1,10 +1,11 @@
-import { render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
+import { writeLastProject } from '../lib/lastProject'
 import { ProjectContext, type ProjectContextValue } from '../project/ProjectContext'
 import type { ProjectMembership } from '../services/auth'
 
@@ -30,11 +31,11 @@ function auth(isMaintainer = false): AuthContextValue {
  */
 function renderIdentity(
   ctx: ProjectContextValue | null,
-  opts: { withName?: boolean; account?: AuthContextValue } = {},
+  opts: { withName?: boolean; compact?: boolean; account?: AuthContextValue } = {},
 ) {
   const identity = (
     <MemoryRouter initialEntries={['/p/v/albums']}>
-      <ProjectIdentity withName={opts.withName} />
+      <ProjectIdentity withName={opts.withName} compact={opts.compact} />
     </MemoryRouter>
   )
   return render(
@@ -69,6 +70,7 @@ function context(
 }
 
 beforeEach(async () => {
+  window.localStorage.clear()
   await i18n.changeLanguage('en')
 })
 
@@ -120,13 +122,54 @@ describe('ProjectIdentity', () => {
     expect(link.querySelector('.kk-project-identity__name')).toHaveTextContent('Veselice')
   })
 
-  it('is the neutral app title, a link to the entry rule, outside a project', () => {
+  it('leads back to the remembered project outside one, with its mark', () => {
+    writeLastProject('u1', 'rodina')
+    renderIdentity(context(member('v', 'Veselice'), false))
+
+    const link = screen.getByRole('link', { name: 'Back to Rodina' })
+    expect(link).toHaveAttribute('href', '/p/rodina')
+    expect(link).toHaveAttribute('title', 'Back to Rodina')
+    expect(link.querySelector('.kk-project-identity__mark')).toHaveTextContent('R')
+    // The neutral title stays beside the mark, but it is no longer the only way back.
+    expect(link.querySelector('.kk-project-identity__name')).toHaveTextContent('Kukátko')
+    expect(screen.queryByText('Veselice')).not.toBeInTheDocument()
+  })
+
+  it('leads to the only project when nothing is remembered', () => {
+    renderIdentity(context(member('v', 'Veselice'), false, []))
+
+    expect(screen.getByRole('link', { name: 'Back to Veselice' })).toHaveAttribute('href', '/p/v')
+  })
+
+  it('is the neutral app title opening the chooser with no project to name', () => {
     renderIdentity(context(member('v', 'Veselice'), false))
 
     const link = screen.getByTestId('project-identity')
     expect(link).toHaveTextContent(/^Kukátko$/)
+    expect(link).toHaveAttribute('href', '/projects')
+    expect(link).toHaveAccessibleName('Choose a library')
+    expect(link.querySelector('.kk-project-identity__mark')).toBeNull()
+  })
+
+  it('folds to the mark alone on the rail', () => {
+    writeLastProject('u1', 'rodina')
+    renderIdentity(context(member('v', 'Veselice'), false), { compact: true })
+
+    const link = screen.getByRole('link', { name: 'Back to Rodina' })
+    expect(link).toHaveTextContent(/^R$/)
+  })
+
+  it('is the neutral title linking to the entry rule without an account', () => {
+    const signedOut = {
+      status: 'unauthenticated',
+      user: null,
+      isMaintainer: false,
+    } as unknown as AuthContextValue
+    renderIdentity(context(member('v', 'Veselice'), false), { account: signedOut })
+
+    const link = screen.getByTestId('project-identity')
+    expect(link).toHaveTextContent(/^Kukátko$/)
     expect(link).toHaveAttribute('href', '/')
-    expect(screen.queryByText('Veselice')).not.toBeInTheDocument()
   })
 
   it('renders nothing without a provider or a project', () => {
@@ -150,5 +193,19 @@ describe('ProjectIdentity', () => {
 
     renderIdentity(context(member('v', 'Veselice'), true, []))
     expect(screen.getByRole('link', { name: 'Veselice' })).toHaveAttribute('title', 'Veselice')
+    cleanup()
+
+    renderIdentity(context(member('v', 'Veselice'), false, []))
+    expect(screen.getByRole('link', { name: 'Zpět do projektu Veselice' })).toHaveAttribute(
+      'href',
+      '/p/v',
+    )
+    cleanup()
+
+    renderIdentity(context(member('v', 'Veselice'), false))
+    expect(screen.getByRole('link', { name: 'Vybrat projekt' })).toHaveAttribute(
+      'href',
+      '/projects',
+    )
   })
 })

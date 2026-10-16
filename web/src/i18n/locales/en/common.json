@@ -3285,6 +3285,10 @@
     "unread_other": "{{count}} unread notifications",
     "othersUnread": "Unread notifications in other projects: {{count}}"
   },
+  "backToProject": {
+    "toProject": "Back to {{name}}",
+    "chooser": "Choose a library"
+  },
   "projectIdentity": {
     "switchTitle": "{{name}} — switch library",
     "neutral": "Kukátko",

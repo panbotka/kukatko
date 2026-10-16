@@ -20,7 +20,8 @@ import { NarrowPage } from '../components/NarrowPage'
 import { NavPositionSwitcher } from '../components/NavPositionSwitcher'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { ACTIVITY_PATH } from '../lib/activityView'
-import { isEnterable } from '../project/paths'
+import { LIBRARY_PATH } from '../lib/libraryView'
+import { isEnterable, projectPathFor } from '../project/paths'
 import { ApiError, changePassword, MIN_PASSWORD_LENGTH } from '../services/auth'
 import { fetchHealth, type HealthResponse } from '../services/health'
 
@@ -56,7 +57,7 @@ function errorKeyFor(error: unknown): AccountErrorKey {
 
 /**
  * Account page: shows the signed-in identity and its role in every project it
- * may enter (each named — the page belongs to no project), and lets the user change
+ * may enter (each named, and a link into it — the page belongs to no project), and lets the user change
  * their own password via `POST /auth/password`. Validates that the new password
  * meets the minimum length and matches its confirmation before submitting.
  *
@@ -177,9 +178,14 @@ export function AccountPage() {
                     <Badge bg="secondary">{t('roles.maintainer')}</Badge>
                   </li>
                 )}
+                {/* Each project is named as a link into it: from the
+                    account, the role list is also the way back in. */}
                 {memberships.map((membership) => (
                   <li key={membership.uid}>
-                    {membership.name} <Badge bg="secondary">{t(`roles.${membership.role}`)}</Badge>
+                    <Link to={projectPathFor(membership.slug, LIBRARY_PATH)}>
+                      {membership.name}
+                    </Link>{' '}
+                    <Badge bg="secondary">{t(`roles.${membership.role}`)}</Badge>
                   </li>
                 ))}
               </ul>

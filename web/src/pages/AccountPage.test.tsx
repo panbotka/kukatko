@@ -104,6 +104,22 @@ describe('AccountPage', () => {
     ])
   })
 
+  it('links each project in the role list into that project', () => {
+    renderAccount({
+      ...editorAuth,
+      projects: [
+        membership('v', 'Veselice', 'curator'),
+        membership('rodina', 'Rodina', 'admin'),
+        membership('vypnuty', 'Vypnutý', 'editor', { active: false }),
+      ],
+    } as unknown as AuthContextValue)
+
+    const roles = screen.getByTestId('account-roles')
+    expect(within(roles).getByRole('link', { name: 'Veselice' })).toHaveAttribute('href', '/p/v')
+    expect(within(roles).getByRole('link', { name: 'Rodina' })).toHaveAttribute('href', '/p/rodina')
+    expect(within(roles).getAllByRole('link')).toHaveLength(2)
+  })
+
   it('shows a non-maintainer no instance role, only the project roles', async () => {
     for (const language of ['en', 'cs']) {
       await i18n.changeLanguage(language)

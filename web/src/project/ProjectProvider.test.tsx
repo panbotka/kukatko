@@ -4,6 +4,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue, useAuth } from '../auth/AuthContext'
+import { readLastProject } from '../lib/lastProject'
 import { getCurrentProjectSlug, setCurrentProjectSlug } from '../services/api'
 import type { InstanceRole, ProjectMembership } from '../services/auth'
 import { type AdminProject, fetchAdminProjects } from '../services/projects'
@@ -111,6 +112,7 @@ function renderAt(path: string, value: AuthContextValue = auth()) {
 
 beforeEach(() => {
   setCurrentProjectSlug(null)
+  window.localStorage.clear()
 })
 
 afterEach(() => {
@@ -163,6 +165,24 @@ describe('ProjectProvider', () => {
     // The shell keeps working in the entry project, never in the foreign one.
     expect(screen.getByTestId('link')).toHaveTextContent('/p/rodina/albums')
     expect(getCurrentProjectSlug()).toBe('rodina')
+  })
+
+  it('remembers the project shown, per account, and nothing from outside one', () => {
+    const { unmount } = renderAt('/account')
+    expect(readLastProject('u1')).toBeNull()
+    unmount()
+
+    const second = renderAt('/p/v/albums')
+    expect(readLastProject('u1')).toBe('v')
+    second.unmount()
+
+    // A foreign slug is not a project the account was in.
+    const third = renderAt('/p/elsewhere/albums')
+    expect(readLastProject('u1')).toBe('v')
+    third.unmount()
+
+    renderAt('/account')
+    expect(readLastProject('u1')).toBe('v')
   })
 
   it('works in the entry project on an instance page', () => {

@@ -15,11 +15,12 @@ import { LIBRARY_PATH } from '../lib/libraryView'
 import { useNavPosition } from '../lib/navPosition'
 import { useNavSidebarCollapsed } from '../lib/navSidebarCollapsed'
 import { useNeutralChrome, useProjectPath, useProjectSlug } from '../project/ProjectContext'
-import { stripProjectPrefix } from '../project/paths'
+import { isInstancePath, stripProjectPrefix } from '../project/paths'
 import { useLeaveProject } from '../project/useLeaveProject'
 import { useWaitingOnMe } from '../tasks/TaskSummaryContext'
 
 import { AnnouncementBanner } from './AnnouncementBanner'
+import { BackToProjectLink } from './BackToProjectLink'
 import { DeactivatedProjectBanner } from './DeactivatedProjectBanner'
 import { Footer } from './Footer'
 import { Icon } from './Icon'
@@ -144,7 +145,11 @@ import { WelcomeModal } from './welcome/WelcomeModal'
  * neutral app title, a link to `/`), no library navigation, search, bell or tab bar,
  * no announcement banner and no welcome. What stays is what belongs to the
  * account and the instance: the user menu with the account, the instance's own
- * administration and sign-out. A maintainer inside a deactivated project gets
+ * administration and sign-out. **And the way back**: the bar's leading mark is
+ * the project the account came from ({@link ProjectIdentity}), and an instance
+ * page opens with {@link BackToProjectLink} above its content — „Zpět do
+ * projektu <name>", or „Vybrat projekt" with no single project to name. A
+ * refused `/p/<slug>` page carries its own way out, so it gets no second one. A maintainer inside a deactivated project gets
  * the full shell plus {@link DeactivatedProjectBanner}.
  *
  * **Top or left is the account's choice** (`lib/navPosition.ts`, set on the
@@ -501,6 +506,9 @@ export function Layout({ children }: { children?: ReactNode }) {
           {/* The project's own notices: none in the neutral shell, where the
               context's project is not the page's. */}
           {!neutral && <AnnouncementBanner />}
+          {/* The way back into a project, on a page outside every project:
+              the neutral shell has no library navigation to offer it. */}
+          {neutral && user && isInstancePath(pathname) && <BackToProjectLink />}
           <DeactivatedProjectBanner />
           {children ?? <Outlet />}
         </Container>

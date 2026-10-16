@@ -665,6 +665,10 @@ here.
   `<Link>` — keyboard-focusable, focus-ring + underline on hover via `.kk-back-link`
   (the arrow leans toward the target on hover, `prefers-reduced-motion` turns the motion off), a 44px
   tap target on a coarse pointer; also used in the error alert of the same pages. Tests: `BackLink.test.tsx`),
+  `BackToProjectLink` (**the way back into a project from an instance page**: a `BackLink` „Zpět do projektu
+  <name>" → `/p/<slug>`, or „Vybrat projekt" → `/projects` with no single project to name (`backToProject.*`),
+  target from `useBackToProject`; `Layout` draws it at the top of the content in the neutral shell of an
+  instance page for a signed-in account — see *Neutral chrome outside a project*),
   `LanguageSwitcher` (cs/en button group, `aria-pressed` on the active one; **it does not sit in the navbar** —
   it lives in the Jazyk section on `AccountPage`, because only Czechs use this instance and a permanent
   spot in the bar would be a waste. The choice is the **account's**: it writes `kukatko.language.<uid>`
@@ -2190,7 +2194,8 @@ here.
   mismatched passwords, a dead link on opening, a link that dies between opening and submitting, a
   server-refused password and an unreachable check, the first-password wording and the project return,
   `AccountPage` = identity and **the role in every project the account may enter, each named** („Role v
-projektech": `Veselice Kurátor`, `Rodina Správce`; plus „Správce systému" for the maintainer only — a non-maintainer
+projektech": `Veselice Kurátor`, `Rodina Správce`, each project's name a link to its library `/p/<slug>`; plus
+„Správce systému" for the maintainer only — a non-maintainer
 sees no instance role at all, only the project roles) — the page belongs
 to no project, so a single role would be the last-visited project's, unnamed, **the Jazyk section** (`LanguageSwitcher` +
   a hint, `account.language*`) and changing your own password, **plus the app's technical status**
@@ -8751,6 +8756,8 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
   every project, but a person's name, so a sign-out on a shared browser clears it with the rest).
   **User-scoped, kept across sign-out:** `kukatko.language.<uid>` (a preference, and signing back in should
   find it), `kukatko.navPosition.<uid>` (the desktop menu's position, `top`/`left` — likewise a preference),
+  `kukatko.lastProject.<uid>` (the slug of the project last shown, `lib/lastProject.ts` — an instance page's
+  way back; only a slug, and signing back in should still know the way),
   `kukatko.navSidebarCollapsed.<uid>` (the left sidebar folded to its icon rail, `collapsed`/`expanded`) and `kukatko.pushPrompt.answered.<uid>` (the answer is the account's on this browser; signing out drops the
   subscription itself, and the settings page turns it back on — forgetting the answer would only ask again). **Per device by design, never cleared:**
   `kukatko.grid.density`, `kukatko.review.density`, `kukatko.slideshow.settings`, `kukatko.viewer.chromeHintSeen`,
@@ -9038,6 +9045,20 @@ announcement banner, no welcome or push prompt; the user menu keeps **Můj úče
 administration (`adminItems({…, instanceOnly: true})` — maintenance, system, projects, accounts; never a
 project's import, members, audit or settings) and sign-out, and `MobileNavDrawer` the same (no library
 sections, no statistics or help). **A deactivated project the maintainer opened** gets the full shell plus
+**The way back** (an instance page used to offer only the plain „Kukátko" word at the top left, which did
+not look like a link): `ProjectProvider` remembers the project it shows (`inAddress`) per account on this
+browser — `lib/lastProject.ts` `readLastProject(uid)`/`writeLastProject(uid, slug)`, localStorage key
+`kukatko.lastProject.<uid>` (`accountStorageKey`, best-effort, try/catch, as `navPosition.ts`).
+`project/backToProject.ts` `backTarget(remembered, projects)` (pure) picks the target: the remembered project
+while it is still enterable (approved, active), else the account's only enterable project, else `null` = the
+chooser `/projects` (a maintainer's remembered stranger project is not in the memberships, so it falls back
+too); `useBackToProject()` = `{ project, to }`, `null` outside a provider or signed out. Every instance page
+(`isInstancePath`: `/account`, `/account/activity`, `/system…`, `/maintenance`) opens with
+`BackToProjectLink` above its content (over a `NarrowPage`'s column via `.kk-instance-back`); a refused
+`/p/<slug>` page has its own way out and gets none, and `/help` is a project page (`/p/<slug>/help`) whose
+shell is the full one. The bar's leading `ProjectIdentity` becomes the same way back (below), in the top
+bar, the phone row and `NavSidebar` alike, and the drawer's Účet section opens with the same row
+(`drawer-back-to-project`) — left out when it would be the chooser beside „Přepnout projekt".
 `DeactivatedProjectBanner` (`components/`, a non-dismissible warning `Alert` above the page: „Projekt
 **<name>** je deaktivovaný. Vidíte ho jen jako správce systému — jeho členové se do něj nedostanou. Znovu
 ho zapnete ve správě projektu." with the last words a link to `/system/projects/<slug>`,
@@ -9139,8 +9160,11 @@ project. **`NavSidebar`** passes `withName`, so the sidebar's head draws the nam
 (`.kk-project-identity__name`, ellipsised) with the same target and label. On hover the bar's mark
 answers with a ring in its letter's colour (`outline: currentColor`) and the sidebar's name is
 underlined — never the letter. Outside a provider, and for an account with no project, it renders nothing;
-in the neutral shell it is the neutral title „Kukátko" (`projectIdentity.neutral`), a link to `/`,
-where the entry rule picks the project (or the chooser). **„Přepnout projekt"** (en „Switch library",
+in the neutral shell it is **the way back** (`useBackToProject`): the target project's letter mark beside
+the neutral title „Kukátko" (`projectIdentity.neutral`), a link to that project's library named and titled
+„Zpět do projektu <name>" (`backToProject.toProject`), or the title alone to `/projects` named „Vybrat
+projekt" (`backToProject.chooser`); folded to the rail the title gives way (the mark, or the house glyph).
+Signed out it stays the title, a link to `/`. **„Přepnout projekt"** (en „Switch library",
 `PROJECTS_ITEM` in `navItems.ts`, icon `arrow-left-right`, `title` „Opustit tento projekt a vybrat
 jiný") → `/projects` is the **first entry of the user menu** (then a divider) and the **first row of
 the drawer's Účet section**. It is offered only when there is somewhere else to go —
@@ -9189,7 +9213,14 @@ Tests: `project/paths.test.ts` (entry rule's three branches + the unusable-last 
 pages, query/hash dropped, instance pages), `components/ProjectIdentity.test.tsx` (the mark
 alone opening `/projects` when switching is offered — the system administrator too —, a link to the
 library named for the project alone when not, the sidebar's name, no menu or other project, the
-neutral title, nothing without a provider, Czech),
+way back outside a project — remembered, only project, chooser, the rail, signed out —, nothing without a
+provider, Czech), `lib/lastProject.test.ts` (round-trip per account, nothing without an account, storage
+that throws), `project/backToProject.test.tsx` (the three fallbacks incl. a remembered project no longer
+enterable, another account's memory, no account/provider), the „the way back into a project" cases in
+`Layout.test.tsx` (`/account` and `/account/activity` labels and targets in en + cs, the chooser on
+`/system/projects`, none on `/p/<slug>/help` or a refused slug, the bar's mark, the sidebar, the drawer row
+and its chooser dedup), the role-list links in `AccountPage.test.tsx`, the remembering in
+`ProjectProvider.test.tsx`,
 `pages/ProjectsPage.test.tsx` (normal / inactive / pending / empty, the
 maintainer link, the unread pill, the tab title), the „project in the bar, and leaving it" cases (the mark leads and opens `/projects`, or the library with nowhere to switch, no project list, „Switch library"
 first in the user menu, offered only with a second enterable project or to the maintainer, the others-only

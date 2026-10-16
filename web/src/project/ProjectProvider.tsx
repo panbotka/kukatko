@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useContext, useEffect, useMemo, useState }
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { AuthContext } from '../auth/AuthContext'
+import { writeLastProject } from '../lib/lastProject'
 import { setCurrentProjectSlug } from '../services/api'
 import type { ProjectMembership } from '../services/auth'
 import { type AdminProject, fetchAdminProjects } from '../services/projects'
@@ -114,6 +115,16 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   // The project is the page's own only when the address names it and the
   // account belongs to it; on `/account` it is merely the entry-rule fallback.
   const inAddress = status === 'ready' && urlSlug !== null
+
+  // Remember the project shown, per account on this browser: it is the way
+  // back an instance page offers (`project/backToProject.ts`).
+  const uid = auth?.user?.uid
+  const shownSlug = inAddress ? (project?.slug ?? null) : null
+  useEffect(() => {
+    if (shownSlug !== null) {
+      writeLastProject(uid, shownSlug)
+    }
+  }, [uid, shownSlug])
 
   const value = useMemo<ProjectContextValue>(
     () => ({ project, projects, status, inAddress, switchProject }),

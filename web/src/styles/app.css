@@ -443,6 +443,13 @@ body {
   margin-inline: auto;
 }
 
+/* The way back above an instance page (`BackToProjectLink`) stands where the
+   page starts: over a narrow page's column, not at the container's edge. */
+.kukatko-main:has(> .kk-page-narrow) > .kk-instance-back {
+  max-width: 48rem;
+  margin-inline: auto;
+}
+
 /* Navbar hierarchy. The bar is not a flat row of equals: the everyday actions
    lead, one call-to-action stands out, and a divider fences off the quieter
    tools/admin cluster. These rules add only what Bootstrap utilities cannot. */

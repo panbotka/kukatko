@@ -2,11 +2,13 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { CAPABILITIES_DEFAULT, CapabilitiesContext } from '../capabilities/CapabilitiesContext'
 import i18n from '../i18n'
+import { writeLastProject } from '../lib/lastProject'
+import { writeNavPosition } from '../lib/navPosition'
 import {
   NOTIFICATION_INBOX_DEFAULT,
   NotificationInboxContext,
@@ -1150,10 +1152,11 @@ describe('the neutral shell outside a project', () => {
     for (const name of ['Library', 'Albums', 'Labels', 'Upload']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     }
-    // A neutral title instead, the way back in through the entry rule.
+    // A neutral title instead; with two projects and none remembered, the way
+    // back is the chooser.
     const identity = screen.getByTestId('project-identity')
     expect(identity).toHaveTextContent(/^Kukátko$/)
-    expect(identity).toHaveAttribute('href', '/')
+    expect(identity).toHaveAttribute('href', '/projects')
     expect(screen.queryByText('My projects')).not.toBeInTheDocument()
     // Picking a project is the chooser's, from the user menu.
     await user.click(screen.getByRole('button', { name: /User One/ }))
@@ -1162,6 +1165,122 @@ describe('the neutral shell outside a project', () => {
       '/projects',
     )
     expect(screen.queryByRole('link', { name: 'Rodina' })).not.toBeInTheDocument()
+  })
+
+  describe('the way back into a project', () => {
+    beforeEach(async () => {
+      window.localStorage.clear()
+      await i18n.changeLanguage('en')
+    })
+
+    afterEach(async () => {
+      await i18n.changeLanguage('en')
+    })
+
+    it('opens /account with a back link to the remembered project', async () => {
+      writeLastProject('u1', 'rodina')
+      const { unmount } = renderWith(auth(), '/account')
+
+      const back = within(screen.getByTestId('back-to-project')).getByRole('link', {
+        name: 'Back to Rodina',
+      })
+      expect(back).toHaveAttribute('href', '/p/rodina')
+      // At the top of the content, above the page itself.
+      expect(precedes(back, screen.getByText('page content'))).toBe(true)
+
+      unmount()
+      await i18n.changeLanguage('cs')
+      renderWith(auth(), '/account')
+      expect(
+        within(screen.getByTestId('back-to-project')).getByRole('link', {
+          name: 'Zpět do projektu Rodina',
+        }),
+      ).toHaveAttribute('href', '/p/rodina')
+    })
+
+    it('leads to the only project, else to the chooser', () => {
+      const { unmount } = renderWith(auth(), '/account/activity', {
+        projects: [member('v', 'Veselice')],
+      })
+      expect(
+        within(screen.getByTestId('back-to-project')).getByRole('link', {
+          name: 'Back to Veselice',
+        }),
+      ).toHaveAttribute('href', '/p/v')
+      unmount()
+
+      // Two projects, nothing remembered: no guess, the chooser.
+      renderWith(auth({ isMaintainer: true }), '/system/projects')
+      expect(
+        within(screen.getByTestId('back-to-project')).getByRole('link', {
+          name: 'Choose a library',
+        }),
+      ).toHaveAttribute('href', '/projects')
+    })
+
+    it('is not drawn inside a project — on its help page or anywhere else', () => {
+      writeLastProject('u1', 'rodina')
+      renderWith(auth(), '/p/v/help', { inAddress: true })
+
+      expect(screen.queryByTestId('back-to-project')).not.toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Library' })).toHaveAttribute('href', '/p/v')
+    })
+
+    it('is not drawn on a refused project page, which has its own way out', () => {
+      writeLastProject('u1', 'rodina')
+      renderWith(auth(), '/p/zzz', { status: 'not-member' })
+
+      expect(screen.queryByTestId('back-to-project')).not.toBeInTheDocument()
+    })
+
+    it("makes the bar's leading mark the way back on an instance page", () => {
+      writeLastProject('u1', 'rodina')
+      renderWith(auth(), '/account')
+
+      const identity = screen.getByTestId('project-identity')
+      expect(identity).toHaveAttribute('href', '/p/rodina')
+      expect(identity).toHaveAccessibleName('Back to Rodina')
+      expect(identity).toHaveAttribute('title', 'Back to Rodina')
+      expect(identity.querySelector('.kk-project-identity__mark')).toHaveTextContent('R')
+    })
+
+    it('makes the left sidebar lead back the same way', () => {
+      writeLastProject('u1', 'rodina')
+      writeNavPosition('u1', 'left')
+      renderWith(auth(), '/account')
+
+      expect(screen.getByTestId('project-identity')).toHaveAttribute('href', '/p/rodina')
+      expect(screen.getByTestId('project-identity')).toHaveAccessibleName('Back to Rodina')
+    })
+
+    it('opens the phone drawer with the way back', async () => {
+      mockViewport(true)
+      writeLastProject('u1', 'rodina')
+      const user = userEvent.setup()
+      renderWith(auth(), '/account')
+
+      expect(screen.getByTestId('project-identity')).toHaveAttribute('href', '/p/rodina')
+      await user.click(screen.getByRole('button', { name: 'Open the menu' }))
+      const drawer = await screen.findByRole('dialog')
+      expect(within(drawer).getByRole('link', { name: 'Back to Rodina' })).toHaveAttribute(
+        'href',
+        '/p/rodina',
+      )
+    })
+
+    it('leaves the chooser to "Switch library" in the drawer rather than list it twice', async () => {
+      mockViewport(true)
+      const user = userEvent.setup()
+      renderWith(auth(), '/account')
+
+      await user.click(screen.getByRole('button', { name: 'Open the menu' }))
+      const drawer = await screen.findByRole('dialog')
+      expect(within(drawer).queryByTestId('drawer-back-to-project')).not.toBeInTheDocument()
+      expect(within(drawer).getByRole('link', { name: 'Switch library' })).toHaveAttribute(
+        'href',
+        '/projects',
+      )
+    })
   })
 
   it("keeps the account and the instance's own administration, drops the project's", async () => {

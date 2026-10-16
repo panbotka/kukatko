@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext'
 import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { LIBRARY_PATH } from '../lib/libraryView'
 import { bareVersion } from '../lib/version'
+import { useBackToProject } from '../project/backToProject'
 import { useNeutralChrome, useProjectPath } from '../project/ProjectContext'
 import { useLeaveProject } from '../project/useLeaveProject'
 import { useWaitingOnMe } from '../tasks/TaskSummaryContext'
@@ -84,7 +85,10 @@ interface DrawerSection {
  * `/projects` — offered only when there is somewhere else to go
  * ({@link useLeaveProject}) and wearing the other projects' unread total —
  * exactly as the desktop user menu does. The current project's name is the
- * bar's leading identity, above the drawer.
+ * bar's leading identity, above the drawer. **Outside a project** the account
+ * block opens with the way back instead ({@link useBackToProject}): „Zpět do
+ * projektu <name>", or „Vybrat projekt" — left out when it would only repeat
+ * the „Přepnout projekt" row's chooser.
  *
  * Mounted by {@link Layout} only below the breakpoint, so the desktop DOM keeps a
  * single set of nav links; navigating closes it (both via `Layout`'s pathname
@@ -124,6 +128,11 @@ export function MobileNavDrawer({
   const admin = adminItems({ isAdmin, isMaintainer, instanceOnly: neutral })
   // "Switch library", and the news waiting in the other projects.
   const leave = useLeaveProject()
+  // The way back into a project, outside one. The chooser twice — this row and
+  // "Switch library" — would be one destination under two names.
+  const back = useBackToProject()
+  const backRow =
+    neutral && back !== null && !(back.project === null && leave.offered) ? back : null
 
   // Each of the bar's dropdowns becomes one section, unfolded, behind the very
   // same role gate — a closed gate drops the whole section, exactly as it drops
@@ -208,6 +217,21 @@ export function MobileNavDrawer({
             <h2 id="kk-navdrawer-account" className="kk-navdrawer__heading">
               {t('nav.sections.account')}
             </h2>
+            {backRow && (
+              <NavLink
+                to={backRow.to}
+                className="kk-navdrawer__link"
+                onClick={onHide}
+                data-testid="drawer-back-to-project"
+              >
+                <Icon name="arrow-left" className="kk-navdrawer__icon" />
+                <span className="kk-navdrawer__label">
+                  {backRow.project === null
+                    ? t('backToProject.chooser')
+                    : t('backToProject.toProject', { name: backRow.project.name })}
+                </span>
+              </NavLink>
+            )}
             {leave.offered && (
               <NavLink
                 to={PROJECTS_ITEM.to}

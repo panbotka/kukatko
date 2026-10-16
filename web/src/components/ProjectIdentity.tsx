@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 
 import { avatarInitial, avatarTone } from '../lib/avatarIdentity'
 import { LIBRARY_PATH } from '../lib/libraryView'
+import { useBackToProject } from '../project/backToProject'
 import { ProjectContext } from '../project/ProjectContext'
 import { projectPathFor } from '../project/paths'
 import { useLeaveProject } from '../project/useLeaveProject'
@@ -37,10 +38,16 @@ import { PROJECTS_ITEM } from './navItems'
  * **Outside a project** (an instance page, or a `/p/<slug>` the account may
  * not enter — see `useNeutralChrome`) the context's project is only the entry
  * rule's fallback, and naming it would claim the page for it. The bar then
- * wears the neutral app title instead, linking to `/`, where the entry rule
- * picks the project (or the chooser when it cannot). Outside a provider (an
- * isolated component test) and for an account with no project at all nothing
- * is rendered.
+ * leads back to where the reader came from ({@link useBackToProject}): the
+ * remembered project's letter mark beside the neutral app title, a link to
+ * that project's library named „Zpět do projektu <name>", or — with no project
+ * to name — the title alone leading to the chooser, named „Vybrat projekt".
+ * The plain word was the only way back before, and it did not look like a
+ * link. Folded to the rail (`compact`) the title gives way: the mark, or the
+ * house glyph for the chooser. Signed out (no account to lead anywhere) the
+ * title links to `/` as it always did. Outside a provider (an isolated
+ * component test) and for an account with no project at all inside one
+ * nothing is rendered.
  */
 export function ProjectIdentity({
   withName = false,
@@ -52,8 +59,39 @@ export function ProjectIdentity({
   const { t } = useTranslation()
   const ctx = useContext(ProjectContext)
   const leave = useLeaveProject()
+  const back = useBackToProject()
   if (ctx === null) {
     return null
+  }
+  if (!ctx.inAddress && back !== null) {
+    const target = back.project
+    const backLabel =
+      target === null
+        ? t('backToProject.chooser')
+        : t('backToProject.toProject', { name: target.name })
+    return (
+      <Link
+        to={back.to}
+        title={backLabel}
+        aria-label={backLabel}
+        className="kukatko-tap-target kk-project-identity"
+        data-testid="project-identity"
+      >
+        {target === null ? (
+          compact && <Icon name="house" />
+        ) : (
+          <span
+            className={`kk-avatar kk-avatar--sm kk-project-identity__mark kk-avatar--tone-${avatarTone(target.name)}`}
+            aria-hidden="true"
+          >
+            {avatarInitial(target.name)}
+          </span>
+        )}
+        {!compact && (
+          <span className="kk-project-identity__name">{t('projectIdentity.neutral')}</span>
+        )}
+      </Link>
+    )
   }
   if (!ctx.inAddress) {
     return (
