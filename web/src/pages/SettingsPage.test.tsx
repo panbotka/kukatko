@@ -349,7 +349,7 @@ describe('SettingsPage', () => {
     expect(usage).toHaveTextContent('5.0 MB')
     expect(usage).toHaveTextContent('10.0 GB')
     expect(usage).toHaveTextContent('unlimited')
-    expect(usage).toHaveTextContent('Limits are set by the system administrator.')
+    expect(usage).toHaveTextContent("The project's limits cannot be changed here.")
     expect(within(usage).queryByRole('textbox')).not.toBeInTheDocument()
   })
 

@@ -3,9 +3,10 @@ package project
 // FormerMemberSQL returns the SQL predicate that holds when the account row
 // aliased userAlias is shown in the project projectExpr as a former member: it
 // holds no membership there whose identity the project may see (none at all,
-// or only a withheld exact-match add — Member.IdentityWithheld) and it is not
-// the instance's maintainer, who belongs everywhere ('maintainer' is
-// auth.RoleMaintainer, which this package cannot import).
+// or only a withheld exact-match add — Member.IdentityWithheld). The instance's
+// system administrator is no exception: their access to every project is
+// implicit, and a project must not learn that the role exists, so one who is
+// no member reads exactly like anybody else who is none.
 //
 // It is the one definition of "the project no longer gets to read this
 // account's name": an account that left the project, or that never belonged to
@@ -24,9 +25,9 @@ package project
 // table alias for userAlias); they are pasted verbatim, so they must never
 // carry user input.
 func FormerMemberSQL(projectExpr, userAlias string) string {
-	return "(" + userAlias + ".role <> 'maintainer' AND NOT EXISTS (SELECT 1 FROM project_members fmm" +
+	return "(CASE WHEN " + userAlias + ".uid IS NULL THEN NULL ELSE NOT EXISTS (SELECT 1 FROM project_members fmm" +
 		" WHERE fmm.user_uid = " + userAlias + ".uid AND fmm.project_uid = " + projectExpr +
-		" AND NOT fmm.identity_withheld))"
+		" AND NOT fmm.identity_withheld) END)"
 }
 
 // ShownNameSQL returns the SQL expression a project shows the account row

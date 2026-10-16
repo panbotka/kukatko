@@ -21,7 +21,7 @@ FROM users u WHERE u.uid = $1`
 
 // ProjectUserName returns how the project projectUID names the account uid:
 // its display name (else its username) while it belongs to the project — a
-// membership whose identity the project may see, or the instance's maintainer —
+// membership whose identity the project may see, whatever its instance role —
 // and otherwise no name and former true, so a project never reads the live name
 // of somebody who left it (or never joined it). It returns ErrUserNotFound when
 // no account has uid.

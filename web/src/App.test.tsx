@@ -384,7 +384,7 @@ describe('routing', () => {
     // that would answer them with a refusal.
     renderRoutes(['/system'], 0, adminAuth)
 
-    expect(await screen.findByTestId('forbidden-page')).toHaveTextContent(/maintainer role/i)
+    expect(await screen.findByTestId('forbidden-page')).toHaveTextContent(/not available to you/i)
     expect(screen.getByTestId('pathname')).toHaveTextContent('/system')
   })
 
@@ -435,7 +435,7 @@ describe('routing', () => {
   it('keeps the system project and account pages from an admin', async () => {
     for (const path of ['/system/projects', '/system/projects/v', '/system/users']) {
       const { unmount } = renderRoutes([path], 0, adminAuth)
-      expect(await screen.findByTestId('forbidden-page')).toHaveTextContent(/maintainer role/i)
+      expect(await screen.findByTestId('forbidden-page')).toHaveTextContent(/not available to you/i)
       expect(screen.getByTestId('pathname')).toHaveTextContent(path)
       unmount()
     }

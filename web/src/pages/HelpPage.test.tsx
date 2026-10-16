@@ -3,19 +3,31 @@ import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { CAPABILITIES_DEFAULT, CapabilitiesContext } from '../capabilities/CapabilitiesContext'
 import i18n from '../i18n'
 
 import { HelpPage } from './HelpPage'
 
-function renderHelp(caps = CAPABILITIES_DEFAULT) {
+/** The signed-in account reading the page: a project member unless overridden. */
+function authAs(isMaintainer: boolean): AuthContextValue {
+  return {
+    status: 'authenticated',
+    user: { uid: 'u1', username: 'jana', display_name: 'Jana', role: 'editor' },
+    isMaintainer,
+  } as unknown as AuthContextValue
+}
+
+function renderHelp(caps = CAPABILITIES_DEFAULT, auth: AuthContextValue = authAs(false)) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <CapabilitiesContext.Provider value={caps}>
-        <MemoryRouter>
-          <HelpPage />
-        </MemoryRouter>
-      </CapabilitiesContext.Provider>
+      <AuthContext.Provider value={auth}>
+        <CapabilitiesContext.Provider value={caps}>
+          <MemoryRouter>
+            <HelpPage />
+          </MemoryRouter>
+        </CapabilitiesContext.Provider>
+      </AuthContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -76,15 +88,37 @@ describe('HelpPage', () => {
     expect(albums).toHaveAttribute('href', '#help-albums')
   })
 
-  it('spells out the role ladder inside the roles section', () => {
+  it('spells out the project role ladder inside the roles section', () => {
     renderHelp()
 
     // The role names come from the shared `roles.*` keys, each with a plain
     // description of what that level can do.
     expect(screen.getByText('Viewer')).toBeInTheDocument()
+    expect(screen.getByText('Curator')).toBeInTheDocument()
     expect(screen.getByText('Editor')).toBeInTheDocument()
     expect(screen.getByText('Administrator')).toBeInTheDocument()
+  })
+
+  it('never names the system administrator to a project member', async () => {
+    for (const language of ['en', 'cs']) {
+      await i18n.changeLanguage(language)
+      const { unmount } = renderHelp()
+
+      const page = screen.getByTestId('narrow-page')
+      expect(page).not.toHaveTextContent(i18n.t('roles.maintainer'))
+      expect(page).not.toHaveTextContent(/maintainer|system administrator|správc\S* systému/i)
+      expect(
+        screen.queryByRole('button', { name: i18n.t('help.sections.import.title') }),
+      ).toBeNull()
+      unmount()
+    }
+  })
+
+  it('adds the instance chapters for a system administrator', () => {
+    renderHelp(CAPABILITIES_DEFAULT, authAs(true))
+
     expect(screen.getByText('Maintainer')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Importing the library' })).toBeInTheDocument()
   })
 
   it('teaches the key:value query language in the search section, worked examples first', () => {

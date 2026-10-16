@@ -466,30 +466,65 @@ func TestMembers_roleRules(t *testing.T) {
 	}
 }
 
-// TestMembers_maintainersRoleIsNotTheProjects proves a project admin cannot
-// change a system administrator's membership — its project role has no effect,
-// so a change would only make the list lie — and that the list says who it is.
-func TestMembers_maintainersRoleIsNotTheProjects(t *testing.T) {
-	e := newEnv(t)
+// promote makes the account uid a system administrator of the instance.
+func (e *env) promote(t *testing.T, uid string) {
+	t.Helper()
+	if _, err := e.pool.Exec(t.Context(), `UPDATE users SET role = 'maintainer' WHERE uid = $1`, uid); err != nil {
+		t.Fatalf("promoting %s: %v", uid, err)
+	}
+}
+
+// TestMembers_maintainerIsAnOrdinaryMember proves a project never learns that
+// the system administrator role exists: a maintainer who is a member is listed
+// with their stored role and no flag, and their membership is changed and
+// removed like anybody else's; a maintainer who is no member — even one who
+// has entered the project on their implicit access — is in neither the
+// members list nor the name directory.
+func TestMembers_maintainerIsAnOrdinaryMember(t *testing.T) {
+	// B's admin is a system administrator and no member of A.
+	e := newEnv(t, projecttest.AsMaintainer(projecttest.SideB))
 	client := e.f.ClientFor(t, e.server, projecttest.SideA)
 	ops := e.seedAccount(t, "ops", "ops@example.test", true)
-	if _, err := e.pool.Exec(t.Context(), `UPDATE users SET role = 'maintainer' WHERE uid = $1`, ops); err != nil {
-		t.Fatalf("promoting ops: %v", err)
+	e.promote(t, ops)
+	e.addMember(t, e.f.A.ProjectUID, ops, project.RoleCurator, true)
+	root := e.f.B.UserUID
+	// root looks around A on their implicit access, which must add them nowhere.
+	if status, _, raw := e.call(t, e.f.ClientFor(t, e.server, projecttest.SideB), http.MethodGet,
+		e.f.PathFor(projecttest.SideA, "members"), nil); status != http.StatusOK {
+		t.Fatalf("the non-member maintainer reading A's members = %d %s", status, raw)
 	}
-	e.addMember(t, e.f.A.ProjectUID, ops, project.RoleAdmin, true)
 
-	status, _, raw := e.call(t, client, http.MethodPatch, e.f.PathFor(projecttest.SideA, "members/"+ops),
+	status, _, raw := e.call(t, client, http.MethodGet, e.f.PathFor(projecttest.SideA, "members"), nil)
+	if status != http.StatusOK || strings.Contains(raw, "maintainer") {
+		t.Fatalf("list = %d %s, want 200 without any maintainer key", status, raw)
+	}
+	if row := e.memberRow(t, client, projecttest.SideA, ops); row["role"] != string(project.RoleCurator) {
+		t.Errorf("the maintainer's row = %v, want the stored curator role", row)
+	}
+	if strings.Contains(raw, root) {
+		t.Errorf("list %s names the non-member maintainer", raw)
+	}
+	uids := e.directoryUIDs(t, client, projecttest.SideA)
+	if !slices.Contains(uids, ops) || slices.Contains(uids, root) {
+		t.Errorf("directory %v: want the member maintainer and not the other", uids)
+	}
+
+	status, _, raw = e.call(t, client, http.MethodPatch, e.f.PathFor(projecttest.SideA, "members/"+ops),
 		map[string]string{"role": "viewer"})
-	if status != http.StatusConflict || !strings.Contains(raw, `"error":"maintainer"`) {
-		t.Fatalf("demoting the maintainer = %d %s, want 409 maintainer", status, raw)
+	if status != http.StatusOK || !strings.Contains(raw, `"role":"viewer"`) || strings.Contains(raw, "maintainer") {
+		t.Fatalf("demoting the maintainer = %d %s, want 200 viewer without a maintainer key", status, raw)
 	}
 	member, err := project.NewStore(e.pool).Membership(t.Context(), e.f.A.ProjectUID, ops)
-	if err != nil || member.Role != project.RoleAdmin || !member.Maintainer {
-		t.Fatalf("membership after the refusal = %+v, %v; want an untouched admin, flagged maintainer", member, err)
+	if err != nil || member.Role != project.RoleViewer {
+		t.Fatalf("membership after the change = %+v, %v; want a viewer", member, err)
 	}
-	status, _, raw = e.call(t, client, http.MethodGet, e.f.PathFor(projecttest.SideA, "members"), nil)
-	if status != http.StatusOK || strings.Count(raw, `"maintainer":true`) != 1 {
-		t.Errorf("list = %d %s, want exactly the maintainer flagged", status, raw)
+	if status, _, raw := e.call(t, client, http.MethodDelete, e.f.PathFor(projecttest.SideA, "members/"+ops),
+		nil); status != http.StatusNoContent {
+		t.Fatalf("removing the maintainer = %d %s, want 204", status, raw)
+	}
+	if _, err := project.NewStore(e.pool).Membership(t.Context(), e.f.A.ProjectUID, ops); !errors.Is(err,
+		project.ErrNotMember) {
+		t.Errorf("membership after the removal: %v, want ErrNotMember", err)
 	}
 }
 

@@ -46,7 +46,7 @@ describe('ProjectUnavailablePage', () => {
     expect(
       screen.getByRole('heading', { level: 1, name: 'Projekt je vypnutý' }),
     ).toBeInTheDocument()
-    expect(screen.getByText(/Projekt Starý archiv správce systému vypnul/)).toBeInTheDocument()
+    expect(screen.getByText(/Projekt Starý archiv je vypnutý/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Zpět na projekty' })).toHaveAttribute(
       'href',
       '/projects',

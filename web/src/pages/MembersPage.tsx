@@ -60,9 +60,8 @@ interface RoleSelectProps {
 }
 
 /**
- * The role of one member as a select that changes it at once. A system
- * administrator's row shows „Správce systému" instead, never a select. On the
- * caller's own row it is off, and says why: the hover tooltip sits on a wrapper (a
+ * The role of one member as a select that changes it at once. On the caller's
+ * own row it is off, and says why: the hover tooltip sits on a wrapper (a
  * disabled control receives no pointer events in every browser) and the same
  * sentence is the select's description for a screen reader.
  */
@@ -70,21 +69,6 @@ function RoleSelect({ member, disabledReason, busy, onChange }: RoleSelectProps)
   const { t } = useTranslation()
   const reasonId = useId()
   const off = disabledReason !== null
-  if (member.maintainer) {
-    // A system administrator administers every project whatever its membership
-    // says: a role here would be a fiction, and changing it would only make the
-    // row lie. It is named for what it is, with the reason beside it.
-    return (
-      <span className="d-inline-block" title={t('members.maintainerRoleReason')}>
-        <Badge bg="secondary" aria-describedby={reasonId}>
-          {t('roles.maintainer')}
-        </Badge>
-        <span id={reasonId} className="visually-hidden">
-          {t('members.maintainerRoleReason')}
-        </span>
-      </span>
-    )
-  }
   return (
     <span className="d-inline-block" title={disabledReason ?? undefined}>
       <Form.Select
@@ -187,8 +171,6 @@ export function MembersPage() {
       toast.show({ message: t('members.lastAdmin'), variant: 'danger' })
     } else if (code === 'self') {
       toast.show({ message: t('members.self'), variant: 'danger' })
-    } else if (code === 'maintainer') {
-      toast.show({ message: t('members.maintainerRoleReason'), variant: 'danger' })
     } else if (code === 'not_member') {
       toast.show({ message: t('members.notMember'), variant: 'danger' })
       void reload()

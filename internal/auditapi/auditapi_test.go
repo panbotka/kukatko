@@ -495,3 +495,22 @@ func TestWriteFilterError(t *testing.T) {
 		t.Errorf("status for a lookup failure = %d, want 500", rec.Code)
 	}
 }
+
+// TestWithoutInstanceRole verifies a project's listing loses the instance-role
+// detail of an entry a system administrator made, keeps every other detail,
+// and never modifies the map it was handed.
+func TestWithoutInstanceRole(t *testing.T) {
+	t.Parallel()
+	byMaintainer := map[string]any{"actor_role": "maintainer", "name": "Léto"}
+	plain := map[string]any{"name": "Zima"}
+	got := withoutInstanceRole([]audit.Record{{Details: byMaintainer}, {Details: plain}, {}})
+	if _, ok := got[0].Details["actor_role"]; ok || got[0].Details["name"] != "Léto" {
+		t.Errorf("maintainer's entry details = %v, want the name without actor_role", got[0].Details)
+	}
+	if got[1].Details["name"] != "Zima" || len(got[1].Details) != 1 {
+		t.Errorf("plain entry details = %v, want them untouched", got[1].Details)
+	}
+	if byMaintainer["actor_role"] != "maintainer" {
+		t.Errorf("the original details lost actor_role: %v", byMaintainer)
+	}
+}

@@ -104,6 +104,23 @@ describe('AccountPage', () => {
     ])
   })
 
+  it('shows a non-maintainer no instance role, only the project roles', async () => {
+    for (const language of ['en', 'cs']) {
+      await i18n.changeLanguage(language)
+      const { unmount } = renderAccount({
+        ...editorAuth,
+        projects: [membership('v', 'Veselice', 'admin')],
+      } as unknown as AuthContextValue)
+
+      const roles = screen.getByTestId('account-roles')
+      expect(roles.querySelectorAll('li')).toHaveLength(1)
+      expect(roles).toHaveTextContent('Veselice')
+      expect(roles).not.toHaveTextContent(i18n.t('roles.maintainer'))
+      expect(screen.queryByText(i18n.t('roles.maintainer'))).not.toBeInTheDocument()
+      unmount()
+    }
+  })
+
   it('names the instance role of a maintainer', () => {
     renderAccount({ ...editorAuth, isMaintainer: true })
 

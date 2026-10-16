@@ -253,24 +253,21 @@ func TestHandleSetRole_mapsStoreErrors(t *testing.T) {
 	}
 }
 
-// TestHandleSetRole_refusesTheMaintainer verifies a system administrator's
-// membership keeps its role: the change is refused before the store is asked,
-// and the list names the account as a maintainer.
-func TestHandleSetRole_refusesTheMaintainer(t *testing.T) {
+// TestMemberResponse_namesNoInstanceRole verifies the members page's shape
+// carries nothing but the project's own view of a membership: no key a client
+// could read an account's instance role from.
+func TestMemberResponse_namesNoInstanceRole(t *testing.T) {
 	t.Parallel()
-	maintainer := project.Member{UserUID: "us1", Role: project.RoleAdmin, Maintainer: true}
-	fake := &fakeMembers{current: &maintainer, members: []project.Member{maintainer}}
-	srv := newTestServer(t, fake, nil, nil)
-	status, body := send(t, srv, http.MethodPatch, "/members/us1", `{"role":"viewer"}`)
-	if status != http.StatusConflict || !strings.Contains(body, `"error":"maintainer"`) {
-		t.Fatalf("demoting the maintainer = %d %s, want 409 maintainer", status, body)
+	member := project.Member{UserUID: "us1", Username: "ops", Role: project.RoleAdmin}
+	srv := newTestServer(t, &fakeMembers{current: &member, members: []project.Member{member}}, nil, nil)
+	status, body := send(t, srv, http.MethodGet, "/members", "")
+	if status != http.StatusOK {
+		t.Fatalf("list = %d %s", status, body)
 	}
-	if fake.lastRole != "" {
-		t.Errorf("the store was asked to set %q", fake.lastRole)
-	}
-	if status, body := send(t, srv, http.MethodGet, "/members", ""); status != http.StatusOK ||
-		!strings.Contains(body, `"maintainer":true`) {
-		t.Errorf("list = %d %s, want the maintainer flagged", status, body)
+	for _, leak := range []string{"maintainer", "instance", "identity_withheld"} {
+		if strings.Contains(body, leak) {
+			t.Errorf("list %s carries %q", body, leak)
+		}
 	}
 }
 

@@ -14,9 +14,12 @@ import { type GuardRole } from '../services/auth'
  * build until it gets a sentence. Mirrors the pattern in {@link LeaderboardPage}.
  *
  * Each role gets its own sentence instead of one template with the role name
- * interpolated: Czech would have to decline it („roli editora", „roli správce
- * systému"), and the way to obtain the role differs — a curator or an editor asks an admin,
- * an admin asks someone who already is one.
+ * interpolated: Czech would have to decline it („roli editora", „roli
+ * kurátora"), and the way to obtain the role differs — a curator or an editor
+ * asks an admin, an admin asks someone who already is one. The instance-only
+ * `maintainer` guard (the `/system` screens) names no role at all: an ordinary
+ * member must not learn that the system administrator exists, so it says only
+ * that the page is not accessible.
  */
 const MESSAGE_KEYS = {
   curator: 'forbidden.message.curator',

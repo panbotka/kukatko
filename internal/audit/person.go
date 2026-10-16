@@ -84,13 +84,13 @@ func (s *Store) ActorNames(ctx context.Context, uids []string) (map[string]strin
 
 // projectActorNamesSQL is actorNamesSQL for a listing narrowed to the project
 // $2: it adds whether each account is a former member there — no membership of
-// the project whose identity the project may see, and not the instance's
-// maintainer, who belongs everywhere. The predicate is project.FormerMemberSQL
-// written out ('maintainer' is auth.RoleMaintainer): this package sits below
-// both and imports neither, so the two must be kept in step by hand.
+// the project whose identity the project may see, a system administrator
+// included (the project must not learn that the role exists). The predicate is
+// project.FormerMemberSQL written out: this package sits below it and does not
+// import it, so the two must be kept in step by hand.
 const projectActorNamesSQL = `SELECT u.uid, COALESCE(NULLIF(u.display_name, ''), u.username),
-	(u.role <> 'maintainer' AND NOT EXISTS (SELECT 1 FROM project_members fmm
-		WHERE fmm.user_uid = u.uid AND fmm.project_uid = $2 AND NOT fmm.identity_withheld))
+	NOT EXISTS (SELECT 1 FROM project_members fmm
+		WHERE fmm.user_uid = u.uid AND fmm.project_uid = $2 AND NOT fmm.identity_withheld)
 FROM users u
 WHERE u.uid = ANY($1)`
 

@@ -3,6 +3,7 @@ import { Fragment } from 'react'
 import Accordion from 'react-bootstrap/Accordion'
 import { useTranslation } from 'react-i18next'
 
+import { useAuth } from '../auth/AuthContext'
 import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { Icon, type IconName } from '../components/Icon'
 import { NarrowPage } from '../components/NarrowPage'
@@ -16,12 +17,16 @@ import { commitUrl, formatVersion } from '../lib/version'
  * icon, and the i18n keys for its heading and prose. Content itself lives in the
  * `help.sections.*` namespace (cs default, en) — this list only wires each
  * section to its keys, so the page and its table of contents stay in sync.
+ * A `maintainerOnly` section is about operating the instance and is rendered
+ * only for a system administrator: an ordinary member must not even learn that
+ * the role exists.
  */
 interface HelpSection {
   id: string
   icon: IconName
   titleKey: ParseKeys
   bodyKey: ParseKeys
+  maintainerOnly?: boolean
 }
 
 /** The help sections, in reading order — mirrors the features that exist today. */
@@ -97,6 +102,7 @@ const SECTIONS: HelpSection[] = [
     icon: 'box-arrow-in-down',
     titleKey: 'help.sections.import.title',
     bodyKey: 'help.sections.import.body',
+    maintainerOnly: true,
   },
   {
     id: 'roles',
@@ -131,13 +137,17 @@ const QUERY_EXAMPLES: { id: 'year' | 'person' | 'album'; query: string }[] = [
   { id: 'album', query: 'album:"Léto 2024" faces:2' },
 ]
 
-/** The role ladder rows shown inside the "roles" section, low to high. */
-const ROLE_ROWS: { role: ParseKeys; descKey: ParseKeys }[] = [
+/**
+ * The role ladder rows shown inside the "roles" section, low to high: the four
+ * project roles, and the instance's system administrator only for one (see
+ * {@link HelpSection}).
+ */
+const ROLE_ROWS: { role: ParseKeys; descKey: ParseKeys; maintainerOnly?: boolean }[] = [
   { role: 'roles.viewer', descKey: 'help.sections.roles.viewer' },
   { role: 'roles.curator', descKey: 'help.sections.roles.curator' },
   { role: 'roles.editor', descKey: 'help.sections.roles.editor' },
   { role: 'roles.admin', descKey: 'help.sections.roles.admin' },
-  { role: 'roles.maintainer', descKey: 'help.sections.roles.maintainer' },
+  { role: 'roles.maintainer', descKey: 'help.sections.roles.maintainer', maintainerOnly: true },
 ]
 
 /**
@@ -241,10 +251,14 @@ function BuildInfo() {
  * feature behaves, reachable from the user menu by any authenticated role. A
  * short table of contents jumps to sections, each an open-by-default,
  * collapsible {@link Accordion} item so a reader can scan or fold away the noise.
+ * What only a system administrator does is left out for everybody else.
  */
 export function HelpPage() {
   const { t } = useTranslation()
+  const { isMaintainer } = useAuth()
   useDocumentTitle(t('help.title'))
+  const sections = SECTIONS.filter((section) => isMaintainer || section.maintainerOnly !== true)
+  const roleRows = ROLE_ROWS.filter((row) => isMaintainer || row.maintainerOnly !== true)
 
   return (
     <NarrowPage>
@@ -254,7 +268,7 @@ export function HelpPage() {
       <nav aria-label={t('help.tocTitle')} className="mb-4">
         <h2 className="kk-section-title h5 mb-2">{t('help.tocTitle')}</h2>
         <ul className="list-unstyled mb-0">
-          {SECTIONS.map((section) => (
+          {sections.map((section) => (
             <li key={section.id} className="mb-1">
               <a href={`#help-${section.id}`} className="d-inline-flex align-items-center gap-2">
                 <Icon name={section.icon} />
@@ -265,8 +279,8 @@ export function HelpPage() {
         </ul>
       </nav>
 
-      <Accordion alwaysOpen defaultActiveKey={SECTIONS.map((section) => section.id)}>
-        {SECTIONS.map((section) => (
+      <Accordion alwaysOpen defaultActiveKey={sections.map((section) => section.id)}>
+        {sections.map((section) => (
           <Accordion.Item key={section.id} eventKey={section.id} id={`help-${section.id}`}>
             <Accordion.Header>
               <span className="d-inline-flex align-items-center gap-2">
@@ -279,7 +293,7 @@ export function HelpPage() {
               {section.id === 'search' && <SearchQueryChapter />}
               {section.id === 'roles' && (
                 <dl className="row mb-0 mt-2">
-                  {ROLE_ROWS.map((row) => (
+                  {roleRows.map((row) => (
                     <Fragment key={row.role}>
                       <dt className="col-sm-3">{t(row.role)}</dt>
                       <dd className="col-sm-9 kk-text-body">{t(row.descKey)}</dd>

@@ -92,6 +92,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -360,6 +361,9 @@ func (a *API) respond(w http.ResponseWriter, r *http.Request, filter audit.Filte
 		writeError(w, http.StatusInternalServerError, "counting audit entries failed")
 		return
 	}
+	if _, inProject := r.Context().Value(projectScopeKey{}).(string); inProject {
+		entries = withoutInstanceRole(entries)
+	}
 	resp := buildResponse(filter, entries, total)
 	resp.Actors, resp.FormerActors, err = a.actorNames(r, entries)
 	if err != nil {
@@ -386,6 +390,28 @@ func (a *API) actorNames(r *http.Request, entries []audit.Record) (map[string]st
 		return nil, nil, fmt.Errorf("auditapi: naming actors: %w", err)
 	}
 	return names, []string{}, nil
+}
+
+// instanceRoleDetail is the detail audit.Meta.Entry stamps on an entry whose
+// actor acted on the strength of the instance role alone ("maintainer").
+const instanceRoleDetail = "actor_role"
+
+// withoutInstanceRole returns entries with the instance-role detail taken out
+// of every entry's details, for a project's listing: a project must not learn
+// that the system administrator role exists, so it must not read which of its
+// entries were made by one. The entries' detail maps are copied, never
+// modified, and an entry without the detail is returned as it is. The
+// instance listings keep it, since only the system administrator reads them.
+func withoutInstanceRole(entries []audit.Record) []audit.Record {
+	for i, entry := range entries {
+		if _, ok := entry.Details[instanceRoleDetail]; !ok {
+			continue
+		}
+		details := maps.Clone(entry.Details)
+		delete(details, instanceRoleDetail)
+		entries[i].Details = details
+	}
+	return entries
 }
 
 // actorUIDs returns the distinct actors of entries, in first-seen order;

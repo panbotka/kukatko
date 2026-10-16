@@ -23,7 +23,10 @@ const statusAccepted = "accepted"
 // memberResponse is one member as the members page shows it. It deliberately
 // carries no e-mail address: a project admin manages memberships, not the
 // accounts behind them. A membership whose identity is withheld never becomes
-// one (visibleMember), so there is no field telling one apart either.
+// one (visibleMember), so there is no field telling one apart either. Nor does
+// it carry the account's instance role: a system administrator who is a member
+// is listed with their stored project role like anybody else, so a project
+// never learns that the role exists.
 type memberResponse struct {
 	UserUID     string       `json:"user_uid"`
 	Username    string       `json:"username"`
@@ -35,10 +38,6 @@ type memberResponse struct {
 	// account was active in other projects.
 	LastSeenAt *time.Time `json:"last_seen_at"`
 	HasPicture bool       `json:"has_picture"`
-	// Maintainer marks the instance's system administrator: its project role
-	// has no effect (it administers every project), so the page names it
-	// instead of a role and offers no role change (project.Member).
-	Maintainer bool `json:"maintainer"`
 }
 
 // addRequest is the body of POST /members.
@@ -62,7 +61,6 @@ func toMemberResponse(m project.Member) memberResponse {
 	return memberResponse{
 		UserUID: m.UserUID, Username: m.Username, DisplayName: m.DisplayName, Role: m.Role,
 		ApprovedAt: m.ApprovedAt, LastSeenAt: m.LastSeenAt, HasPicture: m.HasPicture,
-		Maintainer: m.Maintainer,
 	}
 }
 
@@ -139,31 +137,31 @@ func (a *API) handleWithdraw(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, acceptedResponse{Status: statusAccepted})
 }
 
-// visibleMember reads the membership of userUID in the request's project, or
-// project.ErrNotMember when there is none — or when its identity is withheld.
+// visibleMember checks that userUID holds a membership of the request's project
+// the project may see: project.ErrNotMember when there is none — or when its
+// identity is withheld.
 // Every route addressing a member by uid goes through it first: the project
 // cannot see such a membership, so an admin who knows the account's uid from
 // elsewhere (another project they share) must not learn from a 200 or a 204
 // that the address they typed into the blind add was that account's. Should
 // the account enter between this read and the change, it is visible by then.
-func (a *API) visibleMember(r *http.Request, userUID string) (*project.Member, error) {
+func (a *API) visibleMember(r *http.Request, userUID string) error {
 	member, err := a.members.Membership(r.Context(), auth.ProjectUIDFromContext(r.Context()), userUID)
 	if err != nil {
-		return nil, fmt.Errorf("reading member %s: %w", userUID, err)
+		return fmt.Errorf("reading member %s: %w", userUID, err)
 	}
 	if member.IdentityWithheld {
-		return nil, project.ErrNotMember
+		return project.ErrNotMember
 	}
-	return member, nil
+	return nil
 }
 
 // handleSetRole changes a member's role. It answers 200 with the member, 404
 // not_member for a membership whose identity is withheld (visibleMember), 409
 // self for the caller's own membership (another admin must do it), 409
-// maintainer for a system administrator's membership (its project role has no
-// effect, so a change would only make the list lie), 409 last_admin for
-// demoting the project's only admin, 404 not_member, 422 invalid_role and 400
-// invalid_body.
+// last_admin for demoting the project's only admin, 404 not_member, 422
+// invalid_role and 400 invalid_body. A system administrator's membership is
+// changed like any other: their access to the instance never depended on it.
 func (a *API) handleSetRole(w http.ResponseWriter, r *http.Request) {
 	var req roleRequest
 	if err := decodeBody(r, &req); err != nil {
@@ -181,14 +179,8 @@ func (a *API) handleSetRole(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, codeSelf, "an admin cannot change their own role")
 		return
 	}
-	current, err := a.visibleMember(r, userUID)
-	if err != nil {
+	if err := a.visibleMember(r, userUID); err != nil {
 		writeStoreError(w, err, "reading a member")
-		return
-	}
-	if current.Maintainer {
-		writeError(w, http.StatusConflict, codeMaintainer,
-			"a system administrator administers every project; its project role cannot be changed")
 		return
 	}
 	member, err := a.members.SetRole(r.Context(), auditMeta(r), auth.ProjectUIDFromContext(r.Context()), userUID, role)
@@ -206,7 +198,7 @@ func (a *API) handleSetRole(w http.ResponseWriter, r *http.Request) {
 // withheld (visibleMember).
 func (a *API) handleApprove(w http.ResponseWriter, r *http.Request) {
 	userUID := chi.URLParam(r, "user_uid")
-	if _, err := a.visibleMember(r, userUID); err != nil {
+	if err := a.visibleMember(r, userUID); err != nil {
 		writeStoreError(w, err, "reading a member")
 		return
 	}
@@ -226,7 +218,7 @@ func (a *API) handleApprove(w http.ResponseWriter, r *http.Request) {
 // (visibleMember; POST /members/withdraw is its way out).
 func (a *API) handleRemove(w http.ResponseWriter, r *http.Request) {
 	userUID := chi.URLParam(r, "user_uid")
-	if _, err := a.visibleMember(r, userUID); err != nil {
+	if err := a.visibleMember(r, userUID); err != nil {
 		writeStoreError(w, err, "reading a member")
 		return
 	}

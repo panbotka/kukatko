@@ -19,12 +19,13 @@ const foreignKeyViolation = "23503"
 // order; it reads project_members as m joined with users as u. A membership
 // whose identity is withheld (an exact-match add the account has not entered
 // yet, see AddByIdentifier) reads with an empty username and display name, no
-// last sign-in, no picture and not as a maintainer: the project learns who the
-// account is only once it comes in. A pending membership reads with no picture
-// either: GET /users/{uid}/avatar shows an account only to those it shares a
-// project with as an approved member (SharesProject), so a pending one would
-// promise a picture its reader is refused. 'maintainer' is the instance role
-// (auth.RoleMaintainer), spelled out because this package does not import auth.
+// last sign-in and no picture: the project learns who the account is only once
+// it comes in. A pending membership reads with no picture either:
+// GET /users/{uid}/avatar shows an account only to those it shares a project
+// with as an approved member (SharesProject), so a pending one would promise a
+// picture its reader is refused. Nothing here reads the account's
+// instance role: a system administrator's membership is an ordinary one, and
+// the project must not learn that the role exists.
 const memberColumns = `m.project_uid, m.user_uid, m.role, m.approved_at, m.subject_uid,
 	m.last_seen_at, m.visit_reference_at, m.task_digest_at, m.created_at,
 	CASE WHEN m.identity_withheld THEN '' ELSE u.username END,
@@ -32,8 +33,7 @@ const memberColumns = `m.project_uid, m.user_uid, m.role, m.approved_at, m.subje
 	CASE WHEN m.identity_withheld THEN NULL ELSE u.last_login_at END,
 	(NOT m.identity_withheld AND m.approved_at IS NOT NULL AND (m.subject_uid IS NOT NULL
 		OR EXISTS (SELECT 1 FROM user_pictures up WHERE up.user_uid = u.uid))),
-	m.identity_withheld,
-	(NOT m.identity_withheld AND u.role = 'maintainer')`
+	m.identity_withheld`
 
 // memberFrom joins a membership with its account.
 const memberFrom = ` FROM project_members m JOIN users u ON u.uid = m.user_uid`
@@ -43,7 +43,7 @@ func scanMember(row pgx.Row) (*Member, error) {
 	var m Member
 	if err := row.Scan(&m.ProjectUID, &m.UserUID, &m.Role, &m.ApprovedAt, &m.SubjectUID,
 		&m.LastSeenAt, &m.VisitReferenceAt, &m.TaskDigestAt, &m.CreatedAt,
-		&m.Username, &m.DisplayName, &m.LastLoginAt, &m.HasPicture, &m.IdentityWithheld, &m.Maintainer); err != nil {
+		&m.Username, &m.DisplayName, &m.LastLoginAt, &m.HasPicture, &m.IdentityWithheld); err != nil {
 		return nil, fmt.Errorf("scanning project member: %w", err)
 	}
 	return &m, nil

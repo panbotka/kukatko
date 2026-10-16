@@ -60,7 +60,6 @@ function member(overrides: Partial<ProjectMemberRow> = {}): ProjectMemberRow {
     approved_at: '2026-10-01T10:00:00Z',
     last_seen_at: '2026-10-12T08:30:00Z',
     has_picture: false,
-    maintainer: false,
     ...overrides,
   }
 }
@@ -145,42 +144,28 @@ describe('MembersPage', () => {
     expect(novak.getByText('nikdy')).toBeInTheDocument()
   })
 
-  it('names a maintainer for what it is and offers no role change on its row', async () => {
+  it('lists every member alike, never naming an instance role', async () => {
+    // The server says nothing about a system administrator who is a member: the
+    // row is an ordinary one with the stored role, a select and a removal.
     fetchMock.mockResolvedValue([
       ME,
-      member({
-        user_uid: 'u9',
-        username: 'ops',
-        display_name: 'Ops',
-        role: 'viewer',
-        maintainer: true,
-      }),
+      member({ user_uid: 'u9', username: 'ops', display_name: 'Ops', role: 'viewer' }),
     ])
     renderPage()
 
     await screen.findByText('ops')
     const ops = within(rowOf('ops'))
-    expect(ops.queryByRole('combobox')).not.toBeInTheDocument()
-    expect(ops.getByText('Správce systému')).toBeInTheDocument()
-    expect(ops.queryByText('Prohlížeč')).not.toBeInTheDocument()
-  })
-
-  it('words the server refusing a maintainer role change', async () => {
-    roleMock.mockRejectedValue(new MemberApiError(409, 'maintainer'))
-    const user = userEvent.setup()
-    renderPage()
-
-    await screen.findByText('jana')
-    await user.selectOptions(
-      within(rowOf('jana')).getByRole('combobox', { name: 'Role uživatele Jana Nováková' }),
-      'viewer',
+    const select = ops.getByRole('combobox', { name: 'Role uživatele Ops' })
+    expect(select).toHaveValue('viewer')
+    expect(select).toBeEnabled()
+    expect(ops.getByRole('button', { name: 'Odebrat' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
     )
-    await waitFor(() => {
-      expect(toastShow).toHaveBeenCalledWith({
-        message: i18n.t('members.maintainerRoleReason'),
-        variant: 'danger',
-      })
-    })
+    expect(screen.queryByText(/správce systému/i)).not.toBeInTheDocument()
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).not.toContain(
+      i18n.t('roles.maintainer'),
+    )
   })
 
   it('keeps one’s own role and removal off, saying why', async () => {

@@ -269,7 +269,8 @@ func TestMentions_taskThread(t *testing.T) {
 
 // TestRead_formerMembers verifies an author and a mentioned account that have
 // left the comment's project read as former members — no name, no person, the
-// flag set — while a maintainer, who belongs to every project, keeps its name.
+// flag set — a system administrator among them: their implicit access to every
+// project must not tell the project that the role exists.
 // A blind re-add of the two (an exact-match add they have not entered, its
 // identity withheld) changes nothing: their live names coming back would tell
 // the admin who typed the address whose it was.
@@ -304,7 +305,7 @@ func TestRead_formerMembers(t *testing.T) {
 			t.Errorf("%s: author = %q former=%v uid=%q, want a nameless former member", when, got.AuthorName,
 				got.AuthorFormer, got.AuthorUID)
 		}
-		want := []comments.Mention{{UserUID: bob, Former: true}, {UserUID: ops, Name: "Ops"}}
+		want := []comments.Mention{{UserUID: bob, Former: true}, {UserUID: ops, Former: true}}
 		if !reflect.DeepEqual(got.Mentions, want) {
 			t.Errorf("%s: mentions = %+v, want %+v", when, got.Mentions, want)
 		}

@@ -2184,7 +2184,8 @@ here.
   mismatched passwords, a dead link on opening, a link that dies between opening and submitting, a
   server-refused password and an unreachable check,
   `AccountPage` = identity and **the role in every project the account may enter, each named** („Role v
-projektech": `Veselice Kurátor`, `Rodina Správce`; plus „Správce systému" for the maintainer) — the page belongs
+projektech": `Veselice Kurátor`, `Rodina Správce`; plus „Správce systému" for the maintainer only — a non-maintainer
+sees no instance role at all, only the project roles) — the page belongs
 to no project, so a single role would be the last-visited project's, unnamed, **the Jazyk section** (`LanguageSwitcher` +
   a hint, `account.language*`) and changing your own password, **plus the app's technical status**
   (`GET /healthz` badge + version, without the commit hash) in a small muted row at the bottom — status and language
@@ -2339,7 +2340,10 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   shot variants (stacks), the map and places, deletion+trash, import, **roles** (what each role may do), the
   account, and **API tokens** (`help.sections.apiTokens.*`, id `api-tokens` → the anchor `#help-api-tokens`
   the account page's empty state links to: what a token is, that its secret is shown exactly once, that it
-  carries the reader's own permissions, and to revoke one that is no longer needed). Texts
+  carries the reader's own permissions, and to revoke one that is no longer needed). **The import chapter
+  and the „Správce systému" rung of the roles ladder render for a maintainer only** (`maintainerOnly` on
+  `HelpSection` / `ROLE_ROWS`, read off `useAuth().isMaintainer`): a member reads the four project roles
+  and nothing that names the system administrator. Texts
   in the new top-level namespace `help.*` (cs/en); the first `Accordion` in the app. The **Search chapter
   teaches the query language** (`SearchQueryChapter`): `help.sections.search.queryTitle`/`queryIntro`, three
   ready-made queries as a `<dl>` (`QUERY_EXAMPLES` — literal query text, the same in both languages, one
@@ -3179,10 +3183,9 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   account's uid; it shows up as an ordinary row once the account opens the project. **Your own row** keeps the role select natively `disabled` with the reason
   („Vlastní roli změnit nemůžete…") as a `title` on a wrapper (a disabled control gets no pointer events) and as
   the select's `aria-describedby`, and its Odebrat is a `ReasonedButton` off with its own reason — another admin
-  has to do either. **A system administrator's row** (`maintainer: true`) shows „Správce systému"
-  (`roles.maintainer`, a badge with the reason as its `title` and description) instead of a role select: a
-  maintainer administers every project whatever its membership says, so a role there would only lie — the
-  server refuses a change with `409 maintainer`, worded with the same reason. Refusals arrive as **toasts**
+  has to do either. **A system administrator who is a member is an ordinary row** — the server tells the page
+  nothing about the instance role, so it gets the stored role in a select and Odebrat like anybody else (and a
+  non-member maintainer is not listed at all). Refusals arrive as **toasts**
   (`useToast`, mapped by `MemberApiError.code`): `last_admin` →
   „Projekt musí mít alespoň jednoho administrátora.", `self` → „Tohle nemůžete udělat sami sobě…", `not_member` →
   a toast plus a refetch (somebody else removed the member meanwhile), anything else → the action's own failure.
@@ -5283,8 +5286,11 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   back to the library. It takes the demanded role
   (`GuardRole` = `Role` without `viewer`, the floor nobody can miss) and prints **its own sentence per
   role** — `forbidden.message.{curator,editor,admin,maintainer}` — rather than interpolating a role name into
-  one template: Czech would have to decline it („roli editora" / „roli správce systému") and the way
+  one template: Czech would have to decline it („roli editora" / „roli kurátora") and the way
   to *get* the role differs (a curator or an editor asks an admin; an admin asks someone who already is one).
+  The instance-only `maintainer` guard (`/system/*`, `/maintenance`, `/p/<slug>/import`) **names no role**:
+  „Tahle stránka vám není přístupná." and the way back — an ordinary member must not learn that the system
+  administrator exists.
   `MESSAGE_KEYS` is exhaustive over `GuardRole`, so a new rung on the ladder fails the build until it has
   its sentence.
   Because it renders instead of navigating, **the URL stays on the protected route** — a reload
@@ -8004,7 +8010,7 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `members.ts` = the project admin's client of `/api/v1/p/<slug>/members` (`apiPath`): `fetchMembers(signal)` →
   `ProjectMemberRow[]` (`user_uid`, `username`, `display_name`, `role`, `approved_at`, `last_seen_at` — the
   member's last visit to this project, the column „Naposledy v projektu", never the account's last sign-in,
-  `has_picture`, `maintainer`), `setMemberRole(uid,role)` (`PATCH`), `approveMember(uid)` (`POST …/approve`), `removeMember(uid)`
+  `has_picture` — nothing about the instance role), `setMemberRole(uid,role)` (`PATCH`), `approveMember(uid)` (`POST …/approve`), `removeMember(uid)`
   (`DELETE`), each throwing **`MemberApiError`** with the backend's `code` (`last_admin`, `self`, `not_member`,
   `invalid_role`), and **`addMember(identifier,role)`** (`POST`), which **resolves for any HTTP answer and returns
   nothing** — the backend's 202 is identical for a hit and a miss, and the client keeps it that way; only a
@@ -8069,7 +8075,10 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   a language change leaves nothing in storage; the per-account half is `accountLanguage.test.ts`) +
   `screens.test.tsx` (representative
   screens — the navbar + tiles — render without missing-key warnings in both cs and en via
-  `cloneInstance({saveMissing})`, plural rendering 1/3/5, a language switch rewrites the visible text)),
+  `cloneInstance({saveMissing})`, plural rendering 1/3/5, a language switch rewrites the visible text) +
+  `maintainerHidden.test.ts` (no cs/en string names the system administrator — „správce systému",
+  "maintainer", „systémová role" in any declension — unless its key is on the `MAINTAINER_ONLY` allow-list
+  of strings rendered only for a maintainer, each with its reason; a stale entry fails)),
   `styles/viewTransition.css` (**the grid ⇄ viewer morph's choreography** — imported last in `main.tsx`, and
   inert in any browser without the API, which simply drops an unknown pseudo element. Its rules:
   `[data-kk-morph] { view-transition-name: kk-morph }` (the mark `useMorphMark` paints — see

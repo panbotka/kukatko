@@ -50,8 +50,8 @@ func (s *Store) WithMentionObserver(observer MentionObserver) *Store {
 // column is the comment's mentions as a JSON array (see mentionsColumn).
 //
 // An author who has left the comment's project (no membership there now, or
-// only one whose identity is withheld — see authorJoin —, and not the
-// instance's maintainer, who belongs everywhere) reads as a former member: no
+// only one whose identity is withheld — see authorJoin —, whatever the
+// account's instance role) reads as a former member: no
 // name — the project must not keep seeing a live name, renamed perhaps in
 // another project — and author_former set, so the client says "former member"
 // and draws no picture.
@@ -63,8 +63,9 @@ const commentColumns = `c.uid, COALESCE(c.photo_uid, ''), COALESCE(c.task_uid, '
 
 // authorFormerSQL is true for a comment whose author's account still exists but
 // is no member of the comment's project any more (authorJoin's um row is
-// missing) and is not a maintainer. 'maintainer' is auth.RoleMaintainer.
-const authorFormerSQL = `(u.uid IS NOT NULL AND um.user_uid IS NULL AND u.role <> 'maintainer')`
+// missing). A system administrator is no exception (project.FormerMemberSQL):
+// the project must not learn that the role exists.
+const authorFormerSQL = `(u.uid IS NOT NULL AND um.user_uid IS NULL)`
 
 // mentionsColumn resolves the comment's stored mentions (comment_mentions) to
 // the accounts' current names and the people their memberships of the
@@ -73,7 +74,7 @@ const authorFormerSQL = `(u.uid IS NOT NULL AND um.user_uid IS NULL AND u.role <
 // than a join so a comment stays one row however many people it names; an
 // account deleted since has no row (the cascade took it), so it is simply
 // absent, and the client falls back to the token's name. An account that has
-// left the project (no membership, not a maintainer) is a former member: no
+// left the project (no membership, whatever its instance role) is a former member: no
 // name, no person, 'former' true. So is one whose only membership is a
 // withheld exact-match add: re-adding a former member's guessed address must
 // not bring their live name back, which would tell the admin whose it was.
@@ -89,9 +90,9 @@ const mentionsColumn = `COALESCE((
 	WHERE m.comment_uid = c.uid), '[]'::jsonb)`
 
 // mentionFormerSQL is true for a mentioned account with no membership of the
-// comment's project (mentionsColumn's mm row is missing) that is not a
-// maintainer.
-const mentionFormerSQL = `(mm.user_uid IS NULL AND mu.role <> 'maintainer')`
+// comment's project (mentionsColumn's mm row is missing), a system
+// administrator included.
+const mentionFormerSQL = `(mm.user_uid IS NULL)`
 
 // commentProjectSQL is the project of the comment row aliased c: the project
 // of whichever photo, task or album it hangs off (a comment carries no project
@@ -111,7 +112,7 @@ const mutationColumns = `uid, photo_uid, task_uid, album_uid, author_uid, body, 
 // fact about one project's people). All three are LEFT JOINs, and for
 // different reasons: the user because author_uid is ON DELETE SET NULL (losing
 // the account must not lose the comment), the membership because the author
-// may have left the project (or is a maintainer who never joined it, or holds
+// may have left the project (or is a system administrator who never joined it, or holds
 // only a membership whose identity is withheld, which counts as none: a blind
 // re-add of a former member's address must not revive their name), the
 // subject because almost no account is linked to one and a linked one usually

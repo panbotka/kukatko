@@ -212,7 +212,7 @@
         "viewer": "Prohlíží fotky, alba, štítky, mapu i žebříček a nahrává nové fotky. Nic dalšího nemění.",
         "curator": "Navíc třídí obličeje a lidi, spravuje alba i štítky, řadí nahrané fotky do alb a hraje třídicí hru.",
         "editor": "Navíc upravuje fotky a jejich údaje (třeba datum pořízení), slučuje duplicity a přesouvá fotky do koše.",
-        "admin": "Navíc spravuje uživatele, vidí auditní log a může trvale mazat.",
+        "admin": "Navíc spravuje členy projektu, vidí auditní log a může trvale mazat.",
         "maintainer": "Navíc spouští importy a údržbu, sleduje stav systému a spravuje zálohy."
       },
       "account": {
@@ -3466,7 +3466,7 @@
   },
   "projectUnavailable": {
     "title": "Projekt je vypnutý",
-    "message": "Projekt {{project}} správce systému vypnul, takže ho teď nelze otevřít. Vaše ostatní projekty najdete v přehledu.",
+    "message": "Projekt {{project}} je vypnutý, takže ho teď nelze otevřít. Vaše ostatní projekty najdete v přehledu.",
     "projects": "Zpět na projekty"
   },
   "forbidden": {
@@ -3475,7 +3475,7 @@
       "curator": "Na tuhle část potřebujete roli kurátora — požádejte o ni správce.",
       "editor": "Na tuhle část potřebujete roli editora — požádejte o ni správce.",
       "admin": "Na tuhle část potřebujete roli správce — požádejte o ni někoho, kdo ji už má.",
-      "maintainer": "Na tuhle část potřebujete roli správce systému — požádejte o ni někoho, kdo ji už má."
+      "maintainer": "Tahle stránka vám není přístupná."
     },
     "back": "Zpět do knihovny"
   },
@@ -4164,7 +4164,7 @@
       "maxFile": "Největší povolený soubor",
       "maxTotal": "Celkový limit originálů",
       "unlimited": "neomezeno",
-      "note": "Limity nastavuje správce systému.",
+      "note": "Limity projektu se tady měnit nedají.",
       "loadFailed": "Využití se nepodařilo načíst.",
       "barLabel": "Zaplnění úložiště",
       "barText": "Využito {{used}} z {{limit}} ({{percent}} %)",
@@ -4199,7 +4199,6 @@
       "actions": "Akce"
     },
     "roleLabel": "Role uživatele {{name}}",
-    "maintainerRoleReason": "Správce systému spravuje všechny projekty, ať má v projektu jakoukoli roli — tu proto měnit nelze.",
     "selfRoleReason": "Vlastní roli změnit nemůžete — musí to udělat jiný správce projektu.",
     "pending": "Čeká na schválení",
     "approved": "Schválený",

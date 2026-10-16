@@ -495,7 +495,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   (+ a human `message` where the client should show the rule); every mutation is audited by
   `internal/project` in the change's transaction, with the project.
   - `GET /members` → a bare array by display name: `[{user_uid, username, display_name, role,
-    approved_at, last_seen_at, has_picture, maintainer}]` — `approved_at: null` is a membership
+    approved_at, last_seen_at, has_picture}]` — `approved_at: null` is a membership
     waiting for approval; `last_seen_at` is the member's **last visit to this project** (the membership's
     clock `GET /whats-new` stamps), `null` for never — never the account's last sign-in, which told a project's
     admin when the account was active in other projects; `has_picture` says `GET /users/{uid}/avatar` is worth asking (an uploaded/picked
@@ -505,8 +505,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     is **not listed at all** — not even as a nameless row: a row would appear only when the typed address
     belonged to an account, and would hand the project the account's uid (and with it its picture). The
     first request the account makes inside the project ends the withholding, and from then on it is listed
-    like any member. `maintainer: true` marks the instance's **system administrator**: it administers every
-    project whatever its membership's `role` says, so the page shows „Správce systému" instead of the role.
+    like any member. **Nothing names the instance role:** a system administrator who is a member is listed
+    with their stored `role` like anybody else (there is no `maintainer` field), and one who is **no**
+    member is never listed — entering the project on the implicit access adds them nowhere, nor to the name
+    directory `GET /users`. A project must not learn that the role exists.
   - `POST /members` `{identifier, role}` — add an **existing** account by its **exact** username (as
     sign-in normalises it: trimmed, lower-cased) or its e-mail address (**case-insensitive**); nothing is
     matched partially and a username wins over an address. The answer is **always `202
@@ -543,9 +545,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     visible one), `no_such_account` (with the typed `identifier`) or `ambiguous`. Refusals: 400
     `invalid_body` (a `role` field included), 422 `invalid_identifier` (blank).
   - `PATCH /members/{user_uid}` `{role}` → 200 + the member. **The caller's own membership → 409 `self`**
-    (another admin must change it); **a system administrator's membership (`maintainer: true`) → 409
-    `maintainer`** — its project role has no effect, and a change would only make the list lie (removing
-    the membership stays possible, and `POST /projects/{uid}/members` re-adds it with another role); **409 `last_admin`** when it would demote the project's last
+    (another admin must change it); a system administrator's membership is changed (and removed) like any
+    other — there is no `409 maintainer` any more: their instance-wide access never depended on it;
+    **409 `last_admin`** when it would demote the project's last
     **working** admin — an approved membership whose account is not disabled and whose identity is not
     withheld; a pending, disabled or withheld "admin" row does not count, and demoting such a row is
     never refused; 404 `not_member` (a withheld membership included); 422 `invalid_role`; 400
@@ -833,7 +835,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   uploader are reported as their own entry (`uid: ""`, `name: ""` — the client names the group), so the
   counts add up to what the grid shows. `name` is the uploader's display name, falling back to their
   username — except for a **former member** of the project (no membership there whose identity it may see,
-  not the maintainer — `project.FormerMemberSQL`; also an account an upload link credited before it checked
+  a system administrator included — `project.FormerMemberSQL`; also an account an upload link credited before it checked
   membership): the entry keeps its `uid` and count, `name` is `""` and **`former: true`** (omitted
   otherwise), so the project never reads the account's live name. The `uploader:` query filter matches a
   former member's photos by uid only, never by their name. The `uploader` filter is **the only one ignored** — a facet must not narrow its own offering;
@@ -1467,7 +1469,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   and participant changes do not count; the uid is empty when the account is gone). **Former members:**
   the creator, closer and last actor are named by the same rule as participants and comment authors — an
   account that is no member of the task's project any more (no membership there whose identity the
-  project may see, and not the maintainer; `project.FormerMemberSQL`) keeps its uid but its `*_name` is
+  project may see, a system administrator included; `project.FormerMemberSQL`) keeps its uid but its `*_name` is
   `""` and its `*_former` flag `true`, so the project never reads a live name the account may have changed
   elsewhere since it left. The same rule names the uploader facet, the photo detail's uploader and link
   account, upload-link and invite creators and a project's audit actors. Then two flags that are **relative to the
@@ -2991,7 +2993,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   edits, instance-role promote/demote, blocking, password resets — the entries no project's page shows; the
   SPA's `/system/audit` is its reader). `instance_only` accepts `true`/`false` (anything else → 400), next to a
   `?project=` → **400** `instance_only and project exclude each other`, and on `GET /p/{project}/audit` (and
-  `/p/{project}/audit/mine`) it is refused by name like `?project=`.
+  `/p/{project}/audit/mine`) it is refused by name like `?project=`. **A project's listings never name the
+  instance role:** both drop the `actor_role` detail (`"maintainer"`, stamped on what a system administrator
+  did in a project) from every entry's `details`, and a system administrator who is no member reads as a
+  former member like anybody else (`project.FormerMemberSQL`); only the instance `GET /audit` keeps it.
   Body `{entries,actors,former_actors,total,limit,offset,next_offset}` — **`actors`** maps the uid of every account that
   acted in one of the page's entries to its display name (`COALESCE(NULLIF(display_name,''), username)`,
   `audit.Store.ActorNames`; `{}` for a page without actors, an account since deleted is absent). It names

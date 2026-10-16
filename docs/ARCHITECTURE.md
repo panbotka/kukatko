@@ -1286,7 +1286,9 @@ request path singles it out (see *The guards* below). The tables are §5.2a; the
   after authentication: unknown slug, a project the caller is not a member of and — for non-maintainers —
   a deactivated one all answer the **same 404**, so a tenant never learns another project exists; an
   unapproved membership is 403 `pending_approval`; a maintainer enters as admin and the access log and
-  `audit.FromRequest` entries carry `actor_role=maintainer`. `auth.ProjectFromContext` /
+  `audit.FromRequest` entries carry `actor_role=maintainer` — a detail only the instance audit shows: a
+  project's own listings drop it, and nothing project-facing names the role (a maintainer's membership is
+  an ordinary one, a non-member maintainer a former member). `auth.ProjectFromContext` /
   `ProjectUIDFromContext` / `ProjectRoleFromContext` are the only way handlers and stores learn it.
   The frontend reads `instance_role` and the memberships `GET /auth/me` lists (role and "this is me" per
   project). The account record — `GET /auth/me`'s `user` and the maintainer-only `/admin/users` endpoints —

@@ -25,18 +25,32 @@ afterEach(async () => {
 })
 
 describe('ForbiddenPage', () => {
-  it('names the role the route actually needs', async () => {
+  it('names the project role the route actually needs', async () => {
     await i18n.changeLanguage('en')
     const cases: [GuardRole, RegExp][] = [
       ['curator', /curator role/i],
       ['editor', /editor role/i],
       ['admin', /administrator role/i],
-      ['maintainer', /maintainer role/i],
     ]
 
     for (const [role, expected] of cases) {
       const { unmount } = renderPage(role)
       expect(screen.getByTestId('forbidden-page')).toHaveTextContent(expected)
+      unmount()
+    }
+  })
+
+  it('never names the instance role behind a system screen', async () => {
+    for (const [language, sentence] of [
+      ['cs', 'Tahle stránka vám není přístupná.'],
+      ['en', 'This page is not available to you.'],
+    ] as const) {
+      await i18n.changeLanguage(language)
+      const { unmount } = renderPage('maintainer')
+      const page = screen.getByTestId('forbidden-page')
+      expect(within(page).getByText(sentence)).toBeInTheDocument()
+      expect(page).not.toHaveTextContent(/správc|maintainer|system admin/i)
+      expect(within(page).getByRole('link')).toHaveAttribute('href', '/p/v')
       unmount()
     }
   })

@@ -22,7 +22,6 @@ const (
 	codeNotMember         = "not_member"
 	codeLastAdmin         = "last_admin"
 	codeSelf              = "self"
-	codeMaintainer        = "maintainer"
 	codeInternal          = "internal"
 )
 

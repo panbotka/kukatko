@@ -1961,7 +1961,7 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   (`json:"mentions"`, never nil) — so a renamed account reads under its new name in every old comment and a
   deleted one (its rows cascaded away) is simply absent, the client falling back to the token's own name.
   **A former member** — an account that still exists but has no membership of the comment's project any
-  more and is not a maintainer (`authorFormerSQL`/`mentionFormerSQL`, over `authorJoin`'s and the mention's
+  more, whatever its instance role (`authorFormerSQL`/`mentionFormerSQL`, over `authorJoin`'s and the mention's
   `project_members` LEFT JOIN) — reads with **no name** and `Comment.AuthorFormer` / `Mention.Former` set (no
   person either), so the project stops seeing a live name renamed later elsewhere (CAT-4,
   `TestRead_formerMembers`); `internal/photoapi`'s last-comment field carries `author_former` too.
@@ -4328,8 +4328,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (an unknown membership is not an error); consumed by `internal/taskdigestjob`;
   **who is on a task** (`participants.go`, table `photo_task_participants` from migration
   `0081_photo_task_participants.sql`): `Participant{UserUID,Name,JoinedAt,AddedByUID,AddedByName,Former,
-  AddedByFormer}` (a participant — or whoever asked them — who has left the task's project and is no
-  maintainer reads with no name and the flag set, `participantFormerParam`/`…Task`, CAT-4; so do the task's
+  AddedByFormer}` (a participant — or whoever asked them — who has left the task's project, a system
+  administrator included, reads with no name and the flag set, `participantFormerParam`/`…Task`, CAT-4; so do the task's
   creator, closer and last actor — `Task.CreatedByFormer`/`ClosedByFormer`/`LastActivityByFormer`,
   `project.ShownNameSQL` over `t.project_id`),
   `Participants`/`Assign`/`Unassign`/`Join`, `Filter.ParticipantUID`, and — the part that makes the list
@@ -7520,8 +7520,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     not pass.
   - `member_former.go` — **the one rule for showing a stored account by name in a project**:
     `FormerMemberSQL(projectExpr, userAlias)` is true for an account row with no membership of the project
-    whose identity the project may see (none, or only a withheld exact-match add) that is not the maintainer
-    — a **former member**, also an account credited before the upload link checked membership; NULL for a
+    whose identity the project may see (none, or only a withheld exact-match add) — a system administrator
+    included, whose implicit access a project must not learn of — a **former member**, also an account credited before the upload link checked membership; NULL for a
     missing LEFT JOINed account. `ShownNameSQL` is its name column (display name, else username, `''` for a
     former member or a missing account). Read by the task creator/closer/last actor (`internal/phototask`),
     the uploader facet and the `uploader:` filter's name arms (`internal/photos`), the photo detail's uploader
@@ -7576,10 +7576,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     404 `not_member`, byte-identical to a uid that is no member — so an admin who knows the account's uid
     from elsewhere cannot confirm whose address the blind add found. `POST /members/withdraw` answers the
     add's one `202` whatever `WithdrawByIdentifier` reports. The project is always `auth.ProjectUIDFromContext`; the self rules
-    are the handler's (`PATCH` of the caller's own uid → `self` before the store; `PATCH` of a system
-    administrator's membership — `project.Member.Maintainer`, read through `Members.Membership` — →
-    `maintainer`, its project role having no effect; `DELETE` of oneself maps
-    the store's `ErrLastAdmin` to `self`). `POST /members` answers the one `202 {"status":"accepted"}`
+    are the handler's (`PATCH` of the caller's own uid → `self` before the store; `DELETE` of oneself maps
+    the store's `ErrLastAdmin` to `self`). A system administrator's membership is an ordinary one: neither
+    `project.Member` nor the member JSON carries the instance role, so the project never learns of it. `POST /members` answers the one `202 {"status":"accepted"}`
     whatever `AddByIdentifier` reports. The member JSON's time is `last_seen_at`
     (`project.Member.LastSeenAt`, the membership's own visit clock), never the account's `last_login_at`,
     which would show the project's admin when the account was active elsewhere. `approvalMail` builds the `project.ApproveHook` that reads the

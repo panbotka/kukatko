@@ -204,7 +204,7 @@
         "viewer": "Views photos, albums, labels, the map and the leaderboard, and uploads new photos. Changes nothing else.",
         "curator": "Additionally sorts faces and people, manages albums and labels, files uploaded photos into albums and plays the review game.",
         "editor": "Additionally edits photos and their details (the capture date among them), merges duplicates and moves photos to the trash.",
-        "admin": "Additionally manages users, sees the audit log, and can delete permanently.",
+        "admin": "Additionally manages the project's members, sees the audit log, and can delete permanently.",
         "maintainer": "Additionally runs imports and maintenance, watches system status, and manages backups."
       },
       "account": {
@@ -2685,7 +2685,7 @@
       "preparing": "This video is still being prepared for playback. Please come back in a few minutes.",
       "preparingNow": "This video is being prepared for playback right now. It will play in a moment.",
       "preparationFailed": "Preparing this video for playback did not finish.",
-      "preparationFailedHint": "The details are in the Processing section, where a maintainer can start the preparation again.",
+      "preparationFailedHint": "The details are in the Processing section, where an administrator can start the preparation again.",
       "preparingHint": "A smoother version for playing and seeking is being prepared.",
       "live": "Live",
       "livePlay": "Hold or hover to play the motion clip",
@@ -3296,7 +3296,7 @@
   },
   "projectUnavailable": {
     "title": "The project is switched off",
-    "message": "The system administrator has switched the project {{project}} off, so it cannot be opened now. Your other projects are in the overview.",
+    "message": "The project {{project}} is switched off, so it cannot be opened now. Your other projects are in the overview.",
     "projects": "Back to projects"
   },
   "forbidden": {
@@ -3305,7 +3305,7 @@
       "curator": "You need the curator role for this part — ask an administrator for it.",
       "editor": "You need the editor role for this part — ask an administrator for it.",
       "admin": "You need the administrator role for this part — ask someone who already has it.",
-      "maintainer": "You need the maintainer role for this part — ask someone who already has it."
+      "maintainer": "This page is not available to you."
     },
     "back": "Back to the library"
   },
@@ -3964,7 +3964,7 @@
       "maxFile": "Largest file allowed",
       "maxTotal": "Limit on all originals",
       "unlimited": "unlimited",
-      "note": "Limits are set by the system administrator.",
+      "note": "The project's limits cannot be changed here.",
       "loadFailed": "Usage could not be loaded.",
       "barLabel": "Storage used",
       "barText": "{{used}} of {{limit}} used ({{percent}} %)",
@@ -3999,7 +3999,6 @@
       "actions": "Actions"
     },
     "roleLabel": "Role of {{name}}",
-    "maintainerRoleReason": "A maintainer administers every project whatever their role in it, so that role cannot be changed.",
     "selfRoleReason": "You cannot change your own role — another project admin has to.",
     "pending": "Waiting for approval",
     "approved": "Approved",

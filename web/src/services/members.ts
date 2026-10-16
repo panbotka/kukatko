@@ -33,12 +33,6 @@ export interface ProjectMemberRow {
   last_seen_at: string | null
   /** True when `GET /users/{uid}/avatar` has a picture to answer with. */
   has_picture: boolean
-  /**
-   * True for the instance's system administrator: it administers every project
-   * whatever its membership says, so the page names it instead of a role and
-   * offers no role change (the server refuses one with `409 maintainer`).
-   */
-  maintainer: boolean
 }
 
 /** A refusal of the members API; `message` (inherited) is the `code`. */

@@ -315,3 +315,31 @@ func TestInstanceListing_instanceOnly(t *testing.T) {
 	badRequest(t, f.maintainer, base+"/audit?instance_only=yes", "instance_only")
 	badRequest(t, f.adminV, base+"/p/v/audit?instance_only=true", "instance_only")
 }
+
+// TestProjectListing_hidesTheInstanceRole proves a project's listing never
+// tells its admin that a system administrator acted there: a maintainer who is
+// no member of b reads as a nameless former member, and the entry carries no
+// actor_role — which the maintainer's own instance listing keeps.
+func TestProjectListing_hidesTheInstanceRole(t *testing.T) {
+	f := newProjectFixture(t)
+	_, rootUID := f.env.loginUser(t, "root", auth.AccountMaintainer)
+	f.env.seed(t, audit.Entry{ActorUID: rootUID, Action: audit.ActionAlbumCreate, TargetType: "albums",
+		TargetUID: "al-root", ProjectUID: f.b.UID, Details: map[string]any{"actor_role": "maintainer"}})
+	base := f.env.baseURL + "/api/v1"
+
+	got := list(t, f.adminB, base+"/p/b/audit")
+	if !slices.Contains(targets(got), "al-root") {
+		t.Fatalf("b's listing targets = %v, want al-root", targets(got))
+	}
+	if _, named := got.Actors[rootUID]; named || !slices.Contains(got.FormerActors, rootUID) {
+		t.Errorf("b's actors = %v / former %v, want the maintainer nameless among the former", got.Actors,
+			got.FormerActors)
+	}
+	if _, body := rawGet(t, f.adminB, base+"/p/b/audit"); strings.Contains(body, "maintainer") ||
+		strings.Contains(body, "actor_role") || strings.Contains(body, `"root"`) {
+		t.Errorf("b's listing %s names the instance role or the maintainer", body)
+	}
+	if _, body := rawGet(t, f.maintainer, base+"/audit?project=b"); !strings.Contains(body, `"actor_role":"maintainer"`) {
+		t.Errorf("the instance listing %s lost actor_role", body)
+	}
+}

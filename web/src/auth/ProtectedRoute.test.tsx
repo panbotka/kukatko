@@ -174,10 +174,11 @@ describe('RequireImport', () => {
   it('shows admins, editors and viewers the 403 page on the route itself', () => {
     // Import is now an operations capability: only a maintainer holds it, so even
     // an admin (governance, not operations) is refused — and told so, on the URL
-    // they asked for, rather than being dropped on the library.
+    // they asked for, rather than being dropped on the library — in words that
+    // never name the system administrator role.
     for (const role of ['admin', 'editor', 'viewer'] as const) {
       const { unmount } = renderApp(authValue('authenticated', role), 'import')
-      expect(screen.getByTestId('forbidden-page')).toHaveTextContent(/maintainer role/i)
+      expect(screen.getByTestId('forbidden-page')).toHaveTextContent(/not available to you/i)
       expect(screen.getByTestId('pathname')).toHaveTextContent('/secret')
       expect(screen.queryByText('secret content')).not.toBeInTheDocument()
       expect(screen.queryByText('home page')).not.toBeInTheDocument()

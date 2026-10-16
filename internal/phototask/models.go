@@ -264,8 +264,8 @@ type Participant struct {
 	AddedByUID  string `json:"added_by,omitempty"`
 	AddedByName string `json:"added_by_name,omitempty"`
 	// Former reports a participant whose account is no member of the task's
-	// project any more (and no maintainer): Name is empty then, and the client
-	// says "former member" without a picture or a link.
+	// project any more: Name is empty then, and the client says "former
+	// member" without a picture or a link.
 	Former bool `json:"former"`
 	// AddedByFormer is Former for whoever put this person on the task;
 	// AddedByName is empty then.
