@@ -121,7 +121,7 @@ func (a *API) handleStoryboardSprite(w http.ResponseWriter, r *http.Request) {
 	projectUID := auth.ProjectUIDFromContext(r.Context())
 	reader, _, err := a.storyboards.Open(r.Context(), projectUID, uid)
 	if err != nil {
-		writeStoryboardError(w, err)
+		writeStoryboardError(w, r, photo, err)
 		return
 	}
 	defer func() { _ = reader.Close() }()
@@ -146,8 +146,9 @@ func storyboardETag(ctx context.Context, svc StoryboardService, projectUID, uid 
 
 // writeStoryboardError maps a sprite read failure to an HTTP response: 404 for a
 // missing photo and for every "there is no sprite" condition (not generated yet,
-// not a scrubbable video, no known duration), otherwise 500.
-func writeStoryboardError(w http.ResponseWriter, err error) {
+// not a scrubbable video, no known duration), otherwise 500 logged through
+// mediaFailure.
+func writeStoryboardError(w http.ResponseWriter, r *http.Request, photo photos.Photo, err error) {
 	switch {
 	case errors.Is(err, photos.ErrPhotoNotFound),
 		errors.Is(err, storyboard.ErrNotGenerated),
@@ -155,6 +156,6 @@ func writeStoryboardError(w http.ResponseWriter, err error) {
 		errors.Is(err, storyboardjob.ErrNotAVideo):
 		writeError(w, http.StatusNotFound, "no storyboard for this photo")
 	default:
-		writeError(w, http.StatusInternalServerError, "reading storyboard failed")
+		mediaFailure(w, r, photo, "storyboard", "reading storyboard failed", err)
 	}
 }

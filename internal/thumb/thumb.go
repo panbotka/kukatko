@@ -56,6 +56,7 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/panbotka/kukatko/internal/imgconvert"
 	"github.com/panbotka/kukatko/internal/photoedit"
@@ -149,6 +150,10 @@ type Thumbnailer struct {
 	location LocationLock
 	// observer receives per-size generation timing; never nil after New.
 	observer Observer
+	// flight collapses concurrent on-demand renders of one cache key (see
+	// OpenOrGenerate) into a single Generate, so a burst of first requests for
+	// one size encodes it once instead of racing each other over its file.
+	flight singleflight.Group
 }
 
 // LocationLock keeps a storage move off one photo while one of its sizes is
@@ -363,6 +368,11 @@ func (t *Thumbnailer) OpenCached(prefix, hash, size string) (io.ReadCloser, erro
 // bytes must therefore be prepared to fetch them, which is the whole difference
 // between this and OpenCached.
 //
+// Concurrent callers missing the same size share one encode (renderOnce), so
+// two first requests for one key never write — or publish — it against each
+// other; a render racing the thumbnail job is made safe by the write itself
+// (see installTemp and publishSize).
+//
 // It returns ErrUnknownSize for an unregistered size, ErrInvalidHash for a
 // malformed photo file hash, or a wrapped error from the store or the encoder.
 func (t *Thumbnailer) OpenOrGenerate(
@@ -376,7 +386,7 @@ func (t *Thumbnailer) OpenOrGenerate(
 	if !errors.Is(err, ErrNotCached) {
 		return nil, err
 	}
-	if _, err := t.Generate(ctx, photo, size); err != nil {
+	if err := t.renderOnce(ctx, photo, prefix, size); err != nil {
 		return nil, err
 	}
 	// Generate may have written the cache file, or may have skipped the size
@@ -387,6 +397,29 @@ func (t *Thumbnailer) OpenOrGenerate(
 		return nil, err
 	}
 	return reader, nil
+}
+
+// renderOnce generates the one size of photo, sharing the encode with every
+// concurrent caller asking for the same cache key. The shared encode runs on a
+// context detached from the first caller's cancellation — one client navigating
+// away must not fail the others waiting on the same render — while each caller
+// still stops waiting as soon as its own context ends.
+func (t *Thumbnailer) renderOnce(ctx context.Context, photo photos.Photo, prefix, size string) error {
+	key, err := RelPath(prefix, photo.FileHash, size)
+	if err != nil {
+		return err
+	}
+	shared := context.WithoutCancel(ctx)
+	done := t.flight.DoChan(key, func() (any, error) {
+		_, genErr := t.Generate(shared, photo, size)
+		return nil, genErr
+	})
+	select {
+	case res := <-done:
+		return res.Err
+	case <-ctx.Done():
+		return fmt.Errorf("thumb: waiting for %s/%s: %w", photo.FileHash, size, ctx.Err())
+	}
 }
 
 // openAvailable opens the size from the local cache, falling back to the object
@@ -777,11 +810,13 @@ func (t *Thumbnailer) writeSize(
 	if err != nil {
 		return fmt.Errorf("thumb: %s: %w", name, err)
 	}
-	if err := writeFileAtomic(absPath, data); err != nil {
+	written, err := writeFileAtomic(absPath, data)
+	if err != nil {
 		return fmt.Errorf("thumb: write %s: %w", name, err)
 	}
+	defer func() { _ = written.Close() }()
 	t.observer.ObserveThumbnail(time.Since(start))
-	return t.publishSize(ctx, dst, name, absPath)
+	return t.publishSize(ctx, dst, name, absPath, written)
 }
 
 // publishSize uploads the freshly written thumbnail at absPath to the storage
@@ -792,17 +827,26 @@ func (t *Thumbnailer) writeSize(
 // from the cache directory and needs no upload, so its URL is empty and this is
 // a no-op.
 //
-// When the upload fails the local cache file is removed, so the size counts as
-// ungenerated and a later Generate re-encodes and re-uploads it. That preserves
-// the invariant that on a publishing backend every cached size is also in the
-// bucket — which is what lets a client's object URL resolve.
+// written is the file this writer installed at absPath, still open: the upload
+// hashes and streams that one file, never whatever absPath names by then. Two
+// writers of one key (an on-demand render and the thumbnail job, or a forced
+// rebuild) each rename their own file into place, and re-opening absPath could
+// hand one of them the other's bytes after it had hashed its own — a digest
+// mismatch, a failed render, a 500.
+//
+// When the upload fails the local cache file is removed — but only while it is
+// still the file this writer installed (removeOwn), never one another writer
+// renamed over it since — so the size counts as ungenerated and a later
+// Generate re-encodes and re-uploads it. That preserves the invariant that on a
+// publishing backend every cached size is also in the bucket — which is what
+// lets a client's object URL resolve.
 //
 // The upload runs under the photo's lock (WithLocation), right after the photo's
 // prefix is re-read there (checkLocation): when a storage move committed the
 // photo since the generation started, or is moving it right now, the cache file
 // is removed and ErrPrefixMoved returned instead of publishing under the prefix
 // the photo has left.
-func (t *Thumbnailer) publishSize(ctx context.Context, dst target, size, absPath string) error {
+func (t *Thumbnailer) publishSize(ctx context.Context, dst target, size, absPath string, written *os.File) error {
 	rel, err := RelPath(dst.prefix, dst.hash, size)
 	if err != nil {
 		return err
@@ -810,7 +854,7 @@ func (t *Thumbnailer) publishSize(ctx context.Context, dst target, size, absPath
 	if t.originals.URL(rel) == "" {
 		return nil
 	}
-	put := func() error { return t.upload(ctx, size, rel, absPath) }
+	put := func() error { return t.upload(ctx, size, rel, written) }
 	if t.location != nil && dst.uid != "" {
 		err = t.location.Publish(ctx, dst.project, dst.uid, func(filePath string, found bool) error {
 			if err := checkLocation(dst, filePath, found); err != nil {
@@ -825,28 +869,46 @@ func (t *Thumbnailer) publishSize(ctx context.Context, dst target, size, absPath
 		err = fmt.Errorf("%w: %w", ErrPrefixMoved, err)
 	}
 	if err != nil {
-		_ = os.Remove(absPath)
+		removeOwn(absPath, written)
 		return err
 	}
 	return nil
 }
 
-// upload puts the cached thumbnail at absPath under the object key rel.
-func (t *Thumbnailer) upload(ctx context.Context, size, rel, absPath string) error {
-	digest, byteLen, err := hashAndSize(absPath)
+// upload puts the cached thumbnail file — the one this writer installed, open
+// as file — under the object key rel. The digest and the streamed bytes come
+// from the same open file, so they always agree whatever happens to the cache
+// path meanwhile.
+func (t *Thumbnailer) upload(ctx context.Context, size, rel string, file *os.File) error {
+	digest, byteLen, err := hashAndSize(file)
 	if err != nil {
 		return err
 	}
-	file, err := os.Open(absPath) //nolint:gosec // G304: absPath is built from a validated hex hash and registry size.
-	if err != nil {
-		return fmt.Errorf("thumb: reopening %s for upload: %w", size, err)
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("thumb: rewinding %s for upload: %w", size, err)
 	}
-	defer func() { _ = file.Close() }()
 	want := storage.StoredFile{Hash: digest, RelPath: rel, Size: byteLen, MIME: thumbMIME}
 	if err := t.originals.Put(ctx, file, want); err != nil {
 		return fmt.Errorf("thumb: publishing %s: %w", size, err)
 	}
 	return nil
+}
+
+// removeOwn removes the cache file at absPath when it is still the file this
+// writer installed (written), and leaves it alone when another writer has
+// renamed its own rendition over it since: that one is not this writer's
+// failure to undo, and removing it would turn the other writer's success into
+// a missing thumbnail.
+func removeOwn(absPath string, written *os.File) {
+	mine, err := written.Stat()
+	if err != nil {
+		return
+	}
+	current, err := os.Stat(absPath)
+	if err != nil || !os.SameFile(mine, current) {
+		return
+	}
+	_ = os.Remove(absPath)
 }
 
 // checkLocation returns ErrPrefixMoved when the photo of dst, whose original
@@ -862,19 +924,17 @@ func checkLocation(dst target, filePath string, found bool) error {
 	return nil
 }
 
-// hashAndSize returns the lowercase hex SHA256 digest and byte length of the file
-// at absPath, streaming it so nothing is buffered whole in memory. Storage.Put
-// verifies the uploaded stream against exactly these two values.
-func hashAndSize(absPath string) (digest string, size int64, err error) {
-	file, err := os.Open(absPath) //nolint:gosec // G304: absPath is built from a validated hex hash and registry size.
-	if err != nil {
-		return "", 0, fmt.Errorf("thumb: opening %s for hashing: %w", absPath, err)
+// hashAndSize returns the lowercase hex SHA256 digest and byte length of file
+// from its start, streaming it so nothing is buffered whole in memory.
+// Storage.Put verifies the uploaded stream against exactly these two values.
+func hashAndSize(file *os.File) (digest string, size int64, err error) {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", 0, fmt.Errorf("thumb: rewinding %s for hashing: %w", file.Name(), err)
 	}
-	defer func() { _ = file.Close() }()
 	hasher := sha256.New()
 	size, err = io.Copy(hasher, file)
 	if err != nil {
-		return "", 0, fmt.Errorf("thumb: hashing %s: %w", absPath, err)
+		return "", 0, fmt.Errorf("thumb: hashing %s: %w", file.Name(), err)
 	}
 	return hex.EncodeToString(hasher.Sum(nil)), size, nil
 }
@@ -932,32 +992,51 @@ func fileExists(absPath string) bool {
 }
 
 // writeFileAtomic writes data to absPath via a temp file in the same directory
-// followed by an atomic rename, creating parent directories as needed. The
-// rename makes concurrent writers of identical content converge race-free and
-// guarantees no half-written thumbnail is ever observed at its final path.
-func writeFileAtomic(absPath string, data []byte) error {
+// followed by an atomic rename (installTemp), creating parent directories as
+// needed, and returns the installed file open for reading. The rename makes
+// concurrent writers converge race-free and guarantees no half-written
+// thumbnail is ever observed at its final path. The caller owns the returned
+// file and must close it.
+func writeFileAtomic(absPath string, data []byte) (*os.File, error) {
 	dir := filepath.Dir(absPath)
 	if err := os.MkdirAll(dir, dirPerm); err != nil {
-		return fmt.Errorf("create cache dir %s: %w", dir, err)
+		return nil, fmt.Errorf("create cache dir %s: %w", dir, err)
 	}
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(absPath)+".tmp-*")
 	if err != nil {
-		return fmt.Errorf("create temp: %w", err)
+		return nil, fmt.Errorf("create temp: %w", err)
 	}
 	tmpPath := tmp.Name()
 	if err := writeAndClose(tmp, data); err != nil {
 		_ = os.Remove(tmpPath)
-		return err
+		return nil, err
 	}
+	return installTemp(tmpPath, absPath)
+}
+
+// installTemp moves the finished temp file at tmpPath — a sibling of absPath,
+// so the rename is atomic — into place at absPath and returns it open for
+// reading. The file is opened before the rename, so the handle names this
+// writer's rendition even if another writer renames its own over absPath a
+// moment later; that is what lets the upload and the failure clean-up act on
+// exactly this writer's file (see publishSize). On any failure the temp file is
+// removed. The caller owns the returned file and must close it.
+func installTemp(tmpPath, absPath string) (*os.File, error) {
 	if err := os.Chmod(tmpPath, filePerm); err != nil {
 		_ = os.Remove(tmpPath)
-		return fmt.Errorf("chmod temp: %w", err)
+		return nil, fmt.Errorf("chmod temp: %w", err)
+	}
+	file, err := os.Open(tmpPath) //nolint:gosec // G304: tmpPath is a temp sibling of a validated cache path.
+	if err != nil {
+		_ = os.Remove(tmpPath)
+		return nil, fmt.Errorf("reopen temp: %w", err)
 	}
 	if err := os.Rename(tmpPath, absPath); err != nil {
+		_ = file.Close()
 		_ = os.Remove(tmpPath)
-		return fmt.Errorf("rename: %w", err)
+		return nil, fmt.Errorf("rename: %w", err)
 	}
-	return nil
+	return file, nil
 }
 
 // writeAndClose writes data to f and closes it, returning the first error.

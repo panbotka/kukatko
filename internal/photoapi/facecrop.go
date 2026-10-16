@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log"
 	"math"
 	"net/http"
 	"strconv"
@@ -80,8 +79,7 @@ func (a *API) handleFaceCrop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		log.Printf("photoapi: rendering face crop of %s: %v", photo.UID, err)
-		writeError(w, http.StatusInternalServerError, "face crop unavailable")
+		mediaFailure(w, r, photo, "face", "face crop unavailable", err)
 		return
 	}
 	defer func() { _ = reader.Close() }()

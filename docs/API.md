@@ -1171,7 +1171,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   (`thumb.ErrUndecodable`) — answers **404 `{"error":"original cannot be thumbnailed"}`**: a state of the
   photo, not a fault, so it logs at WARN and stays out of the 5xx metrics; the SPA paints its "no preview"
   placeholder for it. Every other failure to open or generate the size (an original gone from storage, I/O,
-  a converter that is not installed, a cancelled request) stays **500 `thumbnail unavailable`**. `GET /photos/{uid}/video` (session/`?t=` token) streams
+  a converter that is not installed, a cancelled request) stays **500 `thumbnail unavailable`**, and every
+  media route's 500 (thumbnail, original, face crop, video, HLS, storyboard sprite) also logs **one ERROR line**
+  carrying `request_id`, `photo`, `project` (+ `project_slug`), `size` (the rendition, where the route has one) and
+  the wrapped `error` chain naming the step that failed — the access log's own line records only the status. `GET /photos/{uid}/video` (session/`?t=` token) streams
   video **with HTTP Range** (206 partial, `Accept-Ranges`, seek; a live photo = a motion clip, still → 404)
   for inline HTML5 playback, or redirects to the Worker, which serves Range directly from R2 (dropping the
   requirement of a seekable local file); an optional on-the-fly transcode of non-web-friendly codecs via

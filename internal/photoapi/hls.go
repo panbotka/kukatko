@@ -93,7 +93,7 @@ func (a *API) handleHLSMaster(w http.ResponseWriter, r *http.Request) {
 	uid := photo.UID
 	list, err := a.hls.ListForPhoto(r.Context(), uid)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "reading streaming renditions failed")
+		mediaFailure(w, r, photo, "hls", "reading streaming renditions failed", err)
 		return
 	}
 	if len(list) == 0 {
@@ -102,7 +102,7 @@ func (a *API) handleHLSMaster(w http.ResponseWriter, r *http.Request) {
 	}
 	playlist, err := hls.BuildMaster(masterVariants(list, mediaPlaylistURI(r)))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "building master playlist failed")
+		mediaFailure(w, r, photo, "hls", "building master playlist failed", err)
 		return
 	}
 	writePlaylist(w, playlist)
@@ -148,7 +148,7 @@ func (a *API) handleHLSMedia(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "no such streaming rendition")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "reading streaming rendition failed")
+		mediaFailure(w, r, photo, rendition, "reading streaming rendition failed", err)
 		return
 	}
 	segment := segmentURI(r)
@@ -156,7 +156,7 @@ func (a *API) handleHLSMedia(w http.ResponseWriter, r *http.Request) {
 		return segment(name), nil
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "building media playlist failed")
+		mediaFailure(w, r, photo, rendition, "building media playlist failed", err)
 		return
 	}
 	writePlaylist(w, playlist)
@@ -190,7 +190,7 @@ func (a *API) handleHLSSegment(w http.ResponseWriter, r *http.Request) {
 	}
 	has, err := a.hls.Has(r.Context(), photo.UID, rendition)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "reading streaming rendition failed")
+		mediaFailure(w, r, photo, rendition, "reading streaming rendition failed", err)
 		return
 	}
 	key, keyErr := hls.Key(storekeys.PrefixOf(photo.FilePath), photo.FileHash, rendition, name)
@@ -217,7 +217,7 @@ func (a *API) streamSegment(
 			writeError(w, http.StatusNotFound, "no such segment")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "opening segment failed")
+		mediaFailure(w, r, photo, name, "opening segment failed", err)
 		return
 	}
 	defer func() { _ = reader.Close() }()

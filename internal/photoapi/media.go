@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
@@ -116,7 +119,7 @@ func (a *API) handleThumb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "thumbnail unavailable")
+		mediaFailure(w, r, photo, size, "thumbnail unavailable", err)
 		return
 	}
 	defer func() { _ = reader.Close() }()
@@ -142,6 +145,42 @@ func (a *API) openThumb(r *http.Request, photo photos.Photo, size string) (io.Re
 		return nil, fmt.Errorf("photoapi: opening thumbnail: %w", err)
 	}
 	return reader, nil
+}
+
+// mediaFailure answers a media route's server-side failure with 500 and message,
+// after logging one structured ERROR line that says why. The access log's own
+// line only records the status, so without this one a 500 on a thumbnail or a
+// clip leaves nothing to go on: this line carries the request id (to join the
+// two), the photo, the rendition asked for (size; empty where the route has
+// none), the project and the whole wrapped error chain, whose prefixes name the
+// step that failed — the storage read, the materialize, the decode, the cache
+// write, vips. An expected outcome (a missing photo, an undecodable original)
+// is never routed here: it is a 404 and the access log keeps it at WARN.
+func mediaFailure(w http.ResponseWriter, r *http.Request, photo photos.Photo, size, message string, err error) {
+	ctx := r.Context()
+	attrs := []slog.Attr{
+		slog.String("request_id", middleware.GetReqID(ctx)),
+		slog.String("photo", photo.UID),
+		slog.String("project", photo.ProjectID),
+		slog.String("error", errorText(err)),
+	}
+	if p, ok := auth.ProjectFromContext(ctx); ok {
+		attrs = append(attrs, slog.String("project_slug", p.Slug))
+	}
+	if size != "" {
+		attrs = append(attrs, slog.String("size", size))
+	}
+	slog.Default().LogAttrs(ctx, slog.LevelError, "photoapi: "+message, attrs...)
+	writeError(w, http.StatusInternalServerError, message)
+}
+
+// errorText renders err for a log line, tolerating a nil error so a caller that
+// reached a failure without one still logs something readable.
+func errorText(err error) string {
+	if err == nil {
+		return "<nil>"
+	}
+	return err.Error()
 }
 
 // handleDownload streams a photo's file as an attachment. When the photo carries
@@ -185,7 +224,7 @@ func (a *API) serveOriginal(w http.ResponseWriter, r *http.Request, photo photos
 			writeError(w, http.StatusNotFound, "original file not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "opening original failed")
+		mediaFailure(w, r, photo, "", "opening original failed", err)
 		return
 	}
 	defer func() { _ = reader.Close() }()

@@ -227,10 +227,7 @@ func TestGenerate_publishesEachSizeToObjectStore(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Path(%s): %v", size, err)
 		}
-		wantDigest, wantSize, err := hashAndSize(abs)
-		if err != nil {
-			t.Fatalf("hashAndSize(%s): %v", abs, err)
-		}
+		wantDigest, wantSize := fileDigest(t, abs)
 		if sf.Hash != wantDigest {
 			t.Errorf("size %s published Hash = %s, want %s", size, sf.Hash, wantDigest)
 		}
@@ -238,6 +235,21 @@ func TestGenerate_publishesEachSizeToObjectStore(t *testing.T) {
 			t.Errorf("size %s published Size = %d, want %d", size, sf.Size, wantSize)
 		}
 	}
+}
+
+// fileDigest returns the SHA256 digest and byte length of the file at abs.
+func fileDigest(t *testing.T, abs string) (digest string, size int64) {
+	t.Helper()
+	file, err := os.Open(abs)
+	if err != nil {
+		t.Fatalf("open %s: %v", abs, err)
+	}
+	defer func() { _ = file.Close() }()
+	digest, size, err = hashAndSize(file)
+	if err != nil {
+		t.Fatalf("hashAndSize(%s): %v", abs, err)
+	}
+	return digest, size
 }
 
 // TestGenerate_publishFailureRemovesCachedFile proves a failed upload is not

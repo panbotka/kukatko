@@ -279,6 +279,15 @@ an embedding — so no semantic search, no near-duplicate check and no "similar
 photos" for anything new. Fetching the object instead costs one GET against ~4 s
 of encoding it did not have to do.
 
+Concurrent misses of **one** cache key share one encode: `OpenOrGenerate` runs
+the render through a `singleflight` keyed by `RelPath`, so a burst of first
+requests for a size (the viewer and a face-crop render asking for the same
+preview, a page opened twice) decodes the original and uploads the size once
+instead of once per request. Different keys still render in parallel. A writer
+that does meet another one on the same file (an on-demand render against the
+thumbnail job) uploads the file it installed, never the one at the path by then
+(see `docs/PACKAGES.md`, `internal/thumb`).
+
 ### Which `fit_*` a face crop is worth
 
 A crop of a face is the one place where the smallest thumbnail is usually the

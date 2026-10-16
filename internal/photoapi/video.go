@@ -46,7 +46,7 @@ func (a *API) handleVideo(w http.ResponseWriter, r *http.Request) {
 	}
 	src, ok, err := a.videoFile(r.Context(), photo)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "resolving video file failed")
+		mediaFailure(w, r, photo, "video", "resolving video file failed", err)
 		return
 	}
 	if !ok {
@@ -62,7 +62,7 @@ func (a *API) handleVideo(w http.ResponseWriter, r *http.Request) {
 	// Both http.ServeContent and ffmpeg need a real file.
 	absPath, cleanup, err := a.storage.Materialize(r.Context(), src.relPath)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "opening video failed")
+		mediaFailure(w, r, photo, "video", "opening video failed", err)
 		return
 	}
 	defer cleanup()
@@ -155,14 +155,14 @@ func (a *API) streamVideoFile(
 			writeError(w, http.StatusNotFound, "video file not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "opening video failed")
+		mediaFailure(w, r, photo, "video", "opening video failed", err)
 		return
 	}
 	defer func() { _ = file.Close() }()
 
 	info, err := file.Stat()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "reading video failed")
+		mediaFailure(w, r, photo, "video", "reading video failed", err)
 		return
 	}
 	if src.mime != "" {

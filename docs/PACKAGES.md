@@ -1230,6 +1230,15 @@ to `## Package map` in `CLAUDE.md`.
   `Generate` renders and uploads it again (invariant: a cached size on a publishing
   backend is always in the bucket too, so the client object URL resolves). This way a fresh ingest on R2
   gets its thumbnails into the bucket the same as `storage migrate-to-r2`;
+  **two writers of one key** (spec `task-6ef4560a`): `installTemp` opens the writer's temp file *before*
+  renaming it into place, and the upload hashes and streams **that open file**, never the cache path again — a
+  second writer (an on-demand render vs. the thumbnail job, or a forced rebuild writing different bytes) renaming
+  its own file in between used to hand the first one bytes that disagreed with the digest it had just taken: a
+  failed `Put`, a 500. A failed upload removes the cache file **only while it is still this writer's**
+  (`removeOwn`, `os.SameFile`), never a rendition another writer installed since. And `OpenOrGenerate` funnels
+  concurrent misses of one cache key through a `singleflight` (`renderOnce`): a burst of first requests encodes
+  and uploads the size once; the shared encode runs on `context.WithoutCancel`, so one caller giving up neither
+  fails it nor the callers still waiting (each still stops waiting on its own context);
   **the published object also counts as done** (`dropPublished`): a cold local cache used to mean a full
   re-encode + re-upload of objects that were already in the bucket — on a library whose cache is pruned by
   construction (8 sizes ≈ 2.76 MB per photo, more than the free disk) that is the whole library, twice. Before
