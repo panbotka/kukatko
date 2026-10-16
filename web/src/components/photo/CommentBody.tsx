@@ -47,7 +47,7 @@ export interface CommentBodyProps {
  * newline is a line break (`breaks`), so a short typed comment looks as typed.
  * A typed heading starts at level 4 and is drawn small, under the thread's own.
  *
- * An `@`-mention — `@[Tomáš Kozák](user:<uid>)`, as the composer writes it —
+ * An `@`-mention — `@[Petr Kolář](user:<uid>)`, as the composer writes it —
  * renders as a `MentionChip`: the account's current name on a small pill,
  * linking to the person it is linked to, the reader's own drawn stronger
  * (`lib/mentions` `remarkMentions`, inside the sanitised pipeline).

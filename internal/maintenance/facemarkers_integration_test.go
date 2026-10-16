@@ -15,14 +15,14 @@ import (
 )
 
 // The geometry of the production photo that motivated the exclusive pairing: one
-// marker for "Tomáš Kozák" and two detected faces, of which face 7 overlaps the
+// marker for "Jan Novák" and two detected faces, of which face 7 overlaps the
 // marker far better (~0.80) than face 6 (~0.16). Both cleared the matching
 // threshold, so the old per-face search handed the marker to each of them and the
 // person rendered twice.
 var (
-	tomasMarkerBox = [4]float64{0.2889, 0.3241, 0.0917, 0.1222}
-	looserFaceBox  = [4]float64{0.3489, 0.2873, 0.0464, 0.1067}
-	winnerFaceBox  = [4]float64{0.2965, 0.3217, 0.0755, 0.1227}
+	janMarkerBox  = [4]float64{0.2889, 0.3241, 0.0917, 0.1222}
+	looserFaceBox = [4]float64{0.3489, 0.2873, 0.0464, 0.1067}
+	winnerFaceBox = [4]float64{0.2965, 0.3217, 0.0755, 0.1227}
 )
 
 // seedDuplicateMarker catalogues a photo with one named face marker and two faces
@@ -33,13 +33,13 @@ func (h *harness) seedDuplicateMarker(t *testing.T, name string, seed uint8) (ph
 	ctx := context.Background()
 
 	photo := h.storeRealPhoto(t, name, seed)
-	subject, err := h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Tomáš " + name})
+	subject, err := h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Jan " + name})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 	marker, err := h.people.CreateMarker(ctx, project.BootstrapUID, people.Marker{
 		PhotoUID: photo.UID, SubjectUID: &subject.UID, Type: people.MarkerFace,
-		X: tomasMarkerBox[0], Y: tomasMarkerBox[1], W: tomasMarkerBox[2], H: tomasMarkerBox[3],
+		X: janMarkerBox[0], Y: janMarkerBox[1], W: janMarkerBox[2], H: janMarkerBox[3],
 	})
 	if err != nil {
 		t.Fatalf("CreateMarker: %v", err)
@@ -167,7 +167,7 @@ func TestRepairFaceMarkersLeavesSingleLinks(t *testing.T) {
 		}
 		marker, err := h.people.CreateMarker(ctx, project.BootstrapUID, people.Marker{
 			PhotoUID: photo.UID, SubjectUID: &subject.UID, Type: people.MarkerFace,
-			X: tomasMarkerBox[0], Y: tomasMarkerBox[1], W: tomasMarkerBox[2], H: tomasMarkerBox[3],
+			X: janMarkerBox[0], Y: janMarkerBox[1], W: janMarkerBox[2], H: janMarkerBox[3],
 		})
 		if err != nil {
 			t.Fatalf("CreateMarker(%s): %v", name, err)

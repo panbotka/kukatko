@@ -361,7 +361,7 @@ function totalOf(summary: TaskSummary | null): number | undefined {
  * One line of the listing: the thumbnail of the first photograph, the question,
  * the state, the two counts and who acted last. The "answered" mark is
  * deliberately loud — it is the one thing a reader scans the page for — and the
- * last activity ("naposledy Tomáš Kozák · před 2 h") says whose move it is
+ * last activity ("naposledy Petr Kolář · před 2 h") says whose move it is
  * without opening the task.
  *
  * The state is on the row twice over: as the badge on the right, and as the

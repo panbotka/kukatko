@@ -42,7 +42,7 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
 - **A query language** that mixes free text with `key:value` filters in the same field:
   `dovolená camera:"Canon EOS R6" iso:100-400 faces:2`, `label:cat|dog`, `taken:2024-05`,
   `person:"Anna Nováková" year:1985`, `near:<uid>` for "more like this one",
-  `family:Nečas` for a whole family at once — the named person, everybody descended from them and all of
+  `family:Nedvěd` for a whole family at once — the named person, everybody descended from them and all of
   their partners, which is exactly the set the drawn tree walks. Some 40 keys — people, families,
   albums, labels, country/city, `geo`, `dated` (`dated:no` is the pile of photos with no date at all,
   whether nobody ever knew it or somebody said so), camera, lens, `iso`, `f`, `mm`, `mp`, media type,
@@ -50,7 +50,7 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   it in, `sound:no`, `fps:120-` and `streaming:no`, the clips still waiting to be prepared for
   playback. `person:`, `label:` and `album:` autocomplete the **actual names in
   your library**, diacritics-insensitively and quoted correctly — a person also by their nickname, the
-  suggestion then reading `Bohumil Nečas („Bohouš")` while the filter still carries the name; a `?` cheat
+  suggestion then reading `Bohumil Nedvěd („Bohouš")` while the filter still carries the name; a `?` cheat
   sheet is one keypress away, and a filter the parser did not understand is pointed out instead of silently
   ignored.
   **Nothing has to be spelled with háčky, either:** every text filter folds accents on both sides, so
@@ -92,7 +92,7 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   person's suspicious faces, a group of unknown ones, the chips under a photograph — is the same
   server-cut crop, so a screen full of faces is kilobytes rather than a photograph apiece.
 - **A person can also be recorded under the name everybody actually uses.** Half a village answers to
-  something that appears on no document — Bohumil Nečas is „Bohouš" and nobody calls him anything else —
+  something that appears on no document — Bohumil Nedvěd is „Bohouš" and nobody calls him anything else —
   so a person carries an optional nickname beside their name. It is written next to the name on their page
   and **searched exactly like it**: by the people index, by the command palette, by `person:Bohouš`, and by
   the list you pick from when you put a name to a face, which is where it matters most — the handle you
@@ -150,7 +150,7 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   at once only when it fits, the fit button for the rest — a click on anybody redraws it around them, and if a village-sized family ever outgrows it the page says it is
   showing the nearest few hundred. For a curator every person with a parent the library does not know
   carries a **+** on their card: click it and the dialog opens on the right person, ready to record
-  their mother or father. And the family is also a **search filter**: `family:Nečas` (or `family:me`)
+  their mother or father. And the family is also a **search filter**: `family:Nedvěd` (or `family:me`)
   is every photo of the clan — the descendants of that person plus the people they married, a narrower
   question on purpose, because a filter is there to narrow a listing and the drawing is there to show a
   family.

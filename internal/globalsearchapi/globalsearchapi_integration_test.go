@@ -276,7 +276,7 @@ func newUIDEnv(t *testing.T) uidEnv {
 
 // uidFixturePhotoprism is the PhotoPrism source uid the seeded photo was
 // imported under.
-const uidFixturePhotoprism = "pt8suk5b57jgshdz"
+const uidFixturePhotoprism = "ptfakeppuid00001"
 
 // TestGlobalSearch_directUID verifies every uid prefix resolves against the real
 // database: a photo, album, label and subject by their own id, a marker to the

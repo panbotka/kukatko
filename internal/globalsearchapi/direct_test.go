@@ -14,13 +14,13 @@ import (
 // The well-formed uids the direct-hit tests paste into the search box, one per
 // prefix. Only their shape matters here — the fake resolves them from maps.
 const (
-	photoUID  = "ph7lpul2io09bcg2rvp2rljsr6"
-	albumUID  = "al7lpul2io09bcg2rvp2rljsr6"
-	labelUID  = "lb7lpul2io09bcg2rvp2rljsr6"
-	personUID = "su7lpul2io09bcg2rvp2rljsr6"
-	stackUID  = "st7lpul2io09bcg2rvp2rljsr6"
-	markerUID = "mk7lpul2io09bcg2rvp2rljsr6"
-	ppUID     = "pt8suk5b57jgshdz"
+	photoUID  = "phfake0uid0for0tests000001"
+	albumUID  = "alfake0uid0for0tests000001"
+	labelUID  = "lbfake0uid0for0tests000001"
+	personUID = "sufake0uid0for0tests000001"
+	stackUID  = "stfake0uid0for0tests000001"
+	markerUID = "mkfake0uid0for0tests000001"
+	ppUID     = "ptfakeppuid00001"
 )
 
 // newDirectFake returns a fake wired with one row of every kind: the photo the
@@ -113,7 +113,7 @@ func TestDirect_everyPrefix(t *testing.T) {
 func TestDirect_photoprismAlias(t *testing.T) {
 	t.Parallel()
 	f := newDirectFake()
-	const aliased = "pt9zzzz5b57jgshd"
+	const aliased = "ptfakeppuid00003"
 	f.byPPAlias[aliased] = photos.Photo{UID: photoUID, Title: "Beach sunset"}
 
 	body := getDirect(t, f, aliased)

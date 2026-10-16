@@ -528,15 +528,15 @@ func TestFaces_oneMarkerPerFace(t *testing.T) {
 	ctx := context.Background()
 
 	uid := env.makePhoto(t, "onemarkerperface")
-	tomas := env.createSubject(t, "Tomáš Kozák")
-	marker := env.createMarker(t, uid, tomas.UID, [4]float64{0.2889, 0.3241, 0.0917, 0.1222})
+	jan := env.createSubject(t, "Jan Novák")
+	marker := env.createMarker(t, uid, jan.UID, [4]float64{0.2889, 0.3241, 0.0917, 0.1222})
 	unnamed := env.createMarker(t, uid, "", [4]float64{0.4019, 0.3121, 0.0430, 0.0783})
 	// Face 7 overlaps the marker by ~0.80, face 6 by ~0.16: both clear the matching
 	// threshold, which is why per-face matching handed the marker to each in turn.
 	env.saveFace(t, uid, 6, faceVec(6), [4]float64{0.3489, 0.2873, 0.0464, 0.1067}, "", "")
 	env.saveFace(t, uid, 7, faceVec(7), [4]float64{0.2965, 0.3217, 0.0755, 0.1227}, "", "")
 	for _, index := range []int{6, 7} {
-		if err := env.vectors.UpdateFaceMarker(ctx, uid, index, marker.UID, tomas.UID, tomas.Name); err != nil {
+		if err := env.vectors.UpdateFaceMarker(ctx, uid, index, marker.UID, jan.UID, jan.Name); err != nil {
 			t.Fatalf("seeding duplicate link on face %d: %v", index, err)
 		}
 	}
@@ -546,12 +546,12 @@ func TestFaces_oneMarkerPerFace(t *testing.T) {
 		named, views := 0, map[int]facematch.FaceView{}
 		for _, view := range resp.Faces {
 			views[view.FaceIndex] = view
-			if view.SubjectUID == tomas.UID {
+			if view.SubjectUID == jan.UID {
 				named++
 			}
 		}
 		if named != 1 {
-			t.Errorf("round %d: %d views name Tomáš Kozák, want 1 (%+v)", round, named, resp.Faces)
+			t.Errorf("round %d: %d views name Jan Novák, want 1 (%+v)", round, named, resp.Faces)
 		}
 		if got := views[7]; got.MarkerUID != marker.UID || got.Action != facematch.ActionAlreadyDone {
 			t.Errorf("round %d: face 7 = %+v, want already_done on %s", round, got, marker.UID)

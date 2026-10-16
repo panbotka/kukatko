@@ -37,16 +37,16 @@ describe('foldedEquals', () => {
 
 describe('truncateText', () => {
   it('leaves a string that already fits alone', () => {
-    expect(truncateText('Marie Nečasová', 20)).toBe('Marie Nečasová')
+    expect(truncateText('Marie Nedvědová', 20)).toBe('Marie Nedvědová')
     expect(truncateText('Marie', 5)).toBe('Marie')
   })
 
   it('cuts to the limit and marks the cut', () => {
-    expect(truncateText('Bohumil Nečas st.st.', 12)).toBe('Bohumil Neč…')
+    expect(truncateText('Bohumil Nedvěd st.st.', 12)).toBe('Bohumil Ned…')
   })
 
   it('does not leave a space hanging before the ellipsis', () => {
-    expect(truncateText('Marie Nečasová', 7)).toBe('Marie…')
+    expect(truncateText('Marie Nedvědová', 7)).toBe('Marie…')
   })
 
   it('counts letters, not code units', () => {

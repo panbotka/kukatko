@@ -285,7 +285,7 @@ func TestScanTaskReadsFlags(t *testing.T) {
 	at := time.Date(2026, 9, 19, 17, 21, 0, 0, time.UTC)
 	got, err := scanTask(fakeRow{
 		stateAt: at.Add(-time.Hour), hasNewAnswer: true, waiting: true,
-		lastActivityAt: at, lastActivityBy: "us2", lastActivityByName: "Tomáš Kozák",
+		lastActivityAt: at, lastActivityBy: "us2", lastActivityByName: "Jan Novák",
 	})
 	if err != nil {
 		t.Fatalf("scanTask: %v", err)
@@ -293,7 +293,7 @@ func TestScanTaskReadsFlags(t *testing.T) {
 	if !got.HasNewAnswer || !got.WaitingOnMe {
 		t.Errorf("flags = answer %v / waiting %v, want both as the row said", got.HasNewAnswer, got.WaitingOnMe)
 	}
-	if !got.LastActivityAt.Equal(at) || got.LastActivityByUID != "us2" || got.LastActivityByName != "Tomáš Kozák" {
+	if !got.LastActivityAt.Equal(at) || got.LastActivityByUID != "us2" || got.LastActivityByName != "Jan Novák" {
 		t.Errorf("last activity = %v by %q (%q), want the row's", got.LastActivityAt,
 			got.LastActivityByUID, got.LastActivityByName)
 	}

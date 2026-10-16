@@ -131,7 +131,7 @@ function label(uid: string, name: string): Label {
  * A face question. The tight bbox is deliberately off-centre and small so the
  * padding assertions have something to move.
  */
-function faceQuestion(id: string, name = 'Tomáš Kozák'): ReviewQuestion {
+function faceQuestion(id: string, name = 'Petr Kolář'): ReviewQuestion {
   return {
     id,
     kind: 'face',
@@ -182,7 +182,7 @@ function duplicateQuestion(id: string): ReviewQuestion {
 }
 
 /** An outlier question over a face assigned to somebody it may not be. */
-function outlierQuestion(id: string, name = 'Tomáš Kozák'): ReviewQuestion {
+function outlierQuestion(id: string, name = 'Petr Kolář'): ReviewQuestion {
   return {
     id,
     kind: 'outlier',
@@ -291,7 +291,7 @@ describe('ReviewPage', () => {
     renderPage()
 
     const question = await screen.findByTestId('review-question')
-    expect(question).toHaveTextContent('Tomáš Kozák')
+    expect(question).toHaveTextContent('Petr Kolář')
 
     // The rectangle is placed in percentages of the stage, so it waits until the
     // preview has reported the frame it actually rendered at.
@@ -368,7 +368,7 @@ describe('ReviewPage', () => {
     )
     // The person is named under their picture, and the photograph with the
     // highlighted box is still the stage below.
-    expect(pair).toHaveTextContent('Tomáš Kozák')
+    expect(pair).toHaveTextContent('Petr Kolář')
     expect(container.querySelector('.review-photo')).toBeInTheDocument()
 
     // The pair lives in the prompt, outside the stage: the stage carries the
@@ -1102,7 +1102,7 @@ describe('ReviewPage rounds', () => {
       makeQueue(
         [faceQuestion('q1', 'Alice'), faceQuestion('q2', 'Bob'), faceQuestion('q3', 'Cyril')],
         {
-          breathers: [breather('b1', 'Svatba u Kozáků', 1962)],
+          breathers: [breather('b1', 'Svatba u Kolářů', 1962)],
         },
       ),
     )
@@ -1113,7 +1113,7 @@ describe('ReviewPage rounds', () => {
     await user.keyboard('{ArrowRight}')
 
     const breatherCard = await screen.findByTestId('review-breather')
-    expect(breatherCard).toHaveTextContent('Svatba u Kozáků')
+    expect(breatherCard).toHaveTextContent('Svatba u Kolářů')
     expect(breatherCard).toHaveTextContent('1962')
     expect(breatherCard).toHaveTextContent('just for the joy of it')
     // There is nothing to answer here, so nothing may look answerable.
@@ -1445,7 +1445,7 @@ describe('ReviewPage resume', () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null)
     queueMock.mockResolvedValue(
       makeQueue([outlierQuestion('q1', 'Alice'), duplicateQuestion('q2'), faceQuestion('q3')], {
-        breathers: [breather('b1', 'Svatba u Kozáků', 1962)],
+        breathers: [breather('b1', 'Svatba u Kolářů', 1962)],
       }),
     )
     renderRoundTrip()
@@ -1478,7 +1478,7 @@ describe('ReviewPage resume', () => {
     await screen.findByTestId('review-breather')
     // The breather, which a player is the likeliest to want to keep.
     await takeTrip(0, '/p/v/photos/b1')
-    expect(await screen.findByTestId('review-breather')).toHaveTextContent('Svatba u Kozáků')
+    expect(await screen.findByTestId('review-breather')).toHaveTextContent('Svatba u Kolářů')
     expect(open).not.toHaveBeenCalled()
   })
 

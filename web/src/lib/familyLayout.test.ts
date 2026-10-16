@@ -77,16 +77,16 @@ function expectNoOverlap(drawing: FamilyLayout): void {
 }
 
 /**
- * The production shape the network exists for: Ludmila and Aleš with their son
- * Tomáš, Ludmila in a parentless sibling group with her sister Dagmar, and
- * Dagmar's daughter Petra. Five people, three generations' worth of lines, one
+ * The production shape the network exists for: Marta and Adam with their son
+ * Vojtěch, Marta in a parentless sibling group with her sister Hana, and
+ * Hana's daughter Renata. Five people, three generations' worth of lines, one
  * of them sideways.
  */
-function kozaks(): FamilyLayout {
-  return layout('tomas', { tomas: 0, ludmila: -1, ales: -1, dagmar: -1, petra: 0 }, [
-    family('fm_couple', ['ludmila', 'ales'], ['tomas']),
-    family('fm_sisters', [], ['ludmila', 'dagmar']),
-    family('fm_dagmar', ['dagmar'], ['petra']),
+function svobodas(): FamilyLayout {
+  return layout('vojta', { vojta: 0, marta: -1, adam: -1, hana: -1, renata: 0 }, [
+    family('fm_couple', ['marta', 'adam'], ['vojta']),
+    family('fm_sisters', [], ['marta', 'hana']),
+    family('fm_hana', ['hana'], ['renata']),
   ])
 }
 
@@ -127,66 +127,66 @@ describe('layoutNetwork', () => {
   })
 
   it('puts every box on the layer of its signed generation, the oldest on top', () => {
-    const drawing = kozaks()
+    const drawing = svobodas()
     // The oldest generation present is −1, so it is the top row — pushed down
     // by half a gap, because the sisters' bar hangs above it.
     const top = TREE_PADDING + LEVEL_GAP / 2
     expect(node(drawing, 'fm_couple').y).toBe(top)
-    expect(node(drawing, 'fm_dagmar').y).toBe(top)
-    expect(node(drawing, 'person:tomas').y).toBe(top + LEVEL_STRIDE)
-    expect(node(drawing, 'person:petra').y).toBe(top + LEVEL_STRIDE)
+    expect(node(drawing, 'fm_hana').y).toBe(top)
+    expect(node(drawing, 'person:vojta').y).toBe(top + LEVEL_STRIDE)
+    expect(node(drawing, 'person:renata').y).toBe(top + LEVEL_STRIDE)
     expect(node(drawing, 'fm_couple').generation).toBe(-1)
     expect(drawing.height).toBe(top + LEVEL_STRIDE + NODE_HEIGHT + TREE_PADDING)
   })
 
   it('reaches sideways: the aunt and the cousin are drawn beside the parents', () => {
-    const drawing = kozaks()
+    const drawing = svobodas()
     const drawn = drawing.nodes.flatMap((box) => box.personUids).sort()
-    expect(drawn).toEqual(['ales', 'dagmar', 'ludmila', 'petra', 'tomas'])
+    expect(drawn).toEqual(['adam', 'hana', 'marta', 'renata', 'vojta'])
     expectNoOverlap(drawing)
   })
 
   it('draws a couple as one box, their children hanging off the bar between them', () => {
-    const drawing = kozaks()
+    const drawing = svobodas()
     const couple = node(drawing, 'fm_couple')
-    expect([...couple.personUids].sort()).toEqual(['ales', 'ludmila'])
+    expect([...couple.personUids].sort()).toEqual(['adam', 'marta'])
     expect(couple.width).toBe(boxWidth(2))
-    const edge = drawing.edges.find((candidate) => candidate.childId === 'tomas')
+    const edge = drawing.edges.find((candidate) => candidate.childId === 'vojta')
     expect(edge).toMatchObject({
       parentId: 'fm_couple',
       x1: centre(couple),
       y1: couple.y + NODE_HEIGHT,
-      x2: centre(node(drawing, 'person:tomas')),
-      y2: node(drawing, 'person:tomas').y,
+      x2: centre(node(drawing, 'person:vojta')),
+      y2: node(drawing, 'person:vojta').y,
     })
   })
 
   it('turns a couple towards the partner’s own family', () => {
-    const drawing = kozaks()
+    const drawing = svobodas()
     const couple = node(drawing, 'fm_couple')
-    const dagmar = node(drawing, 'fm_dagmar')
-    // Ludmila is drawn on the side of her sister, so the sibling bar does not
-    // have to run across Aleš to reach her.
-    const ludmilaSide = cardCentre(couple, 'ludmila') < cardCentre(couple, 'ales') ? -1 : 1
-    const sisterSide = centre(dagmar) < centre(couple) ? -1 : 1
-    expect(ludmilaSide).toBe(sisterSide)
+    const hana = node(drawing, 'fm_hana')
+    // Marta is drawn on the side of her sister, so the sibling bar does not
+    // have to run across Adam to reach her.
+    const martaSide = cardCentre(couple, 'marta') < cardCentre(couple, 'adam') ? -1 : 1
+    const sisterSide = centre(hana) < centre(couple) ? -1 : 1
+    expect(martaSide).toBe(sisterSide)
   })
 
   it('joins a parentless sibling group with one bar just above the siblings', () => {
-    const drawing = kozaks()
+    const drawing = svobodas()
     const bar = drawing.edges.filter((edge) => edge.parentId === 'fm_sisters')
-    expect(bar.map((edge) => edge.childId).sort()).toEqual(['dagmar', 'ludmila'])
+    expect(bar.map((edge) => edge.childId).sort()).toEqual(['hana', 'marta'])
     const couple = node(drawing, 'fm_couple')
-    const dagmar = node(drawing, 'fm_dagmar')
+    const hana = node(drawing, 'fm_hana')
     const [first, second] = bar
     // One shared start, halfway between the two sisters' cards, in the gap above
     // their row — a sibling group has no box to hang off.
     expect(first.x1).toBe(second.x1)
-    expect(first.x1).toBe((cardCentre(couple, 'ludmila') + cardCentre(dagmar, 'dagmar')) / 2)
+    expect(first.x1).toBe((cardCentre(couple, 'marta') + cardCentre(hana, 'hana')) / 2)
     expect(first.y1).toBe(couple.y - LEVEL_GAP / 2)
     // Over the top row the bar still lands on the canvas, inside its padding.
     expect(first.y1).toBe(TREE_PADDING)
-    expect(bar.find((edge) => edge.childId === 'ludmila')?.x2).toBe(cardCentre(couple, 'ludmila'))
+    expect(bar.find((edge) => edge.childId === 'marta')?.x2).toBe(cardCentre(couple, 'marta'))
   })
 
   it('packs a wide sibship without overlap and centres the parents over it', () => {
@@ -268,7 +268,7 @@ describe('layoutNetwork', () => {
   })
 
   it('is deterministic: the same family comes out the same', () => {
-    expect(kozaks()).toEqual(kozaks())
+    expect(svobodas()).toEqual(svobodas())
   })
 
   it('starts a drawing with no sibling bar on top right at the padding', () => {
@@ -277,7 +277,7 @@ describe('layoutNetwork', () => {
   })
 
   it('sizes the canvas around everything it drew', () => {
-    const drawing = kozaks()
+    const drawing = svobodas()
     for (const box of drawing.nodes) {
       expect(box.x).toBeGreaterThanOrEqual(TREE_PADDING)
       expect(box.x + box.width).toBeLessThanOrEqual(drawing.width - TREE_PADDING + 0.001)

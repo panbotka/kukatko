@@ -41,7 +41,7 @@ export interface ReviewFacePairProps {
 /**
  * The face question's two squares: the face being judged, and the person being
  * asked about. It reads left to right as the question itself — *this face …
- * Tomáš Kozák?*
+ * Petr Kolář?*
  *
  * It exists because the photograph alone cannot be answered. A group shot of
  * thirty people is 393 px wide on a phone, which leaves the highlighted face

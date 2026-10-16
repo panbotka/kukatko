@@ -6,7 +6,7 @@ import (
 )
 
 // MentionScheme is the pseudo-URL scheme a mention token links to: the
-// account's uid, so `@[Tomáš Kozák](user:us3f9k…)` survives a rename — the
+// account's uid, so `@[Jan Novák](user:us3f9k…)` survives a rename — the
 // name in the token is only what to show once the account is gone.
 const MentionScheme = "user:"
 

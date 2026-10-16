@@ -85,7 +85,7 @@ const ANCHOR_PARAM = 'at'
  * result count on desktop, in the filters drawer on a phone. That, with the
  * digest condensed to one line and the filter pickers moved behind the Filters
  * button, is what puts the first row of photographs on the first screen at
- * 1280 x 800: measured against the deployed build over the same 20 664-photo
+ * 1280 x 800: measured against the deployed build over the same ~20k-photo
  * catalogue, 325 px -> 205 px with the digest dismissed, 261 px with it showing,
  * against the ~490 px the page used to open at.
  */

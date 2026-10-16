@@ -378,7 +378,7 @@ export function SubjectPage() {
           <BackLink to={projectPath(PEOPLE_PATH)} label={t('subject.back')} />
           <h1 className="kk-page-title mb-0">{subject.name}</h1>
           {/* What people actually call them, beside the name and never instead of
-              it: Bohumil Nečas („Bohouš"). It is the handle the family uses, so it
+              it: Bohumil Nedvěd („Bohouš"). It is the handle the family uses, so it
               belongs on the same line as the name rather than on one of its own —
               and when nobody recorded one, nothing is drawn at all. */}
           {nickname !== null && (

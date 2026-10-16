@@ -6,7 +6,7 @@
 // from PhotoPrism and photo-sorter finished in August 2026 and its importers are
 // gone, but its rows — and the SourcePhotoPrism/SourcePhotoSorter/
 // SourcePhotoSorterFeeds constants they are written under — stay, because they
-// are the only account of where 20 647 photos came from. Nothing writes those
+// are the only account of where ~20k photos came from. Nothing writes those
 // sources any more; everything still reads them.
 //
 // A run progresses through a small lifecycle: Start opens a row in the running
@@ -109,7 +109,7 @@ type Counts struct {
 	//
 	// It is deliberately its own bucket rather than part of Skipped: "already up to
 	// date" and "the catalogue holds these bytes under another name" are different
-	// answers, and reading the second as the first is how 450 production photos went
+	// answers, and reading the second as the first is how a few hundred production photos went
 	// missing under a run that reported failed=0.
 	//
 	// A run recorded before this field existed simply has no key for it in the

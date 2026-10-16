@@ -7,9 +7,9 @@ package review_test
 // A small library proves nothing here: the defect this guards against only
 // appears once the library has many named people, because building the queue
 // used to run the whole recognition sweep — one kNN per exemplar per subject —
-// inside the request. On production (105 named subjects) that was 250 s.
+// inside the request. On production (~100 named subjects) that was 250 s.
 //
-// The subject dimension is therefore seeded at production scale (105 named
+// The subject dimension is therefore seeded at production scale (~100 named
 // subjects). The face dimension is not: 100 000 faces would mean 100 000 HNSW
 // index inserts before the first assertion, minutes of fixture on the test box,
 // and it would not change what is asserted — the number of kNN queries is a

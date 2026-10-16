@@ -6,20 +6,20 @@
 
 | shown as | value | actually |
 | --- | --- | --- |
-| Nalezenych obliceju | 115 461 | `faces` (raw detections) |
-| Pojmenovanych obliceju | 4 671 | `markers_assigned` |
-| Nepojmenovanych obliceju | 16 586 | `markers_unassigned` |
-| Oblicejе se jmenem (meter) | 3,8 % | `faces_assigned / faces` = 4 395 / 115 461 |
+| Nalezenych obliceju | ~115k | `faces` (raw detections) |
+| Pojmenovanych obliceju | ~4.7k | `markers_assigned` |
+| Nepojmenovanych obliceju | ~16.6k | `markers_unassigned` |
+| Oblicejе se jmenem (meter) | 3,8 % | `faces_assigned / faces` = ~4.4k / ~115k |
 
-- 4 671 + 16 586 = 21 257, not 115 461. Three counts named "oblicej" that invite addition and cannot be added.
-- The meter reads 3,8 % while the card immediately above implies 4 671 of 21 257 = 22 %. Same concept, two denominators, two inches apart.
+- ~4.7k + ~16.6k = ~21.3k, not ~115k. Three counts named "oblicej" that invite addition and cannot be added.
+- The meter reads 3,8 % while the card immediately above implies ~4.7k of ~21.3k = 22 %. Same concept, two denominators, two inches apart.
 
 Sources: `web/src/components/LibraryStatsCards.tsx:117` (`headline: stats.faces`) and `:139-143` (`markers_assigned` / `markers_unassigned`) versus `web/src/components/stats/CoverageMeters.tsx:45-49` (`done: stats.faces_assigned, total: stats.faces`).
 
 ## Requirements
 
 - The page picks one grain for "how much of the face work is done" and uses it in both the card and the meter, so the two agree.
-- The 115 461 number is either dropped or renamed to something that is not "oblicej" — it counts detections, most of which never became markers. If it stays, the page says plainly how it relates to the other numbers.
+- The ~115k number is either dropped or renamed to something that is not "oblicej" — it counts detections, most of which never became markers. If it stays, the page says plainly how it relates to the other numbers.
 - Any number a reader could reasonably try to add to another either adds up, or is visibly a different kind of thing.
 - The Czech and English strings both change; no English leaks into the Czech UI.
 - Test coverage for the derived percentages.

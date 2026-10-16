@@ -327,7 +327,7 @@ func TestFind_subjectNotFoundDB(t *testing.T) {
 // TestFind_perExemplarCapCostsNoMatchesDB is the quality half of the performance work
 // behind migration 0047. A subject tagged on hundreds of photos runs one kNN per
 // exemplar, and the neighbour cap those kNNs are given was cut so that a request
-// costs 0.8 s instead of 13.7 s on a 50 410-face library. The cap is only defensible
+// costs 0.8 s instead of 13.7 s on a ~50k-face library. The cap is only defensible
 // if it changes nothing, so this builds the shape in which it could bite — a crowded
 // source set and far more genuine lookalikes inside the threshold than one exemplar's
 // kNN may return — and demands the bounded search return exactly what an unbounded one

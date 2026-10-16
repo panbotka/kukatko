@@ -282,7 +282,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireAuth).Get("/rgeocode", a.handleReverseGeocode)
 		r.With(a.requireAuth).Get("/geocode", a.handleGeocode)
 		// The feed is the whole located library in one JSON document — ~0.8 MB
-		// for prod's 2 456 photos — and nothing in front of the app compresses
+		// for prod's few thousand located photos — and nothing in front of the app compresses
 		// it, so the route does: gzip takes it to ~0.18 MB (docs/PERF.md).
 		r.With(a.requireAuth, middleware.Compress(geoCompressLevel, "application/json")).
 			Get("/photos", a.handlePhotos)

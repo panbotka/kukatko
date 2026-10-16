@@ -414,7 +414,7 @@ identity:
     file_path: 2024/05/IMG_1234.jpg
     original_name: DSC_0001.JPG
     media_type: image
-    uploaded_by: pan.botka
+    uploaded_by: jan.novak
     external:
         photoprism_uid: ppuid123
 descriptive:
@@ -462,10 +462,10 @@ curation:
           box: {x: 0.25, y: 0.1, w: 0.2, h: 0.3}
           score: 88
     favorites:
-        - user: pan.botka
+        - user: jan.novak
           user_uid: usr001
     ratings:
-        - user: pan.botka
+        - user: jan.novak
           stars: 4
           flag: pick
     hidden_from_library: true
@@ -626,19 +626,19 @@ project:
     slug: v
 subjects:
     - uid: su000000000000001
-      slug: bohumil-necas-st
-      name: Bohumil Nečas st.
-      nickname: Bohouš
+      slug: josef-novak-st
+      name: Josef Novák st.
+      nickname: Pepa
       type: person
-      birth_year: 1901
-      death_year: 1978
+      birth_year: 1903
+      death_year: 1975
     - uid: su000000000000002
-      slug: marie-necasova
-      name: Marie Nečasová
+      slug: marie-novakova
+      name: Marie Nováková
       type: person
     - uid: su000000000000003
-      slug: bohumil-necas-ml
-      name: Bohumil Nečas ml.
+      slug: josef-novak-ml
+      name: Josef Novák ml.
       type: person
 families:
     - uid: fa000000000000001
@@ -646,9 +646,9 @@ families:
         - su000000000000001
         - su000000000000002
       kind: marriage
-      from_year: 1925
-      to_year: 1978
-      note: svatba ve Vavřinci
+      from_year: 1927
+      to_year: 1975
+      note: svatba na faře
       children:
         - subject_uid: su000000000000003
           kind: birth

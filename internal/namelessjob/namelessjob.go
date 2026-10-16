@@ -13,7 +13,7 @@
 // hands the same file to the browser as a download before it schedules anything.
 //
 // The destructive step runs through the job queue rather than inline. Detaching
-// the production catch-all sets subject_uid NULL on ~111 000 faces, which moves
+// the production catch-all sets subject_uid NULL on ~100k faces, which moves
 // every one of them into the partial "unassigned faces" HNSW index (migration
 // 0047) — minutes of index maintenance no HTTP request should sit on. Each job
 // reuses people.Store.DetachSubject / RestoreSubject, so there is exactly one

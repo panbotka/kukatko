@@ -33,11 +33,11 @@ v mřížce počítají totéž **při renderu**, takže se samy opraví, jakmil
 
 ## Jak to reprodukovat
 
-Na box staging (`http://100.127.79.1:6490`, admin/adminadmin):
+Na box staging (`http://<staging host>:6490`, staging admin účet):
 
 1. Mít video bez HLS renditionu — buď nahrát dlouhý klip, nebo dočasně smazat jeho řádek
    v `photo_hls_renditions`.
-2. `agent-browser open "http://100.127.79.1:6490/slideshow?q=filename%3A<jmeno>"` — studené
+2. `agent-browser open "http://<staging host>:6490/slideshow?q=filename%3A<jmeno>"` — studené
    načtení, tedy vložený odkaz, reload nebo obnovená záložka.
 3. Snímek ukáže „▶ 7:00" nad náhledem a `document.querySelector('video')` není null;
    `agent-browser network requests --filter /video` ukáže dva 206 proti originálu.
@@ -68,6 +68,6 @@ a nesmí sáhnout na `/video`.
 
 ## Screenshoty z walkthroughu
 
-`/tmp/claude-1000/-home-pi-projects-kukatko/ed228130-3290-47a1-9d72-db060e00b5e6/scratchpad/23-slideshow-coldload-bug.png`
-`/tmp/claude-1000/-home-pi-projects-kukatko/ed228130-3290-47a1-9d72-db060e00b5e6/scratchpad/m11-slideshow-coldload.png`
+`<scratchpad>/23-slideshow-coldload-bug.png`
+`<scratchpad>/m11-slideshow-coldload.png`
 (scratchpad je dočasný — screenshoty ber jako doplněk, reprodukce výše stojí sama o sobě)

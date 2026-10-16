@@ -175,7 +175,7 @@ func WriteSubject(w io.Writer, subject Subject) error {
 }
 
 // subjectDisplayName is the name with the nickname appended in Czech quotation
-// marks — `Bohumil Nečas („Bohouš")` — or the bare name for the many subjects
+// marks — `Bohumil Nedvěd („Bohouš")` — or the bare name for the many subjects
 // that have none.
 func subjectDisplayName(subject Subject) string {
 	if subject.Nickname == "" {

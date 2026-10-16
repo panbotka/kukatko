@@ -470,7 +470,7 @@ describe('FacesPanel', () => {
     const user = userEvent.setup()
     const acceptSuggestion = vi.fn()
     fetchSubjectsMock.mockResolvedValue([
-      { ...namedSubject(null), name: 'Bohumil Nečas', nickname: 'Bohouš' },
+      { ...namedSubject(null), name: 'Bohumil Nedvěd', nickname: 'Bohouš' },
     ])
     const selected = faceView({ face_index: 0 })
     renderPanel(facesResult({ faces: [selected], selected, acceptSuggestion }))
@@ -479,13 +479,13 @@ describe('FacesPanel', () => {
       expect(screen.getByLabelText('Name')).toBeEnabled()
     })
     await user.type(screen.getByLabelText('Name'), 'bohous')
-    const option = await screen.findByRole('option', { name: /Bohumil Nečas/ })
+    const option = await screen.findByRole('option', { name: /Bohumil Nedvěd/ })
     expect(option).toHaveTextContent('„Bohouš"')
     await user.click(option)
 
     expect(acceptSuggestion).toHaveBeenCalledWith(selected, {
       subject_uid: 'su_9',
-      subject_name: 'Bohumil Nečas',
+      subject_name: 'Bohumil Nedvěd',
     })
   })
 
@@ -494,7 +494,7 @@ describe('FacesPanel', () => {
     // would answer every query with the whole library.
     const user = userEvent.setup()
     fetchSubjectsMock.mockResolvedValue([
-      { ...namedSubject(null), name: 'Bohumil Nečas', nickname: 'Bohouš' },
+      { ...namedSubject(null), name: 'Bohumil Nedvěd', nickname: 'Bohouš' },
       { ...namedSubject(null), uid: 'su_8', slug: 'anna', name: 'Anna Nováková' },
     ])
     const selected = faceView({ face_index: 0 })
@@ -505,7 +505,7 @@ describe('FacesPanel', () => {
     })
     await user.type(screen.getByLabelText('Name'), 'bohous')
 
-    expect(await screen.findByRole('option', { name: /Bohumil Nečas/ })).toBeInTheDocument()
+    expect(await screen.findByRole('option', { name: /Bohumil Nedvěd/ })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /Anna Nováková/ })).not.toBeInTheDocument()
   })
 

@@ -43,13 +43,13 @@ This is the baseline every option below must beat.
 
 ```bash
 # Claude Code
-claude mcp add --transport http kukatko https://fotky.kotrzina.cz/api/v1/mcp \
+claude mcp add --transport http kukatko https://photos.example.org/api/v1/mcp \
   --header "Authorization: Bearer kkt_…"
 ```
 
 ```jsonc
 // OpenAI Responses API — a bare access token in the tool object
-{"type": "mcp", "server_url": "https://fotky.kotrzina.cz/api/v1/mcp",
+{"type": "mcp", "server_url": "https://photos.example.org/api/v1/mcp",
  "authorization": "kkt_…"}
 ```
 
@@ -171,7 +171,7 @@ the tests must pin.
 Kukátko would only verify JWTs and the audience. Rejected, for four reasons in ascending order
 of severity:
 
-1. **There is no IdP anywhere on the VPS.** A search of `~/projects/vps` finds no Authentik,
+1. **There is no IdP anywhere on the VPS.** A search of the deployment repo finds no Authentik,
    Keycloak, Authelia, oauth2-proxy or Dex — only Traefik basic-auth middlewares used
    elsewhere. This would be a brand-new operational component: its own database, its own
    upgrades, its own backup, its own Traefik router. The VPS has 8 vCPU and already runs
@@ -203,10 +203,10 @@ project has), and does nothing at all for ChatGPT.
 > **Worth doing in parallel, not instead:** it costs one e-mail and might unblock the
 > claude.ai half of this weeks before any code ships.
 
-### What Option A means for the `vps` repository and for `make check`
+### What Option A means for the deployment repository and for `make check`
 
-- `vps`: two new environment variables on the existing `kukatko` service in
-  `roles/apps/files/apps/vps/docker-compose.yml` (`KUKATKO_MCP_ENABLED=true`,
+- `<private deployment repo>`: two new environment variables on the existing `kukatko` service in
+  its compose file (`KUKATKO_MCP_ENABLED=true`,
   `KUKATKO_MCP_OAUTH_ENABLED=true`) and nothing else. **No new container, no new Traefik
   router, no new secret** — the token secrets are random values in our own database, not
   configuration. Anthropic's egress range `160.79.104.0/21` must *not* be turned into a
@@ -323,7 +323,7 @@ clients send it. Handling:
 2. The canonical URL is **derived from the request's own host** when that host is one this
    instance answers on (`web.allowed_origins`), with `mcp.oauth.issuer` as an explicit
    override. This matters here specifically: production answers on **two** hostnames,
-   `fotky.kotrzina.cz` and `kukatko.kotrzina.cz`, and the PRM `resource` must equal the URL
+   `photos.example.org` and `kukatko.example.org`, and the PRM `resource` must equal the URL
    the user typed *exactly*. A hard-coded single host would silently break whichever name the
    user chose.
 3. The granted `resource` is stored on the token row.
@@ -432,9 +432,9 @@ SPA and are *not* redirected back to the client, as OAuth requires for an untrus
 ```jsonc
 // /.well-known/oauth-authorization-server
 {
-  "issuer": "https://fotky.kotrzina.cz",
-  "authorization_endpoint": "https://fotky.kotrzina.cz/oauth/authorize",
-  "token_endpoint": "https://fotky.kotrzina.cz/api/v1/oauth/token",
+  "issuer": "https://photos.example.org",
+  "authorization_endpoint": "https://photos.example.org/oauth/authorize",
+  "token_endpoint": "https://photos.example.org/api/v1/oauth/token",
   "response_types_supported": ["code"],
   "grant_types_supported": ["authorization_code", "refresh_token"],
   "code_challenge_methods_supported": ["S256"],
@@ -447,8 +447,8 @@ SPA and are *not* redirected back to the client, as OAuth requires for an untrus
 
 // /.well-known/oauth-protected-resource/api/v1/mcp
 {
-  "resource": "https://fotky.kotrzina.cz/api/v1/mcp",
-  "authorization_servers": ["https://fotky.kotrzina.cz"],
+  "resource": "https://photos.example.org/api/v1/mcp",
+  "authorization_servers": ["https://photos.example.org"],
   "scopes_supported": ["kukatko:read", "kukatko:write"],
   "bearer_methods_supported": ["header"],
   "resource_name": "Kukátko"
@@ -547,7 +547,7 @@ and is independently reviewable.
 | 2 | The grant: migration + store, `/authorize` validate/describe/approve/deny, `/token` for both grants, rotation and reuse detection, audit rows, `oauth_connect_allowed`. | **L — the core** |
 | 3 | The resource server: `kko_` verification in `internal/auth`, audience + scope enforcement, the MCP 401/403 challenges, `role ∩ scope` in `internal/mcpapi`, rate limits. | M |
 | 4 | Frontend: the consent screen, "Connected apps" on `AccountPage`, admin toggle, cs/en. | M |
-| 5 | Rollout: `docs/MCP.md` + `docs/OPERATIONS.md` + `config.example.yaml` + `README.md`, the `vps` compose variables, and a walkthrough on the box staging stack that actually adds the connector in claude.ai and in ChatGPT before production is touched. | S, but do not skip |
+| 5 | Rollout: `docs/MCP.md` + `docs/OPERATIONS.md` + `config.example.yaml` + `README.md`, the deployment compose variables, and a walkthrough on the box staging stack that actually adds the connector in claude.ai and in ChatGPT before production is touched. | S, but do not skip |
 
 Tasks 1–3 are strictly ordered. Task 4 can run beside task 3. Task 2 is the one to review
 hardest; if it wants splitting, the seam is "codes and the authorization endpoint" versus

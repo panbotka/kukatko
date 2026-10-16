@@ -35,7 +35,7 @@ Measured end-to-end on the RTX 3070, `POST /embed/image` with JPEG decode includ
 | throughput | 11.88 photos/s | 11.00 photos/s |
 | interactive text query | 6.3 ms | 9.1 ms |
 
-Only 8 % slower per photo — JPEG decode dominates a real request, so the heavier tower barely moves the total. **A full re-embed of ~20 664 photos is roughly half an hour of sidecar time, not hours.** Service VRAM is ~3090 MiB against ~3120 MiB before, so nothing on the GPU side changed for the worse.
+Only 8 % slower per photo — JPEG decode dominates a real request, so the heavier tower barely moves the total. **A full re-embed of ~20k photos is roughly half an hour of sidecar time, not hours.** Service VRAM is ~3090 MiB against ~3120 MiB before, so nothing on the GPU side changed for the worse.
 
 ## Context
 
@@ -56,7 +56,7 @@ Only 8 % slower per photo — JPEG decode dominates a real request, so the heavi
 ## Acceptance
 
 - The migration applies to a database holding existing embeddings and leaves the table empty, at the new width, with a usable HNSW index.
-- After deploy, `BackfillEmbeddings` enqueues every non-archived photo (~20 664) and the queue drains with no dimension errors.
+- After deploy, `BackfillEmbeddings` enqueues every non-archived photo (~20k) and the queue drains with no dimension errors.
 - Semantic search returns results again once the backfill completes.
 
 ## Implementation notes

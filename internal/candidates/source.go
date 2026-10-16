@@ -42,7 +42,7 @@ type source struct {
 // The cap is a memory bound, and it is the reason this reads a sample at all: one
 // exemplar means one kNN query and one result set to merge, so an uncapped source
 // set puts a single request's allocation on the library's growth curve. One subject
-// holding 16 532 exemplars is what let a GET /review/queue grow the process to
+// holding ~16k exemplars is what let a GET /review/queue grow the process to
 // 10.9 GB and take the host down with it. It costs little recall — the vote rule
 // clamps at five agreeing exemplars, which hundreds supply as well as thousands.
 func (s *Service) loadSource(ctx context.Context, projectUID, subjectUID string) (source, error) {

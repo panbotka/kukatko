@@ -129,7 +129,7 @@ const (
 	// ActionPhotoDateClear records the library maintenance repair declaring a
 	// photo's capture date unknown because the recorded one is impossible — a
 	// year no photograph can have been taken in, which is what a download named
-	// after an asset id (90090310_638783213372240_… reads as 9009-03-10) leaves
+	// after an asset id (90090310_100000000000001_… reads as 9009-03-10) leaves
 	// behind. It is distinct from a photo.update so the trail says the date was
 	// withdrawn by a repair rather than retyped by hand; the discarded date and
 	// its provenance are in the details, and nothing invents a replacement.

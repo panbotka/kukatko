@@ -382,8 +382,8 @@ func taskCond(v query.Value, env condEnv) (string, bool) {
 // UID, via a non-invalid marker — the same linkage the person= scope uses.
 //
 // Both name arms are accent-folded, the same way internal/people's own subject
-// search reads a typed name: in this archive the names are Czech, and `person:necas`
-// has to reach "Nečas" or the filter is unusable from a keyboard without háčky.
+// search reads a typed name: in this archive the names are Czech, and `person:nedved`
+// has to reach "Nedvěd" or the filter is unusable from a keyboard without háčky.
 //
 // The nickname matches on the same terms as the name, because in a village
 // archive it is often the only handle anybody remembers. Both name arms bind the
@@ -416,7 +416,7 @@ const familyPartnerExpr = "CASE WHEN f.partner_a_uid = d.uid THEN f.partner_b_ui
 // familyCond matches photos showing anybody in a chosen person's family: that
 // person, every descendant of theirs, and the partners of all of them. It is
 // deliberately the same set internal/family walks for the drawn tree, so the
-// page and the filter can never disagree about who "the Nečas family" is — and
+// page and the filter can never disagree about who "the Nedvěd family" is — and
 // deliberately not a connected component, which in a village would eventually
 // swallow everybody and stop filtering anything.
 //
@@ -442,8 +442,8 @@ func familyCond(v query.Value, env condEnv) (string, bool) {
 // the roots matching the pattern or the UID, everybody descended from them, and
 // the partners of that whole set. pattern, uid and project are placeholders the
 // caller already bound, never user values. The root arms are accent-folded like
-// personCond's — `family:necas` names the Nečas family — and confined to the
-// project, so the walk starts from this library's Nečas and never another's;
+// personCond's — `family:nedved` names the Nedvěd family — and confined to the
+// project, so the walk starts from this library's Nedvěd and never another's;
 // every family it steps through is confined to the project as well, so even a
 // row that broke the one-project-per-family invariant could not carry the walk
 // out of it. The project is a bound value rather than a reference to the outer row, which

@@ -11,6 +11,6 @@ UI/UX review finding #6 (2026-10-11). Selecting photos in the library shows a fl
 
 ## Scope and verification
 - UI only: no change to what the actions do.
-- Reference screenshot: `/mnt/nas-botka/kukatko/uiux-review-2026-10-11/shots/d-selection.png`.
+- Reference screenshot: `<path>/uiux-review-2026-10-11/shots/d-selection.png`.
 - Check at 1440px, 1024px and 390px with 2 photos selected.
 - Finish per CLAUDE.md Definition of Done (docs/FRONTEND.md, `make check-box`, commit, push).

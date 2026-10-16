@@ -4,7 +4,7 @@ import "testing"
 
 // photoUID is a well-formed photo uid used as the shape template below: two
 // prefix characters plus 24 base32 characters.
-const photoUID = "ph7lpul2io09bcg2rvp2rljsr6"
+const photoUID = "phfake0uid0for0tests000001"
 
 // TestClassifyUID_recognisedShapes verifies every prefix routes to its entity
 // and that the PhotoPrism shape is told apart by its length.
@@ -14,13 +14,13 @@ func TestClassifyUID_recognisedShapes(t *testing.T) {
 		uid  string
 		want EntityKind
 	}{
-		{"ph7lpul2io09bcg2rvp2rljsr6", EntityPhoto},
-		{"al7lpul2io09bcg2rvp2rljsr6", EntityAlbum},
-		{"lb7lpul2io09bcg2rvp2rljsr6", EntityLabel},
-		{"su7lpul2io09bcg2rvp2rljsr6", EntityPerson},
-		{"st7lpul2io09bcg2rvp2rljsr6", EntityStack},
-		{"mk7lpul2io09bcg2rvp2rljsr6", EntityMarker},
-		{"pt8suk5b57jgshdz", EntityPhotoprism},
+		{"phfake0uid0for0tests000001", EntityPhoto},
+		{"alfake0uid0for0tests000001", EntityAlbum},
+		{"lbfake0uid0for0tests000001", EntityLabel},
+		{"sufake0uid0for0tests000001", EntityPerson},
+		{"stfake0uid0for0tests000001", EntityStack},
+		{"mkfake0uid0for0tests000001", EntityMarker},
+		{"ptfakeppuid00001", EntityPhotoprism},
 	}
 	for _, tt := range tests {
 		t.Run(tt.uid, func(t *testing.T) {
@@ -45,12 +45,12 @@ func TestClassifyUID_rejects(t *testing.T) {
 		name  string
 		token string
 	}{
-		{"unknown prefix", "zz7lpul2io09bcg2rvp2rljsr6"},
+		{"unknown prefix", "zzfake0uid0for0tests000001"},
 		{"too short", photoUID[:25]},
 		{"too long", photoUID + "x"},
-		{"out of alphabet", "ph7lpul2io09bcg2rvp2rljszz"},
-		{"photoprism wrong prefix", "xx8suk5b57jgshdz"},
-		{"photoprism out of alphabet", "pt8suk5b57jgsh_z"},
+		{"out of alphabet", "phfake0uid0for0tests0000zz"},
+		{"photoprism wrong prefix", "xxfakeppuid00001"},
+		{"photoprism out of alphabet", "ptfakeppuid000_1"},
 		{"plain word", "dovolena"},
 		{"empty", ""},
 	}
@@ -68,7 +68,7 @@ func TestClassifyUID_rejects(t *testing.T) {
 // resolves, and resolves to the lowercase form the database stores.
 func TestClassifyUID_lowercases(t *testing.T) {
 	t.Parallel()
-	got, ok := ClassifyUID("PH7LPUL2IO09BCG2RVP2RLJSR6")
+	got, ok := ClassifyUID("PHFAKE0UID0FOR0TESTS000001")
 	if !ok || got.Kind != EntityPhoto || got.UID != photoUID {
 		t.Fatalf("ClassifyUID(upper) = %+v, %v; want {%s photo}, true", got, ok, photoUID)
 	}
@@ -87,7 +87,7 @@ func TestFindUID(t *testing.T) {
 		{"bare uid", photoUID, photoUID, true},
 		{"padded", "  " + photoUID + " ", photoUID, true},
 		{"with a word next to it", "photo " + photoUID, photoUID, true},
-		{"first wins", photoUID + " al7lpul2io09bcg2rvp2rljsr6", photoUID, true},
+		{"first wins", photoUID + " alfake0uid0for0tests000001", photoUID, true},
 		{"plain text", "dovolená u moře", "", false},
 	}
 	for _, tt := range tests {

@@ -49,7 +49,7 @@ func TestCheckRelationTarget(t *testing.T) {
 		},
 		{
 			name: "new subject",
-			rel:  AddRelation{Role: RoleParent, New: &NewPerson{Name: "Marie Nečasová"}},
+			rel:  AddRelation{Role: RoleParent, New: &NewPerson{Name: "Marie Nedvědová"}},
 		},
 		{
 			name: "both",

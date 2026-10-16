@@ -70,7 +70,7 @@ func TestParseFilenameDate_patterns(t *testing.T) {
 			// A Facebook download: the leading digits are an asset id that
 			// happens to read as 9009-03-10.
 			name: "facebook asset id rejected",
-			path: "90090310_638783213372240_7483353598378639360_n.jpg",
+			path: "90090310_100000000000001_1000000000000000001_n.jpg",
 			ok:   false,
 		},
 		{

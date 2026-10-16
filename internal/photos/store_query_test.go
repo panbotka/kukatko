@@ -370,7 +370,7 @@ func TestFamilyCond(t *testing.T) {
 	}{
 		{
 			name:  "the root is a name, a nickname or an exact uid",
-			input: "family:necas",
+			input: "family:nedved",
 			contains: []string{
 				"WITH RECURSIVE descendants(uid, depth)",
 				"immutable_unaccent(s.name) ILIKE immutable_unaccent($1)",
@@ -380,7 +380,7 @@ func TestFamilyCond(t *testing.T) {
 				"d.depth < 20",
 				"m.invalid = FALSE",
 			},
-			args: []any{"%necas%", "necas"},
+			args: []any{"%nedved%", "nedved"},
 		},
 		{
 			name:     "a wildcard anchors both name arms of the root",
@@ -568,11 +568,11 @@ func TestQueryTextFilters_foldAccentsOnBothSides(t *testing.T) {
 		{"album:dovolena", []string{"immutable_unaccent(a.title) ILIKE immutable_unaccent($1)"}},
 		{"label:kytka", []string{"immutable_unaccent(l.name) ILIKE immutable_unaccent($1)"}},
 		{"task:popisky", []string{"immutable_unaccent(t.title) ILIKE immutable_unaccent($1)"}},
-		{"person:necas", []string{
+		{"person:nedved", []string{
 			"immutable_unaccent(s.name) ILIKE immutable_unaccent($1)",
 			"immutable_unaccent(s.nickname) ILIKE immutable_unaccent($1)",
 		}},
-		{"family:necas", []string{
+		{"family:nedved", []string{
 			"immutable_unaccent(s.name) ILIKE immutable_unaccent($1)",
 			"immutable_unaccent(s.nickname) ILIKE immutable_unaccent($1)",
 		}},

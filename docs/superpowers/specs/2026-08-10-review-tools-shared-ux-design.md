@@ -132,7 +132,7 @@ already suspend shortcuts during a running "confirm all".
   `gridTemplateColumns`; clicking a photo opens the lightbox; acting from inside the lightbox
   reaches the same write path as the card, asserted through the mocked service.
 - **Real browser:** the tools are editor-gated, so verification signs in as the maintainer
-  account (`panbotka`, item "Kukatko" in the 1Password vault "Pan Botka") against production,
+  account (its credentials are in the password manager) against production,
   driving this tree's frontend through a throwaway Vite proxy — the technique already used to
   verify the `/library/*` redirect. Every phase is checked on the real library before its
   commit, because the thing being fixed is a judgement made by looking at pixels.

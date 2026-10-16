@@ -12,8 +12,8 @@
 -- Until this table existed the second source photo was therefore dropped in
 -- silence: counted as "skipped", nothing logged, no failure recorded, and its
 -- albums, labels and face markers left behind with it because nothing could
--- resolve its uid to a row. On the production library that was 450 photos of
--- 20 660 — with the run reporting failed=0.
+-- resolve its uid to a row. On the production library that was a few hundred
+-- photos of ~20k — with the run reporting failed=0.
 --
 -- An alias records exactly that collapse: "source photo X is held by catalogue row
 -- Y". The uid stays resolvable (internal/ppimport lookupImported,

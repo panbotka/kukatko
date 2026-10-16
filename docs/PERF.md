@@ -242,7 +242,7 @@ backend: `Generate` decided "already done" from the local disk alone, so a prune
 cache meant re-encoding **and** re-uploading objects that were already in R2.
 That is not a hypothetical — eight sizes are ~2.76 MB per photo (~57 GB for the
 production library against ~20 GB of free disk), so the import runs with a pruner
-and the cache is cold by construction. A full pass over ~20 670 photos at ~4 s
+and the cache is cold by construction. A full pass over ~20k photos at ~4 s
 each is around twenty hours and ~57 GB of pointless writes.
 
 `internal/thumb` now asks the store first (`dropPublished`). The shape matters:
@@ -607,18 +607,18 @@ walk runs once per photo. It does not: the walk does not reference the outer row
 so the planner evaluates it once and turns the whole `EXISTS` into a hash semi
 join.
 
-**Measured on production data, 2026-09-13.** 21 018 photos, 121 subjects, 21 476
+**Measured on production data, 2026-09-13.** ~20k photos, ~120 subjects, ~20k
 markers. Production is still on 0.20.0 and has no `subject_families` yet, so the
 two tables were created as **`TEMP` tables in one psql session** — they live in
 `pg_temp`, shadow the public schema for that session only and vanish on
 disconnect, so nothing in the live library was written. They were seeded with a
 deliberately extreme genealogy: 60 couples chained so that the root's clan is
-essentially every subject in the library (119 of 121 people), which is far wider
+essentially every subject in the library (all but two people), which is far wider
 than any real family and therefore an upper bound.
 
 | Query | `EXPLAIN (ANALYZE)` execution |
 | --- | --- |
-| `family:` by name (`%Nečas%`) | **56.8 ms** |
+| `family:` by name (`%Novák%`) | **56.8 ms** |
 | `family:` by uid, root of the whole synthetic clan | **44.6 ms** |
 | `person:` over the same library (baseline) | **10.3 ms** |
 
@@ -641,14 +641,14 @@ around a column cannot use a plain index. It costs nothing here, because these
 are `%…%` contains-matches — they reach no index either way, before the fold or
 after it.
 
-**Measured on production data, 2026-09-20.** 21 019 photos, 2 459 `photo_places`
-rows, 126 subjects. `EXPLAIN (ANALYZE, BUFFERS)`, plain form against folded form:
+**Measured on production data, 2026-09-20.** ~20k photos, ~2.5k `photo_places`
+rows, ~125 subjects. `EXPLAIN (ANALYZE, BUFFERS)`, plain form against folded form:
 
 | Query | Before | After |
 | --- | --- | --- |
 | `count(*)` over `title ILIKE '%dum%'` (whole table) | 39.8 ms, seq scan | 58.2 ms, parallel seq scan |
 | a listing page: `archived_at IS NULL`, `ORDER BY taken_at DESC`, `LIMIT 60` | 46.8 ms, seq scan + sort | **17.4 ms**, index scan on `idx_photos_live_taken_at` |
-| `country:` over `photo_places`, same 2 459 rows matched | 19.4 ms | 29.4 ms |
+| `country:` over `photo_places`, same ~2.5k rows matched | 19.4 ms | 29.4 ms |
 
 The whole-table count is the worst case and still under 60 ms. The **listing
 page** is the shape a user actually waits on, and there the fold is faster, not
@@ -664,7 +664,7 @@ count becomes a real path — it is not one today.
 ### The album index (`GET /api/v1/p/<slug>/albums`)
 
 **Symptom (production, 2026-08-02).** The endpoint took **32.8 s** to return
-151 kB for 437 albums / 20 197 visible photos / 40 459 memberships, and the
+151 kB for ~440 albums / ~20k visible photos / ~40k memberships, and the
 requests that did not finish in time failed outright — four `status:500` lines in
 one minute of a user clicking "Alba".
 
@@ -676,9 +676,9 @@ satisfies a per-album `ORDER BY … LIMIT 1` by walking the **global**
 album (`Incremental Sort`, `Presorted Key: p2.taken_at`). An album whose newest
 photo is old — a 2011 holiday — walks most of the library before its first hit,
 and that happens once per album. `EXPLAIN (ANALYZE, BUFFERS)` on production:
-**16 265 977 buffer hits to produce 437 rows, 99.99 % of them in the cover
+**16 265 977 buffer hits to produce ~440 rows, 99.99 % of them in the cover
 subquery**; the rest of the statement (join, counts, MIN/MAX) cost 2 531 buffers
-and 141 ms. Memoize capped it at 437 executions instead of 40 471, at 79.7 ms
+and 141 ms. Memoize capped it at ~440 executions instead of ~40k, at 79.7 ms
 each. A development library of a few hundred photos makes the global walk free,
 which is exactly why it shipped.
 
@@ -814,8 +814,8 @@ carrying this label" would drift.
 ### The review queue (`GET /api/v1/p/<slug>/review/queue`)
 
 **Symptom (production, 2026-08-02).** The endpoint answered **200 OK after
-250.8 s** with a valid 89 kB payload for 105 named subjects / 113 628 faces /
-20 437 photos. Nothing was broken — it was four minutes slow, so every browser
+250.8 s** with a valid 89 kB payload for ~100 named subjects / ~110k faces /
+~20k photos. Nothing was broken — it was four minutes slow, so every browser
 gave up first and `/review` simply never loaded.
 
 **Root cause.** `internal/review` built the queue by running the **entire
@@ -945,7 +945,7 @@ which bounds *time* and says nothing at all about memory.
 1. **Exemplars.** `Find` loaded *every* face assigned to the subject, embeddings
    included, and ran one kNN per exemplar, merging every result set. Nothing
    capped that count, so the cost followed how heavily a person was tagged. The
-   separate catch-all-subject bug had left one "person" holding **16 532**
+   separate catch-all-subject bug had left one "person" holding **~16.5k**
    exemplars, which is what lit the fuse — but a genuinely well-tagged person in
    a large library gets there on merit.
 2. **Candidates.** Every survivor was hydrated into a full `photos.Photo` —
@@ -993,7 +993,7 @@ megabytes, whatever the library does.
 **Noticed while measuring, not fixed here: there is no index on
 `faces.subject_uid`.** Every "this subject's faces" read — `ListFacesBySubject`,
 the new `SampleFacesBySubject`, outlier detection — therefore seq-scans the whole
-`faces` table (113 628 rows in production), and a review rebuild does it once per
+`faces` table (~110k rows in production), and a review rebuild does it once per
 subject in its window. `sampleFacesBySubjectSQL` is deliberately written to scan
 once rather than twice (`max(dense_rank())` over two query levels instead of a
 second subquery for the distinct-photo count), so this change does not make it
@@ -1005,7 +1005,7 @@ migration under this heading.
 **One memory exposure is knowingly left in place.** `GET /subjects/{uid}/outliers`
 (`internal/outliers`) still reads *every* face of a subject via
 `ListFacesBySubject`, embeddings included — 2 kB a face, so ~34 MB for a
-16 532-face subject and ~200 MB for a hypothetical 100 000-face one. It is two
+~16.5k-face subject and ~200 MB for a hypothetical 100 000-face one. It is two
 orders of magnitude below what the candidate search was doing, and it is not the
 same kind of bug: outlier detection ranks a person's faces *against their own
 centroid*, so a sample would not bound the work, it would change the answer.
@@ -1025,7 +1025,7 @@ go test -run TestFind_allocationDoesNotScale -v ./internal/candidates/
 
 **Still outstanding — the container has no memory limit.** The fix bounds the
 application; it does not change what happens if anything else on that box ever
-does this again. The `kukatko` service in the `vps` repo's `docker-compose.yml`
+does this again. The `kukatko` service in the deployment repo's compose file
 runs with `MemoryLimit=0`, which is why a runaway process became a *global* OOM
 instead of one dead container. Proposed (not applied — that repo is deployed
 separately):
@@ -1047,13 +1047,13 @@ consumer.
 ### The candidate search's latency (`POST /subjects/{uid}/candidates`)
 
 **Symptom (production, 2026-08-03, from the user).**
-`/faces?subject=sudh96iqevipv1v2cjfn85a26q&threshold=60&limit=0` "takes forever.
-In the sorter it took a few milliseconds." The subject is Tomáš Kozák, 428
-markers. The HNSW indexes were all in place, so this was never a missing index.
+`/faces?subject=<subject uid>&threshold=60&limit=0` "takes forever.
+In the sorter it took a few milliseconds." The subject is one well-tagged person,
+428 markers. The HNSW indexes were all in place, so this was never a missing index.
 
 **Reproduced before anything was changed**, because a fix without a number
 before and after is a guess. A synthetic library of the production shape was
-loaded into the development database on the Pi: 50 410 faces over 1 000
+loaded into the development database on the Pi: ~50k faces over 1 000
 identities, one of them holding 460 faces of which 428 are assigned to a subject
 and 32 are not. Baseline, warm cache, nothing else running:
 
@@ -1150,8 +1150,8 @@ the query's `WHERE` clause breaks nothing — it just silently costs 9× again.
   a radius above 90°, i.e. "everything". Rejected on quality.
 
 **The catch-all subject is already bounded.** `candidates.max_exemplars` (500)
-caps the source set before any of this, so the 16 532-exemplar "person" runs 500
-searches, not 16 532 — the same bound that fixed the memory blow-up above.
+caps the source set before any of this, so the ~16.5k-exemplar "person" runs 500
+searches, not ~16.5k — the same bound that fixed the memory blow-up above.
 
 ---
 
@@ -1408,7 +1408,7 @@ throttling: the Pi 5's Cortex-A76 cores are themselves in mid-range-phone territ
 
 | | value |
 | --- | --- |
-| photos on the map / in the library | **2 456 / 20 421** (1 524 distinct coordinates, at most 34 photos on one) |
+| photos on the map / in the library | **~2.5k / ~20k** (~1.5k distinct coordinates, a few dozen photos at most on one) |
 | GeoJSON as served before this change | **765 536 B** (~312 B a photo), **not compressed** — nothing in front of the app gzips it; 0.57–0.60 s |
 | the same, gzip | 107 300 B |
 | + `blurhash` (~30 chars a photo, high-entropy) | 883 224 B raw → **176 798 B** with the route's own gzip (level 5) |
@@ -1435,7 +1435,7 @@ for prod) and expires; instead a tile asks the thumbnail route for its uid
   `tile_100`: a 56 px tile up to DPR 2); a village at z16 on a phone draws 44.
 - A cluster's summary (newest photo by feed rank + the date span) is computed once per cluster —
   markercluster caches the icon until the cluster's children change.
-- The area panel's list is a plain filter over the feed: **0.6 ms** for 2 456 photos, 2 ms for
+- The area panel's list is a plain filter over the feed: **0.6 ms** for ~2.5k photos, 2 ms for
   50 000 (node, same predicate). The grid is virtualized inside the panel.
 
 ### Long tasks (`PerformanceObserver('longtask')`, production build)
@@ -1447,7 +1447,7 @@ for prod) and expires; instead a tile asks the thumbnail route for its uid
 | zoom out one step × 6 (phone) | 114, 70, 132, 52 ms |
 | zoom in × 4, desktop, panel open | 54–104 ms |
 | zoom in × 4, desktop, panel collapsed | 61–150 ms |
-| tap the 2 289-photo cluster (zoom to it), desktop | 61 ms |
+| tap the ~2.3k-photo cluster (zoom to it), desktop | 61 ms |
 
 Every zoom step settles in one task of ~50–150 ms, after the animation (markercluster re-clusters on
 `zoomend`, the URL takes the new viewport, the panel re-lists 200 ms later); the open panel adds

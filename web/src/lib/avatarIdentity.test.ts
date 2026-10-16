@@ -5,7 +5,7 @@ import { AVATAR_TONE_COUNT, avatarInitial, avatarTone } from './avatarIdentity'
 describe('avatarInitial', () => {
   it('takes the first letter of the name, upper-cased', () => {
     expect(avatarInitial('Jarmila')).toBe('J')
-    expect(avatarInitial('jarmila kozáková')).toBe('J')
+    expect(avatarInitial('jarmila kolářová')).toBe('J')
   })
 
   it('upper-cases a diacritic letter without losing the diacritic', () => {

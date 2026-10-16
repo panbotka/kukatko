@@ -86,8 +86,8 @@ func TestSibling_withNoParents(t *testing.T) {
 	fam, ppl, _, db := stores(t)
 	ctx := context.Background()
 	actor := makeUser(t, db, "usfamily0000000000000010", "sibling-editor")
-	josef := makeSubject(t, ppl, "Josef Nečas")
-	anna := makeSubject(t, ppl, "Anna Nečasová")
+	josef := makeSubject(t, ppl, "Josef Nedvěd")
+	anna := makeSubject(t, ppl, "Anna Nedvědová")
 	before := countSubjects(t, db)
 
 	res := addSibling(t, fam, actor, josef, anna)
@@ -118,7 +118,7 @@ func TestSibling_withNoParents(t *testing.T) {
 	}
 
 	// A third sibling joins the same group rather than starting another.
-	marie := makeSubject(t, ppl, "Marie Nečasová")
+	marie := makeSubject(t, ppl, "Marie Nedvědová")
 	third := addSibling(t, fam, actor, anna, marie)
 	if third.Family.UID != res.Family.UID {
 		t.Errorf("the third sibling landed in family %s, want the group %s", third.Family.UID, res.Family.UID)
@@ -169,9 +169,9 @@ func TestSibling_withKnownParentsIsUnchanged(t *testing.T) {
 	fam, ppl, _, db := stores(t)
 	ctx := context.Background()
 	actor := makeUser(t, db, "usfamily0000000000000011", "sibling-editor")
-	mother := makeSubject(t, ppl, "Marie Nečasová")
-	josef := makeSubject(t, ppl, "Josef Nečas")
-	anna := makeSubject(t, ppl, "Anna Nečasová")
+	mother := makeSubject(t, ppl, "Marie Nedvědová")
+	josef := makeSubject(t, ppl, "Josef Nedvěd")
+	anna := makeSubject(t, ppl, "Anna Nedvědová")
 
 	parentage, err := fam.AddParentAudited(ctx, project.BootstrapUID, josef, mother, "",
 		entryFor(actor, audit.ActionSubjectRelationAdd))
@@ -202,10 +202,10 @@ func TestSibling_aParentAdoptsTheWholeGroup(t *testing.T) {
 	fam, ppl, _, db := stores(t)
 	ctx := context.Background()
 	actor := makeUser(t, db, "usfamily0000000000000012", "sibling-editor")
-	josef := makeSubject(t, ppl, "Josef Nečas")
-	anna := makeSubject(t, ppl, "Anna Nečasová")
-	marie := makeSubject(t, ppl, "Marie Nečasová")
-	mother := makeSubject(t, ppl, "Ludmila Nečasová")
+	josef := makeSubject(t, ppl, "Josef Nedvěd")
+	anna := makeSubject(t, ppl, "Anna Nedvědová")
+	marie := makeSubject(t, ppl, "Marie Nedvědová")
+	mother := makeSubject(t, ppl, "Ludmila Nedvědová")
 
 	group := addSibling(t, fam, actor, josef, anna).Family
 	addSibling(t, fam, actor, josef, marie)
@@ -243,10 +243,10 @@ func TestSibling_aParentWithAnOwnFamilyTakesTheGroupIn(t *testing.T) {
 	fam, ppl, _, db := stores(t)
 	ctx := context.Background()
 	actor := makeUser(t, db, "usfamily0000000000000013", "sibling-editor")
-	mother := makeSubject(t, ppl, "Ludmila Nečasová")
-	petr := makeSubject(t, ppl, "Petr Nečas")
-	josef := makeSubject(t, ppl, "Josef Nečas")
-	anna := makeSubject(t, ppl, "Anna Nečasová")
+	mother := makeSubject(t, ppl, "Ludmila Nedvědová")
+	petr := makeSubject(t, ppl, "Petr Nedvěd")
+	josef := makeSubject(t, ppl, "Josef Nedvěd")
+	anna := makeSubject(t, ppl, "Anna Nedvědová")
 
 	own, err := fam.AddParentAudited(ctx, project.BootstrapUID, petr, mother, "", entryFor(actor, audit.ActionSubjectRelationAdd))
 	if err != nil {
@@ -308,9 +308,9 @@ func TestSibling_twoDifferentFamiliesAreRefused(t *testing.T) {
 	fam, ppl, _, db := stores(t)
 	ctx := context.Background()
 	actor := makeUser(t, db, "usfamily0000000000000014", "sibling-editor")
-	oneMother := makeSubject(t, ppl, "Marie Nečasová")
+	oneMother := makeSubject(t, ppl, "Marie Nedvědová")
 	otherMother := makeSubject(t, ppl, "Ludmila Doležalová")
-	josef := makeSubject(t, ppl, "Josef Nečas")
+	josef := makeSubject(t, ppl, "Josef Nedvěd")
 	petr := makeSubject(t, ppl, "Petr Doležal")
 
 	for _, pair := range []struct{ child, parent string }{
@@ -353,9 +353,9 @@ func TestSibling_removalRules(t *testing.T) {
 	fam, ppl, _, db := stores(t)
 	ctx := context.Background()
 	actor := makeUser(t, db, "usfamily0000000000000015", "sibling-editor")
-	josef := makeSubject(t, ppl, "Josef Nečas")
-	anna := makeSubject(t, ppl, "Anna Nečasová")
-	marie := makeSubject(t, ppl, "Marie Nečasová")
+	josef := makeSubject(t, ppl, "Josef Nedvěd")
+	anna := makeSubject(t, ppl, "Anna Nedvědová")
+	marie := makeSubject(t, ppl, "Marie Nedvědová")
 
 	group := addSibling(t, fam, actor, josef, anna).Family
 	addSibling(t, fam, actor, josef, marie)
@@ -387,7 +387,7 @@ func TestSibling_removalRules(t *testing.T) {
 
 	// With a parent on the family, being siblings follows from that parent and
 	// there is nothing between the two to remove.
-	mother := makeSubject(t, ppl, "Ludmila Nečasová")
+	mother := makeSubject(t, ppl, "Ludmila Nedvědová")
 	for _, child := range []string{josef, anna} {
 		if _, err := fam.AddParentAudited(ctx, project.BootstrapUID, child, mother, "",
 			entryFor(actor, audit.ActionSubjectRelationAdd)); err != nil {
@@ -418,8 +418,8 @@ func TestSibling_exportRoundTripsAParentlessFamily(t *testing.T) {
 	fam, ppl, _, db := stores(t)
 	ctx := context.Background()
 	actor := makeUser(t, db, "usfamily0000000000000016", "sibling-editor")
-	josef := makeSubject(t, ppl, "Josef Nečas")
-	anna := makeSubject(t, ppl, "Anna Nečasová")
+	josef := makeSubject(t, ppl, "Josef Nedvěd")
+	anna := makeSubject(t, ppl, "Anna Nedvědová")
 	group := addSibling(t, fam, actor, josef, anna).Family
 
 	export, err := fam.Export(ctx, project.BootstrapUID)

@@ -102,14 +102,14 @@ func TestBuild_externalPresentWhenImported(t *testing.T) {
 
 // TestMarshal_externalKeysSurviveTheImportRemoval pins the sidecar's wire format
 // for the source identifiers. Removing the PhotoPrism/photo-sorter import in
-// August 2026 made them look like import leftovers; they are not. 25 791 sidecar
+// August 2026 made them look like import leftovers; they are not. ~26k sidecar
 // files next to the originals in object storage already carry these exact keys,
 // and they are how a catalogue rebuilt from storage alone knows a photo's
 // provenance. Renaming or dropping one silently invalidates every one of them.
 func TestMarshal_externalKeysSurviveTheImportRemoval(t *testing.T) {
 	t.Parallel()
 
-	ppUID, ppHash, psUID := "pt8suk5b57jgshdz", "cd0123456789abcdef0123456789abcdef012345", "ps01"
+	ppUID, ppHash, psUID := "ptfakeppuid00001", "cd0123456789abcdef0123456789abcdef012345", "ps01"
 	doc := Build(Input{
 		Photo: photos.Photo{
 			UID:                "pht1",

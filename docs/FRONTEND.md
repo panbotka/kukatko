@@ -152,7 +152,7 @@ here.
   sees), and on a phone on the **corner of the hamburger** (`Navbar.Toggle` with children: the default glyph
   restated + the badge with `over`), so the summons is visible without opening the menu; the drawer's own
   Úkoly row wears it too. Nothing is drawn for zero or while the counts are unknown. **Width, measured**
-  (Chromium over the real `Layout`, Czech labels, maintainer = the widest role, display name „Tomáš Kozák",
+  (Chromium over the real `Layout`, Czech labels, maintainer = the widest role, display name „Tomáš Novák",
   3 waiting): the badge is **17px** and adds **25px** to the „Procházet" toggle (107→133px in the icon-less
   992–1199 band, 131→157px from 1200px); the whole collapse row (the nav, the shortcuts button, the user menu) grows from **798 to 823px** in
   the 888px collapse at 992px (65px of slack left), from **990 to 1015px** in the 1068px collapse at 1200px
@@ -480,7 +480,7 @@ here.
   and a `failed` count was not coloured at all. The sections:
   `StatTile`/`StatTileGrid` (**the dashboard's number tile** — a big `kk-display` value over its label, 2 per
   row on a phone up to 5 on a wide screen; a tile that has a view behind it makes the **whole card** the click
-  target (`stretched-link` over the label, so the accessible name is the label and not "16 585") and a tile
+  target (`stretched-link` over the label, so the accessible name is the label and not "12 345") and a tile
   with nowhere to go stays plain text rather than offering a link that lands somewhere unrelated. `value` is
   a **number or a string**: a number is formatted by the tile itself (`formatCount`, active language) and is
   what `tone` is applied to; a string is a value that is not a count at all — the duplicates tile's „—" while
@@ -516,7 +516,7 @@ here.
   columns and its lifetime "celkem kdy" total, rows ordered dead-letter first then busiest then by name so the
   order is stable between two polls; a row with a dead letter carries its **own requeue button**, and the
   whole-dead-letter button sits below with the shared `JobStateLegend`. The lifetime numbers are captioned as
-  history — this replaced a badge row where `image_embed: 41 594` against 20 930 photos read as a backlog when
+  history — this replaced a badge row where `image_embed` at twice the photo count read as a backlog when
   it was a one-off re-embedding. An empty queue renders a sentence, not an empty table. **Every row is named
   in words** — `system.jobs.types.*`, „Hledání obličejů" rather than `face_detect`, through
   `components/system/jobTypeLabels.ts` `JOB_TYPE_LABELS`; `jobTypeLabels.test.ts` reads every `Type*`
@@ -555,10 +555,10 @@ here.
   their own. Both cards close with an optional `note` (`StatNote` → `StatNoteText`, quiet caption under the
   `dl`, `{{total}}` interpolated through `formatCount`) saying what the numbers add up to and which
   neighbouring count they must not be added to — before this split all three counts wore the word "obličej",
-  read as a partition and did not add up (4 671 + 16 586 ≠ 115 461, and the card implied 22 % where the meter
+  read as a partition and did not add up (~5k + ~17k ≠ ~115k, and the card implied 22 % where the meter
   said 3,8 %).
-  **Fotky walks the total down to the count the Knihovna itself reports.** The page said „V knihovně 20 890"
-  while the library grid said „Počet fotek: 20 619" and nothing explained the 271: the grid drops the photos
+  **Fotky walks the total down to the count the Knihovna itself reports.** The page said „V knihovně 12 890"
+  while the library grid said „Počet fotek: 12 619" and nothing explained the 271: the grid drops the photos
   hidden from the library and the non-primary members of a stack. Both are rows of their own now
   (`photos_hidden`, `photos_stacked`) between **Mimo koš** (`photos_live`) and **Vidíte v Knihovně**
   (`photos_listed`); the three parts are disjoint and add back up to `photos_live`, and the card's `note`
@@ -566,7 +566,7 @@ here.
   and `stats.live` reads **Mimo koš** rather than the „V knihovně" that contradicted the grid.
   A count that stands for work to be done, or that a reader may want to check against another screen, is a
   **`Link`** (`text-reset text-decoration-underline`, so it keeps
-  the row's colour and gains an underline; `aria-label`/`title` name the destination, since "16 585" names
+  the row's colour and gains an underline; `aria-label`/`title` name the destination, since "12 345" names
   nothing): v koši → `/trash`, fotky bez obličeje → the library's own filter `/?q=faces%3A0`, obličeje bez
   jména → `/review` (the review game works over the nameless **detections**, which is why the link hangs off
   `faces_unassigned` and not off a marker count), skrytých → `/?q=hidden%3Ayes` (the documented way back to a
@@ -1333,7 +1333,7 @@ here.
   always-visible row under the header, deliberately, because they are the ways photos are actually found.
   Measured on the live instance at 1280 px that row was the last of ~490 px of chrome (heading, digest,
   search row, pickers) above the first photograph: the app's front door opened onto its own settings.
-  A/B over the same 20 664-photo catalogue at 1280 × 800 (deployed 0.17.2 vs. this tree through the
+  A/B over the same ~20k-photo catalogue at 1280 × 800 (deployed 0.17.2 vs. this tree through the
   prod-proxy probe, digest dismissed on both): the first row of photographs moved from **325 px to 205 px**;
   with the digest showing it is **261 px**, against ~490 px before.
   A picker is a surface for *changing* the view, which a reader does occasionally; photographs are what
@@ -1393,7 +1393,7 @@ here.
   wording and its ability to close, because waiting for a number must not cost the way out. Without it the
   drawer stated a *false zero*: `useWindowedPhotos` resets `total` to 0 the moment the query changes, so
   every refetch flashed „Žádné fotky — zavřít". Measured on the deployed build at 393 × 852: typing
-  `svatba` walked the count „Počet fotek: 20664" → „0" → „146"; the same typing now goes „436" →
+  `svatba` walked the count „Počet fotek: 12619" → „0" → „146"; the same typing now goes „436" →
   „Počítám fotky…" → the answer, with no wrong number in between. And the two free-text fields — the quick
   filter and **Fotoaparát** — commit through **`useDebouncedText`** (300 ms) rather than on every
   keystroke, so a typed word is one query instead of one per letter (`Apple` on the deployed build:
@@ -2432,7 +2432,7 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   library) beside the grid (`minSpanMonths`, hidden while a
   selection is being gathered), with the position in the same `at=YYYY-MM` URL param the library uses —
   which is why the grid is a *window* over the album rather than a growing prefix of it: a jump to 1936
-  in an album of 781 photos costs one scroll and one page fetch;
+  in an album of several hundred photos costs one scroll and one page fetch;
   selection raises the shared **`BatchActionBar`** with the album's own
   actions merged in as `extraActions` — **Nastavit obálku** (enabled at exactly 1 selected) and
   **Odebrat z alba** (`danger`) — beside the full batch vocabulary (both removal and a successful edit
@@ -2479,7 +2479,7 @@ to no project, so a single role would be the last-visited project's, unnamed, **
 
   `LabelsPage` = `/labels` **a wrapping cloud of label chips** with counts + `Nový štítek`
   (editor/admin). It used to be a column of full-width rows: a label is one word and a number, so a
-  real library's 113 of them ran a 5 730 px document with no controls at all, in which the alphabet
+  real library's hundred-plus of them ran a 5 730 px document with no controls at all, in which the alphabet
   alone decided what you met first — and dozens of numbered `DumNN` house-number labels occupied the
   entire start of it. Now the labels are chips (`LabelCloud` + `LabelChip`), the numbered families
   **fold into one expandable chip each**, and the page carries a name search + an ordering
@@ -2511,7 +2511,7 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   **`BatchActionBar`** (the library's full set of actions, `onSelectAll`; refetch on success),
   `TasksPage` = `/tasks` the **work queue**: one row per task (one of its photographs as a 56px tile, the
   question, the state as a `TaskStateBadge`, the photo/comment counts, **who acted last** — "naposledy
-  Tomáš Kozák · před 2 h", `last_activity_by_name` (falling back to *někdo* for a gone account) + a
+  Tomáš Novák · před 2 h", `last_activity_by_name` (falling back to *někdo* for a gone account) + a
   `<time dateTime>` through `formatRelativeTime`, so whose move it is reads off the row without opening
   the task — and a loud **Nová odpověď** badge when `has_new_answer`, which the server now computes **per
   reader**: one's own reply never lights it), open tasks first and the most recently touched at the top,
@@ -2856,7 +2856,7 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   Only `album:`, `label:`, `person:`/`subject:` complete values — a number or a date has no list to propose;
   matching is **prefix + diacritics-insensitive** (`lib/text` `foldText`) and ranked by photo count, a person's
   **nickname** matching on the same terms through `FilterValue.alias` while the row still **completes to the
-  name** (the row then reads „Bohumil Nečas („Bohouš")" via `lib/nickname` `withNickname`, since the match may
+  name** (the row then reads „Jaromír Novák („Jarouš")" via `lib/nickname` `withNickname`, since the match may
   have come from the nickname alone), the picked
   value is inserted **properly quoted** (`quoteFilterValue`) with a trailing space, and a value token with no
   match still opens the dropdown with „Nic neodpovídá" rather than vanishing mid-word. Arrows move,
@@ -3644,7 +3644,7 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   pre-rotation dimensions**, because `displayFrame` is what applies the orientation to them. The source catalogue
   reports its own dimensions with the tag **already applied**, so the import that took them verbatim
   stored a pair the frontend rotated a second time — the figure got the transposed aspect ratio, „contain"
-  letterboxed the photo inside it, and every percentage box drifted off the faces (85 photos with a marker,
+  letterboxed the photo inside it, and every percentage box drifted off the faces (dozens of photos with a marker,
   orientations 6 and 8; ~8.6 % of the library carries the pair). The rows still want repairing — everything that
   crops a **square tile** out of a photo (`subjectTile`, `OutlierCard`, `DuplicateMarkerCrop`,
   `useFaces`) scales a background instead of overlaying a box on a rendered image and so cannot measure its way
@@ -3660,7 +3660,7 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   (hovered, focused or selected; the z-ladder lifts it over the neighbours it reaches across, and over the veil that
   dims the rest of the photograph while a face is selected). Drawing every name at
   once is what the overlay used to do, and with two people side by side one label lay across another and across a
-  third box — on a fifteen-person group photo an unreadable pile, and `faces:3 face:new` alone returns 2 937 photos.
+  third box — on a fifteen-person group photo an unreadable pile, and `faces:3 face:new` alone returns thousands of photos.
   The other names are one hover away in the panel, whose rows carry the crops.
   Hovering a box highlights the row in the panel and vice versa (`hovered`/`onHover`
   held by the page) — **from focus as well as hover on both sides**, so the keyboard and a finger pair too, and the
@@ -4064,7 +4064,7 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   **place, not the coordinate**: `placeLabel(photo.place)` (`lib/photoPlace`) reads the cached hierarchy as
   one line („Špilberk, Brno, Česko"), a completed lookup **replaces** it (answering a click with the string
   already on screen would read as the button having done nothing), and with neither the line says so
-  (`photo.location.unknownPlace`). „49.39322, 16.70869" is not an answer to „kde to je?" for anyone not
+  (`photo.location.unknownPlace`). „49.12340, 16.56780" is not an answer to „kde to je?" for anyone not
   holding a map — the numbers survive as the line's `title` (`formatCoordinates(…, 5)`) and in full in
   Technické údaje. **3. Technické údaje** (`TechnicalDetails`,
   **closed on first render** expander `aria-expanded`/`aria-controls`): **everything the app knows about
@@ -4393,7 +4393,7 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   never arrives falls back to the same placeholder rather than to a broken-image glyph. The caption under
   the name is the photo count plus, for whoever has one, the **life span** (`formatLifeSpan` → „1923–1998" /
   „*1923" / „†1998") — on the count's own line, so a grid of people with years and one without still line up.
-  It also opens with the **nickname** („Bohouš") when the prop `showNickname` says so, which `PeoplePage`
+  It also opens with the **nickname** („Jarouš") when the prop `showNickname` says so, which `PeoplePage`
   sets for a tile the search found **through** the nickname (`lib/nickname` `matchedByNickname`): a row whose
   stored name has nothing to do with what was typed reads as a bug until the nickname is on screen, while a
   row the name itself matched needs no explanation and stays uncluttered,
@@ -4403,7 +4403,7 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   greet the next opening; the dialog carries the **nickname** field for every type (a pet answers to one as
   readily as a person; empty clears it, the value is trimmed, and it never reaches the slug — the backend
   derives that from the name alone, so every existing link keeps resolving). The header draws it beside the
-  name rather than on a line of its own — Bohumil Nečas („Bohouš"), `lib/nickname` `nicknameTag` owning the
+  name rather than on a line of its own — Jaromír Novák („Jarouš"), `lib/nickname` `nicknameTag` owning the
   quotation marks so the page, the tile and every picker write it the same way — and **nothing at all** when
   it is empty, which is the usual case; the dialog also carries the two **year** fields, shown **only for
   `type='person'`** (a pet has no life span to read) but always submitted, so a mistaken
@@ -4461,7 +4461,7 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   family of a dozen is one call and not one per chip). The chip borrows the photo panel's person chip's shape
   (`ps-1 pe-3` pill, a round face, the name) but is painted **neutral** — `.kk-family-chip` (surface-raised,
   surface border, body text; the border lifts on hover/focus) and not the `ENTITY_STYLE.person` rose, which
-  reads as danger and turned a family into a row of warnings — with the **life span inside it** where anybody recorded one — with eight Nečases in the library the years are
+  reads as danger and turned a family into a row of warnings — with the **life span inside it** where anybody recorded one — with several Nováks in one library the years are
   what tell two namesakes apart. The face is **`SubjectAvatar`** (`components/people/SubjectAvatar.tsx` →
   `GET /subjects/{uid}/avatar`, the server-cut square), which falls back to `InitialAvatar`'s coloured letter
   for `photo_count === 0` (no request that could only 404) or a rendition that fails: a relative nobody
@@ -4483,7 +4483,7 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   heard of. All that is left of that is the copy: `family.add.siblingHint` names the parents the sibling will
   hang off, `siblingHintNoParents` says the two will share a parentless family that a parent can join later.
   The dialog **stays open** after an add (the field clears, the role is kept, an `Alert` lists what the sitting
-  has recorded): recording the family of 118 people is several evenings of clicking, and four children have to
+  has recorded): recording a family of a hundred-plus people is several evenings of clicking, and four children have to
   be four names typed in a row. A refusal is read off the `ApiError` status — 409 „nesedí do rodokmenu" (a
   cycle, a second parentage), 400 „nedává smysl", anything else the generic failure.
   The dialog is `centered scrollable` **`fullscreen="sm-down"`** like the app’s other pickers: a
@@ -4927,10 +4927,10 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   and a small card between rounds offering another. The page names what it is showing (`Stage` =
   `question`/`breather`/`round-summary`/`session-summary`/`loading`/`error`/`empty`) instead of inferring it in
   three places, because each of those states has its own keyboard rules.
-  The question comes in **five flavours** — „Je na fotce **Tomáš Kozák**?"
+  The question comes in **five flavours** — „Je na fotce **Tomáš Novák**?"
   (face) · „Sedí k fotce štítek **Ostatky**?" (label) · „Byla tahle fotka pořízena v **Brně**?" (place, over a
   location the estimator guessed) · „Je to **stejná fotka**?" (duplicate, the two photos side by side) · „Je na
-  téhle fotce opravdu **Tomáš Kozák**?" (outlier, a face already assigned to him but far from his centroid).
+  téhle fotce opravdu **Tomáš Novák**?" (outlier, a face already assigned to him but far from his centroid).
   `QUESTION_KEYS`, `questionName`, `QuestionHint` and `QuestionStage` are the four places a kind is branched
   on, and nowhere else: the header, the progress, the three buttons and every keyboard shortcut are
   **identical for all five**, because a game whose controls change under the player is not a game.
@@ -5332,7 +5332,7 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   **names** the library holds for `album:`/`label:`/`person:` (`subject:` included), looked up with an ordinary
   `useGlobalSearch` run on the half-typed *value* alone, from one character on, and inserted quoted when the
   language needs it (an album completes to its **stored** title, not to the rendering `albumDisplayTitle`
-  shows). A person's row carries their **nickname** on its second line („Bohouš", `lib/nickname`
+  shows). A person's row carries their **nickname** on its second line („Jarouš", `lib/nickname`
   `nicknameTag`) and so does the ordinary people result group: the backend matches the nickname too, so a row
   showing only the stored name would look unrelated to what was typed — while the completed value stays the
   **name**, which is what identifies the person. The key list is **never written down here**: it is fetched
@@ -5701,7 +5701,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   zero, since "Show 0 photos" reads as a broken promise) plus a non-closing "clear filters" when there is
   something to clear. The **coverage statement survives the fold** — it is the one thing on the page that
   says the map is partial: `CoverageStatement` states it short beside the button (`map.coverageShort`,
-  "2 378 z 20 636 na mapě") and in full inside the drawer, where the editor's link lives; only one
+  "1 250 z 12 000 na mapě") and in full inside the drawer, where the editor's link lives; only one
   instance per layout is `aria-live`, so a filter change is announced once);
   `components/places/` = `PlaceRow` (one row of the place browse list: a fixed square preview well
   (`.kk-place-row__media`, sunken so a place with nothing to draw is an empty well and not a hole; a map-pin
@@ -6194,7 +6194,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `badgeText` caps it at „99+"; the number itself is `aria-hidden`, the button's name says it —
   „Oznámení – 3 nepřečtená", `inbox.bellUnread` plural). On desktop it sits in the right-hand `Nav` beside
   the shortcuts button (`gap-2`; ~42px with a mouse — measured 2026-10-11 over the real `Layout`,
-  maintainer „Tomáš Kozák", 12 unread: one 53px row at 992/1100/1200/1280px, the collapse never scrolls,
+  maintainer „Tomáš Novák", 12 unread: one 53px row at 992/1100/1200/1280px, the collapse never scrolls,
   even with headless Chromium's 44px coarse-pointer tap targets — the badge costs no width: `.btn .badge`
   would put it back in the flow, so `.kk-bell .kk-waiting-badge--over` restates `position: absolute`), on a phone (`drawerNav`) just before the hamburger, taking the trailing `ms-auto` from it. It is
   a react-bootstrap `Dropdown` (`align="end"`, caret hidden, `.kk-bell-menu`: at most 22rem / the viewport,
@@ -6353,7 +6353,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `q`, and a query change resets it), which is what lets the library raise `UnknownFiltersAlert` for a mistyped
   filter key instead of showing an empty grid that reads as „not in the library".
   This is what makes the timeline's jump cost **independent of distance** — measured on a seeded
-  20 889-photo library, clicking the oldest year went from **40.3 s / 102 sequential page requests**
+  ~20k-photo library, clicking the oldest year went from **40.3 s / 102 sequential page requests**
   (the old `useGridJump`, which paged its way to the target) to **~3.1 s**, the same as a jump one month
   back; `useSelection` = multi-selection of photos in the grid
   (`active`/`selected`/`count`/`enable`/`disable`/`toggle`/`selectMany` (select-all-in-view)/`clear`);
@@ -6754,7 +6754,7 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   full-frame photo the wrapper *is* the box's coordinate system (the box is percentages of it), so the wrapper
   must sit exactly on the rendered pixels — and the catalogue row cannot be trusted for that: the imported
   import stored already-oriented dimensions that `displayFrame` rotates a **second** time, so ~8.6 % of the
-  library carries a transposed pair (`phqale6fftf3a3v5tn17vtfd3d`: stored 3000x4000 + orientation 6 over a
+  library carries a transposed pair (`ph000000000000000000example`: stored 3000x4000 + orientation 6 over a
   portrait file → a 4/3 wrapper around a 3/4 image, every box's x/width stretched by 1.78, one of the three
   faces off the right edge entirely). `naturalWidth`/`naturalHeight` **are post-orientation**, so the row
   survives only as the **initial estimate** (no layout jump while the image loads) and the measurement takes
@@ -7012,9 +7012,9 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   the labels themselves are i18n (`subject.age` with a plural count, „~23 let" / „~23 yrs"));
   `lib/nickname.ts` (pure, the one place the nickname's *form* and its *matching* live, so the page header,
   the people tile, the pickers and both value completions write and find it identically: `nicknameTag` →
-  „Bohouš" in Czech quotation marks, trimmed, and **`null`** for an absent/blank one (never an empty string —
+  „Jarouš" in Czech quotation marks, trimmed, and **`null`** for an absent/blank one (never an empty string —
   a caller has to decide what to draw instead of silently printing empty quotes); `withNickname(name,nickname)`
-  → „Bohumil Nečas („Bohouš")" for the single-line places (a suggestion row, a picker option) where there is no
+  → „Jaromír Novák („Jarouš")" for the single-line places (a suggestion row, a picker option) where there is no
   second element to style; `matchesSubjectName(name,nickname,query)` = the client-side twin of the backend's
   subject search (substring, case- and accent-insensitive via `lib/text`), used by `browsePeople`; and
   `matchedByNickname` = "the query found them **through** the nickname", which is what makes a tile show it);
@@ -7182,11 +7182,11 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   That split is the imported bookkeeping (boxes) meeting Kukátko's detector (vectors): `internal/facematch` handles
   both in one step (`create_marker` creates the marker *and* assigns, `assign_person` assigns to the existing one),
   so naming either one is the same single click and only the verb the backend picks differs — while the marker-less
-  half is **82 % of the library** (94 194 of 115 457 faces, 2026-08-03) and was drawn in the color that means
+  half is **82 % of the library** (~94k of ~115k faces, 2026-08-03) and was drawn in the color that means
   „something is wrong". **The backend state machine is unchanged** — this is only what the UI shows.
   What replaced it is `hasEmbedding(face)` = `face_index >= 0`: `facematch` appends markers that matched no stored
   face under *descending negative* indexes, so a negative index is exactly „a marker with no vector behind it"
-  (144 in production) — the payload already carries the fact, no backend change was needed. That one is **not a
+  (a little over a hundred in production) — the payload already carries the fact, no backend change was needed. That one is **not a
   color**, only a mark on the panel row + a note in `FaceAssignPanel`, because it decides whether automation can
   ever reach the face at all;
   `faceGeometry.ts` = the pure `faceBoxStyle` (a normalized bbox → absolute `left/top/width/height`
@@ -7265,7 +7265,7 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   DMS / degrees-decimal-minutes, a comma/space separator, ±/the hemispheres N/S/E/W, unicode primes/`''`,
   an axis reorder by the hemispheres, a range check of ±90/±180) + `formatCoordinates({lat,lng},precision=6)` →
   the canonical `"49.123400, 16.567800"` (it round-trips through the parser, but it is a **display, lossy**
-  format — `16.7083583333333` → `16.708358`, which is why an unchanged coordinate isn't sent in the PATCH
+  format — `16.5678123456789` → `16.567812`, which is why an unchanged coordinate isn't sent in the PATCH
   at all) — shared with the `MetadataPanel` picker;
   `mediaFiles.ts` = the one place the app decides „this is a photo or a video": `MEDIA_EXTENSIONS` (the
   browser-native images, HEIC/HEIF, the RAW of every usual vendor, the phone/camcorder video containers —
@@ -8934,7 +8934,7 @@ to name, so the switcher is **„Moje projekty"** (`projectSwitcher.choose`) —
 enterable project, each opening at its home, plus „Všechny projekty…"; a plain link to `/projects` below
 `lg` or without any enterable project; in the drawer a „Moje projekty" section of the same rows.
 
-**Width** (Chromium over the real `Layout`, maintainer „Tomáš Kozák", Czech labels, 3 tasks
+**Width** (Chromium over the real `Layout`, maintainer „Tomáš Novák", Czech labels, 3 tasks
 waiting, 2026-10-12). The bar had ~11px of slack left at 1200px, so the switcher pays its way: the
 user menu's display name is hidden **visually only** between 992 and 1399.98px
 (`.kk-user-menu__name`, clipped — the toggle keeps it as its accessible name; the avatar stays), and

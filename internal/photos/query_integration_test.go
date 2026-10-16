@@ -41,7 +41,7 @@ func ptrOf[T any](v T) *T {
 // winterPhotoprismUID is the PhotoPrism source uid the winter fixture was
 // imported under, so uid: can be driven against an external id too. No other
 // filter reads the column, so carrying it changes no other expectation.
-const winterPhotoprismUID = "pt8suk5b57jgshdz"
+const winterPhotoprismUID = "ptfakeppuid00001"
 
 // seedQueryLibrary builds the library every filter assertion runs against:
 //
@@ -433,7 +433,7 @@ func TestQueryLanguage_uid(t *testing.T) {
 	}
 	// winter carries a PhotoPrism source uid from the fixture; a second source
 	// photo of the same bytes is recorded as an alias onto it.
-	const ppAlias = "pt9suk5b57jgshdz"
+	const ppAlias = "ptfakeppuid00002"
 	if err := lib.store.AddPhotoprismAlias(ctx, project.BootstrapUID, ppAlias, lib.uids["winter"], ""); err != nil {
 		t.Fatalf("AddPhotoprismAlias: %v", err)
 	}

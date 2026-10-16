@@ -27,8 +27,8 @@ function mockViewport(narrow: boolean): void {
 }
 
 const OPTIONS: AutocompleteOption[] = [
-  { uid: 'su1', label: 'Bohumil Nečas', alias: 'Bohouš', hint: '12' },
-  { uid: 'su2', label: 'Marie Nečasová' },
+  { uid: 'su1', label: 'Bohumil Nedvěd', alias: 'Bohouš', hint: '12' },
+  { uid: 'su2', label: 'Marie Nedvědová' },
   { uid: 'su3', label: 'Petr Doležal' },
 ]
 
@@ -65,7 +65,7 @@ describe('AddAutocomplete', () => {
 
     // Accent- and case-insensitive, and the nickname searches like the name does.
     await user.type(screen.getByRole('combobox'), 'bohous')
-    await user.click(screen.getByRole('option', { name: /Bohumil Nečas/ }))
+    await user.click(screen.getByRole('option', { name: /Bohumil Nedvěd/ }))
 
     expect(onAdd).toHaveBeenCalledWith('su1')
     expect(screen.getByRole('combobox')).toHaveValue('')
@@ -75,7 +75,7 @@ describe('AddAutocomplete', () => {
     const user = userEvent.setup()
     const { onAdd } = renderField()
 
-    await user.type(screen.getByRole('combobox'), 'nečas{ArrowDown}{Enter}')
+    await user.type(screen.getByRole('combobox'), 'nedvěd{ArrowDown}{Enter}')
 
     expect(onAdd).toHaveBeenCalledWith('su2')
   })
@@ -85,8 +85,8 @@ describe('AddAutocomplete', () => {
     const { onAdd } = renderField()
     const input = screen.getByRole('combobox')
 
-    await user.type(input, 'nečas')
-    const first = screen.getByRole('option', { name: /Bohumil Nečas/ })
+    await user.type(input, 'nedvěd')
+    const first = screen.getByRole('option', { name: /Bohumil Nedvěd/ })
     expect(input).toHaveAttribute('aria-activedescendant', first.id)
     expect(first).toHaveAttribute('aria-selected', 'true')
 
@@ -156,7 +156,7 @@ describe('AddAutocomplete', () => {
     await user.keyboard('{Enter}')
     expect(input).not.toHaveAttribute('aria-activedescendant')
 
-    await user.type(input, 'nečas{Escape}{Enter}')
+    await user.type(input, 'nedvěd{Escape}{Enter}')
     expect(onAdd).not.toHaveBeenCalled()
   })
 

@@ -186,7 +186,7 @@ func TestWriteSubject_nickname(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			var buf strings.Builder
-			subject := Subject{UID: "sub01", Name: "Bohumil Nečas", Nickname: tt.nickname}
+			subject := Subject{UID: "sub01", Name: "Bohumil Nedvěd", Nickname: tt.nickname}
 			if err := WriteSubject(&buf, subject); err != nil {
 				t.Fatalf("WriteSubject returned %v", err)
 			}
@@ -214,14 +214,14 @@ func TestWriteSubjects_nicknameRidesInTheNameColumn(t *testing.T) {
 
 	var buf strings.Builder
 	subjects := []Subject{
-		{UID: "sub01", Name: "Bohumil Nečas", Nickname: "Bohouš", Type: "person"},
+		{UID: "sub01", Name: "Bohumil Nedvěd", Nickname: "Bohouš", Type: "person"},
 		{UID: "sub02", Name: "Anna Nováková", Type: "person"},
 	}
 	if err := WriteSubjects(&buf, subjects); err != nil {
 		t.Fatalf("WriteSubjects returned %v", err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, `Bohumil Nečas („Bohouš")`) {
+	if !strings.Contains(out, `Bohumil Nedvěd („Bohouš")`) {
 		t.Errorf("list does not show the nickname beside the name:\n%s", out)
 	}
 	if !strings.Contains(out, "Anna Nováková  ") && !strings.Contains(out, "Anna Nováková\t") {

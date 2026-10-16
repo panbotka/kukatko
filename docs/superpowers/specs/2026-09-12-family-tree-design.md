@@ -2,9 +2,9 @@
 
 **Status:** proposed — awaiting review. No code has been written for this document.
 
-Kukátko knows 118 people and 116 704 faces. What it does not know is that
-`Bohumil Nečas st.` is the father of `Bohumil Nečas ml.`, that `Nečasová` is the same
-family as `Nečas`, or who `Miloslav Novotný st.st.` was senior to. Those facts are
+Kukátko knows ~120 people and over 100k faces. What it does not know is that
+`Josef Novák st.` is the father of `Josef Novák ml.`, that `Nováková` is the same
+family as `Novák`, or who `Karel Kučera st.st.` was senior to. Those facts are
 currently encoded in display names, which is where a data model goes when it does not
 exist.
 
@@ -17,16 +17,16 @@ Measured against production on 2026-09-12:
 
 | | |
 | --- | --- |
-| subjects | 118, all `type='person'`, all named |
+| subjects | ~120, all `type='person'`, all named |
 | subjects with a birth year | 3 |
 | subjects with a death year | 0 |
-| subjects appearing on a photo | 117 |
-| largest surname groups | Nečas ×8, Fabiánek ×6, Skoták ×6, Souček ×6, Jarůšek ×4, Novotný ×4 |
+| subjects appearing on a photo | all but one |
+| largest surname groups | Novák ×8, Dvořák ×6, Veselý ×6, Svoboda ×6, Horák ×4, Kučera ×4 |
 | names carrying `st.` / `ml.` / `st.st.` | 8 |
 
 Two consequences shape the design. First, a genealogy cannot be derived from dates —
 three birth years is nothing, so relationships have to stand on their own. Second,
-feminine surnames (`Nečas`/`Nečasová`, `Souček`/`Součková`, `Straka`/`Straková`) split
+feminine surnames (`Novák`/`Nováková`, `Svoboda`/`Svobodová`, `Procházka`/`Procházková`) split
 one family into two groups, so surname is not even a usable heuristic.
 
 ## 2. Decisions taken before this document
@@ -37,7 +37,7 @@ Settled with the user during design:
 2. **A person who appears on no photo is an ordinary subject** with an empty gallery.
    A great-grandmother nobody photographed is a normal node; `/people` must render a
    tile without a face crop, and "a subject with zero photos" stops being an anomaly.
-3. **"The Nečas family" means the descendants of a chosen root** (plus their partners),
+3. **"The Novák family" means the descendants of a chosen root** (plus their partners),
    not a connected component and not a hand-curated group. Reason: in a village the
    families eventually marry into each other, and a component-based family would one day
    swallow the whole of Veselice and stop filtering anything.
@@ -62,7 +62,7 @@ Everything else is derived, and therefore cannot disagree with itself:
 - **half-siblings** = children of another family one of my parents is a partner in
 - **a second marriage** = a second family, and the step-relations fall out correctly
 
-The two-column couple also *is* the box the tree draws (`Marie ⚭ Bohumil`), which a plain
+The two-column couple also *is* the box the tree draws (`Marie ⚭ Josef`), which a plain
 parent edge cannot express at all: a childless marriage would be unrecordable.
 
 ### 3.2 Migration `0073_subject_families.sql`
@@ -266,7 +266,7 @@ The `POST` body takes either an existing `subject_uid` **or** an inline `new_sub
 creates the subject and the relation in one audited transaction:
 
 ```json
-{ "role": "parent", "new_subject": { "name": "Marie Nečasová", "birth_year": 1921 } }
+{ "role": "parent", "new_subject": { "name": "Marie Nováková", "birth_year": 1921 } }
 ```
 
 That single affordance is what makes filling the tree bearable — otherwise every
@@ -299,7 +299,7 @@ can never disagree.
    with no further work.
 
 **Performance.** The inner recursive CTE does not depend on the outer row, so Postgres
-should hoist it into an InitPlan. Measure it against production's 21 018 photos before
+should hoist it into an InitPlan. Measure it against production's ~20k photos before
 declaring victory. If the planner does not cooperate, the fallback is to resolve the
 descendant set in Go and pass it as `= ANY($n)` — which needs a pre-pass before
 compilation, because `condBuilder` receives neither a context nor a pool. Prefer the
@@ -364,7 +364,7 @@ without making the rest incoherent.
 
 ## 10. The real risk is data entry, not drawing
 
-The tree can be drawn in an afternoon. Recording relationships for 118 people is several
+The tree can be drawn in an afternoon. Recording relationships for over a hundred people is several
 evenings of clicking, and if that part is awkward the feature stays empty and the whole
 thing was wasted. Hence the emphasis on inline subject creation, keyboard operation and
 searching without diacritics.
@@ -430,6 +430,6 @@ Ordered; usable from step 4 onward.
    could be added later if the omission is felt.
 2. Should a subject with no photos be hidden from `/people` behind a filter, or listed
    with a placeholder tile? This design assumes listed — it is the simpler promise — but
-   with 118 people and possibly forty photo-less ancestors it may crowd the index.
+   with over a hundred people and possibly forty photo-less ancestors it may crowd the index.
 3. Is `families.yaml` (§9) worth its job and its store prefix, or is the tree acceptably
    covered by the nightly `pg_dump`?

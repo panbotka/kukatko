@@ -76,7 +76,7 @@ describe('isEmptyResult', () => {
     expect(
       isEmptyResult({
         query: 'x',
-        direct: { uid: 'ph7lpul2io09bcg2rvp2rljsr6', kind: 'photo', found: false },
+        direct: { uid: 'ph00000000000000000000beef', kind: 'photo', found: false },
         albums: [],
         labels: [],
         people: [],

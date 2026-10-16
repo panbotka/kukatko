@@ -572,7 +572,7 @@ export interface FilterValue {
  * what makes a bare `person:` offer the people who appear most.
  *
  * A value's {@link FilterValue.alias} is matched on the same terms as its name,
- * so `person:bohous` reaches Bohumil Nečas; the row still completes to the name.
+ * so `person:bohous` reaches Bohumil Nedvěd; the row still completes to the name.
  *
  * Values that fold to the same name are collapsed: a query matches by name, so
  * two identically titled albums are one and the same proposal.
@@ -695,13 +695,13 @@ export interface QueryHelpRow {
  */
 export const QUERY_HELP_ROWS: QueryHelpRow[] = [
   { id: 'text', keys: 'title: description: notes:', example: 'title:svatba' },
-  { id: 'uid', keys: 'uid:', example: 'uid:ph7lpul2io09bcg2rvp2rljsr6' },
+  { id: 'uid', keys: 'uid:', example: 'uid:ph00000000000000000000beef' },
   { id: 'filename', keys: 'filename:', example: 'filename:IMG_*' },
   { id: 'keywords', keys: 'keywords:', example: 'keywords:beach' },
   { id: 'photoText', keys: 'text:', example: 'text:veselice' },
   { id: 'album', keys: 'album:', example: 'album:"Léto 2024"' },
   { id: 'label', keys: 'label:', example: 'label:cat|dog' },
-  { id: 'task', keys: 'task:', example: 'task:tk7hcmtn79ubvf0ij7cenj7sr5' },
+  { id: 'task', keys: 'task:', example: 'task:tk00000000000000000000beef' },
   {
     id: 'person',
     keys: 'person: subject:',
@@ -711,7 +711,7 @@ export const QUERY_HELP_ROWS: QueryHelpRow[] = [
   {
     id: 'family',
     keys: 'family:',
-    example: 'family:Nečas',
+    example: 'family:Nedvěd',
     notes: [{ id: 'familyMe', example: 'family:me' }],
   },
   {

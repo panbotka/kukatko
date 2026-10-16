@@ -180,7 +180,7 @@ func TestSubjectMutations_scheduleTheGenealogyExport(t *testing.T) {
 		method, target string
 		body           string
 	}{
-		{name: "rename", method: http.MethodPatch, target: "/subjects/su_a", body: `{"name":"Marie Nečasová"}`},
+		{name: "rename", method: http.MethodPatch, target: "/subjects/su_a", body: `{"name":"Marie Nedvědová"}`},
 		{name: "delete", method: http.MethodDelete, target: "/subjects/su_a"},
 		{name: "merge", method: http.MethodPost, target: "/subjects/su_a/merge", body: `{"keeper_uid":"su_b"}`},
 	}

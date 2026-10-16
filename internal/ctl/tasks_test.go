@@ -16,7 +16,7 @@ const taskBody = `{"uid":"tk1","title":"V kterém roce se přestavoval dům?","b
 "created_by_name":"Pan Botka","created_at":"2026-09-18T10:00:00Z","updated_at":"2026-09-18T10:00:00Z",
 "state_at":"2026-09-18T10:00:00Z","photo_count":3,"cover_photo_uid":"ph1","comment_count":2,
 "last_comment_at":"2026-09-18T12:00:00Z","has_new_answer":true,
-"last_activity_at":"2026-09-18T12:00:00Z","last_activity_by":"us2","last_activity_by_name":"Tomáš Kozák",
+"last_activity_at":"2026-09-18T12:00:00Z","last_activity_by":"us2","last_activity_by_name":"Jan Novák",
 "waiting_on_me":true}`
 
 // taskListBody is a one-task page with more behind it, so the summary has a next
@@ -346,7 +346,7 @@ func TestWriteTask(t *testing.T) {
 	got := buf.String()
 	for _, want := range []string{
 		"tk1", "V kterém roce", "question", "Pan Botka", "Tři fotky.",
-		"Last activity   2026-09-18 12:00 by Tomáš Kozák", "Waiting on you  yes",
+		"Last activity   2026-09-18 12:00 by Jan Novák", "Waiting on you  yes",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output does not contain %q:\n%s", want, got)
@@ -421,8 +421,8 @@ func TestLastActivity(t *testing.T) {
 		task Task
 		want string
 	}{
-		{name: "named", task: Task{LastActivityAt: at, LastActivityBy: "us2", LastActivityByName: "Tomáš Kozák"},
-			want: "2026-09-19 17:21 by Tomáš Kozák"},
+		{name: "named", task: Task{LastActivityAt: at, LastActivityBy: "us2", LastActivityByName: "Jan Novák"},
+			want: "2026-09-19 17:21 by Jan Novák"},
 		{name: "uid only", task: Task{LastActivityAt: at, LastActivityBy: "us2"}, want: "2026-09-19 17:21 by us2"},
 		{name: "account gone", task: Task{LastActivityAt: at}, want: "2026-09-19 17:21"},
 		{name: "old server", task: Task{}, want: "-"},

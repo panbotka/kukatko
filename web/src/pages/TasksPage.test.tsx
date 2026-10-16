@@ -195,13 +195,13 @@ describe('TasksPage', () => {
   it('says who acted last on every row', async () => {
     fetchTasksMock.mockResolvedValue(
       page([
-        task({ last_activity_by: 'u2', last_activity_by_name: 'Tomáš Kozák' }),
+        task({ last_activity_by: 'u2', last_activity_by_name: 'Petr Kolář' }),
         task({ uid: 'tk2', last_activity_by: '', last_activity_by_name: '' }),
       ]),
     )
     renderPage()
 
-    expect(await screen.findByText(/last by Tomáš Kozák/)).toBeInTheDocument()
+    expect(await screen.findByText(/last by Petr Kolář/)).toBeInTheDocument()
     // An actor whose account is gone still gets a line, not a blank.
     expect(screen.getByText(/last by someone/)).toBeInTheDocument()
     // The stamp is machine-readable as well as human-readable. Found by its

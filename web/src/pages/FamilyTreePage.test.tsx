@@ -69,24 +69,24 @@ function family(uid: string, a: string | null, b: string | null, children: strin
 }
 
 /**
- * The production shape the network exists for, from Tomáš: his parents Ludmila
- * and Aleš, Ludmila in a parentless sibling group with her sister Dagmar, and
- * Dagmar's daughter Petra — who, with her mother, is reachable only sideways.
+ * The production shape the network exists for, from Vojtěch: his parents Marta
+ * and Adam, Marta in a parentless sibling group with her sister Hana, and
+ * Hana's daughter Renata — who, with her mother, is reachable only sideways.
  */
 function network(): FamilyTree {
   return {
     root: ROOT,
     members: [
-      member('s1', 'Tomáš Kozák', 0, 1980),
-      member('s2', 'Ludmila Kozáková', -1, 1955),
-      member('s3', 'Aleš Kozák', -1, 1953),
-      member('s4', 'Dagmar Andrlíková', -1, 1958),
-      member('s5', 'Petra Houdková', 0, 1984),
+      member('s1', 'Vojtěch Svoboda', 0, 1980),
+      member('s2', 'Marta Svobodová', -1, 1955),
+      member('s3', 'Adam Svoboda', -1, 1953),
+      member('s4', 'Hana Procházková', -1, 1958),
+      member('s5', 'Renata Horáková', 0, 1984),
     ],
     families: [
       family('fm_couple', 's2', 's3', ['s1']),
       family('fm_sisters', null, null, ['s2', 's4']),
-      family('fm_dagmar', 's4', null, ['s5']),
+      family('fm_hana', 's4', null, ['s5']),
     ],
     truncated: false,
     total: 5,
@@ -97,7 +97,7 @@ function network(): FamilyTree {
 const ROOT: Relative = {
   uid: 's1',
   slug: 's1',
-  name: 'Tomáš Kozák',
+  name: 'Vojtěch Svoboda',
   type: 'person',
   birth_year: 1980,
   death_year: null,
@@ -158,7 +158,7 @@ describe('FamilyTreePage', () => {
     renderPage()
 
     expect(
-      await screen.findByRole('heading', { name: 'Family tree — Tomáš Kozák' }),
+      await screen.findByRole('heading', { name: 'Family tree — Vojtěch Svoboda' }),
     ).toBeInTheDocument()
     expect(fetchTreeMock).toHaveBeenCalledTimes(1)
     expect(fetchTreeMock).toHaveBeenCalledWith('s1', expect.anything())
@@ -174,19 +174,19 @@ describe('FamilyTreePage', () => {
   it('draws everybody once in one drawing, the aunt and the cousin included', async () => {
     const { container } = renderPage()
 
-    await screen.findByLabelText('Open Tomáš Kozák')
+    await screen.findByLabelText('Open Vojtěch Svoboda')
     expect(container.querySelectorAll('.kk-tree-stage')).toHaveLength(1)
-    for (const name of ['Ludmila Kozáková', 'Aleš Kozák', 'Dagmar Andrlíková', 'Petra Houdková']) {
+    for (const name of ['Marta Svobodová', 'Adam Svoboda', 'Hana Procházková', 'Renata Horáková']) {
       expect(screen.getAllByLabelText(`Redraw the family around ${name}`)).toHaveLength(1)
     }
-    // The couple's line, the two sisters' bar, and Dagmar's line to Petra.
+    // The couple's line, the two sisters' bar, and Hana's line to Renata.
     expect(container.querySelectorAll('.kk-tree-edges path')).toHaveLength(4)
   })
 
   it('has no direction switch and no generations control any more', async () => {
     renderPage()
 
-    await screen.findByLabelText('Open Tomáš Kozák')
+    await screen.findByLabelText('Open Vojtěch Svoboda')
     expect(screen.queryByRole('group')).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Ancestors' })).not.toBeInTheDocument()
@@ -196,7 +196,7 @@ describe('FamilyTreePage', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(await screen.findByLabelText('Redraw the family around Petra Houdková'))
+    await user.click(await screen.findByLabelText('Redraw the family around Renata Horáková'))
 
     await waitFor(() => {
       expect(address()).toBe('/p/v/people/s5/tree')
@@ -209,16 +209,16 @@ describe('FamilyTreePage', () => {
   it('ignores the old direction and depth in a bookmarked address', async () => {
     renderPage('/p/v/people/s1/tree?direction=ancestors&generations=4&closed=fm_2')
 
-    await screen.findByLabelText('Open Tomáš Kozák')
+    await screen.findByLabelText('Open Vojtěch Svoboda')
     expect(fetchTreeMock).toHaveBeenCalledWith('s1', expect.anything())
-    expect(screen.getByLabelText('Redraw the family around Petra Houdková')).toBeInTheDocument()
+    expect(screen.getByLabelText('Redraw the family around Renata Horáková')).toBeInTheDocument()
   })
 
   it('leads from the root card to the person page, not back to itself', async () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.click(await screen.findByLabelText('Open Tomáš Kozák'))
+    await user.click(await screen.findByLabelText('Open Vojtěch Svoboda'))
 
     await waitFor(() => {
       expect(address()).toBe('/p/v/people/s1')
@@ -239,7 +239,7 @@ describe('FamilyTreePage', () => {
   it('shows no banner for a network drawn whole', async () => {
     renderPage()
 
-    await screen.findByLabelText('Open Tomáš Kozák')
+    await screen.findByLabelText('Open Vojtěch Svoboda')
     expect(screen.queryByText(/showing the nearest/)).not.toBeInTheDocument()
   })
 
@@ -247,17 +247,17 @@ describe('FamilyTreePage', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await screen.findByLabelText('Open Tomáš Kozák')
-    // Tomáš has both parents; Petra has only her mother; the sisters' parents
-    // and Aleš's are not in the library at all.
+    await screen.findByLabelText('Open Vojtěch Svoboda')
+    // Vojtěch has both parents; Renata has only her mother; the sisters' parents
+    // and Adam's are not in the library at all.
     expect(
-      screen.queryByRole('button', { name: 'Record a parent of Tomáš Kozák' }),
+      screen.queryByRole('button', { name: 'Record a parent of Vojtěch Svoboda' }),
     ).not.toBeInTheDocument()
-    for (const name of ['Ludmila Kozáková', 'Aleš Kozák', 'Dagmar Andrlíková']) {
+    for (const name of ['Marta Svobodová', 'Adam Svoboda', 'Hana Procházková']) {
       expect(screen.getByRole('button', { name: `Record a parent of ${name}` })).toBeInTheDocument()
     }
 
-    await user.click(screen.getByRole('button', { name: 'Record a parent of Petra Houdková' }))
+    await user.click(screen.getByRole('button', { name: 'Record a parent of Renata Horáková' }))
 
     expect(screen.getByTestId('add-relation')).toHaveTextContent('parent of s5')
   })
@@ -266,7 +266,7 @@ describe('FamilyTreePage', () => {
     const user = userEvent.setup()
     renderPage()
 
-    const plus = await screen.findByRole('button', { name: 'Record a parent of Aleš Kozák' })
+    const plus = await screen.findByRole('button', { name: 'Record a parent of Adam Svoboda' })
     plus.focus()
     await user.keyboard('{Enter}')
 
@@ -276,14 +276,14 @@ describe('FamilyTreePage', () => {
   it('offers no + to a reader who may not record anything', async () => {
     renderPage('/p/v/people/s1/tree', false)
 
-    await screen.findByLabelText('Open Tomáš Kozák')
+    await screen.findByLabelText('Open Vojtěch Svoboda')
     expect(screen.queryByRole('button', { name: /Record a parent/ })).not.toBeInTheDocument()
   })
 
   it('says so to a reader when nobody has recorded a family yet', async () => {
     fetchTreeMock.mockResolvedValue({
       ...network(),
-      members: [member('s1', 'Tomáš Kozák', 0)],
+      members: [member('s1', 'Vojtěch Svoboda', 0)],
       families: [],
       total: 1,
     })
@@ -295,14 +295,14 @@ describe('FamilyTreePage', () => {
   it('gives a curator the lone card with its + instead of the empty state', async () => {
     fetchTreeMock.mockResolvedValue({
       ...network(),
-      members: [member('s1', 'Tomáš Kozák', 0)],
+      members: [member('s1', 'Vojtěch Svoboda', 0)],
       families: [],
       total: 1,
     })
     renderPage()
 
     expect(
-      await screen.findByRole('button', { name: 'Record a parent of Tomáš Kozák' }),
+      await screen.findByRole('button', { name: 'Record a parent of Vojtěch Svoboda' }),
     ).toBeInTheDocument()
     expect(screen.queryByText('No family has been recorded here yet.')).not.toBeInTheDocument()
   })

@@ -58,30 +58,30 @@ func TestLibraryDerive(t *testing.T) {
 			},
 		},
 		{
-			// The production numbers the statistics page was reported over: the
-			// page said 20 890 while the library grid said 20 619, and the 271
+			// Production-shaped numbers the statistics page was reported over: the
+			// page said 19 984 while the library grid said 19 713, and the 271
 			// missing photos are exactly the hidden ones plus the stacked-away
 			// siblings. Both counts are now reported, so the page can say so.
 			name: "the grid count is the live library minus the hidden and the stacked away",
 			raw: Library{
-				Photos: 20906, PhotosArchived: 16, PhotosHidden: 30, PhotosStacked: 241,
+				Photos: 20000, PhotosArchived: 16, PhotosHidden: 30, PhotosStacked: 241,
 			},
 			want: Library{
-				Photos: 20906, Images: 20906, PhotosArchived: 16,
-				PhotosLive: 20890, PhotosHidden: 30, PhotosStacked: 241, PhotosListed: 20619,
-				PhotosWithoutEmbedding: 20906, PhotosWithoutFaces: 20906,
+				Photos: 20000, Images: 20000, PhotosArchived: 16,
+				PhotosLive: 19984, PhotosHidden: 30, PhotosStacked: 241, PhotosListed: 19713,
+				PhotosWithoutEmbedding: 20000, PhotosWithoutFaces: 20000,
 			},
 		},
 		{
 			name: "the two halves of the face grain add up to the whole",
 			raw: Library{
-				Photos: 10, PhotosWithFaces: 10, Faces: 115461, FacesAssigned: 4395,
+				Photos: 10, PhotosWithFaces: 10, Faces: 110000, FacesAssigned: 4400,
 			},
 			want: Library{
 				Photos: 10, Images: 10, PhotosLive: 10, PhotosListed: 10,
 				PhotosWithoutEmbedding: 10,
-				PhotosWithFaces:        10, Faces: 115461, FacesAssigned: 4395,
-				FacesUnassigned: 111066,
+				PhotosWithFaces:        10, Faces: 110000, FacesAssigned: 4400,
+				FacesUnassigned: 105600,
 			},
 		},
 		{

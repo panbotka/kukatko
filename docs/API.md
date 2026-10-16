@@ -1903,7 +1903,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   cover only non-invalid markers on visible photos and they are **not interchangeable**:
   `marker_count` counts markers (the figure the face tools want), `photo_count` counts **distinct
   photos** and is smaller whenever one photo carries several of the person's faces (on production the
-  catch-all subject had 16 531 markers on 6 767 photos). A "N photos" label must use `photo_count` —
+  catch-all subject had ~16k markers on ~7k photos). A "N photos" label must use `photo_count` —
   it is the length of the list `GET /subjects/{uid}/photos` pages through.
   `cover_face` = `{photo_uid,x,y,w,h,width,height,orientation}` — the face by which the
   subject is illustrated in the people grid when it **has no** `cover_photo_uid`; absent when the subject has no
@@ -1924,7 +1924,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   the same **404** `{"error":"photo not found"}` on both routes (never the 500 an unknown uid used to hit at
   the foreign key, nor a 201 storing another tenant's photo), and the cover reads
   (`people.SubjectCovers` behind global search, the avatar) join the picked photo on the project too;
-  **`nickname` is what people actually call the subject** — Bohumil Nečas („Bohouš") — `""` when nobody
+  **`nickname` is what people actually call the subject** — Bohumil Nedvěd („Bohouš") — `""` when nobody
   recorded one, which is the usual case. It is **searched like the name**: by the subject search behind
   `GET /search/global` (accent-insensitive), by `person:`/`subject:` and by the pickers built on
   `GET /subjects`. It is **not** unique (two men in one village are both "Bohouš"), carries no length
@@ -1992,7 +1992,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `POST /subjects/{uid}/relations` (RequireCurator) → **201** records one relation on the path subject. The
   body names the role and **either** an existing subject **or** one to create inline:
   `{"role":"parent","subject_uid":"su_…"}` or
-  `{"role":"parent","new_subject":{"name":"Marie Nečasová","birth_year":1921}}` (roles: `parent`, `child`,
+  `{"role":"parent","new_subject":{"name":"Marie Nedvědová","birth_year":1921}}` (roles: `parent`, `child`,
   `partner`, `sibling`. Optional `child_kind`, ignored for `partner`; `new_subject` also takes `type`,
   `death_year` and `notes`).
   **`sibling` is still not a stored edge** — a sibling is another child of the family somebody is a child in —
@@ -2895,12 +2895,12 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   The features come **newest first** (`taken_at` descending — the list's own order, which the map
   relies on: the newest photo of a cluster is its picture, and the area panel's order is the viewer's).
   The route is **gzip-compressed** for a client that accepts it (`middleware.Compress`, level 5): the feed
-  is the whole located library in one document — prod's 2 456 photos are ~0.8 MB raw, ~0.18 MB gzipped
+  is the whole located library in one document — prod's ~2.5k photos are ~0.8 MB raw, ~0.18 MB gzipped
   (docs/PERF.md) — and nothing in front of the app compresses it. The collection
   also carries the foreign member `coverage: {located, total}` (RFC 7946 §6.1 permits foreign members):
   `located` = markers actually drawn, `total` = photos matching **the same filters** with the has-GPS
   restriction lifted (one extra `photos.Store.Count`, paging stripped). It is computed server-side because
-  only the server knows the exact filter set; the map states it in words ("Na mapě je 2 378 z 20 906 fotek
+  only the server knows the exact filter set; the map states it in words ("Na mapě je 2 200 z 20 000 fotek
   — u ostatních není uložená poloha"), since a map showing 11 % of a library and saying nothing reads as
   broken rather than sparse. mapy.com errors
   (**401/403 → 424** `mapsapi.StatusMapKeyRejected` = *our* key rejected, a raw 403 does not
@@ -3125,7 +3125,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   that **removes** a value: `impossible_dates` (sampled by photo uid) counts the photos dated to a year no
   photograph can have been taken in — the range `internal/exif` accepts, 1826 to next year, asked for through
   `exif.CaptureYearBounds()` so the guard on the way in and this finding cannot disagree. Such a row comes from
-  the file-name date fallback believing an asset id (`90090310_638783213372240_…` reads as 9009-03-10), and one
+  the file-name date fallback believing an asset id (`90090310_100000000000001_…` reads as 9009-03-10), and one
   of them sorts ahead of the whole library and stretches the year axis to meet it. The repair **withdraws** the
   date (`impossible_dates_cleared`) rather than guessing a replacement: `taken_at` goes to NULL,
   `taken_at_source` to `unknown`, so the photo becomes one without a date and is found as `dated:no`. Nothing is
@@ -3177,7 +3177,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   nameless-subjects --project <slug>` — and the undo file records it (`project_uid`,
   `project_slug`). Both destructive directions run as the `nameless_detach` /
   `nameless_restore` jobs over `people.DetachSubject`/`RestoreSubject` (audited inside their own transaction),
-  never inline: detaching production's catch-all moves ~111 000 faces into the partial HNSW index of migration
+  never inline: detaching production's catch-all moves ~100k faces into the partial HNSW index of migration
   0047 and takes minutes. Mounted always (`buildMaintenanceAPI`
   in `cmd/kukatko/maintenance.go`). The `maintenance` operation that stays CLI-only, the **library wipe**
   (`kukatko maintenance reset`, `internal/reset`), is deliberately **not exposed here** — like the destructive
@@ -3273,7 +3273,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `null` until a scan finished and always for a deactivated project (never scanned); `last_import` its latest
   folder import. `imports.folder` is the newest of those, `remaining.duplicates.groups` the scan's sum.
   `jobs.by_type_state` (type → state → count) is what the dashboard renders; `by_type`/`total` are
-  **lifetime** tallies, because the queue table keeps finished jobs — `image_embed: 41 594` against 20 930
+  **lifetime** tallies, because the queue table keeps finished jobs — `image_embed: ~41k` against ~21k
   photos described a one-off re-embedding, not a backlog, which is why the UI labels them "ever run". All
   three views are sums over **one** `jobs.Store.CountsByTypeState` scan, so they cannot disagree.
   `library` is the browsable catalogue (`trashed` is **not** part of `photos`; `hidden`/`private` are), its
@@ -3354,8 +3354,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   excludes the hidden ones **on purpose**: the parts are disjoint, so the subtraction is exact and no photo
   is deducted twice. The two predicates mirror `photos.hiddenClauses` / `photos.stackClauses`, so
   `photos_listed` equals what `photos.Store.Count` answers with default `ListParams` — i.e. the „Počet
-  fotek" the library page prints. They exist because the statistics page reported 20 890 where the grid said
-  20 619 with nothing to explain the difference; `/stats` now shows the whole walk down (see
+  fotek" the library page prints. They exist because the statistics page reported a few hundred more than the grid
+  showed, with nothing to explain the difference; `/stats` now shows the whole walk down (see
   `docs/FRONTEND.md`, `LibraryStatsCards`).
   `photos_geocoded` counts photos with a cached place resolved from coordinates, `photos_pending_geocode`
   the live geotagged photos that still have none — the outstanding, metered mapy.com spend.
@@ -3514,7 +3514,7 @@ put a photo taken minutes either side of New Year in the same year.
 | `album:` | text | album membership by **name** (substring) or exact UID |
 | `label:` | text | a label by **name** or UID |
 | `task:` | text | membership in a **task** — the work queue's frozen group — by the task's **question** (substring, `*` wildcard) or exact UID. Closed tasks match too: the group is the record of what a batch of edits touched, which is exactly what somebody searching for it wants back |
-| `person:` (alias `subject:`) | text | a subject by **name**, by **nickname** or by UID, via non-invalid markers. The name and the nickname are matched on the same terms (substring, `*` wildcard, case- and accent-insensitive like `album:`) against the same bound pattern, so `person:Bohouš` finds Bohumil Nečas and `person:Necas` finds him too; an empty nickname matches nothing. The exact lower-case value **`me`** is reserved: it means the person the caller's own account is linked to in this project (`project_members.subject_uid`) — see below |
+| `person:` (alias `subject:`) | text | a subject by **name**, by **nickname** or by UID, via non-invalid markers. The name and the nickname are matched on the same terms (substring, `*` wildcard, case- and accent-insensitive like `album:`) against the same bound pattern, so `person:Bohouš` finds Bohumil Nedvěd and `person:Nedved` finds him too; an empty nickname matches nothing. The exact lower-case value **`me`** is reserved: it means the person the caller's own account is linked to in this project (`project_members.subject_uid`) — see below |
 | `family:` | text | a whole **family**: the named subject, everybody **descended** from them and all of those people's **partners**, matched through non-invalid markers. The root is named exactly as `person:` names a subject — by **name**, by **nickname** or by **UID**, same substring/`*`/case rules — and the filter keeps its **own** walk (`internal/photos`), independent of `internal/family`. It is deliberately **not** a connected component: in a village the families marry into each other, and a component would eventually swallow everybody and stop filtering anything. That makes it deliberately **different** from `GET /subjects/{uid}/tree`, which since the 2026-09-26 network redesign draws the whole reachable family (aunts, cousins, in-laws' relatives): the tree page shows a family, the filter narrows a listing, and the two answer different questions on purpose — do not "fix" the inconsistency by unifying them. A person reachable by two paths (cousins marrying) is counted **once**. The walk is bounded at 20 generations. The exact lower-case value **`me`** is reserved here too — see above. There is **no** Czech alias `rodina:`, for the same reason `osoba:` is unsupported: the key registry is English-only |
 | `uploader:` | text | who uploaded the photo, by the account's **username or display name** (substring, `*` wildcard, accent-insensitive like every text filter — a name is typed from memory, so `uploader:tomas` finds "Tomáš") or by exact UID. Two exact lower-case values are reserved: **`me`** is the caller's own account (see below) and **`none`** are the photos with **no** uploader, the ones an import brought in — so `uploader:!none` is everything somebody did upload |
 | `favorite:` `private:` `archived:` | `yes\|no` | per-user favourite / private / archived; `archived:` **removes the default live-only scope** |

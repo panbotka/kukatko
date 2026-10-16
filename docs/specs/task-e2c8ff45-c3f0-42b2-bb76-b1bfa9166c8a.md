@@ -1,6 +1,6 @@
 # Person Merge and Split
 
-Let editors merge duplicate people and move misassigned faces out to another person. With 105 imported subjects, duplicate people exist and there is currently no way to fix them.
+Let editors merge duplicate people and move misassigned faces out to another person. With ~100 imported subjects, duplicate people exist and there is currently no way to fix them.
 
 ## Requirements
 

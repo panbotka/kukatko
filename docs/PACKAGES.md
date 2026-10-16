@@ -1396,7 +1396,7 @@ to `## Package map` in `CLAUDE.md`.
   upload in thirty. **The file-name date must also land on a plausible year** — no earlier than
   1826 (the oldest surviving photograph) and no later than a year from now, which forgives a
   camera whose clock is set wrong but drops the long digit runs Facebook and WhatsApp name their
-  downloads with (`90090310_638783213372240_…` reads as 9009-03-10); a rejected year is simply
+  downloads with (`90090310_100000000000001_…` reads as 9009-03-10); a rejected year is simply
   no date, i.e. `unknown`, and the bound is the guess's alone — an EXIF date is kept however odd.
   That bound lives in `captureyear.go` (`MinCaptureYear`, `CaptureYearLookahead`,
   `PlausibleCaptureYear(year)` and `CaptureYearBounds() (min,max)`) because it has a **second**
@@ -2721,7 +2721,7 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   name written outside ASCII (CJK/Cyrillic/…, still a name, so still distinct), and is the **only** key a
   find-or-create-by-name path may use. Keying such a path on `Slugify` makes the fallback a **catch-all**:
   every nameless face resolves to it, the first creates one empty-named subject and the rest are *found* by
-  it — in production that collected 16 532 markers on a single fake person (fixed in the importers of the
+  it — in production that collected ~16k markers on a single fake person (fixed in the importers of the
   day and in `facematch`; `peopleapi` rejects such a name with 400; the repair for existing
   data is `kukatko maintenance nameless-subjects`, see [`OPERATIONS.md`](OPERATIONS.md))/
   `UpdateSubject`(re-slugging + refresh of the `faces.subject_name` cache)/
@@ -3651,7 +3651,7 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   when a round found something, was cut short, or the library holds no source to rotate through. An empty
   *window* is not an empty library, and only a genuinely empty one may report so.
   **A rebuild is bounded — the game asks one question at a time, so it must never cost a library-wide
-  work list** (it did: 250 s for 105 subjects on production, see `docs/PERF.md` §3). Faces go through
+  work list** (it did: 250 s for ~100 subjects on production, see `docs/PERF.md` §3). Faces go through
   `Sweeper.Scan` with `Window{Offset: cursor, Budget: FaceBudget}` (default **24** subjects — 8 until the kind
   shares arrived, raised because most subjects have nothing unassigned left and a window of eight regularly
   produced candidates from one or two people; the dropped label scan pays for it, measured 375 ms → 141 ms per
@@ -5144,7 +5144,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `CountUnresolvedFailures(ctx,id)`, `ListFailures(ctx,FailureFilter{ProjectUID,RunID,Source,UnresolvedOnly,Limit,Offset})`.
   `Counts` (the `counts` JSONB) is `imported`/`updated`/`skipped`/**`deduplicated`**/`failed` — the fourth bucket
   counts SOURCE photos whose content was already catalogued under another source photo (see the
-  `photoprism_aliases` table in `internal/photos`); reading that as "skipped" is how 450 production
+  `photoprism_aliases` table in `internal/photos`); reading that as "skipped" is how hundreds of production
   photos went missing under a clean-looking migration run. A run recorded before the field existed simply has no key for it and reads back as 0.
   **`Complete` auto-detects the status**: a run with ≥1 unresolved defect closes as `StatusPartial`
   (`partial`, 0042 extends the status CHECK) instead of `done`. 0042 also
@@ -5384,7 +5384,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `photos.ListImpossibleTakenAt(minYear,maxYear)` is its dry run (`ImpossibleDates`, sampled by photo uid): the
   photos dated to a year no photograph can have been taken in, the bounds asked of `exif.CaptureYearBounds()` so
   the guard that stops a **new** file-name guess and the finding for the rows dated **before** that guard existed
-  cannot disagree (`90090310_638783213372240_…` reads as 9009-03-10, and one such row sorts ahead of the whole
+  cannot disagree (`90090310_100000000000001_…` reads as 9009-03-10, and one such row sorts ahead of the whole
   library and stretches the year axis to meet it — `internal/metajob` cannot fix it, being a gap-filler that
   holds the capture time outside its reach). The repair **withdraws** the date rather than guessing a
   replacement (`photos.ClearImpossibleTakenAtAudited` → `ImpossibleDatesCleared`): `taken_at` → NULL,
@@ -5948,7 +5948,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `people.SnapshotSubject`, skipping one that vanished mid-read; `EnqueueDetach`/`EnqueueRestore` — one job per
   subject, the scheduling maintainer's `audit.Meta` carried in the payload so the job's audit row names them),
   and the two handlers `HandleDetach`/`HandleRestore` over `people.DetachSubject`/`RestoreSubject`.
-  **Why the queue and not the request:** detaching production's catch-all sets `subject_uid` NULL on ~111 000
+  **Why the queue and not the request:** detaching production's catch-all sets `subject_uid` NULL on ~100k
   faces, moving every one into the partial `WHERE subject_uid IS NULL` HNSW index of migration 0047 — minutes of
   index maintenance no HTTP request may sit on. `HandleDetach` treats `ErrSubjectNotFound` as done (a retry, a
   double-click or the CLI having got there first all mean the repair happened) and **warns** when it detached
@@ -6089,7 +6089,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   predicates plus a `COUNT(*) OVER (PARTITION BY photo_uid, subject_uid) > 1` window so Postgres ships a few
   dozen rows instead of the whole catalogue — an optimisation, **not** the rule, which lives in Go where it is
   unit-tested. The nameless catch-all subject is excluded (it holds thousands of untagged regions and would bury
-  every real finding, cf. the 6 767 photos in `docs/API.md`); archived photos are excluded, **non-primary stack
+  every real finding, cf. the ~7k photos in `docs/API.md`); archived photos are excluded, **non-primary stack
   members are not** — a RAW sibling with the same person twice is the same mistake),
   `internal/dupmarkersapi/`
   (the HTTP surface of the repeated-marker review, every route inside the request's project — the listing

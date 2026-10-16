@@ -17,8 +17,8 @@ const listDirectoryMock = vi.mocked(listDirectory)
 
 const PEOPLE = [
   { uid: 'us1', name: 'Anna Nováková' },
-  { uid: 'us2', name: 'Tomáš Kozák' },
-  { uid: 'us3', name: 'Jana Kozáková' },
+  { uid: 'us2', name: 'Petr Kolář' },
+  { uid: 'us3', name: 'Jana Kolářová' },
 ]
 
 /** A stateful host, the way the composer owns its draft. */
@@ -55,10 +55,10 @@ describe('MentionTextarea', () => {
     expect(listDirectoryMock).not.toHaveBeenCalled()
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
 
-    await user.type(box, '@koz')
+    await user.type(box, '@kol')
     expect(listDirectoryMock).toHaveBeenCalledTimes(1)
     const options = await screen.findAllByRole('option')
-    expect(options.map((o) => o.textContent)).toEqual(['Tomáš Kozák', 'Jana Kozáková'])
+    expect(options.map((o) => o.textContent)).toEqual(['Petr Kolář', 'Jana Kolářová'])
     expect(box).toHaveAttribute('aria-expanded', 'true')
   })
 
@@ -67,17 +67,17 @@ describe('MentionTextarea', () => {
     render(<Host />)
     const box = screen.getByLabelText<HTMLTextAreaElement>('Comment')
 
-    await user.type(box, 'Hele @tom')
-    const option = await screen.findByRole('option', { name: 'Tomáš Kozák' })
+    await user.type(box, 'Hele @pet')
+    const option = await screen.findByRole('option', { name: 'Petr Kolář' })
     // mousedown, not click: the row picks before the box can lose focus (and a
     // `.click()` alone must pick nothing, which is what the next line proves).
     fireEvent.click(option)
-    expect(box).toHaveValue('Hele @tom')
+    expect(box).toHaveValue('Hele @pet')
     fireEvent.mouseDown(option)
 
-    expect(box).toHaveValue('Hele @[Tomáš Kozák](user:us2) ')
+    expect(box).toHaveValue('Hele @[Petr Kolář](user:us2) ')
     await waitFor(() => {
-      expect(box.selectionStart).toBe('Hele @[Tomáš Kozák](user:us2) '.length)
+      expect(box.selectionStart).toBe('Hele @[Petr Kolář](user:us2) '.length)
     })
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
   })
@@ -88,32 +88,32 @@ describe('MentionTextarea', () => {
     render(<Host onKeyDown={onKeyDown} />)
     const box = screen.getByLabelText('Comment')
 
-    await user.type(box, '@koz')
+    await user.type(box, '@kol')
     await screen.findAllByRole('option')
     await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('option', { name: 'Jana Kozáková' })).toHaveAttribute(
+    expect(screen.getByRole('option', { name: 'Jana Kolářová' })).toHaveAttribute(
       'aria-selected',
       'true',
     )
     await user.keyboard('{ArrowUp}')
-    expect(screen.getByRole('option', { name: 'Tomáš Kozák' })).toHaveAttribute(
+    expect(screen.getByRole('option', { name: 'Petr Kolář' })).toHaveAttribute(
       'aria-selected',
       'true',
     )
     onKeyDown.mockClear()
     await user.keyboard('{Enter}')
-    expect(box).toHaveValue('@[Tomáš Kozák](user:us2) ')
+    expect(box).toHaveValue('@[Petr Kolář](user:us2) ')
     // The Enter that picked a name never reached the composer, so nothing was posted.
     expect(onKeyDown).not.toHaveBeenCalledWith('Enter')
 
     await user.type(box, '@ja')
-    await screen.findByRole('option', { name: 'Jana Kozáková' })
+    await screen.findByRole('option', { name: 'Jana Kolářová' })
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
-    expect(box).toHaveValue('@[Tomáš Kozák](user:us2) @ja')
+    expect(box).toHaveValue('@[Petr Kolář](user:us2) @ja')
     // Typing on reopens it.
     await user.type(box, 'n')
-    expect(await screen.findByRole('option', { name: 'Jana Kozáková' })).toBeInTheDocument()
+    expect(await screen.findByRole('option', { name: 'Jana Kolářová' })).toBeInTheDocument()
   })
 
   it('hands other keys to the composer and says when nobody matches', async () => {

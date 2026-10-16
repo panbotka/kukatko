@@ -313,7 +313,7 @@ function InlinePhotoFilters({ view, onChange }: { view: MapView; onChange: SetUr
 /**
  * How much of the library the map speaks for, in one of two lengths.
  *
- * `compact` is the phone header's version — "2 378 z 20 906 na mapě" — which
+ * `compact` is the phone header's version — "1 250 z 12 000 na mapě" — which
  * fits beside the Filters button and still says the map is a fraction of the
  * library; the full sentence says *why* the rest is missing and is what desktop
  * and the drawer show. Both fall back to the plain marker count for a feed that

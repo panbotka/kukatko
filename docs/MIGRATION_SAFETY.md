@@ -11,7 +11,7 @@ in [`migrations-rollback/`](migrations-rollback/README.md).
 ## Method
 
 Each rehearsal ran on a **copy of a real pre-tenancy library** (schema 0099, release 0.31.0 — about 20k photos,
-120k faces, 450 albums, 80 GB of originals) restored from a `pg_dump -Fc` into a throwaway
+120k faces, a few hundred albums, 80 GB of originals) restored from a `pg_dump -Fc` into a throwaway
 `pgvector/pgvector:pg17` container on the build box. Every working database was a `CREATE DATABASE … TEMPLATE`
 copy of the restore, so each experiment started from the same bytes; the dump and the copies were deleted
 afterwards. Both binaries were built `CGO_ENABLED=0` from the 0.31.0 tag (old) and the rehearsed commit (new).

@@ -117,9 +117,9 @@ func TestHandleStats_OK(t *testing.T) {
 	t.Parallel()
 
 	counts := system.Library{
-		Photos: 20310, PhotosWithEmbedding: 20092, PhotosWithoutEmbedding: 218,
-		Faces: 112806, PhotosWithFaces: 14567,
-		PhotosLive: 20301, PhotosHidden: 30, PhotosStacked: 241, PhotosListed: 20030,
+		Photos: 20000, PhotosWithEmbedding: 19800, PhotosWithoutEmbedding: 200,
+		Faces: 110000, PhotosWithFaces: 14000,
+		PhotosLive: 19990, PhotosHidden: 30, PhotosStacked: 240, PhotosListed: 19720,
 	}
 	r := newRouter(fakeCollector{library: counts})
 

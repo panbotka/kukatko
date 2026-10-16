@@ -1,5 +1,5 @@
 ## Context
-Round-2 review of the multi-tenancy programme (2026-10-14, main 672357f6). Report: `/mnt/nas-botka/kukatko/multitenancy-review-2/isolation-review.md` part "background jobs and notification fan-outs": §J-1, §J-3, §J-4, §J-6. Verify with `rg` each still holds.
+Round-2 review of the multi-tenancy programme (2026-10-14, main 672357f6). Report: `<path>/multitenancy-review-2/isolation-review.md` part "background jobs and notification fan-outs": §J-1, §J-3, §J-4, §J-6. Verify with `rg` each still holds.
 
 Findings:
 - J-1 (should-fix): `internal/albumfeaturedjob/service.go` (~104-109) does not check `approved_at`; a pending (unapproved) member of B gets a push/e-mail with B's name and the album title. Every other kind requires approval.

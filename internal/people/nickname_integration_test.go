@@ -18,7 +18,7 @@ func TestSubjectNicknameRoundTrip(t *testing.T) {
 	ctx := t.Context()
 
 	created, err := store.CreateSubject(ctx, testProject, people.Subject{
-		Name: "Bohumil Nečas", Nickname: "Bohouš",
+		Name: "Bohumil Nedvěd", Nickname: "Bohouš",
 	})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
@@ -26,7 +26,7 @@ func TestSubjectNicknameRoundTrip(t *testing.T) {
 	if created.Nickname != "Bohouš" {
 		t.Fatalf("created nickname = %q, want Bohouš", created.Nickname)
 	}
-	if created.Slug != "bohumil-necas" {
+	if created.Slug != "bohumil-nedved" {
 		t.Fatalf("created slug = %q, want it derived from the name alone", created.Slug)
 	}
 
@@ -47,7 +47,7 @@ func TestSubjectNicknameRoundTrip(t *testing.T) {
 	}
 
 	changed, err := store.UpdateSubject(ctx, testProject, created.UID, people.SubjectUpdate{
-		Name: "Bohumil Nečas", Nickname: "Bohoušek", Type: people.SubjectPerson,
+		Name: "Bohumil Nedvěd", Nickname: "Bohoušek", Type: people.SubjectPerson,
 	})
 	if err != nil {
 		t.Fatalf("UpdateSubject: %v", err)
@@ -60,7 +60,7 @@ func TestSubjectNicknameRoundTrip(t *testing.T) {
 	}
 
 	cleared, err := store.UpdateSubject(ctx, testProject, created.UID, people.SubjectUpdate{
-		Name: "Bohumil Nečas", Type: people.SubjectPerson,
+		Name: "Bohumil Nedvěd", Type: people.SubjectPerson,
 	})
 	if err != nil {
 		t.Fatalf("UpdateSubject clearing: %v", err)
@@ -80,7 +80,7 @@ func TestSearchSubjectsByNickname(t *testing.T) {
 	ctx := t.Context()
 
 	for _, subj := range []people.Subject{
-		{Name: "Bohumil Nečas", Nickname: "Bohouš"},
+		{Name: "Bohumil Nedvěd", Nickname: "Bohouš"},
 		{Name: "Anna Nováková"},
 		{Name: "Marie Dvořáková", Nickname: "Máňa"},
 	} {
@@ -94,10 +94,10 @@ func TestSearchSubjectsByNickname(t *testing.T) {
 		query string
 		want  []string
 	}{
-		{name: "the nickname as written", query: "Bohouš", want: []string{"Bohumil Nečas"}},
-		{name: "the nickname without diacritics", query: "bohous", want: []string{"Bohumil Nečas"}},
+		{name: "the nickname as written", query: "Bohouš", want: []string{"Bohumil Nedvěd"}},
+		{name: "the nickname without diacritics", query: "bohous", want: []string{"Bohumil Nedvěd"}},
 		{name: "the nickname in upper case", query: "MANA", want: []string{"Marie Dvořáková"}},
-		{name: "part of a nickname", query: "ouš", want: []string{"Bohumil Nečas"}},
+		{name: "part of a nickname", query: "ouš", want: []string{"Bohumil Nedvěd"}},
 		{name: "the name still matches", query: "novak", want: []string{"Anna Nováková"}},
 		{name: "a query matching nobody matches nobody", query: "pepa", want: nil},
 	}
@@ -130,7 +130,7 @@ func TestSubjectNicknameInSidecar(t *testing.T) {
 	ctx := t.Context()
 
 	subject, err := store.CreateSubject(ctx, testProject, people.Subject{
-		Name: "Bohumil Nečas", Nickname: "Bohouš",
+		Name: "Bohumil Nedvěd", Nickname: "Bohouš",
 	})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
@@ -150,7 +150,7 @@ func TestSubjectNicknameInSidecar(t *testing.T) {
 	if len(markers) != 1 {
 		t.Fatalf("sidecar markers = %+v, want one", markers)
 	}
-	if markers[0].SubjectName != "Bohumil Nečas" || markers[0].SubjectNickname != "Bohouš" {
+	if markers[0].SubjectName != "Bohumil Nedvěd" || markers[0].SubjectNickname != "Bohouš" {
 		t.Fatalf("sidecar marker = %+v, want the name and the nickname", markers[0])
 	}
 }
@@ -195,7 +195,7 @@ func TestAuditSubjectNicknameChange(t *testing.T) {
 	actor := makeUser(t, db, "usr_nick", "nick")
 
 	created, err := store.CreateSubject(ctx, testProject, people.Subject{
-		Name: "Bohumil Nečas", Nickname: "Bohouš",
+		Name: "Bohumil Nedvěd", Nickname: "Bohouš",
 	})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)

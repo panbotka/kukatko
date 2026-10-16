@@ -9,17 +9,17 @@ The tree page at `/people/{uid}/tree` asks the database one question at a time: 
 above this person*, or *who is below them*. Both answers are drawn well, and neither is
 the question a reader actually has, which is *who is this person's family*.
 
-Measured on production (0.25.0, `52e5de4`), the gap is concrete. The library holds 130
-subjects, 7 rows in `subject_families`, 7 in `subject_family_children`, and 11 people who
-appear in any family at all. For the subject `sudh96iqevipv1v2cjfn85a26q` — Tomáš Kozák —
+Measured on production (0.25.0, `52e5de4`), the gap is concrete. The library holds about a
+hundred subjects, a handful of rows in `subject_families` and `subject_family_children`, and
+about a dozen people who appear in any family at all. For one subject — call him Jan Novák —
 the family links reach **five** people:
 
-- `Ludmila Kozáková` + `Aleš Kozák` → `Tomáš Kozák`
-- a family of kind `unknown` with **no partners at all** → `Ludmila Kozáková`,
-  `Dagmar Andrlíková` (the parentless sibling group migration 0076 exists for)
-- `Dagmar Andrlíková` → `Petra Houdková`
+- `Marie Nováková` + `Petr Novák` → `Jan Novák`
+- a family of kind `unknown` with **no partners at all** → `Marie Nováková`,
+  `Eva Dvořáková` (the parentless sibling group migration 0076 exists for)
+- `Eva Dvořáková` → `Lucie Dvořáková`
 
-The page can show **three** of those five. `Dagmar` (an aunt) and `Petra` (a cousin) appear
+The page can show **three** of those five. `Eva` (an aunt) and `Lucie` (a cousin) appear
 in neither direction, because the path to them runs sideways through a sibling group. No
 setting reveals them; the payload does not contain them.
 
@@ -76,8 +76,8 @@ directions, breadth-first from the root, until nothing new is reached.
 
 Because the walk closes over the component, **`treeFamiliesSQL`'s `child_uids` filter
 becomes a no-op**: every child of every reached family is itself reached. The deliberate
-omission of §1 disappears without a rule of its own. That is the whole fix for Dagmar and
-Petra.
+omission of §1 disappears without a rule of its own. That is the whole fix for Eva and
+Lucie.
 
 ### 3.1 Generation, signed
 

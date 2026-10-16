@@ -85,7 +85,7 @@ function renderModal(kind: RelationKind = 'parent', parents: Relative[] = []) {
     <I18nextProvider i18n={i18n}>
       <AddRelationModal
         subjectUid="su0"
-        subjectName="Jan Nečas"
+        subjectName="Jan Nedvěd"
         parents={parents}
         kind={kind}
         show
@@ -99,8 +99,8 @@ function renderModal(kind: RelationKind = 'parent', parents: Relative[] = []) {
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   subjectsMock.mockResolvedValue([
-    counted('su1', 'Bohumil Nečas'),
-    counted('su2', 'Marie Nečasová'),
+    counted('su1', 'Bohumil Nedvěd'),
+    counted('su2', 'Marie Nedvědová'),
     counted('su3', 'Petr Doležal'),
   ])
   addRelationMock.mockResolvedValue({
@@ -115,7 +115,7 @@ beforeEach(async () => {
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
     },
-    relative: related('su1', 'Bohumil Nečas'),
+    relative: related('su1', 'Bohumil Nedvěd'),
     created: false,
   } satisfies AddRelationResult)
 })
@@ -149,8 +149,8 @@ describe('AddRelationModal', () => {
     expect(screen.getByRole('combobox')).toBeInTheDocument()
     expect(screen.getByText(/family with no parents in it/)).toBeInTheDocument()
 
-    await user.type(screen.getByRole('combobox'), 'nečas')
-    await user.click(screen.getByRole('option', { name: /Bohumil Nečas/ }))
+    await user.type(screen.getByRole('combobox'), 'nedvěd')
+    await user.click(screen.getByRole('option', { name: /Bohumil Nedvěd/ }))
 
     await waitFor(() => {
       expect(addRelationMock).toHaveBeenCalledTimes(1)
@@ -162,12 +162,12 @@ describe('AddRelationModal', () => {
   })
 
   it('names the parents a sibling will hang off when the subject has some', async () => {
-    renderModal('sibling', [related('su2', 'Marie Nečasová')])
+    renderModal('sibling', [related('su2', 'Marie Nedvědová')])
 
     await waitFor(() => {
       expect(subjectsMock).toHaveBeenCalled()
     })
-    expect(screen.getByText(/a child of the parents: Marie Nečasová/)).toBeInTheDocument()
+    expect(screen.getByText(/a child of the parents: Marie Nedvědová/)).toBeInTheDocument()
   })
 
   it('shows the whole suggestion list, which the scrollable body used to clip', async () => {
@@ -177,7 +177,7 @@ describe('AddRelationModal', () => {
     await waitFor(() => {
       expect(subjectsMock).toHaveBeenCalled()
     })
-    await user.type(screen.getByRole('combobox'), 'nečas')
+    await user.type(screen.getByRole('combobox'), 'nedvěd')
 
     // The body still scrolls (the dialog is `scrollable`), but the list is no
     // longer its child's absolute box: it is a fixed overlay measured off the
@@ -188,9 +188,9 @@ describe('AddRelationModal', () => {
     expect(listbox).toHaveStyle({ position: 'fixed' })
     // Both matches plus the "create this name" row, all of them reachable.
     expect(screen.getAllByRole('option').map((row) => row.textContent)).toEqual([
-      'Bohumil Nečas2',
-      'Marie Nečasová2',
-      'Create “nečas”',
+      'Bohumil Nedvěd2',
+      'Marie Nedvědová2',
+      'Create “nedvěd”',
     ])
   })
 })

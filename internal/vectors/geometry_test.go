@@ -18,12 +18,12 @@ func boxAround(cx, cy, w, h float64) [4]float64 {
 }
 
 // productionFace is the row the bug report measured against the live catalogue:
-// photo `phqale6fftf3a3v5tn17vtfd3d`, stored 3000 × 4000 with orientation 6 while
+// photo `phfake0uid0for0tests000003`, stored 3000 × 4000 with orientation 6 while
 // its original is really 4000 × 3000, and a detection whose numbers are a correct
 // box in the RAW frame — the one nobody ever displays.
 func productionFace() TransposedFace {
 	return TransposedFace{
-		PhotoUID:    "phqale6fftf3a3v5tn17vtfd3d",
+		PhotoUID:    "phfake0uid0for0tests000003",
 		FaceIndex:   0,
 		BBox:        [4]float64{0.21085, 0.68267, 0.21971, 0.14213},
 		Orientation: 6,

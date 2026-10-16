@@ -748,7 +748,7 @@ describe('MetadataPanel saving', () => {
     const current = photo({
       taken_at: '2026-01-02T00:33:39Z',
       lat: 49.1234567891011,
-      lng: 16.7083583333333,
+      lng: 16.5678123456789,
     })
     mockApi(current)
     const user = userEvent.setup()
@@ -868,8 +868,8 @@ describe('MetadataPanel credit fields', () => {
     await openCredits(user)
 
     await user.type(screen.getByLabelText('Subject'), 'Wedding at the mill')
-    await user.type(screen.getByLabelText('Artist'), 'Josef Kozák')
-    await user.type(screen.getByLabelText('Copyright'), '© Kozák family')
+    await user.type(screen.getByLabelText('Artist'), 'Josef Kolář')
+    await user.type(screen.getByLabelText('Copyright'), '© Kolář family')
     await user.type(screen.getByLabelText('Licence'), 'CC BY-SA 4.0')
     await user.type(screen.getByLabelText('Keywords'), 'wedding{Enter}')
     await user.click(screen.getByLabelText('Scan'))
@@ -881,8 +881,8 @@ describe('MetadataPanel credit fields', () => {
     // One PATCH, carrying the lot — no second form and no second request.
     expect(sentPatch()).toMatchObject({
       subject: 'Wedding at the mill',
-      artist: 'Josef Kozák',
-      copyright: '© Kozák family',
+      artist: 'Josef Kolář',
+      copyright: '© Kolář family',
       license: 'CC BY-SA 4.0',
       keywords: 'wedding',
       scan: true,
@@ -956,7 +956,7 @@ describe('MetadataPanel credit fields', () => {
   })
 
   it('clears an emptied credit field and leaves the untouched ones out of the patch', async () => {
-    const current = photo({ subject: 'Wedding', artist: 'Josef Kozák', keywords: 'beach' })
+    const current = photo({ subject: 'Wedding', artist: 'Josef Kolář', keywords: 'beach' })
     mockApi(current)
     const user = userEvent.setup()
     renderPanel({ photo: current })
@@ -986,20 +986,20 @@ describe('MetadataPanel credit fields', () => {
     await startEditing(user)
     await openCredits(user)
 
-    await user.type(screen.getByLabelText('Artist'), 'Josef Kozák')
+    await user.type(screen.getByLabelText('Artist'), 'Josef Kolář')
     await user.type(screen.getByLabelText('Keywords'), 'wedding{Enter}')
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     // The form's own error surface, and not a keystroke of the input thrown away.
     expect(await screen.findByText('Saving failed. Check the entered values.')).toBeInTheDocument()
-    expect(screen.getByLabelText('Artist')).toHaveValue('Josef Kozák')
+    expect(screen.getByLabelText('Artist')).toHaveValue('Josef Kolář')
     expect(screen.getByRole('button', { name: 'Remove keyword wedding' })).toBeInTheDocument()
   })
 
   it('offers a viewer no credit editing UI at all', () => {
     renderPanel({
       canWrite: false,
-      photo: photo({ subject: 'Wedding', artist: 'Josef Kozák', keywords: 'beach' }),
+      photo: photo({ subject: 'Wedding', artist: 'Josef Kolář', keywords: 'beach' }),
     })
 
     expect(screen.queryByRole('button', { name: 'Credit and keywords' })).not.toBeInTheDocument()
@@ -1136,7 +1136,7 @@ describe('MetadataPanel estimated location', () => {
  * came off, then the caption. Collapsed onto one line the page reference reads as
  * the opening of the sentence, which is exactly what the two lines were for.
  */
-const PHOTOBOOK_CAPTION = 'Fotokniha 2026 - str. 135 p. 2\nVeseličtí mrskači – rok 1965'
+const PHOTOBOOK_CAPTION = 'Fotokniha 2026 - str. 12 p. 1\nHasiči na návsi – rok 1970'
 
 /** The production shape of an automatic description: the text, a blank line, the model. */
 const AI_NOTE = 'Skupina mužů v krojích na návsi.\n\nAI_MODEL: gemini-2.5-flash'

@@ -1644,7 +1644,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
     })
 
     it('frames a transposed row from the image, not from the row', async () => {
-      // Production photo `phqale6fftf3a3v5tn17vtfd3d`: stored 3000x4000 with EXIF
+      // A production photo: stored 3000x4000 with EXIF
       // orientation 6 — dimensions that were already oriented and then got rotated
       // a second time — while the file, and the preview, are portrait. Framed from
       // that row the figure is 1.78x too wide and one of the three faces lands off

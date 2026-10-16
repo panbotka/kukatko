@@ -17,7 +17,7 @@ import (
 )
 
 // maxUndoBytes caps the undo file accepted by the restore endpoint. The
-// production catch-all's undo is a few megabytes (16 531 marker uids and 111 155
+// production catch-all's undo is a few megabytes (~16k marker uids and ~110k
 // (photo, slot) pairs), so the limit is generous enough for it and still bounds
 // what an upload can make the server hold.
 const maxUndoBytes = 64 << 20

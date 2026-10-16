@@ -263,8 +263,8 @@ func runFamilyRemove(
 }
 
 // describeRelation reads how the two are related and renders it as the phrase
-// every confirmation of this command is built from — "Marie Nečasová (sub02) as
-// the parent of Anna Nečasová (sub01)". A pair that is not related is refused
+// every confirmation of this command is built from — "Marie Nedvědová (sub02) as
+// the parent of Anna Nedvědová (sub01)". A pair that is not related is refused
 // here, before a request is spent on a 404, and so is a pair of siblings whose
 // family records a parent: there the sibling link is not a row, it is what
 // follows from that parent. Siblings with no recorded parent fall through and are

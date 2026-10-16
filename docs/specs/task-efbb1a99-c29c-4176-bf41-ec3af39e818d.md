@@ -1,9 +1,9 @@
 # The review page never loads on the real library
 
-`GET /api/v1/review/queue` on production (https://kukatko.kotrzina.cz, 105 named
-subjects, 113 628 faces, 20 437 photos) answers **200 OK after 250.8 seconds** with a
+`GET /api/v1/review/queue` on production (https://photos.example.org, ~100 named
+subjects, ~110k faces, ~20k photos) answers **200 OK after 250.8 seconds** with a
 valid 89 kB payload. The endpoint is not broken — it is four minutes slow, so every
-browser gives up first and https://kukatko.kotrzina.cz/review simply never loads.
+browser gives up first and https://photos.example.org/review simply never loads.
 
 ## Root cause
 
@@ -33,7 +33,7 @@ pid  | state  | running_for      | query
 ```
 
 **It is not one slow query — it is thousands of fast ones.** Each per-exemplar kNN
-over `faces` costs ~40 ms; the sweep runs them for 105 subjects across 113 628 faces
+over `faces` costs ~40 ms; the sweep runs them for ~100 subjects across ~110k faces
 behind a bounded worker pool. The cost is structural and scales with
 `subjects × exemplars × faces`, so it will keep getting worse as the library grows.
 
@@ -97,7 +97,7 @@ Kukátko is live and this endpoint is user-facing and effectively down.
 - **Do not touch the production instance, its database or its bucket.** The numbers
   above are already gathered; do not run load against production.
 - Migrations run automatically at startup, each in its own transaction, against
-  ~20 000 photos and ~113 000 faces. No destructive DDL, no long locks.
+  ~20 000 photos and ~110 000 faces. No destructive DDL, no long locks.
   `CREATE INDEX CONCURRENTLY` cannot run inside a transaction and is unavailable.
 - **Never write a path that drops or rewrites originals or R2 objects.**
 - **Do not run `make dev`** — it binds the port of the developer's own instance.

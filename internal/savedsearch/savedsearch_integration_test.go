@@ -134,7 +134,7 @@ func TestSavedSearchCarriesUIDQuery(t *testing.T) {
 	ctx := context.Background()
 	owner := makeUser(t, users, "ss_uid", "uid")
 
-	const params = `{"q":"uid:ph7lpul2io09bcg2rvp2rljsr6 favorite:yes","mode":"filter"}`
+	const params = `{"q":"uid:phfake0uid0for0tests000001 favorite:yes","mode":"filter"}`
 	created, err := store.Create(ctx, project.BootstrapUID, owner, "That one photo", json.RawMessage(params))
 	if err != nil {
 		t.Fatalf("Create: %v", err)

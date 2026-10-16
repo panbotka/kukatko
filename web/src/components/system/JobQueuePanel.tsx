@@ -120,8 +120,8 @@ interface JobQueuePanelProps {
  * disclosure under the table, for whoever has to match a row to a log line.
  *
  * It replaces a row of badges that summed the whole queue per type, which was
- * actively misleading: the queue table keeps finished jobs, so `image_embed:
- * 41 594` against a library of 20 930 photos described a re-embedding that
+ * actively misleading: the queue table keeps finished jobs, so `image_embed`
+ * lifetime count at about twice the photo count described a re-embedding that
  * happened once, not a backlog of twice the library. Here every type's work is
  * split across the states it is actually in, its lifetime total is labelled as
  * history, and the one number worth acting on — the dead letter — has its own

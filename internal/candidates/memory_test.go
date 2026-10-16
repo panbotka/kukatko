@@ -5,7 +5,7 @@ package candidates
 // whole box down with it (global_oom — photoprism, mariadb and the embeddings
 // sidecar were collateral). The queue rebuild's only guard was a 15 s deadline,
 // which bounds time and not memory: inside those 15 s the per-subject candidate
-// search ran one kNN per exemplar (16 532 of them for one subject) and then
+// search ran one kNN per exemplar (~16k of them for one subject) and then
 // hydrated every survivor into a full photos.Photo — EXIF blob included — three
 // times over on the way to the caller.
 //
@@ -213,7 +213,7 @@ const searchCeilingBytes = 96 << 20 // 96 MiB
 
 // TestFind_allocationDoesNotScaleWithExemplarCount checks the per-subject search
 // costs the same whether a person is tagged on a thousand photos or twenty
-// thousand. The catch-all-subject bug left one "person" holding 16 532 exemplars,
+// thousand. The catch-all-subject bug left one "person" holding ~16k exemplars,
 // and the search ran one kNN — and merged one result set — per exemplar, so the
 // bytes followed the tagging.
 func TestFind_allocationDoesNotScaleWithExemplarCount(t *testing.T) {

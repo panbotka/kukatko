@@ -79,7 +79,7 @@ export interface AddRelationModalProps {
  *   picker is a radio group the arrow keys move through, and the field's own
  *   Up/Down/Enter pick or create without reaching for the mouse;
  * - **it searches without diacritics.** `AddAutocomplete` folds accents and case,
- *   so `necasova` finds `Nečasová` — the names in this library are full of
+ *   so `nedvedova` finds `Nedvědová` — the names in this library are full of
  *   diacritics and nobody types them into a search field.
  *
  * The new person takes the plain defaults a subject gets anywhere else; years,

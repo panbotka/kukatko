@@ -19,8 +19,8 @@ import (
 // a per-album value (the fallback cover) over a table that dwarfs the albums. A
 // handful of development photos cannot show the difference between a per-album
 // probe and a single pass — both answer instantly — so this fixture reproduces
-// the production shape instead: ~20 000 photos, 437 albums and ~40 000
-// memberships, each album a contiguous slice of the timeline. That skew is what
+// the production shape instead: ~20k photos, a few hundred albums and
+// ~40k memberships, each album a contiguous slice of the timeline. That skew is what
 // matters. An album full of 2011 photos is the slow case for a correlated
 // "newest first, LIMIT 1" probe, because the planner walks the global capture-time
 // order from the newest photo in the library down to that album's first hit.
@@ -30,7 +30,7 @@ const (
 	// planAlbums is how many albums it creates.
 	planAlbums = 437
 	// planAlbumSize is how many photos each album holds (~93, the production
-	// average of 40 459 memberships over 437 albums).
+	// average of memberships per album).
 	planAlbumSize = 93
 	// planAlbumStride is how far the next album's slice starts into the timeline.
 	// It is smaller than planAlbumSize, so consecutive albums overlap the way real
@@ -126,7 +126,7 @@ type explainResult struct {
 // The assertion is a plan property on purpose. A wall-clock threshold would be
 // flaky on a shared machine, and it would not say what actually went wrong; buffer
 // hits are deterministic for a given plan and are exactly what blew up in
-// production (17.3M of them to produce 437 rows).
+// production (~17M of them to produce a few hundred rows).
 func TestAlbumListPlanStaysProportionalToMemberships(t *testing.T) {
 	store, _, _, db := newStores(t)
 	ctx := t.Context()

@@ -468,7 +468,7 @@ body {
  * maintainer's row of ten labelled items measures ~958px before the user menu
  * has spelled out anything longer than "admin" — i.e. it fits only by accident,
  * and a real display name pushes the menu off the edge again (measured on the
- * staging box: 1006px for "Tomáš Kozák").
+ * staging box: 1006px for an 11-character display name).
  *
  * So this one band drops the *glyphs*, not the words. Every icon in the bar is
  * decorative (`aria-hidden`, the label beside it names the destination), which

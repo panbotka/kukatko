@@ -17,7 +17,7 @@ intimidated?_
 > [`UX_RESEARCH.md`](UX_RESEARCH.md), was made the other way round — by using the live
 > production instance on desktop and phone. The two do not overlap; where they touch,
 > they cross-reference. Read this one for per-screen consistency, touch sizing and
-> jargon; read that one for what breaks under 20 906 real photos.
+> jargon; read that one for what breaks under ~20k real photos.
 >
 > **Verification pass — 2026-08-05.** Every open (📋) item below was re-checked against
 > production (app version 0.5.1) with a **viewer** account. Items are now marked
@@ -181,7 +181,7 @@ implemented**, per the task's conservative-changes rule.
 - **The phone screen — fixed:** on a 393 × 852 phone the first photo used to start at **371 px**
   and the tab bar took 54 more, leaving 53 % of the screen for photographs. Above them: the
   „Knihovna" heading with Slideshow and Uložit pohled, the search field, the sort select, the
-  density stepper next to Filtry, a two-line note about the search box, and „Počet fotek: 20637".
+  density stepper next to Filtry, a two-line note about the search box, and „Počet fotek: …".
   Six rows of chrome for one field and one button's worth of daily use — on the device the library
   is actually browsed on. Now, below `md`: the heading is `visually-hidden` (the tab bar already
   says where you are), the view actions, the sort, the density and the note are in the Filtry
@@ -271,7 +271,7 @@ implemented**, per the task's conservative-changes rule.
   📋 Soften. ⚪⚪ — **not verified in this pass** (the production instance has places, so the
   empty state never rendered).
 - A grid skeleton is shown while loading what is actually a **list** — minor mismatch. 📋 ⚪⚪
-- **New (2026-08-05):** for this library the whole page is *one row* ("Česko — 2 351 fotek") and
+- **New (2026-08-05):** for this library the whole page is *one row* ("Česko", a couple of thousand photos) and
   the rows carry no thumbnails at all. See `UX_RESEARCH.md` **N23**.
 
 ### Map (`/map`)
@@ -303,13 +303,13 @@ Photos' map — **a way to browse the photos by place**. What was built, and why
 
   ```
   desktop                                         phone
-  ┌ Mapa      [od]–[do] [archiv]  2 456 z 20 421 ┐  ┌ Mapa   [Filtry] 2 456 z 20 421 ┐
+  ┌ Mapa      [od]–[do] [archiv]  2 500 z 20 000 ┐  ┌ Mapa   [Filtry] 2 500 z 20 000 ┐
   │┌──────────────────────────┐ ┌──────────────┐│  │┌──────────────────────────────┐│
-  ││ +            [Zákl|Tur|Let]│ │2 289 fotek v ││  ││ +                        [≡] ││
+  ││ +            [Zákl|Tur|Let]│ │2 300 fotek v ││  ││ +                        [≡] ││
   ││ −   ▣²⁵                   │ │této oblasti >││  ││      ▣²⁵      ▣              ││
   ││        ▣      ▣⁹⁹⁹⁺       │ │▢ ▢ ▢         ││  ││          ▣⁹⁹⁹⁺               ││
   ││   ▣¹⁵    ▣²⁴⁵             │ │▢ ▢ ▢  (grid) ││  │├──────────── ═══ ─────────────┤│
-  │└──────────────────────────┘ └──────────────┘│  ││ 2 289 fotek v této oblasti   ││
+  │└──────────────────────────┘ └──────────────┘│  ││ 2 300 fotek v této oblasti   ││
   └─────────────────────────────────────────────┘  ││ ▢ ▢ ▢ ▢ ▢ →  (peek strip)    ││
                                                    └──────────────────────────────┘
   ```
@@ -346,7 +346,7 @@ Photos' map — **a way to browse the photos by place**. What was built, and why
 - **Consistency:** Two sibling "index" pages rendered differently — Albums as a **card grid**, Labels
   as a **ListGroup**. Defensible (labels are lightweight) but worth a deliberate decision. 📋 ⚪⚪
   — **verified still open (2026-08-05)**, and at production scale it stopped being cosmetic:
-  Albums showed **438** cards in one flat unsorted grid, Labels **113** full-width rows over
+  Albums showed **~440** cards in one flat unsorted grid, Labels **~110** full-width rows over
   5 730 px, and neither page had a search box or a sort control. ✅ **Done:** both indexes now carry
   a folded name search, an ordering and their whole view in the URL (`UX_RESEARCH.md` **N7** and
   **N10**). The two shapes stay different, now deliberately: an album is a picture, so it is a
@@ -517,7 +517,7 @@ Photos' map — **a way to browse the photos by place**. What was built, and why
   (Not shown to a viewer, who has no access to clusters.)
 - **States:** Error alert has **no retry** (must reload the page). 📋 Add retry. 🟡🟡
   — **not verified in this pass**: a read-only account cannot force the error state.
-- **New (2026-08-05):** at 105 subjects the page has no search and no sort at all, and each
+- **New (2026-08-05):** at ~100 subjects the page has no search and no sort at all, and each
   152 px face tile is cropped out of a `fit_1920`/`fit_1280` source — 125 Mpx downloaded to
   paint 1,7 Mpx. See `UX_RESEARCH.md` **N8**.
 
@@ -726,7 +726,7 @@ rule (now wrapped in `:where()`), and a birth year dimmed with `opacity-75` on a
    one, which is what the printed line beside the row says. Where the absent controls would leave
    a reader puzzled (the faces panel, whose whole point is naming) the panel says once, in words,
    what the missing buttons would have said one by one.
-10. **New (2026-08-05) — index pages don't scale.** Albums (438), Labels (113) and People (105)
+10. **New (2026-08-05) — index pages don't scale.** Albums (~440), Labels (~110) and People (~100)
     all render one flat list with no search and no sort. See `UX_RESEARCH.md` **N7**, **N8**,
     **N10**. 🔴🟡
 11. **New (2026-08-05) — every browser tab is called „Kukátko".** `document.title` never changed,

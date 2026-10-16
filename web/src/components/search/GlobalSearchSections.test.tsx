@@ -17,7 +17,7 @@ const { globalSearch } = await import('../../services/search')
 const searchMock = vi.mocked(globalSearch)
 
 /** A well-formed album id the direct-hit cases paste into the search box. */
-const ALBUM_UID = 'al7lpul2io09bcg2rvp2rljsr6'
+const ALBUM_UID = 'al00000000000000000000beef'
 
 const RESULT: GlobalSearchResult = {
   query: 'beach',

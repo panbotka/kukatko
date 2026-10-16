@@ -46,7 +46,7 @@ type namelessUndo = namelessjob.Undo
 // Such a subject cannot be created deliberately — the subject API rejects a name
 // with no letter or digit — so one in the catalogue was minted by an importer
 // keying find-or-create on the fallback slug, and it acts as a catch-all every
-// nameless face after it was assigned to (16 532 markers in production; see
+// nameless face after it was assigned to (~16k markers in production; see
 // docs/OPERATIONS.md). Repairing that is data loss if it guesses wrong, so it is a
 // deliberate CLI step rather than a migration: it reports by default, applies only
 // with --apply, and always writes an undo file it can replay.

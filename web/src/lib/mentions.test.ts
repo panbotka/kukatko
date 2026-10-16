@@ -44,7 +44,7 @@ function nodesOf(tree: unknown, type: string): Record<string, unknown>[] {
 
 describe('mentionToken', () => {
   it('writes the token the backend recognises, brackets and line breaks dropped', () => {
-    expect(mentionToken('Tomáš Kozák', 'us1')).toBe('@[Tomáš Kozák](user:us1)')
+    expect(mentionToken('Petr Kolář', 'us1')).toBe('@[Petr Kolář](user:us1)')
     expect(mentionToken(' An[na] N\nk ', 'us1')).toBe('@[Anna N k](user:us1)')
   })
 })
@@ -123,14 +123,14 @@ describe('findMentionQuery', () => {
 describe('filterMentionCandidates', () => {
   const users = [
     { uid: 'u1', name: 'Anna Nováková' },
-    { uid: 'u2', name: 'Tomáš Kozák' },
-    { uid: 'u3', name: 'Jana Kozáková' },
-    { uid: 'u4', name: 'Bohumil Nečas' },
+    { uid: 'u2', name: 'Petr Kolář' },
+    { uid: 'u3', name: 'Jana Kolářová' },
+    { uid: 'u4', name: 'Bohumil Nedvěd' },
   ]
 
   it('matches accent- and case-insensitively, word starts first', () => {
-    expect(filterMentionCandidates(users, 'koz').map((u) => u.uid)).toEqual(['u2', 'u3'])
-    expect(filterMentionCandidates(users, 'TOMAS').map((u) => u.uid)).toEqual(['u2'])
+    expect(filterMentionCandidates(users, 'kol').map((u) => u.uid)).toEqual(['u2', 'u3'])
+    expect(filterMentionCandidates(users, 'PETR').map((u) => u.uid)).toEqual(['u2'])
     expect(filterMentionCandidates(users, 'na').map((u) => u.uid)).toEqual(['u1', 'u3'])
     expect(filterMentionCandidates(users, 'ko').map((u) => u.uid)).toEqual(['u2', 'u3', 'u1'])
     expect(filterMentionCandidates(users, 'xyz')).toEqual([])
@@ -145,17 +145,17 @@ describe('filterMentionCandidates', () => {
 
 describe('insertMention', () => {
   it('replaces the typed @query with the token and a space, caret after it', () => {
-    const text = 'Hele @Tom víš?'
+    const text = 'Hele @Pet víš?'
     const at = findMentionQuery(text, 9)
     if (at === null) {
       throw new Error('the caret sits in a mention query')
     }
     const got = insertMention(text, at, 9, {
       uid: 'us1',
-      name: 'Tomáš Kozák',
+      name: 'Petr Kolář',
     })
-    expect(got.text).toBe('Hele @[Tomáš Kozák](user:us1)  víš?')
-    expect(got.caret).toBe('Hele @[Tomáš Kozák](user:us1) '.length)
+    expect(got.text).toBe('Hele @[Petr Kolář](user:us1)  víš?')
+    expect(got.caret).toBe('Hele @[Petr Kolář](user:us1) '.length)
   })
 })
 

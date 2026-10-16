@@ -27,7 +27,7 @@ func TestPersonFilter_nickname(t *testing.T) {
 	withNickname := mustCreatePhoto(t, store, "nick-bohous")
 	withoutNickname := mustCreatePhoto(t, store, "nick-anna")
 
-	bohous, err := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Bohumil Nečas", Nickname: "Bohouš"})
+	bohous, err := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Bohumil Nedvěd", Nickname: "Bohouš"})
 	if err != nil {
 		t.Fatalf("CreateSubject(Bohumil): %v", err)
 	}
@@ -68,7 +68,7 @@ func TestPersonFilter_nickname(t *testing.T) {
 		},
 		{
 			name:  "the name keeps working beside it",
-			query: `person:Nečas`,
+			query: `person:Nedvěd`,
 			want:  []string{withNickname},
 		},
 		{

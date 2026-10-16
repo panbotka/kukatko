@@ -7,7 +7,7 @@
  * (`services/people` — `Subject.nickname`, empty when nobody recorded one, which
  * is the usual case). Two rules hold everywhere it is shown:
  *
- *   * it appears **beside** the name, never instead of it — Bohumil Nečas
+ *   * it appears **beside** the name, never instead of it — Bohumil Nedvěd
  *     („Bohouš") — because the name is what identifies the person and the
  *     nickname is how they are addressed;
  *   * when it is empty, nothing at all is drawn. Empty quotation marks beside
@@ -40,7 +40,7 @@ export function nicknameTag(nickname: string | null | undefined): string | null 
 }
 
 /**
- * A name with the nickname appended — `Bohumil Nečas („Bohouš")` — or the name
+ * A name with the nickname appended — `Bohumil Nedvěd („Bohouš")` — or the name
  * alone when there is no nickname.
  *
  * It is for the places that have a single line of text and no room for a second

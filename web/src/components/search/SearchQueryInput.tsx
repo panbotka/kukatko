@@ -200,7 +200,7 @@ export function SearchQueryInput({
           value: match.name,
           option: {
             key: `value:${match.name}`,
-            // The row reads "Bohumil Nečas („Bohouš")" when the person has a
+            // The row reads "Bohumil Nedvěd („Bohouš")" when the person has a
             // nickname — the match may have come from it — while the completed
             // token above stays the name.
             label: withNickname(match.name, match.alias),

@@ -26,7 +26,7 @@ func sampleExport() family.Export {
 				PartnerB: new("sbj2"),
 				Kind:     family.KindMarriage,
 				FromYear: new(1925),
-				Note:     "svatba ve Vavřinci",
+				Note:     "svatba na faře",
 			},
 		},
 		Children: []family.ChildMembership{

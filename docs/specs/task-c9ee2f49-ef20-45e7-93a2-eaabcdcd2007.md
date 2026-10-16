@@ -12,7 +12,7 @@ the RAW (pre-rotation) frame and need a quarter turn, not a rescale.
 
 ## The evidence, measured against production
 
-Photo `phqale6fftf3a3v5tn17vtfd3d`: stored 3000x4000 with `file_orientation: 6`; the original
+Photo `<photo uid>`: stored 3000x4000 with `file_orientation: 6`; the original
 downloaded from storage is really 4000x3000, so the stored pair is the already-oriented one.
 `GET /photos/{uid}/faces` returns three PhotoPrism markers (verified by eye to sit exactly on
 the faces in the displayed image) and two detections from our own `face_detect` job:
@@ -24,7 +24,7 @@ det1  bbox = [0.32460, 0.44934, 0.06467, 0.06607]
 
 Applying the repair's rescale to det0 gives `[0.281, 0.512, 0.293, 0.107]`, which crops a torso
 in a red coat. Applying a quarter turn (`x' = 1-(y+h)`, `y' = x`, `w' = h`, `h' = w`) gives a
-box whose centre is 0.019 from the "Bohumil Nečas ml." marker's centre — visibly the face.
+box whose centre is 0.019 from the "Jan Novák ml." marker's centre — visibly the face.
 Repeated across the library through the API: over 4 detection/marker pairs on 3 quarter-turned
 photos, the rotation reconciles the two coordinate spaces **4 times out of 4**, the rescale
 **0 times**, identity **0 times**.

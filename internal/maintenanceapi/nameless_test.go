@@ -88,7 +88,7 @@ func newNamelessRouter(n NamelessRepair) http.Handler {
 // name owning one marker and one cached face.
 func namelessFixture() (people.NamelessSubject, people.SubjectSnapshot) {
 	subj := people.Subject{
-		UID: "sunuikf1e9jdpjog5qgomsvgrb", Slug: "subject", Name: "", Type: people.SubjectPerson,
+		UID: "sufake0uid0for0tests000002", Slug: "subject", Name: "", Type: people.SubjectPerson,
 		CreatedAt: time.Date(2026, 8, 2, 10, 0, 0, 0, time.UTC),
 	}
 	return people.NamelessSubject{Subject: subj, MarkerCount: 1, FaceCount: 1},

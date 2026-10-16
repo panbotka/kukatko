@@ -165,7 +165,7 @@ func (s *Store) FindSimilarFaceCandidates(
 // invisible to the index scan, so the iterative scan cannot tell "no more rows are
 // near enough" from "keep looking" and walks the graph until hnsw.max_scan_tuples
 // (20 000) — every time, for every exemplar, whatever the LIMIT. Measured on a
-// 50 410-face library: 90 ms with the predicate, 10 ms without it, same 32 rows out.
+// ~50k-face library: 90 ms with the predicate, 10 ms without it, same 32 rows out.
 // See docs/PERF.md.
 const findSimilarUnassignedFaceCandidatesSQL = `
 WITH nearest AS MATERIALIZED (

@@ -728,7 +728,7 @@ of them into the sidecar next to every original, so dropping a column would sile
 > there instead of being dropped with it. Every reader of a source uid resolves through it after the 1:1
 > column — today that is `internal/globalsearchapi` resolving a `uid:pt…` search, and back then it was
 > the importers and the completeness check, which counted an aliased photo as *deduplicated* rather than
-> *missing*. Before it existed, 450 of the 20 660 production source photos were lost in silence under a
+> *missing*. Before it existed, ~2 % of the ~20k production source photos were lost in silence under a
 > run reporting `failed=0`.
 
 ---
@@ -1194,9 +1194,9 @@ is the primary system and imports from nothing but the disk.
 **What outlived them** (and must not be mistaken for leftovers):
 
 - `photos.photoprism_uid`, `photos.photoprism_file_hash`, `photos.photosorter_uid` and the
-  `photoprism_aliases` table — the provenance of 20 647 photos, the target of `uid:pt…` search
+  `photoprism_aliases` table — the provenance of ~20k photos, the target of `uid:pt…` search
   (`internal/globalsearchapi`), and part of every metadata sidecar written next to an original
-  (`internal/sidecarexport`), i.e. of 25 791 files in object storage. See [§5.3](#53-identity-mapping-provenance).
+  (`internal/sidecarexport`), i.e. of ~26k files in object storage. See [§5.3](#53-identity-mapping-provenance).
 - The `import_runs`/`import_failures` rows they wrote, and the three legacy values of
   `importer.Source` needed to read them.
 - The one import that remains: **`kukatko import dir`** (`internal/dirimport`), which walks a

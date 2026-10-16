@@ -438,7 +438,7 @@ describe('suggestFilterKey', () => {
     // `family:` has no parser alias by design — the registry is English-only —
     // so the Czech word for it arrives as an unknown token, and offering the fix
     // is the whole reason this map exists.
-    expect(suggestFilterKey('rodina:Nečas')).toBe('family')
+    expect(suggestFilterKey('rodina:Nedvěd')).toBe('family')
     expect(suggestFilterKey('rok:1965')).toBe('year')
     // Diacritics are folded, so the word survives being typed properly.
     expect(suggestFilterKey('štítek:svatba')).toBe('label')

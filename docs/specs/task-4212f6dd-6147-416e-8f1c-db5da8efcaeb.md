@@ -1,5 +1,5 @@
 ## Context
-Round-2 review of the multi-tenancy programme (2026-10-14, main 672357f6). Reports: `/mnt/nas-botka/kukatko/multitenancy-review-2/isolation-review.md` §D-2, §D-3, Part I §I-1; `fixes-review.md` §B1; `walk-report.md` §F13 (exact-match add). Design spec: foreign tenants — B must learn nothing about A's accounts. Verify with `rg` each still holds.
+Round-2 review of the multi-tenancy programme (2026-10-14, main 672357f6). Reports: `<path>/multitenancy-review-2/isolation-review.md` §D-2, §D-3, Part I §I-1; `fixes-review.md` §B1; `walk-report.md` §F13 (exact-match add). Design spec: foreign tenants — B must learn nothing about A's accounts. Verify with `rg` each still holds.
 
 Findings:
 - `GET /p/{project}/audit?user=<name|uid>` (`internal/auditapi/auditapi.go` ~143-151, ~451-466): a project admin gets 200 (empty) for an account that exists anywhere and 400 for one that does not → instance-wide username oracle (round 1 fixed only `/audit/mine`).

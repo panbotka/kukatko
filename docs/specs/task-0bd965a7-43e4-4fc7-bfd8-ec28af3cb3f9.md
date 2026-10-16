@@ -34,9 +34,9 @@ jsou to pořád živá data:
   **vydaná funkce z v0.5.0**: vložíš do hledání PhotoPrism id `pt…` a appka tě
   na tu fotku pošle. Bez sloupce přestane fungovat.
 - `internal/sidecarexport` je zapisuje do **každého sidecar souboru** jako
-  `external.photoprism_uid` / `photoprism_file_hash`. Jsou v 25 791 souborech
+  `external.photoprism_uid` / `photoprism_file_hash`. Jsou v ~26 tisících souborů
   vedle originálů v R2.
-- Je to provenience 20 647 fotek — jediná stopa, odkud se vzaly.
+- Je to provenience ~20 tisíc fotek — jediná stopa, odkud se vzaly.
 
 **2. `internal/dirimport` zůstává.** Není to migrace, je to `kukatko import dir`,
 kterým se do knihovny nahrává složka z disku. Používá se dál.

@@ -47,27 +47,27 @@ func (g *graph) walk(t *testing.T, root string, limit int) network {
 	return got
 }
 
-// kozak is the production shape the network exists for: a couple with a child,
+// novak is the shape the network exists for: a couple with a child,
 // the mother in a parentless sibling group with her sister, and the sister's own
-// daughter. Neither directional walk from Tomáš reaches Dagmar or Petra.
+// daughter. Neither directional walk from Vít reaches Hana or Olga.
 //
-//	[Ludmila, Dagmar]      (sibling group, no parents recorded)
-//	Ludmila ⚭ Aleš    Dagmar
-//	      |              |
-//	    Tomáš          Petra
-func kozak() *graph {
+//	[Marie, Hana]          (sibling group, no parents recorded)
+//	Marie ⚭ Emil      Hana
+//	      |            |
+//	     Vít          Olga
+func novak() *graph {
 	return &graph{families: []TreeFamily{
-		fam("fm_couple", "ludmila", "ales", "tomas"),
-		fam("fm_sisters", "", "", "dagmar", "ludmila"),
-		fam("fm_dagmar", "dagmar", "", "petra"),
+		fam("fm_couple", "marie", "emil", "vit"),
+		fam("fm_sisters", "", "", "hana", "marie"),
+		fam("fm_hana", "hana", "", "olga"),
 	}}
 }
 
 func TestWalkNetwork_reachesSidewaysThroughASiblingGroup(t *testing.T) {
 	t.Parallel()
 
-	got := kozak().walk(t, "tomas", NetworkLimit)
-	want := map[string]int{"tomas": 0, "ludmila": -1, "ales": -1, "dagmar": -1, "petra": 0}
+	got := novak().walk(t, "vit", NetworkLimit)
+	want := map[string]int{"vit": 0, "marie": -1, "emil": -1, "hana": -1, "olga": 0}
 	if !maps.Equal(got.generation, want) {
 		t.Errorf("generations = %v, want %v", got.generation, want)
 	}
@@ -83,12 +83,12 @@ func TestWalkNetwork_reachesSidewaysThroughASiblingGroup(t *testing.T) {
 }
 
 // The generation is relative to the root, so walking from the cousin gives the
-// same shape one step shifted: Tomáš is Petra's cousin, in her generation.
+// same shape one step shifted: Vít is Olga's cousin, in her generation.
 func TestWalkNetwork_generationsAreRelativeToTheRoot(t *testing.T) {
 	t.Parallel()
 
-	got := kozak().walk(t, "petra", NetworkLimit)
-	want := map[string]int{"petra": 0, "dagmar": -1, "ludmila": -1, "ales": -1, "tomas": 0}
+	got := novak().walk(t, "olga", NetworkLimit)
+	want := map[string]int{"olga": 0, "hana": -1, "marie": -1, "emil": -1, "vit": 0}
 	if !maps.Equal(got.generation, want) {
 		t.Errorf("generations = %v, want %v", got.generation, want)
 	}
@@ -146,16 +146,16 @@ func TestWalkNetwork_theCapKeepsTheNearest(t *testing.T) {
 		want      []string
 		truncated bool
 	}{
-		{name: "exactly the component", limit: 5, want: []string{"tomas", "ales", "ludmila", "dagmar", "petra"}},
-		{name: "one short drops the cousin", limit: 4, want: []string{"tomas", "ales", "ludmila", "dagmar"}, truncated: true},
-		{name: "parents only", limit: 3, want: []string{"tomas", "ales", "ludmila"}, truncated: true},
+		{name: "exactly the component", limit: 5, want: []string{"vit", "emil", "marie", "hana", "olga"}},
+		{name: "one short drops the cousin", limit: 4, want: []string{"vit", "emil", "marie", "hana"}, truncated: true},
+		{name: "parents only", limit: 3, want: []string{"vit", "emil", "marie"}, truncated: true},
 		// The parents' family does not fit whole, so it is not taken at all.
-		{name: "a family is taken whole or not at all", limit: 2, want: []string{"tomas"}, truncated: true},
+		{name: "a family is taken whole or not at all", limit: 2, want: []string{"vit"}, truncated: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := kozak().walk(t, "tomas", tc.limit)
+			got := novak().walk(t, "vit", tc.limit)
 			if !slices.Equal(got.order, tc.want) {
 				t.Errorf("order = %v, want %v", got.order, tc.want)
 			}
@@ -180,7 +180,7 @@ func TestWalkNetwork_theCapKeepsTheNearest(t *testing.T) {
 func TestWalkNetwork_aPersonInNoFamilyIsAloneAndDone(t *testing.T) {
 	t.Parallel()
 
-	g := kozak()
+	g := novak()
 	got := g.walk(t, "stranger", NetworkLimit)
 	if !slices.Equal(got.order, []string{"stranger"}) || got.generation["stranger"] != 0 {
 		t.Errorf("walk = %v / %v, want the root alone at 0", got.order, got.generation)
@@ -211,7 +211,7 @@ func TestWalkNetwork_passesAFetchErrorOn(t *testing.T) {
 	t.Parallel()
 
 	boom := errors.New("boom")
-	_, err := walkNetwork(context.Background(), "tomas", NetworkLimit,
+	_, err := walkNetwork(context.Background(), "vit", NetworkLimit,
 		func(context.Context, []string) ([]TreeFamily, error) { return nil, boom })
 	if !errors.Is(err, boom) {
 		t.Errorf("err = %v, want the fetch error", err)

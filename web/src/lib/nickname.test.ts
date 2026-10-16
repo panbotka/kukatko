@@ -23,7 +23,7 @@ describe('nicknameTag', () => {
 
 describe('withNickname', () => {
   it('appends the nickname to the name', () => {
-    expect(withNickname('Bohumil Nečas', 'Bohouš')).toBe('Bohumil Nečas („Bohouš")')
+    expect(withNickname('Bohumil Nedvěd', 'Bohouš')).toBe('Bohumil Nedvěd („Bohouš")')
   })
 
   it('leaves the name alone when there is no nickname', () => {
@@ -33,15 +33,15 @@ describe('withNickname', () => {
 
 describe('matchesSubjectName', () => {
   it('matches the name', () => {
-    expect(matchesSubjectName('Bohumil Nečas', 'Bohouš', 'necas')).toBe(true)
+    expect(matchesSubjectName('Bohumil Nedvěd', 'Bohouš', 'nedved')).toBe(true)
   })
 
   it('matches the nickname, accent- and case-insensitively', () => {
-    expect(matchesSubjectName('Bohumil Nečas', 'Bohouš', 'BOHOUS')).toBe(true)
+    expect(matchesSubjectName('Bohumil Nedvěd', 'Bohouš', 'BOHOUS')).toBe(true)
   })
 
   it('matches part of a nickname', () => {
-    expect(matchesSubjectName('Bohumil Nečas', 'Bohouš', 'ouš')).toBe(true)
+    expect(matchesSubjectName('Bohumil Nedvěd', 'Bohouš', 'ouš')).toBe(true)
   })
 
   // The trap an OR over a mostly-empty column sets: if an empty nickname matched,
@@ -57,18 +57,18 @@ describe('matchesSubjectName', () => {
 
 describe('matchedByNickname', () => {
   it('is true when only the nickname contains the query', () => {
-    expect(matchedByNickname('Bohumil Nečas', 'Bohouš', 'bohous')).toBe(true)
+    expect(matchedByNickname('Bohumil Nedvěd', 'Bohouš', 'bohous')).toBe(true)
   })
 
   it('is false when the name contains it too — the row needs no explanation', () => {
-    expect(matchedByNickname('Bohumil Nečas', 'Bohumil', 'bohum')).toBe(false)
+    expect(matchedByNickname('Bohumil Nedvěd', 'Bohumil', 'bohum')).toBe(false)
   })
 
   it('is false for a query matching neither', () => {
-    expect(matchedByNickname('Bohumil Nečas', 'Bohouš', 'pepa')).toBe(false)
+    expect(matchedByNickname('Bohumil Nedvěd', 'Bohouš', 'pepa')).toBe(false)
   })
 
   it('is false for an empty query, which singled nobody out', () => {
-    expect(matchedByNickname('Bohumil Nečas', 'Bohouš', '  ')).toBe(false)
+    expect(matchedByNickname('Bohumil Nedvěd', 'Bohouš', '  ')).toBe(false)
   })
 })

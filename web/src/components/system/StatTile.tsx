@@ -56,7 +56,7 @@ export interface StatTileSpec {
 /**
  * One tile. The whole card is the click target when it links somewhere (Bootstrap's
  * `stretched-link` over the label), because a 48-pixel-wide number is a poor one;
- * the accessible name stays the label, since a link named "16 585" tells a
+ * the accessible name stays the label, since a link named "12 345" tells a
  * screen-reader user nothing.
  */
 function StatTile({ tile }: { tile: StatTileSpec }) {

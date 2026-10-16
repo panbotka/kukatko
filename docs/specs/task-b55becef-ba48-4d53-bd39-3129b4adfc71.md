@@ -1,6 +1,6 @@
 # Review game: wrong reason on the empty labels tab
 
-Verified on the box staging (commit 68e805e, 2026-09-06). The library there has 10 labels with 6–18 photos each, every one with `review` enabled, and embeddings for all 398 photos. Yet the review game's Štítky tab shows the empty state "Zatím tu nejsou štítky — Hra se teď ptá jen na štítky, ale žádný štítek zatím nemá fotky — nebo jsou všechny na stránce Štítky z třídění vypnuté." and `GET /api/v1/review/queue?source=labels` answers `{"questions":[], "reason":"no_labels", …}`. The message blames the wrong thing: labels exist, have photos and are enabled; there simply are no label candidates in the confidence band right now. Screenshot: `/mnt/nas-botka/kukatko-stage-test/38-review-labels.png`.
+Verified on the box staging (commit 68e805e, 2026-09-06). The library there has 10 labels with 6–18 photos each, every one with `review` enabled, and embeddings for all 398 photos. Yet the review game's Štítky tab shows the empty state "Zatím tu nejsou štítky — Hra se teď ptá jen na štítky, ale žádný štítek zatím nemá fotky — nebo jsou všechny na stránce Štítky z třídění vypnuté." and `GET /api/v1/review/queue?source=labels` answers `{"questions":[], "reason":"no_labels", …}`. The message blames the wrong thing: labels exist, have photos and are enabled; there simply are no label candidates in the confidence band right now. Screenshot: `<path>/kukatko-stage-test/38-review-labels.png`.
 
 ## Where to look
 

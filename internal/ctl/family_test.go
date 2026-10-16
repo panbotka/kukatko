@@ -12,16 +12,16 @@ import (
 // relationsBody is a realistic GET /subjects/{uid}/relations answer: a parent, a
 // sibling, a marriage and a child, each shaped as internal/familyapi sends it.
 const relationsBody = `{
-	"parents":[{"uid":"sub02","slug":"marie-necasova","name":"Marie Nečasová","type":"person",
+	"parents":[{"uid":"sub02","slug":"marie-nedvedova","name":"Marie Nedvědová","type":"person",
 		"birth_year":1921,"death_year":1998,"photo_count":12,"family_uid":"fam01","child_kind":"birth"}],
-	"siblings":[{"uid":"sub03","slug":"josef-necas","name":"Josef Nečas","type":"person",
+	"siblings":[{"uid":"sub03","slug":"josef-nedved","name":"Josef Nedvěd","type":"person",
 		"birth_year":1950,"death_year":null,"photo_count":4,"family_uid":"fam01","child_kind":"adopted"}],
 	"partners":[{"family":{"uid":"fam02","partner_a_uid":"sub01","partner_b_uid":"sub04",
 		"kind":"marriage","from_year":1972,"to_year":null,"note":"oddáni v Křtinách",
 		"created_at":"2024-05-01T10:00:00Z","updated_at":"2024-05-02T10:00:00Z"},
-		"partner":{"uid":"sub04","slug":"eva-necasova","name":"Eva Nečasová","type":"person",
+		"partner":{"uid":"sub04","slug":"eva-nedvedova","name":"Eva Nedvědová","type":"person",
 		"birth_year":1949,"death_year":null,"photo_count":30}}],
-	"children":[{"uid":"sub05","slug":"petr-necas","name":"Petr Nečas","type":"person",
+	"children":[{"uid":"sub05","slug":"petr-nedved","name":"Petr Nedvěd","type":"person",
 		"birth_year":1974,"death_year":null,"photo_count":7,"family_uid":"fam02","child_kind":"birth"}]
 }`
 
@@ -43,7 +43,7 @@ func TestClient_GetRelations(t *testing.T) {
 	if gotMethod != http.MethodGet || gotPath != "/api/v1/p/fam/subjects/sub01/relations" {
 		t.Errorf("request = %s %s, want GET on the relations path", gotMethod, gotPath)
 	}
-	if len(relations.Parents) != 1 || relations.Parents[0].Name != "Marie Nečasová" {
+	if len(relations.Parents) != 1 || relations.Parents[0].Name != "Marie Nedvědová" {
 		t.Errorf("parents = %+v, want Marie", relations.Parents)
 	}
 	if len(relations.Partners) != 1 || relations.Partners[0].Partner == nil ||
@@ -95,7 +95,7 @@ func TestClient_AddRelation(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 		w.Write([]byte(`{"family":{"uid":"fam01","partner_a_uid":"sub02","partner_b_uid":null,
 			"kind":"partnership","from_year":null,"to_year":null,"note":""},
-			"relative":{"uid":"sub02","name":"Marie Nečasová","type":"person","birth_year":1921,
+			"relative":{"uid":"sub02","name":"Marie Nedvědová","type":"person","birth_year":1921,
 			"death_year":1998,"photo_count":12},"created":false}`))
 	})
 
@@ -119,7 +119,7 @@ func TestClient_AddRelation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeRelationResult returned %v", err)
 	}
-	if result.Created || result.Relative.Name != "Marie Nečasová" || result.Family.UID != "fam01" {
+	if result.Created || result.Relative.Name != "Marie Nedvědová" || result.Family.UID != "fam01" {
 		t.Errorf("result = %+v, want the existing person in her family", result)
 	}
 }
@@ -129,7 +129,7 @@ func TestClient_AddRelation(t *testing.T) {
 func TestRelationInput_validate(t *testing.T) {
 	t.Parallel()
 
-	person := &NewPerson{Name: "Marie Nečasová"}
+	person := &NewPerson{Name: "Marie Nedvědová"}
 	tests := map[string]struct {
 		in   RelationInput
 		want error
@@ -258,9 +258,9 @@ func TestFamilyUpdate_validate(t *testing.T) {
 // familySubjectsBody is a {"subjects": […]} list with two people who share a name, so a
 // lookup by name has something ambiguous to refuse.
 const familySubjectsBody = `{"subjects":[
-	{"uid":"sub02","slug":"marie-necasova","name":"Marie Nečasová","type":"person"},
-	{"uid":"sub03","slug":"marie-necasova-2","name":"Marie Nečasová","type":"person"},
-	{"uid":"sub04","slug":"eva-necasova","name":"Eva Nečasová","type":"person"}
+	{"uid":"sub02","slug":"marie-nedvedova","name":"Marie Nedvědová","type":"person"},
+	{"uid":"sub03","slug":"marie-nedvedova-2","name":"Marie Nedvědová","type":"person"},
+	{"uid":"sub04","slug":"eva-nedvedova","name":"Eva Nedvědová","type":"person"}
 ]}`
 
 // TestClient_FindSubjectByName verifies the three outcomes a name can have:
@@ -272,18 +272,18 @@ func TestClient_FindSubjectByName(t *testing.T) {
 		w.Write([]byte(familySubjectsBody))
 	})
 
-	found, ok, err := client.FindSubjectByName(t.Context(), "eva nečasová")
+	found, ok, err := client.FindSubjectByName(t.Context(), "eva nedvědová")
 	if err != nil || !ok || found.UID != "sub04" {
 		t.Errorf("lookup by name = %+v, %v, %v; want Eva, matched case-insensitively", found, ok, err)
 	}
-	found, ok, err = client.FindSubjectByName(t.Context(), "eva-necasova")
+	found, ok, err = client.FindSubjectByName(t.Context(), "eva-nedvedova")
 	if err != nil || !ok || found.UID != "sub04" {
 		t.Errorf("lookup by slug = %+v, %v, %v; want Eva", found, ok, err)
 	}
-	if _, ok, err = client.FindSubjectByName(t.Context(), "Bohumila Nečasová"); err != nil || ok {
+	if _, ok, err = client.FindSubjectByName(t.Context(), "Bohumila Nedvědová"); err != nil || ok {
 		t.Errorf("lookup of an unknown name = %v, %v; want nobody and no error", ok, err)
 	}
-	_, _, err = client.FindSubjectByName(t.Context(), "Marie Nečasová")
+	_, _, err = client.FindSubjectByName(t.Context(), "Marie Nedvědová")
 	if !errors.Is(err, ErrSubjectAmbiguous) {
 		t.Fatalf("ambiguous lookup = %v, want ErrSubjectAmbiguous", err)
 	}
@@ -308,9 +308,9 @@ func TestWriteRelations(t *testing.T) {
 	out := buf.String()
 	for _, want := range []string{
 		"ROLE", "WHO", "LIFE", "KIND", "FAMILY", "PHOTOS",
-		"parent", "Marie Nečasová (sub02)", "1921–1998", "birth", "fam01",
-		"sibling", "adopted", "partner", "Eva Nečasová (sub04)", "marriage", "fam02 1972–",
-		"child", "Petr Nečas (sub05)", "1974–",
+		"parent", "Marie Nedvědová (sub02)", "1921–1998", "birth", "fam01",
+		"sibling", "adopted", "partner", "Eva Nedvědová (sub04)", "marriage", "fam02 1972–",
+		"child", "Petr Nedvěd (sub05)", "1974–",
 		"1 parent · 1 sibling · 1 partner · 1 child",
 	} {
 		if !strings.Contains(out, want) {
@@ -379,10 +379,10 @@ func TestWriteRelations_loneParentIsNotCounted(t *testing.T) {
 				Family: Family{
 					UID: "fam04", PartnerA: new("sub01"), PartnerB: new("sub04"), Kind: FamilyPartnership,
 				},
-				Partner: &Relative{UID: "sub04", Name: "Eva Nečasová", PhotoCount: 5},
+				Partner: &Relative{UID: "sub04", Name: "Eva Nedvědová", PhotoCount: 5},
 			},
 		},
-		Children: []Relative{{UID: "sub05", Name: "Petr Nečas", FamilyUID: "fam03", ChildKind: ChildBirth}},
+		Children: []Relative{{UID: "sub05", Name: "Petr Nedvěd", FamilyUID: "fam03", ChildKind: ChildBirth}},
 	}
 	if err := WriteRelations(&buf, relations); err != nil {
 		t.Fatalf("WriteRelations returned %v", err)
@@ -400,7 +400,7 @@ func TestWriteRelations_loneParentIsNotCounted(t *testing.T) {
 	if partnerRows != 1 {
 		t.Errorf("relations table = %q, want exactly one row in the partner role, got %d", out, partnerRows)
 	}
-	for _, want := range []string{RoleLoneParent, "fam03", "Eva Nečasová (sub04)", "fam04"} {
+	for _, want := range []string{RoleLoneParent, "fam03", "Eva Nedvědová (sub04)", "fam04"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("relations table does not contain %q:\n%s", want, out)
 		}
@@ -416,10 +416,10 @@ func TestWriteRelationReport(t *testing.T) {
 	report := RelationReport{
 		RelationResult: RelationResult{
 			Family:   Family{UID: "fam01", Kind: FamilyPartnership},
-			Relative: Relative{UID: "sub02", Name: "Marie Nečasová", BirthYear: &birth},
+			Relative: Relative{UID: "sub02", Name: "Marie Nedvědová", BirthYear: &birth},
 			Created:  true,
 		},
-		Role: RoleParent, SubjectUID: "sub01", SubjectName: "Anna Nečasová",
+		Role: RoleParent, SubjectUID: "sub01", SubjectName: "Anna Nedvědová",
 	}
 
 	var table bytes.Buffer
@@ -427,7 +427,7 @@ func TestWriteRelationReport(t *testing.T) {
 		t.Fatalf("WriteRelationReport returned %v", err)
 	}
 	for _, want := range []string{
-		"Marie Nečasová (sub02)", "parent of Anna Nečasová (sub01)", "1921–", "yes", "fam01 · partnership",
+		"Marie Nedvědová (sub02)", "parent of Anna Nedvědová (sub01)", "1921–", "yes", "fam01 · partnership",
 	} {
 		if !strings.Contains(table.String(), want) {
 			t.Errorf("relation report does not contain %q:\n%s", want, table.String())
@@ -442,7 +442,7 @@ func TestWriteRelationReport(t *testing.T) {
 	if err := json.Unmarshal(machine.Bytes(), &decoded); err != nil {
 		t.Fatalf("json report is not valid JSON: %v (%q)", err, machine.String())
 	}
-	if decoded["role"] != RoleParent || decoded["subject_name"] != "Anna Nečasová" || decoded["created"] != true {
+	if decoded["role"] != RoleParent || decoded["subject_name"] != "Anna Nedvědová" || decoded["created"] != true {
 		t.Errorf("json report = %v, want the synthesized role and subject alongside the server's answer", decoded)
 	}
 }
@@ -458,10 +458,10 @@ func TestWriteFamily(t *testing.T) {
 		Kind: FamilyMarriage, FromYear: &from, Note: "oddáni v Křtinách",
 	}
 	var buf bytes.Buffer
-	if err := WriteFamily(&buf, family, map[string]string{"sub01": "Anna Nečasová"}); err != nil {
+	if err := WriteFamily(&buf, family, map[string]string{"sub01": "Anna Nedvědová"}); err != nil {
 		t.Fatalf("WriteFamily returned %v", err)
 	}
-	for _, want := range []string{"fam02", "Anna Nečasová (sub01) & sub04", "marriage", "1972–", "Křtinách"} {
+	for _, want := range []string{"fam02", "Anna Nedvědová (sub01) & sub04", "marriage", "1972–", "Křtinách"} {
 		if !strings.Contains(buf.String(), want) {
 			t.Errorf("family does not contain %q:\n%s", want, buf.String())
 		}

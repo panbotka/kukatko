@@ -384,7 +384,7 @@ func yesNo(value bool) string {
 }
 
 // lastActivity renders when the task was last acted on and by whom: "2026-09-19
-// 17:21 by Tomáš Kozák", falling back to the uid when the name is unknown and
+// 17:21 by Jan Novák", falling back to the uid when the name is unknown and
 // to the bare stamp when the actor's account is gone. A zero stamp — a server
 // from before the field existed — is a dash.
 func lastActivity(task Task) string {

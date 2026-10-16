@@ -20,7 +20,7 @@ const CaptureYearLookahead = 1
 // the file-name date heuristic below, which drops a guess outside the range
 // before it is ever written, and the library integrity scan, which finds the
 // rows that were dated before the guard existed (the long digit runs Facebook
-// and WhatsApp name their downloads with — 90090310_638783213372240_… reads as
+// and WhatsApp name their downloads with — 90090310_100000000000001_… reads as
 // 9009-03-10 — are exactly what both are looking at). A date the camera itself
 // wrote is an assertion and is kept however odd it looks; this bounds the
 // guesses.

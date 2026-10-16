@@ -64,17 +64,17 @@ function foundReport(): NamelessReport {
   return {
     subjects: [
       {
-        uid: 'sunuikf1e9jdpjog5qgomsvgrb',
+        uid: 'su0000000000000000nameless',
         slug: 'subject',
         name: '',
         type: 'person',
         created_at: '2026-08-02T10:00:00Z',
-        marker_count: 16531,
-        face_count: 111155,
+        marker_count: 12345,
+        face_count: 98765,
       },
     ],
-    marker_total: 16531,
-    face_total: 111155,
+    marker_total: 12345,
+    face_total: 98765,
   }
 }
 
@@ -88,8 +88,8 @@ function undoFile(): NamelessUndoFile {
   return {
     filename: 'kukatko-nameless-undo-20260803T101500Z.json',
     subjects: 1,
-    markers: 16531,
-    faces: 111155,
+    markers: 12345,
+    faces: 98765,
   }
 }
 
@@ -128,11 +128,11 @@ describe('NamelessSubjectsCard', () => {
     expect(await screen.findByText(/zatím neproběhla žádná kontrola/i)).toBeInTheDocument()
     await check(user)
 
-    expect(screen.getByText(/16531 značek a 111155 obličejů/)).toBeInTheDocument()
+    expect(screen.getByText(/12345 značek a 98765 obličejů/)).toBeInTheDocument()
     // The uid and the slug are identifiers, so they are one click away.
-    expect(screen.queryByText('sunuikf1e9jdpjog5qgomsvgrb')).toBeNull()
+    expect(screen.queryByText('su0000000000000000nameless')).toBeNull()
     await user.click(screen.getByRole('button', { name: /technické podrobnosti/i }))
-    expect(screen.getByText('sunuikf1e9jdpjog5qgomsvgrb')).toBeInTheDocument()
+    expect(screen.getByText('su0000000000000000nameless')).toBeInTheDocument()
     // Reporting is read-only: nothing may be scheduled by looking.
     expect(detachMock).not.toHaveBeenCalled()
   })

@@ -306,11 +306,11 @@ func TestHandleAddRelation_newSubject(t *testing.T) {
 	t.Parallel()
 	store := &fakeStore{added: family.AddResult{Created: true}}
 	rec := do(t, newServer(store), http.MethodPost, "/subjects/su_a/relations",
-		`{"role":"parent","new_subject":{"name":"  Marie Nečasová  ","birth_year":1921}}`)
+		`{"role":"parent","new_subject":{"name":"  Marie Nedvědová  ","birth_year":1921}}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201: %s", rec.Code, rec.Body.String())
 	}
-	if store.lastAdd.New == nil || store.lastAdd.New.Name != "Marie Nečasová" {
+	if store.lastAdd.New == nil || store.lastAdd.New.Name != "Marie Nedvědová" {
 		t.Fatalf("new subject mismatch: %+v", store.lastAdd.New)
 	}
 	if store.lastAdd.New.BirthYear == nil || *store.lastAdd.New.BirthYear != 1921 {

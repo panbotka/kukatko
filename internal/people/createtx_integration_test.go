@@ -20,7 +20,7 @@ func TestCreateSubjectTx_joinsTheCallersTransaction(t *testing.T) {
 	store, _, _, db := newStores(t)
 	ctx := t.Context()
 
-	if _, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Marie Nečasová"}); err != nil {
+	if _, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Marie Nedvědová"}); err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 
@@ -28,21 +28,21 @@ func TestCreateSubjectTx_joinsTheCallersTransaction(t *testing.T) {
 	var created people.Subject
 	inTx(t, db.Pool(), func(tx pgx.Tx) error {
 		var err error
-		created, err = people.CreateSubjectTx(ctx, tx, testProject, people.Subject{Name: "Marie Nečasová"})
+		created, err = people.CreateSubjectTx(ctx, tx, testProject, people.Subject{Name: "Marie Nedvědová"})
 		if err != nil {
 			return err
 		}
 		return tx.Commit(ctx)
 	})
-	if created.Slug != "marie-necasova-2" {
-		t.Errorf("slug = %q, want the collision resolved to marie-necasova-2", created.Slug)
+	if created.Slug != "marie-nedvedova-2" {
+		t.Errorf("slug = %q, want the collision resolved to marie-nedvedova-2", created.Slug)
 	}
 
 	// A rolled-back transaction: nothing survives it.
 	var rolledBack people.Subject
 	inTx(t, db.Pool(), func(tx pgx.Tx) error {
 		var err error
-		rolledBack, err = people.CreateSubjectTx(ctx, tx, testProject, people.Subject{Name: "Marie Nečasová"})
+		rolledBack, err = people.CreateSubjectTx(ctx, tx, testProject, people.Subject{Name: "Marie Nedvědová"})
 		return err
 	})
 	if _, err := store.GetSubjectByUID(ctx, testProject, rolledBack.UID); err == nil {

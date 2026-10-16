@@ -1,6 +1,6 @@
-Found in the v0.31 pre-release walkthrough on box staging (ba313619). Screenshot (scratchpad, may be gone): /tmp/claude-1000/-home-pi-projects-kukatko/72b2de76-663f-4e1b-afa6-bd4ef1fb78ca/scratchpad/03-scrolled.png
+Found in the v0.31 pre-release walkthrough on box staging (ba313619). Screenshot (scratchpad, may be gone): <scratchpad>/03-scrolled.png
 
-Repro: library `/`, scroll to the end — the tiles whose thumbnail job died (staging fixtures, e.g. phn9visnak43pnja0jhiogqitp) show the fallback text "Náhled není dostupný" underlined like a link, and the favourite heart disc sits on top of the text's last word.
+Repro: library `/`, scroll to the end — the tiles whose thumbnail job died (staging fixtures, e.g. `<photo uid>`) show the fallback text "Náhled není dostupný" underlined like a link, and the favourite heart disc sits on top of the text's last word.
 
 ## Requirements
 - The no-preview fallback keeps its text clear of the tile's overlay controls (heart, select circle) at every tile size the stepper allows.

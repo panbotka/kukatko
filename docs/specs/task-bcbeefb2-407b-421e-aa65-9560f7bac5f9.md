@@ -6,7 +6,7 @@ Verified on the box staging (commit 68e805e, 2026-09-06), which runs the same `s
 > Čísla by si měla zhruba odpovídat. Větší rozdíl mezi katalogem a diskem znamená, že se něco rozešlo …
 > Katalog a soubory si odpovídají, není co opravovat.
 
-Zero originals next to a hint that the numbers should match, followed by a green verdict, is contradictory. Production shows the same shape. Screenshot: `/mnt/nas-botka/kukatko-stage-test/65-maintenance-scan.png`.
+Zero originals next to a hint that the numbers should match, followed by a green verdict, is contradictory. Production shows the same shape. Screenshot: `<path>/kukatko-stage-test/65-maintenance-scan.png`.
 
 ## Root cause (verified, do not re-derive)
 

@@ -108,12 +108,12 @@ describe('auditTargetHref', () => {
       record({
         action: 'face.unassign',
         target_type: 'markers',
-        target_uid: 'mt8rdjbfhgma1zfg',
-        details: { action: 'unassign_person', photo_uid: 'phakulc72calcifi6immisvfl4' },
+        target_uid: 'mt000000000000a1',
+        details: { action: 'unassign_person', photo_uid: 'ph0000000000000000000000a1' },
       }),
     )
 
-    expect(href).toBe('/photos/phakulc72calcifi6immisvfl4')
+    expect(href).toBe('/photos/ph0000000000000000000000a1')
   })
 
   it('lands on the person’s marker when the details name a subject', () => {
@@ -121,12 +121,17 @@ describe('auditTargetHref', () => {
       record({
         action: 'face.assign',
         target_type: 'markers',
-        target_uid: 'mk3rq71npuo1h9a4burkdqhjmi',
-        details: { photo_uid: 'ph8qpckcoo1vnesecdaqs3f5pv', subject_uid: 'suht2a' },
+        target_uid: 'mk0000000000000000000000a2',
+        details: {
+          photo_uid: 'ph0000000000000000000000a3',
+          subject_uid: 'su0000000000000000000000a5',
+        },
       }),
     )
 
-    expect(href).toBe('/photos/ph8qpckcoo1vnesecdaqs3f5pv?person=suht2a&panel=faces')
+    expect(href).toBe(
+      '/photos/ph0000000000000000000000a3?person=su0000000000000000000000a5&panel=faces',
+    )
   })
 
   it('has nowhere to send a marker whose details name no photo', () => {
@@ -151,12 +156,12 @@ describe('auditDetailLinks', () => {
   })
 
   it('links the photo a label rejection happened on', () => {
-    const { groups } = auditDetailLinks({ via: 'review', photo_uid: 'ph9e3e2uluvsukb4h93b0vbpt9' })
+    const { groups } = auditDetailLinks({ via: 'review', photo_uid: 'ph0000000000000000000000a4' })
 
     expect(groups).toEqual([
       {
         key: 'photo_uid',
-        links: [{ uid: 'ph9e3e2uluvsukb4h93b0vbpt9', href: '/photos/ph9e3e2uluvsukb4h93b0vbpt9' }],
+        links: [{ uid: 'ph0000000000000000000000a4', href: '/photos/ph0000000000000000000000a4' }],
       },
     ])
   })

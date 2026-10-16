@@ -6,10 +6,10 @@ Three things across two pages:
    from a dark page to a glowing map over a large area is unpleasant, especially on a phone.
    The "Turistická" and "Letecká" style toggles also have poor contrast when inactive (dark
    blue on dark).
-2. **Coverage:** "Fotek na mapě: 2 378" out of 20 906, i.e. **11 %**. The page neither explains
+2. **Coverage:** "Fotek na mapě: ~2.4k" out of ~20k, i.e. **11 %**. The page neither explains
    this nor offers anything to do about it, even though the project has `internal/geoestimate`
    for filling in a missing location.
-3. **`/places`** shows exactly **one row** for this library: "Česko — 2 351 fotek". Only after
+3. **`/places`** shows exactly **one row** for this library: "Česko — ~2.4k fotek". Only after
    clicking does the list of municipalities appear (sorted by count, breadcrumb works). The
    rows have no previews at all — places in a photo gallery without a single photo.
 
@@ -22,7 +22,7 @@ the other is one row.
 - On `/places`, show a preview image for each country/municipality row (the best photo of that
   place) — it is a photo gallery.
 - When a level has only one entry, skip it and show the level below directly.
-- On the map, state the coverage in human terms ("Na mapě je 2 378 z 20 906 fotek — u ostatních
+- On the map, state the coverage in human terms ("Na mapě je N z M fotek — u ostatních
   není uložená poloha.") and, for roles allowed to do it, link to filling in locations.
 - Czech and English translations.
 

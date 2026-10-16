@@ -1171,7 +1171,7 @@ describe('SubjectPage family strip', () => {
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     addRelationMock.mockResolvedValue({
       family: familyRow(),
-      relative: relative('sj_new', 'Marie Nečasová'),
+      relative: relative('sj_new', 'Marie Nedvědová'),
       created: true,
     })
     const user = userEvent.setup()
@@ -1181,7 +1181,7 @@ describe('SubjectPage family strip', () => {
     await user.click(screen.getByRole('button', { name: 'Add a parent' }))
 
     const dialog = await screen.findByRole('dialog')
-    await user.type(within(dialog).getByRole('combobox'), 'Marie Nečasová')
+    await user.type(within(dialog).getByRole('combobox'), 'Marie Nedvědová')
     await user.click(await screen.findByRole('option', { name: /Create/ }))
 
     // One call, so the person and the relation land in one audited transaction —
@@ -1189,12 +1189,12 @@ describe('SubjectPage family strip', () => {
     await waitFor(() => {
       expect(addRelationMock).toHaveBeenCalledWith('sj_1', {
         role: 'parent',
-        new_subject: { name: 'Marie Nečasová' },
+        new_subject: { name: 'Marie Nedvědová' },
       })
     })
     // The dialog stays open and says what it recorded: a person's four children
     // are four names typed in a row, not four trips through a dialog.
-    expect(await screen.findByText(/Recorded: Marie Nečasová/)).toBeInTheDocument()
+    expect(await screen.findByText(/Recorded: Marie Nedvědová/)).toBeInTheDocument()
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 

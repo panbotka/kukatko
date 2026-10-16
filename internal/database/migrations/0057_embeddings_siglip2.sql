@@ -15,7 +15,7 @@
 -- vector says nothing about where the photo sits in SigLIP 2's space. So they are
 -- recomputed, not migrated: this migration empties the table and
 -- vectors.BackfillEmbeddings — which enqueues exactly the non-archived photos
--- that have no embedding row — then re-embeds the whole library (~20 664 photos,
+-- that have no embedding row — then re-embeds the whole library (~20k photos,
 -- roughly half an hour of sidecar time at the measured 11 photos/s). Until that
 -- backfill drains, semantic search finds nothing and degrades to full text, which
 -- is the same graceful path an offline box already takes.

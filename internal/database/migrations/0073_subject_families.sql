@@ -1,10 +1,10 @@
 -- 0073_subject_families: a genealogy over subjects — who is whose parent, whose
 -- partner, whose child.
 --
--- The library knows 118 people and a hundred thousand faces of them, but nothing
+-- The library knows over a hundred people and ~100k faces of them, but nothing
 -- about how they are related. Those facts are currently encoded in display names
--- — `Bohumil Nečas st.` is senior to somebody, `Nečasová` is the same family as
--- `Nečas` — which is where a data model goes when it does not exist.
+-- — `Bohumil Nedvěd st.` is senior to somebody, `Nedvědová` is the same family as
+-- `Nedvěd` — which is where a data model goes when it does not exist.
 --
 -- The family is the node, not the edge. A relationship table of the shape
 -- (from, to, type) with parent/spouse/sibling is the obvious first idea and the

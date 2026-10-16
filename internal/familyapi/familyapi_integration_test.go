@@ -193,10 +193,10 @@ func TestRelations_roundTrip(t *testing.T) {
 	env := newEnv(t)
 	editor := env.login(t, "editor", auth.AccountEditor)
 
-	father := env.subject(t, "Bohumil Nečas st.")
-	mother := env.subject(t, "Marie Nečasová")
-	son := env.subject(t, "Bohumil Nečas ml.")
-	daughter := env.subject(t, "Anna Nečasová")
+	father := env.subject(t, "Bohumil Nedvěd st.")
+	mother := env.subject(t, "Marie Nedvědová")
+	son := env.subject(t, "Bohumil Nedvěd ml.")
+	daughter := env.subject(t, "Anna Nedvědová")
 
 	env.addRelation(t, editor, son, `{"role":"parent","subject_uid":"`+father+`"}`)
 	env.addRelation(t, editor, son, `{"role":"parent","subject_uid":"`+mother+`"}`)
@@ -232,22 +232,22 @@ func TestRelations_roundTrip(t *testing.T) {
 func TestAddRelation_newSubjectIsCreatedAndAudited(t *testing.T) {
 	env := newEnv(t)
 	editor := env.login(t, "editor", auth.AccountEditor)
-	son := env.subject(t, "Bohumil Nečas ml.")
+	son := env.subject(t, "Bohumil Nedvěd ml.")
 
 	result := env.addRelation(t, editor, son,
-		`{"role":"parent","new_subject":{"name":"Marie Nečasová","birth_year":1921}}`)
+		`{"role":"parent","new_subject":{"name":"Marie Nedvědová","birth_year":1921}}`)
 	if !result.Created {
 		t.Error("created = false, want true for an inline new subject")
 	}
-	if result.Relative.Name != "Marie Nečasová" || result.Relative.BirthYear == nil ||
+	if result.Relative.Name != "Marie Nedvědová" || result.Relative.BirthYear == nil ||
 		*result.Relative.BirthYear != 1921 {
 		t.Errorf("relative mismatch: %+v", result.Relative)
 	}
 	if result.Family.UID == "" {
 		t.Error("no family uid returned")
 	}
-	if got := env.countSubjects(t, "Marie Nečasová"); got != 1 {
-		t.Errorf("subjects named Marie Nečasová = %d, want 1", got)
+	if got := env.countSubjects(t, "Marie Nedvědová"); got != 1 {
+		t.Errorf("subjects named Marie Nedvědová = %d, want 1", got)
 	}
 
 	records, err := audit.NewStore(env.db.Pool()).List(t.Context(),
@@ -275,7 +275,7 @@ func TestAddRelation_newSubjectIsAtomic(t *testing.T) {
 	env := newEnv(t)
 	editor := env.login(t, "editor", auth.AccountEditor)
 
-	son := env.subject(t, "Bohumil Nečas ml.")
+	son := env.subject(t, "Bohumil Nedvěd ml.")
 	env.addRelation(t, editor, son, `{"role":"parent","subject_uid":"`+env.subject(t, "Otec")+`"}`)
 	env.addRelation(t, editor, son, `{"role":"parent","subject_uid":"`+env.subject(t, "Matka")+`"}`)
 
@@ -423,11 +423,11 @@ func TestTree_network(t *testing.T) {
 	env := newEnv(t)
 	editor := env.login(t, "editor", auth.AccountEditor)
 
-	mother := env.subject(t, "Ludmila")
-	father := env.subject(t, "Aleš")
-	son := env.subject(t, "Tomáš")
-	aunt := env.subject(t, "Dagmar")
-	cousin := env.subject(t, "Petra")
+	mother := env.subject(t, "Marie")
+	father := env.subject(t, "Emil")
+	son := env.subject(t, "Vít")
+	aunt := env.subject(t, "Hana")
+	cousin := env.subject(t, "Olga")
 	env.addRelation(t, editor, son, `{"role":"parent","subject_uid":"`+mother+`"}`)
 	env.addRelation(t, editor, son, `{"role":"parent","subject_uid":"`+father+`"}`)
 	env.addRelation(t, editor, mother, `{"role":"sibling","subject_uid":"`+aunt+`"}`)
@@ -602,8 +602,8 @@ func TestUnauthenticated_isRefused(t *testing.T) {
 func TestAddRelation_siblingWithNoParents(t *testing.T) {
 	env := newEnv(t)
 	editor := env.login(t, "sibling-editor", auth.AccountEditor)
-	josef := env.subject(t, "Josef Nečas")
-	anna := env.subject(t, "Anna Nečasová")
+	josef := env.subject(t, "Josef Nedvěd")
+	anna := env.subject(t, "Anna Nedvědová")
 
 	result := env.addRelation(t, editor, josef, `{"role":"sibling","subject_uid":"`+anna+`"}`)
 	if result.Family.PartnerA != nil || result.Family.PartnerB != nil {
@@ -623,11 +623,11 @@ func TestAddRelation_siblingWithNoParents(t *testing.T) {
 	}
 
 	// A sibling created inline is still one audited transaction.
-	created := env.addRelation(t, editor, josef, `{"role":"sibling","new_subject":{"name":"Marie Nečasová"}}`)
+	created := env.addRelation(t, editor, josef, `{"role":"sibling","new_subject":{"name":"Marie Nedvědová"}}`)
 	if !created.Created || created.Family.UID != result.Family.UID {
 		t.Errorf("inline sibling = %+v, want a new person in the same group", created)
 	}
-	if got := env.countSubjects(t, "Marie Nečasová"); got != 1 {
+	if got := env.countSubjects(t, "Marie Nedvědová"); got != 1 {
 		t.Errorf("subjects named Marie = %d, want exactly the one created", got)
 	}
 
@@ -639,7 +639,7 @@ func TestAddRelation_siblingWithNoParents(t *testing.T) {
 
 	// With a parent on the family they are siblings *through* that parent, and
 	// the refusal is about the state of the tree rather than about the request.
-	mother := env.subject(t, "Ludmila Nečasová")
+	mother := env.subject(t, "Ludmila Nedvědová")
 	env.addRelation(t, editor, josef, `{"role":"parent","subject_uid":"`+mother+`"}`)
 	if got := env.status(t, editor, http.MethodDelete,
 		apiV+"/subjects/"+josef+"/relations/"+anna, nil); got != http.StatusConflict {

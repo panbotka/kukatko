@@ -18,7 +18,7 @@ import (
 
 // facebookDownloadName is the file name that produced the defect this repair
 // exists for: a Facebook asset id whose leading digits read as 9009-03-10.
-const facebookDownloadName = "90090310_638783213372240_7483353598378639360_n.jpg"
+const facebookDownloadName = "90090310_100000000000001_1000000000000000001_n.jpg"
 
 // maintainerMeta inserts the maintainer account the audit rows point at (the
 // actor is a foreign key into users) and returns the provenance a request from

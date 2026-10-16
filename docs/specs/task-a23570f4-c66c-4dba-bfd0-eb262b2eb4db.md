@@ -1,6 +1,6 @@
 # The review game — the page
 
-Kukátko shows you one photo and asks one question: *"Je tohle Tomáš Kozák?"* or *"Má tahle fotka mít štítek
+Kukátko shows you one photo and asks one question: *"Je tohle Jan Novák?"* or *"Má tahle fotka mít štítek
 Ostatky?"* You answer, the next question appears. The point is **rhythm** — it should feel like flicking through
 cards, not like filling in a form.
 
@@ -16,7 +16,7 @@ New route **`/review`** (editor-only), prominently linked in the nav. Czech labe
 - The photo, **large** — as much of the viewport as fits. For a face question, the face is marked with a rectangle
   **with generous padding around it** (~30 %), because you cannot recognise a person from a tight crop; reuse the
   existing bbox geometry helpers (`web/src/lib/faceGeometry.ts`) rather than reinventing them.
-- The question in plain language, big: **"Je tohle Tomáš Kozák?"** / **"Má tahle fotka mít štítek Ostatky?"** The
+- The question in plain language, big: **"Je tohle Jan Novák?"** / **"Má tahle fotka mít štítek Ostatky?"** The
   name or label is the emphasised part — it is what the eye needs to land on.
 - The system's confidence, shown honestly but quietly (a small percentage or a subtle bar). It is context, not the
   answer.

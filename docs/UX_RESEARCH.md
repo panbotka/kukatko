@@ -24,10 +24,10 @@ neduplikuji ho — kde se potkáváme, odkazuji.
     dotyková gesta a velikost dotykových cílů jsem neměřil — nálezy o mobilu jsou
     o rozvržení a informační architektuře. (Že pravidla `@media (pointer: coarse)`
     v nasazeném CSS opravdu jsou, jsem ověřil zvlášť — je jich sedm.)
-- **Data, na kterých se to lámalo:** 20 906 fotek (20 890 v knihovně, 16 v koši),
-  115 461 nalezených obličejů, z toho **16 585 nepojmenovaných** a 4 602 pojmenovaných,
-  **105 osob**, **438 alb**, 113 štítků, 2 378 fotek s polohou (11 % knihovny), fotky
-  od roku 1905 do 2026. Embeddingová služba (box) byla po celou dobu **offline** —
+- **Data, na kterých se to lámalo:** ~20 tisíc fotek (pár z nich v koši),
+  ~115 tisíc nalezených obličejů, z toho **~16,5 tisíce nepojmenovaných** a ~4,6 tisíce
+  pojmenovaných, **~100 osob**, **~440 alb**, ~110 štítků, ~2,4 tisíce fotek s polohou
+  (11 % knihovny), fotky od roku 1905 do 2026. Embeddingová služba (box) byla po celou dobu **offline** —
   `/api/v1/capabilities` vracelo `semantic_search: false`.
 - **Ochrana soukromí:** v dokumentu nejsou snímky obrazovky s fotkami ani jména osob
   z knihovny. Kde je potřeba ilustrace, popisuji rozvržení, ne obsah.
@@ -69,10 +69,10 @@ dopad/pracnost — nahoře je to, co se vyplatí udělat první.
 | [N4](#n4) ✅ | Hustota mřížky je jedna hodnota pro notebook i telefon | 🔴 | ⚪ | `lib/gridDensity.ts` |
 | [N5](#n5) ✅ | Zpět z fotky ztratí pozici v knihovně | 🔴 | 🟡 | `PhotoGrid`, `usePaginatedPhotos` |
 | [N6](#n6) ✅ | Na telefonu panel obličejů i informací fotku úplně zakryje | 🔴 | 🟡 | `photo/viewer.css` |
-| [N7](#n7) ✅ | 438 alb v jedné hromadě, i když API už rozlišuje jejich typ | 🔴 | 🟡 | `AlbumsPage` |
-| [N8](#n8) ✅ | `/people`: 105 osob bez hledání, a 125 Mpx stažených na 72 čtverečků | 🔴 | 🟡 | `PeoplePage`, `SubjectTile` |
+| [N7](#n7) ✅ | ~440 alb v jedné hromadě, i když API už rozlišuje jejich typ | 🔴 | 🟡 | `AlbumsPage` |
+| [N8](#n8) ✅ | `/people`: ~100 osob bez hledání, a 125 Mpx stažených na 72 čtverečků | 🔴 | 🟡 | `PeoplePage`, `SubjectTile` |
 | [N9](#n9) | Seznam obličejů nemá náhledy, jmenovky na fotce se překrývají | 🟡 | 🟡 | `FacesPanel`, `FaceOverlay` |
-| [N10](#n10) ✅ | `/labels`: 113 štítků jako svislý seznam bez hledání a řazení | 🟡 | ⚪ | `LabelsPage` |
+| [N10](#n10) ✅ | `/labels`: ~110 štítků jako svislý seznam bez hledání a řazení | 🟡 | ⚪ | `LabelsPage` |
 | [N11](#n11) ✅ | Příznaky se jmenují podle tvaru ikony: „Oko", „Palec nahoru" | 🟡 | ⚪ | `FlagControl`, `FilterBar` |
 | [N12](#n12) ✅ | Do textu pro uživatele prosakuje `AI_MODEL:`, `Unknown`, anglické názvy | 🟡 | ⚪ | `MetadataPanel`, import |
 | [N13](#n13) ✅ | Stránka, na kterou nemám právo, mlčky přesměruje na knihovnu | 🟡 | ⚪ | routing, `LeaderboardPage` |
@@ -416,30 +416,30 @@ fotka celá uvnitř scény) i na 1280 × 800, kde je rozvržení beze změny.
 ---
 
 <a id="n7"></a>
-### N7 — 438 alb v jedné hromadě, i když API už rozlišuje jejich typ 🔴 🟡
+### N7 — ~440 alb v jedné hromadě, i když API už rozlišuje jejich typ 🔴 🟡
 
 **Co se stalo.** `/albums` vykreslí jeden plochý, neroztříděný, nefiltrovatelný rošt
-karet. Podle `GET /api/v1/albums?limit=1000` jich je **438** a mají pole `type`:
+karet. Podle `GET /api/v1/albums?limit=1000` jich je **~440** a mají pole `type`:
 
 | `type` | Počet | Co to je |
 | --- | ---: | --- |
-| `folder` | **246** | automatická alba podle měsíce a importu |
-| `album` | 166 | alba, která někdo skutečně vytvořil |
-| `moment` | 23 | automatické „momenty" |
+| `folder` | **~250** | automatická alba podle měsíce a importu |
+| `album` | ~170 | alba, která někdo skutečně vytvořil |
+| `moment` | ~20 | automatické „momenty" |
 | `state` | 3 | kraje |
 
-Z toho **239 alb** se jmenuje anglicky ve tvaru `January 2026`, `May 2026`, `April
+Z toho **~240 alb** se jmenuje anglicky ve tvaru `January 2026`, `May 2026`, `April
 2026`. Šest je prázdných a taky anglických (`Pets`, `Nature & Landscape`,
 `Bays, Capes & Beaches` — zbytky kategorií z původního katalogu). Dalších 34 má méně než
 tři fotky.
 
-Nejnázornější příklad: album **„January 2026" obsahuje 2 305 fotek s rozsahem
+Nejnázornější příklad: album **„January 2026" obsahuje ~2 300 fotek s rozsahem
 1905–2026.** Leden 2026 je měsíc, ve kterém běžela migrace — takže album pojmenované
 podle ledna 2026 patří k největším v knihovně a je plné skenů z první republiky.
 Na detailu fotky z roku 1965 pak svítí štítek alba „January 2026".
 
 **Proč to vadí.** Alba jsou v aplikaci hned druhá položka menu. Uživatel je otevře,
-aby našel „Dovolená 2019", a dostane 438 dlaždic, kde 55 % tvoří anglicky
+aby našel „Dovolená 2019", a dostane ~440 dlaždic, kde 55 % tvoří anglicky
 pojmenované strojové skupiny. Ta jeho jsou někde mezi nimi. Stránka nemá ani
 hledání, ani řazení, ani stránkování (rošt je virtualizovaný a scrolluje 16 232 px).
 
@@ -448,7 +448,7 @@ hledání, ani řazení, ani stránkování (rošt je virtualizovaný a scrolluj
 **Návrh.**
 1. Rozdělit stránku na sekce nebo záložky podle `type`: **Moje alba** (`album`,
    výchozí) · **Podle měsíce** (`folder`) · **Momenty** · **Místa**. Uživatel pak
-   ve výchozím pohledu vidí 166 alb, ne 438.
+   ve výchozím pohledu vidí ~170 alb, ne ~440.
 2. Přidat nad rošt **pole pro hledání v názvech** a přepínač řazení (název / počet
    fotek / datum).
 3. Automatická alba pojmenovat česky (`Leden 2026`) — název skládá import, není to
@@ -483,12 +483,12 @@ Je to práce na straně dat a importu, ne na `AlbumsPage`.
 ---
 
 <a id="n8"></a>
-### N8 — `/people`: 105 osob bez hledání, a 125 Mpx stažených na 72 čtverečků 🔴 🟡
+### N8 — `/people`: ~100 osob bez hledání, a 125 Mpx stažených na 72 čtverečků 🔴 🟡
 
 **Co se stalo.** Dvě věci najednou.
 
-*Za prvé:* stránka Lidé vykreslí **105 osob** jako abecední rošt a nemá **žádné
-ovládání** — po nadpisu „Lidé" následuje rovnou 105 odkazů. Žádné hledání podle
+*Za prvé:* stránka Lidé vykreslí **~100 osob** jako abecední rošt a nemá **žádné
+ovládání** — po nadpisu „Lidé" následuje rovnou ~100 odkazů. Žádné hledání podle
 jména, žádné řazení podle počtu fotek, žádné rozdělení na lidi a zvířata. Na
 telefonu jsou to dvě osoby na řádek, tedy zhruba 53 řádků scrollování. Řadí se
 podle křestního jména, takže „najdi babičku" znamená vzpomenout si na její jméno a
@@ -593,7 +593,7 @@ Zároveň se na fotce vykreslují **jmenovky pod rámečky a ty se navzájem př
 u dvou sousedních lidí ležela jedna jmenovka přes druhou a přes rámeček třetího.
 U pěti obličejů je to nepříjemné; u skupinové fotky s patnácti je to nečitelná
 hromada — a takových je v knihovně dost: dotaz `faces:3 face:new` (tři a víc
-obličejů, aspoň jeden nepojmenovaný) vrací **2 937 fotek**.
+obličejů, aspoň jeden nepojmenovaný) vrací **~3 000 fotek**.
 
 Zajímavé je, že panel **Informace** na téže fotce zobrazuje osoby jako štítky
 **s malým kulatým výřezem obličeje** — přesně to, co panel obličejů potřebuje a nemá.
@@ -618,11 +618,11 @@ seznamu s obličejem, práce se zpomalí a roste riziko, že někdo pojmenuje š
 ---
 
 <a id="n10"></a>
-### N10 — `/labels`: 113 štítků jako svislý seznam bez hledání a řazení 🟡 ⚪
+### N10 — `/labels`: ~110 štítků jako svislý seznam bez hledání a řazení 🟡 ⚪
 
-**Co se stalo.** Stránka Štítky vypíše **113 štítků** jako jeden sloupec plných
+**Co se stalo.** Stránka Štítky vypíše **~110 štítků** jako jeden sloupec plných
 řádků: každý řádek zabírá celou šířku 1 106 px, aby nesl jedno slovo a číslo.
-Dokument má **5 730 px**. Stránka nemá **žádné ovládání** — jen nadpis a 113 odkazů.
+Dokument má **5 730 px**. Stránka nemá **žádné ovládání** — jen nadpis a ~110 odkazů.
 
 Řadí se abecedně, takže začátek vypadá takhle:
 
@@ -641,14 +641,14 @@ co za tím tlačítkem je, tomu neodpovídá.
 
 **Návrh.**
 1. Zobrazit štítky jako **mrak pilulek** (`badge`/`chip`) v obtékajícím layoutu, ne
-   jako sloupec plných řádků — 113 štítků se pak vejde na jednu až dvě obrazovky.
+   jako sloupec plných řádků — ~110 štítků se pak vejde na jednu až dvě obrazovky.
 2. Přidat **pole pro hledání** a řazení *podle počtu fotek* (výchozí) / *abecedně*.
 3. Volitelně: štítky s číselným vzorem (`Dum\d+`) seskupit pod jednu rozbalovací
    položku, aby nezaplavovaly seznam.
 4. Zvážit výměnu slotu ve spodní liště — viz [N3](#n3).
 
 `UX_AUDIT.md` už u tohohle konstatuje nekonzistenci „Alba = rošt karet vs. Štítky =
-seznam"; při 113 položkách to ale není kosmetika, ale skutečná cena za nalezení
+seznam"; při ~110 položkách to ale není kosmetika, ale skutečná cena za nalezení
 štítku.
 
 **Kde to je.** `web/src/pages/LabelsPage.tsx`.
@@ -978,7 +978,7 @@ schopnosti zavřít. Bez toho hlásila zásuvka *nepravdivou nulu*:
 `useWindowedPhotos` resetuje `total` na 0, jakmile se dotaz změní, takže každé
 přefiltrování problesklo jako „Žádné fotky". Naměřeno na nasazeném sestavení
 (393 × 852): napsat do rychlého filtru „svatba" vede počet přes „Počet fotek:
-20664" → „0" → „146"; totéž psaní jde teď „436" → „Počítám fotky…" → odpověď,
+20000" → „0" → „146"; totéž psaní jde teď „436" → „Počítám fotky…" → odpověď,
 bez jediného špatného čísla mezi tím. A obě volnotextová pole — rychlý filtr
 a **Fotoaparát** — píší do adresy až po pauze (`useDebouncedText`, 300 ms),
 takže napsané slovo je jeden dotaz místo jednoho na písmeno: na nasazeném
@@ -1076,7 +1076,7 @@ sbírky **hlavní** osa vyhledávání a základní ovladač na ní neumí to, c
 **Co se stalo.** Na telefonu (393 × 852) začíná první fotka v knihovně na
 **`y = 350 px`**. Nad ní je: horní lišta (49 px) → nadpis „Knihovna" + tlačítka
 Promítání a Uložit pohled → vyhledávací pole → řazení → ovladač hustoty + Filtry →
-nápověda „Filtruje název a popis." → „Počet fotek: 20637". Se spodní lištou (54 px)
+nápověda „Filtruje název a popis." → „Počet fotek: 20000". Se spodní lištou (54 px)
 zbývá na fotky **448 px, tedy 53 % obrazovky**, na hlavní obrazovce galerie.
 
 Zároveň má `.kukatko-timeline` na mobilu `display: none`. Časová osa — jediné
@@ -1207,18 +1207,18 @@ změny není.
 
 **Co se stalo.** Stránka Statistiky (dostupná **každému uživateli**, ne jen adminům)
 má pět karet. Jedna z nich se jmenuje **„EMBEDDINGY"** a její řádky znějí
-„Embeddingů celkem 20 664", „Fotek s embeddingem 20 664", „Fotek bez embeddingu 242".
-Karta „Lidé a zvířata" ukazuje „Nepojmenovaných obličejů **16 585**" žlutě
+„Embeddingů celkem 20 000", „Fotek s embeddingem 20 000", „Fotek bez embeddingu 242".
+Karta „Lidé a zvířata" ukazuje „Nepojmenovaných obličejů **16 500**" žlutě
 zvýrazněné — a **nikam neodkazuje**. Na celé stránce není jediný odkaz do aplikace.
 
 **Proč to vadí.** „Embedding" nemá v rozhraní pro rodinu co dělat; `UX_AUDIT.md` ho
 uvádí v inventáři žargonu, ale jen mezi administrátorskými stránkami — tady je na
-stránce pro všechny. A žluté číslo „16 585 nepojmenovaných obličejů" je vlastně
+stránce pro všechny. A žluté číslo „16 500 nepojmenovaných obličejů" je vlastně
 výzva k akci, po které nenásleduje žádná akce.
 
 **Návrh.**
 1. Kartu přejmenovat na něco jako **„Vyhledávání podle obsahu"** a řádky přeložit
-   („Připraveno k hledání podle obsahu 20 664 fotek · Zbývá zpracovat 242").
+   („Připraveno k hledání podle obsahu 20 000 fotek · Zbývá zpracovat 242").
 2. Ze zvýrazněných čísel udělat **odkazy**: nepojmenované obličeje → `/review`,
    fotky bez obličeje → knihovna s `faces:0`, koš → `/trash`.
 3. Rolím bez práva zápisu odkaz na `/review` nezobrazovat (viz [N13](#n13)).
@@ -1228,7 +1228,7 @@ výzva k akci, po které nenásleduje žádná akce.
 
 **✅ Vyřešeno (8. 8. 2026).** Slovo „embedding" ze stránky zmizelo — karta se
 jmenuje **„Vyhledávání podle obsahu"** a říká, co z toho uživatel má:
-v čele **„Fotek připravených k hledání podle obsahu 20 664"**, pod tím jediný
+v čele **„Fotek připravených k hledání podle obsahu 20 000"**, pod tím jediný
 řádek **„Zbývá zpracovat 242"**. Zrušený řádek nic neubral: `embeddings` (počet
 řádků v tabulce) a `photos_with_embedding` jsou v `internal/system/store.go`
 totéž číslo, `embeddings` má `photo_uid` jako primární klíč. Čísla se počítají
@@ -1240,7 +1240,7 @@ je běžný pohled knihovny, který jde dál filtrovat i uložit), **nepojmenova
 obličeje** → `/review`. Odkaz je `Link` s třídami `text-reset
 text-decoration-underline` — podědí barvu řádku (zvýrazněná mezera zůstane
 žlutá) a přibere podtržení, aby byl poznat; přístupné jméno je cíl, ne číslo
-(„16 585" samo o sobě neříká nic). Obě zapisovací cesty jsou podmíněné
+(„16 500" samo o sobě neříká nic). Obě zapisovací cesty jsou podmíněné
 `useAuth().canWrite`: prohlížející uživatel vidí prosté číslo, ne odkaz, který by
 ho odmítl ([N13](#n13)). Odkaz do knihovny zůstává všem.
 
@@ -1255,10 +1255,10 @@ ho odmítl ([N13](#n13)). Odkaz do knihovny zůstává všem.
    tmavého rozhraní. Přechod z tmavé stránky na svítící mapu je na velké ploše
    nepříjemný, na mobilu obzvlášť. Přepínače „Turistická" a „Letecká" mají navíc
    v neaktivním stavu nízký kontrast (tmavě modrá na tmavé).
-2. **Pokrytí:** „Fotek na mapě: 2 378" z 20 906, tedy **11 %**. Stránka to nijak
+2. **Pokrytí:** „Fotek na mapě: 2 400" z 20 000, tedy **11 %**. Stránka to nijak
    nevysvětluje ani nenabízí, co s tím. (Doplnění polohy přitom v projektu existuje
    — `internal/geoestimate`.)
-3. **`/places`** má pro tuhle knihovnu **jediný řádek**: „Česko — 2 351 fotek".
+3. **`/places`** má pro tuhle knihovnu **jediný řádek**: „Česko — 2 400 fotek".
    Teprve po kliknutí se objeví seznam obcí (setříděný podle počtu, breadcrumb
    funguje). Řádky nemají žádné náhledy — místa v galerii bez jediné fotky.
 
@@ -1273,7 +1273,7 @@ uživatele je to dvakrát zklamání a zároveň dvě položky menu, které mu n
 2. Na `/places` dát ke každé zemi/obci **náhled** (nejlepší fotka místa) — je to
    fotogalerie.
 3. Když má zem jen jednu položku, přeskočit úroveň a rovnou ukázat obce.
-4. Na mapě zmínit pokrytí lidsky („Na mapě je 2 378 z 20 906 fotek — u ostatních
+4. Na mapě zmínit pokrytí lidsky („Na mapě je 2 400 z 20 000 fotek — u ostatních
    není uložená poloha.") a nabídnout odkaz na doplnění polohy (pro role, které to
    smí).
 
@@ -1299,7 +1299,7 @@ Mapa taky **řekne, za kolik knihovny mluví**. Feed `GET /map/photos` nese ciz�
 člen `coverage:{located,total}` (RFC 7946 §6.1 je povoluje) — vykreslené
 značky proti jednomu `Count` nad **týmiž** filtry s vypnutou podmínkou na GPS.
 Počítá to server, protože přesnou sadu filtrů zná jen on. Pod filtry pak stojí
-věta „Na mapě je 2 378 z 20 906 fotek — u ostatních není uložená poloha." a pro
+věta „Na mapě je 2 400 z 20 000 fotek — u ostatních není uložená poloha." a pro
 role s právem zápisu odkaz **„Doplnit polohu"** do knihovny s `has_gps=false` —
 tedy tam, kde se poloha nastavuje ([N13](#n13): prohlížející vidí stejné číslo,
 ale ne odkaz na stránku, kde by nic nezmohl). Odkaz, ne tlačítko: hromadný odhad
@@ -1326,7 +1326,7 @@ město se nikdy nedohledalo, a ty vlastní řádek nemají, takže pouhé
 <a id="n24"></a>
 ### N24 — Detail alba nemá časovou osu ani popis ⚪ ⚪
 
-**Co se stalo.** Otevřel jsem album se **781 fotkami** a rozsahem **1910–2026**.
+**Co se stalo.** Otevřel jsem album se **~800 fotkami** a rozsahem **1910–2026**.
 Stránka má nadpis, tlačítka Promítání a Stáhnout ZIP, filtrovací pole a mřížku.
 Nemá **časovou osu** (knihovna ji má) a nemá ani **přepínač řazení**. Pole
 `description` v odpovědi API existuje, ale na stránce alba se nikde nevypisuje —
@@ -1376,9 +1376,9 @@ hledání už tak neběží.
 (rozměry, velikost, formát, datum) také:
 
 - „Formát: JPEG" **a zároveň** „Kodek obrazu: jpeg" — dvakrát totéž,
-- „Otisk (SHA256): 414a4fc8c2b2…",
-- sekci **PŮVOD** s řádkem „Zdrojové UID: pt8qxy9y3nuwqef2",
-- v panelu Informace pod mapkou surové souřadnice „49.39322, 16.70869".
+- „Otisk (SHA256): 0a1b2c3d4e5f…",
+- sekci **PŮVOD** s řádkem „Zdrojové UID: pt000000example",
+- v panelu Informace pod mapkou surové souřadnice „50.07550, 14.43780".
 
 **Proč to vadí.** Nic z toho uživatel nepoužije a všechno to zvyšuje pocit, že je
 aplikace pro techniky. `UX_AUDIT.md` má „raw file paths / UIDs" jako nález na
@@ -1412,7 +1412,7 @@ Aby byl obrázek úplný — tohle jsem při používání ocenil a nemá smysl 
 - **Prázdné stavy.** „Nenalezeny žádné fotky" vypíše aktivní filtry a nabídne
   „Zrušit všechny filtry"; „Zatím žádná uložená hledání" vysvětlí, k čemu jsou.
 - **`/help`** je věcná, česká a dobře členěná (výhrady v [N17](#n17)).
-- **Formátování čísel a jednotek** — „20 906", „531,4 KB", „1,7 Mpx", „1,65 : 1",
+- **Formátování čísel a jednotek** — „20 000", „531,4 KB", „1,7 Mpx", „1,65 : 1",
   odznáček „cca" u nejistého data.
 - **Dotykové cíle.** V nasazeném CSS je sedm pravidel `@media (pointer: coarse)`;
   globální podlaha ze `UX_AUDIT.md` je opravdu v produkci.

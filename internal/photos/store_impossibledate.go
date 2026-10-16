@@ -16,7 +16,7 @@ type ImpossibleDate struct {
 	// UID is the affected photo's uid.
 	UID string `json:"uid"`
 	// FileName is the original's file name, which is usually the culprit: a
-	// download named after an asset id (90090310_638783213372240_…) reads as a
+	// download named after an asset id (90090310_100000000000001_…) reads as a
 	// date, and the filename fallback believed it.
 	FileName string `json:"file_name"`
 	// TakenAt is the impossible capture date currently recorded, in UTC.

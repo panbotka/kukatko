@@ -186,7 +186,7 @@ type Report struct {
 	// ImpossibleDates are photos whose recorded capture date is a year no
 	// photograph can have been taken in — before 1826 or further ahead than next
 	// year. They come from the file-name date fallback believing a long digit run
-	// that is really an asset id (90090310_638783213372240_… reads as 9009-03-10);
+	// that is really an asset id (90090310_100000000000001_… reads as 9009-03-10);
 	// the fallback is guarded now, but rows dated before that guard existed keep
 	// their date, and one of them sorts ahead of the whole library and stretches
 	// the year axis to meet it. Listing them is the dry run of

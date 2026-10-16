@@ -12,8 +12,8 @@ Answers `200` with `text` (blocks joined by newlines, reading order), `blocks[]`
 `model`. A photo with no text is a normal `200` with an empty result, not an error. Latin
 model, Czech diacritics included. `/health` reports an `ocr` section.
 
-Try it by hand: `/tmp/ocr-test.sh <file|URL> [min_confidence]`, `OCR_API` defaults to the
-box at `http://100.127.79.1:8000` (wake it with `boxon`; it is often offline).
+Try it by hand: a small script `ocr-test.sh <file|URL> [min_confidence]`, `OCR_API` pointing at the
+box at `http://<box>:8000` (wake it first; it is often offline).
 
 ## Requirements
 

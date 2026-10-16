@@ -10,6 +10,6 @@ UI/UX review finding #31 (2026-10-11). `/account` (Můj účet) renders its card
 
 ## Scope and verification
 - UI only.
-- Reference screenshots: `/mnt/nas-botka/kukatko/uiux-review-2026-10-11/shots/d-account.png`, `d-settings.png`, `d-help.png`.
+- Reference screenshots: `<path>/kukatko/uiux-review-2026-10-11/shots/d-account.png`, `d-settings.png`, `d-help.png`.
 - Check at 1440px and 1024px.
 - Finish per CLAUDE.md Definition of Done (docs/FRONTEND.md, `make check-box`, commit, push).

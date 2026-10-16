@@ -169,7 +169,7 @@ export function parseCoordinates(input: string): CoordinateParseResult {
  * after the marker moves, e.g. `49.123400, 16.567800`.
  *
  * This is a display format and it is lossy: six decimals are ~10 cm on the ground,
- * but a stored `16.7083583333333` comes back as `16.708358`. Never round-trip the
+ * but a stored `16.5678123456789` comes back as `16.567812`. Never round-trip the
  * result into a PATCH for a coordinate the user did not touch — the metadata form
  * therefore omits an unchanged coordinate from its payload entirely.
  */

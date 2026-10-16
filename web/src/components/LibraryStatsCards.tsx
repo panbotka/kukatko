@@ -44,7 +44,7 @@ interface StatLink {
   /** Route the number links to. */
   to: string
   /**
-   * Accessible name of the link. The formatted number alone ("16 585") names
+   * Accessible name of the link. The formatted number alone ("12 345") names
    * nothing, so the destination is spelled out for the title and aria-label.
    */
   labelKey: ParseKeys
@@ -231,7 +231,7 @@ function groupsFor(stats: LibraryStats): StatGroup[] {
  * One count, rendered as a link when the row leads somewhere the current role
  * may actually go. The link inherits the row's colour (`text-reset`) so a
  * highlighted gap stays highlighted, and keeps an underline so it still reads as
- * a link; its accessible name is the destination, because a link named "16 585"
+ * a link; its accessible name is the destination, because a link named "12 345"
  * tells a screen-reader user nothing.
  */
 function StatValue({ row, allowed }: { row: StatRow; allowed: Record<StatGate, boolean> }) {

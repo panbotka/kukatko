@@ -94,15 +94,15 @@ func seedVillage(t *testing.T, fam *family.Store, ppl *people.Store, db *databas
 	t.Helper()
 	ctx := context.Background()
 	v := village{
-		bohumil: makeSubject(t, ppl, "Bohumil Nečas"),
-		marie:   makeSubject(t, ppl, "Marie Nečasová"),
-		josef:   makeSubject(t, ppl, "Josef Nečas"),
-		ludmila: makeSubject(t, ppl, "Ludmila Nečasová"),
-		anna:    makeSubject(t, ppl, "Anna Skotáková"),
-		karel:   makeSubject(t, ppl, "Karel Skoták"),
-		petr:    makeSubject(t, ppl, "Petr Nečas"),
-		eva:     makeSubject(t, ppl, "Eva Skotáková"),
-		jan:     makeSubject(t, ppl, "Jan Nečas"),
+		bohumil: makeSubject(t, ppl, "Bohumil Nedvěd"),
+		marie:   makeSubject(t, ppl, "Marie Nedvědová"),
+		josef:   makeSubject(t, ppl, "Josef Nedvěd"),
+		ludmila: makeSubject(t, ppl, "Ludmila Nedvědová"),
+		anna:    makeSubject(t, ppl, "Anna Skopalová"),
+		karel:   makeSubject(t, ppl, "Karel Skopal"),
+		petr:    makeSubject(t, ppl, "Petr Nedvěd"),
+		eva:     makeSubject(t, ppl, "Eva Skopalová"),
+		jan:     makeSubject(t, ppl, "Jan Nedvěd"),
 		actor:   makeUser(t, db, "usfamily0000000000000001", "genealogist"),
 	}
 	v.familyOfChildren = map[string]string{}

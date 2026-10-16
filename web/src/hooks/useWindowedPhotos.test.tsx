@@ -14,8 +14,8 @@ vi.mock('../services/photos', () => ({
 const { fetchPhotos } = await import('../services/photos')
 const fetchMock = vi.mocked(fetchPhotos)
 
-/** The production library's order of magnitude: 20 889 photos, ~209 pages. */
-const HUGE = 20889
+/** The production library's order of magnitude: ~20k photos, ~209 pages. */
+const HUGE = 20850
 
 /** Builds a minimal photo with the given uid. */
 function photo(uid: string): Photo {

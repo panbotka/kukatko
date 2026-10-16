@@ -13,7 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
-// The geometry of the photo the bug report measured: `phqale6fftf3a3v5tn17vtfd3d`
+// The geometry of the photo the bug report measured: `phfake0uid0for0tests000003`
 // is stored 3000 × 4000 with EXIF orientation 6 while its original is really
 // 4000 × 3000, so the display frame is 3000 × 4000 and the raw one 4000 × 3000.
 // The photos half of `repair --dimensions` has already written the raw pair onto

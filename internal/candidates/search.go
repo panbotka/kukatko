@@ -69,7 +69,7 @@ func (s *Service) search(
 // perExemplarLimit is how many neighbours one exemplar's kNN may return, and it is
 // the second half of what made this search affordable — the first being the partial
 // index of migration 0047. Every extra neighbour is paid for once per exemplar: on a
-// 50 410-face library the same query costs 10 ms at 100 neighbours and 41 ms at
+// ~50k-face library the same query costs 10 ms at 100 neighbours and 41 ms at
 // 1000, and the subject that prompted this work has 428 exemplars.
 //
 // A lone exemplar carries the whole answer by itself, so it is given the configured
@@ -85,7 +85,7 @@ func (s *Service) search(
 // a proof, so it is measured rather than asserted: TestFind_perExemplarCapCostsNoMatchesDB
 // builds the shape in which the cap could bite and requires the bounded search to
 // return exactly what an unbounded one does, and the same comparison run against the
-// 50 410-face benchmark library — both when the subject has 32 unnamed matches and
+// ~50k-face benchmark library — both when the subject has 32 unnamed matches and
 // when it has 632 — returned identical candidate sets in identical order.
 func (s *Service) perExemplarLimit(exemplarCount int) int {
 	if exemplarCount <= 1 {

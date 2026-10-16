@@ -1,8 +1,8 @@
 package review
 
 // The bounded-work tests. GET /review/queue used to run the whole recognition
-// sweep inside the request — on the production library (105 named subjects,
-// 113 628 faces) that was 250 s, so the page never opened. The regression these
+// sweep inside the request — on the production library (~100 named subjects,
+// ~110k faces) that was 250 s, so the page never opened. The regression these
 // tests guard is structural, not temporal: the work behind one queue rebuild
 // must not grow with the number of named subjects. A wall-clock assertion would
 // be flaky on a shared machine; a query count is exact.
@@ -24,8 +24,8 @@ import (
 	"github.com/panbotka/kukatko/internal/sweep"
 )
 
-// exemplarsPerSubject is the production library's ratio: 113 628 faces spread
-// over 105 named subjects is roughly 240 exemplar kNN queries per subject, each
+// exemplarsPerSubject is the production library's ratio: ~110k faces spread
+// over ~100 named subjects is roughly 240 exemplar kNN queries per subject, each
 // measured at ~40 ms against the real HNSW index.
 const exemplarsPerSubject = 240
 

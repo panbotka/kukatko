@@ -24,15 +24,15 @@ func fullDocument() Document {
 		Subjects: []Subject{
 			{
 				UID:       "sbj000000001",
-				Slug:      "bohumil-necas-st",
-				Name:      "Bohumil Nečas st.",
+				Slug:      "bohumil-nedved-st",
+				Name:      "Bohumil Nedvěd st.",
 				Nickname:  "Bohuš",
 				Type:      "person",
 				BirthYear: new(1901),
 				DeathYear: new(1978),
 			},
-			{UID: "sbj000000002", Slug: "marie-necasova", Name: "Marie Nečasová", Type: "person"},
-			{UID: "sbj000000003", Slug: "bohumil-necas-ml", Name: "Bohumil Nečas ml.", Type: "person"},
+			{UID: "sbj000000002", Slug: "marie-nedvedova", Name: "Marie Nedvědová", Type: "person"},
+			{UID: "sbj000000003", Slug: "bohumil-nedved-ml", Name: "Bohumil Nedvěd ml.", Type: "person"},
 		},
 		Families: []Family{{
 			UID:      "fam000000001",
@@ -40,7 +40,7 @@ func fullDocument() Document {
 			Kind:     "marriage",
 			FromYear: new(1925),
 			ToYear:   new(1978),
-			Note:     "svatba ve Vavřinci",
+			Note:     "svatba na faře",
 			Children: []Child{{SubjectUID: "sbj000000003", Kind: "birth"}},
 		}},
 	}

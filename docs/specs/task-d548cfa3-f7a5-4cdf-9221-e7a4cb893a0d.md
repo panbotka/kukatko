@@ -28,10 +28,10 @@ Depends on the serving task, which exposes the endpoints and the payload field t
 ## Implementation notes
 
 - Import the light build; the full one carries DRM and subtitle handling this app has no use for.
-- Cross-origin reads from the media CDN are **already live** — kozaktomas/infra#33 was merged and
-  applied on 2026-09-08 and verified against production: `photos-cdn.kotrzina.cz` grants
-  `access-control-allow-origin` to both `https://fotky.kotrzina.cz` and
-  `https://kukatko.kotrzina.cz`, answers preflight with 204, and carries the grant on rejections
+- Cross-origin reads from the media CDN are **already live** — the CORS change in the private infra repo was merged and
+  applied on 2026-09-08 and verified against production: `media.example.org` grants
+  `access-control-allow-origin` to both live app origins (`https://photos.example.org` and
+  its second hostname), answers preflight with 204, and carries the grant on rejections
   too. Nothing on the CDN side blocks this task.
 - Verifying this for real needs a browser against a running instance rather than jsdom; the
   virtualised-grid and viewer work in this repo has established how to do that.

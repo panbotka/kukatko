@@ -131,7 +131,7 @@ func TestImportRuns_servesFolderAndMigrationHistory(t *testing.T) {
 	}
 	watermark := time.Date(2026, 8, 5, 0, 0, 0, 0, time.UTC)
 	if err := env.runs.Complete(ctx, migration.ID, &watermark,
-		importer.Counts{Imported: 20647, Deduplicated: 13}); err != nil {
+		importer.Counts{Imported: 20400, Deduplicated: 13}); err != nil {
 		t.Fatalf("complete migration run: %v", err)
 	}
 

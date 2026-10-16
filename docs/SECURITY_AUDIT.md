@@ -500,7 +500,7 @@ Everything else below is open as written.
   tests in `ingest`, `thumb`, `thumbjob`, `facejob` and `userpic`.
 - **Not addressed here:** the budget bounds *live* bytes; resident memory runs ~1.2–1.5× it by Go's GC
   slack. The container memory limit proposed in `docs/PERF.md` and a `GOMEMLIMIT` are deployment changes in
-  the `vps` repo and are still not applied. `thumb.max_pixels` is unchanged (200 MP): the byte budget now
+  the deployment repo and are still not applied. `thumb.max_pixels` is unchanged (200 MP): the byte budget now
   prices bit depth, and lowering the cap would refuse real panoramas. HEIC/RAW/video conversions run in
   external processes (`heif-convert`, `exiftool`, `ffmpeg`) and are outside the in-process budget.
 

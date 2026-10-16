@@ -10,37 +10,37 @@ import (
 )
 
 // The production fixture this whole feature exists for: photo
-// ph9a09ujh1p4qfalm4eigm4h7a, where faces 6 and 7 both claimed marker
-// mt8kfg7wih6tp99t and "Tomáš Kozák" was therefore rendered twice. Face 7 overlaps
+// ph0000000000000000example1, where faces 6 and 7 both claimed marker
+// mt000000example2 and "Jan Novák" was therefore rendered twice. Face 7 overlaps
 // the marker by ~0.80 and face 6 by ~0.16 — both clear the 0.1 threshold, which is
 // exactly why per-face matching handed the marker to each of them in turn.
 const (
-	tomasMarker   = "mt8kfg7wih6tp99t"
-	unnamedMarker = "mt8kfg7wbumuzse5"
+	janMarker     = "mt000000example2"
+	unnamedMarker = "mt000000example1"
 )
 
-// tomasPhoto returns the two detected faces and two markers of the production
+// janPhoto returns the two detected faces and two markers of the production
 // fixture, with the faces' cached links already pointing at the duplicated marker
 // the way the database holds them.
-func tomasPhoto(subjectUID string) ([]vectors.Face, []people.Marker) {
-	marker := tomasMarker
+func janPhoto(subjectUID string) ([]vectors.Face, []people.Marker) {
+	marker := janMarker
 	faces := []vectors.Face{
 		{
-			PhotoUID: "ph9a09ujh1p4qfalm4eigm4h7a", FaceIndex: 6, DetScore: 0.663,
+			PhotoUID: "ph0000000000000000example1", FaceIndex: 6, DetScore: 0.663,
 			BBox: [4]float64{0.3489, 0.2873, 0.0464, 0.1067}, MarkerUID: &marker, SubjectUID: &subjectUID,
 		},
 		{
-			PhotoUID: "ph9a09ujh1p4qfalm4eigm4h7a", FaceIndex: 7, DetScore: 0.588,
+			PhotoUID: "ph0000000000000000example1", FaceIndex: 7, DetScore: 0.588,
 			BBox: [4]float64{0.2965, 0.3217, 0.0755, 0.1227}, MarkerUID: &marker, SubjectUID: &subjectUID,
 		},
 	}
 	markers := []people.Marker{
 		{
-			UID: tomasMarker, PhotoUID: "ph9a09ujh1p4qfalm4eigm4h7a", Type: people.MarkerFace,
+			UID: janMarker, PhotoUID: "ph0000000000000000example1", Type: people.MarkerFace,
 			X: 0.2889, Y: 0.3241, W: 0.0917, H: 0.1222, Reviewed: true, SubjectUID: &subjectUID,
 		},
 		{
-			UID: unnamedMarker, PhotoUID: "ph9a09ujh1p4qfalm4eigm4h7a", Type: people.MarkerFace,
+			UID: unnamedMarker, PhotoUID: "ph0000000000000000example1", Type: people.MarkerFace,
 			X: 0.4019, Y: 0.3121, W: 0.0430, H: 0.0783,
 		},
 	}
@@ -51,17 +51,17 @@ func tomasPhoto(subjectUID string) ([]vectors.Face, []people.Marker) {
 // leave it with the closer one only — the production duplicate.
 func TestMatchMarkers_oneMarkerOneFace(t *testing.T) {
 	t.Parallel()
-	faces, markers := tomasPhoto("su_tomas")
+	faces, markers := janPhoto("su_jan")
 
 	matched := matchMarkers(faces, markers, DefaultIoUThreshold)
 
-	if got, ok := matched[7]; !ok || got.MarkerUID != tomasMarker {
-		t.Errorf("face 7 matched %+v, want %s (the higher IoU)", got, tomasMarker)
+	if got, ok := matched[7]; !ok || got.MarkerUID != janMarker {
+		t.Errorf("face 7 matched %+v, want %s (the higher IoU)", got, janMarker)
 	}
 	if got, ok := matched[6]; ok {
 		t.Errorf("face 6 matched %+v, want no marker (face 7 claimed it)", got)
 	}
-	if got := matched.claims()[tomasMarker]; got != 7 {
+	if got := matched.claims()[janMarker]; got != 7 {
 		t.Errorf("marker claimed by face %d, want 7", got)
 	}
 }
@@ -200,16 +200,16 @@ func TestPhotoFaces_exclusiveMarkerPerFace(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	subjUID := "su_tomas"
-	faces, markers := tomasPhoto(subjUID)
+	subjUID := "su_jan"
+	faces, markers := janPhoto(subjUID)
 	ff := &fakeFaces{list: faces}
 	pe := &fakePeople{
 		markers:       markers,
-		subjectsByUID: map[string]people.Subject{subjUID: {UID: subjUID, Name: "Tomáš Kozák"}},
+		subjectsByUID: map[string]people.Subject{subjUID: {UID: subjUID, Name: "Jan Novák"}},
 	}
 	svc := newService(&fakePhotos{}, ff, pe)
 
-	resp, err := svc.PhotoFaces(ctx, testProject, "ph9a09ujh1p4qfalm4eigm4h7a")
+	resp, err := svc.PhotoFaces(ctx, testProject, "ph0000000000000000example1")
 	if err != nil {
 		t.Fatalf("PhotoFaces: %v", err)
 	}
@@ -221,14 +221,14 @@ func TestPhotoFaces_exclusiveMarkerPerFace(t *testing.T) {
 		}
 	}
 	if named != 1 {
-		t.Errorf("%d views name Tomáš Kozák, want exactly 1 (%+v)", named, resp.Faces)
+		t.Errorf("%d views name Jan Novák, want exactly 1 (%+v)", named, resp.Faces)
 	}
 	byIndex := make(map[int]FaceView, len(resp.Faces))
 	for _, view := range resp.Faces {
 		byIndex[view.FaceIndex] = view
 	}
-	if got := byIndex[7]; got.MarkerUID != tomasMarker || got.Action != ActionAlreadyDone {
-		t.Errorf("face 7 = %+v, want already_done on %s", got, tomasMarker)
+	if got := byIndex[7]; got.MarkerUID != janMarker || got.Action != ActionAlreadyDone {
+		t.Errorf("face 7 = %+v, want already_done on %s", got, janMarker)
 	}
 	if got := byIndex[6]; got.MarkerUID != "" || got.SubjectUID != "" || got.Action != ActionCreateMarker {
 		t.Errorf("face 6 = %+v, want an unnamed face offered a new marker", got)
@@ -250,11 +250,11 @@ func TestClearSurplusLinks(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	faces, markers := tomasPhoto("su_tomas")
+	faces, markers := janPhoto("su_jan")
 	ff := &fakeFaces{list: faces}
 	svc := newService(&fakePhotos{}, ff, &fakePeople{markers: markers})
 
-	cleared, err := svc.ClearSurplusLinks(ctx, "ph9a09ujh1p4qfalm4eigm4h7a")
+	cleared, err := svc.ClearSurplusLinks(ctx, "ph0000000000000000example1")
 	if err != nil {
 		t.Fatalf("ClearSurplusLinks: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestClearSurplusLinks(t *testing.T) {
 	// Re-running over the repaired rows is a no-op.
 	faces[0].MarkerUID, faces[0].SubjectUID = nil, nil
 	ff.updates = 0
-	if cleared, err = svc.ClearSurplusLinks(ctx, "ph9a09ujh1p4qfalm4eigm4h7a"); err != nil {
+	if cleared, err = svc.ClearSurplusLinks(ctx, "ph0000000000000000example1"); err != nil {
 		t.Fatalf("ClearSurplusLinks re-run: %v", err)
 	}
 	if cleared != 0 || ff.updates != 0 {

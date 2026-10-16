@@ -74,8 +74,8 @@ function photo(overrides: Partial<Photo> = {}): Photo {
 }
 
 /** Well-formed ids the direct-hit cases paste into the palette. */
-const PHOTO_UID = 'ph7lpul2io09bcg2rvp2rljsr6'
-const MARKER_UID = 'mk7lpul2io09bcg2rvp2rljsr6'
+const PHOTO_UID = 'ph00000000000000000000beef'
+const MARKER_UID = 'mk00000000000000000000beef'
 
 const RESULT: GlobalSearchResult = {
   query: 'beach',

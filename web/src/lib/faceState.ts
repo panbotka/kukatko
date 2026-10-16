@@ -32,7 +32,7 @@ export function isNamed(face: FaceView): boolean {
  * The faces payload carries this without a dedicated field: `facematch` lists the
  * photo's stored faces under their own per-photo slot and then appends the markers
  * that matched none of them under *descending negative* indexes, so a negative
- * `face_index` is exactly "a marker with no face row behind it" (144 of them in
+ * `face_index` is exactly "a marker with no face row behind it" (over a hundred of them in
  * production). Such a face is nameable by hand, but no similarity search will ever
  * surface it, the sweep cannot suggest it, and naming it teaches the recogniser
  * nothing.

@@ -21,17 +21,17 @@ func sampleSnapshot() LibrarySnapshot {
 				PhotosByMediaType: map[string]int{"image": 20_500, "video": 380, "live": 9},
 				PhotosArchived:    42,
 				PhotosProcessed: map[string]int{
-					StageEmbedding: 20_647, StageFaces: 9_800, StagePlaces: 4_010,
+					StageEmbedding: 20_400, StageFaces: 9_800, StagePlaces: 4_010,
 				},
 				PhotosPending: map[string]int{
-					StageEmbedding: 242, StageFaces: 11_089, StagePlaces: 130,
+					StageEmbedding: 240, StageFaces: 11_000, StagePlaces: 130,
 				},
-				Embeddings:             20_647,
-				Faces:                  115_457,
-				MarkersByState:         map[string]int{MarkerAssigned: 18_003, MarkerUnassigned: 3_164},
+				Embeddings:             20_400,
+				Faces:                  100_000,
+				MarkersByState:         map[string]int{MarkerAssigned: 18_000, MarkerUnassigned: 3_000},
 				SubjectsByType:         map[string]int{"person": 100, "pet": 4, "other": 1},
 				AlbumsByType:           map[string]int{"album": 400, "folder": 30, "month": 7},
-				Labels:                 113,
+				Labels:                 110,
 				VideosWithoutStreaming: 57,
 			},
 			"rodina": {
@@ -74,15 +74,15 @@ func TestRegisterLibrary_exportsCounts(t *testing.T) {
 		`kukatko_library_photos{media_type="image",project="rodina"} 12`,
 		`kukatko_library_photos_archived{project="v"} 42`,
 		`kukatko_library_photos_archived{project="rodina"} 0`,
-		`kukatko_library_photos_processed{project="v",stage="embedding"} 20647`,
+		`kukatko_library_photos_processed{project="v",stage="embedding"} 20400`,
 		`kukatko_library_photos_pending{project="v",stage="places"} 130`,
-		`kukatko_library_embeddings{project="v"} 20647`,
-		`kukatko_library_faces{project="v"} 115457`,
+		`kukatko_library_embeddings{project="v"} 20400`,
+		`kukatko_library_faces{project="v"} 100000`,
 		`kukatko_library_faces{project="rodina"} 3`,
-		`kukatko_library_markers{project="v",state="unassigned"} 3164`,
+		`kukatko_library_markers{project="v",state="unassigned"} 3000`,
 		`kukatko_library_subjects{project="v",type="person"} 100`,
 		`kukatko_library_albums{project="v",type="folder"} 30`,
-		`kukatko_library_labels{project="v"} 113`,
+		`kukatko_library_labels{project="v"} 110`,
 		`kukatko_library_labels{project="rodina"} 2`,
 		`kukatko_library_videos_without_streaming{project="v"} 57`,
 		`kukatko_library_collect_errors_total 0`,
@@ -206,7 +206,7 @@ func TestLibraryCollector_staleValueIsNotServed(t *testing.T) {
 
 	r := New()
 	r.reg.MustRegister(collector)
-	if body := scrape(t, r); !strings.Contains(body, `kukatko_library_faces{project="v"} 115457`) {
+	if body := scrape(t, r); !strings.Contains(body, `kukatko_library_faces{project="v"} 100000`) {
 		t.Fatalf("expected the first scrape to succeed, got:\n%s", body)
 	}
 

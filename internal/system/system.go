@@ -130,7 +130,7 @@ type Embeddings struct {
 // Every number here counts rows in the queue table, which keeps finished jobs:
 // ByType and Total are therefore lifetime tallies ("jobs ever run"), not queue
 // depth. That distinction is the whole point of ByTypeState — an `image_embed`
-// total of 41 594 against 20 930 photos says nothing about a backlog, it says a
+// total of ~40k against ~20k photos says nothing about a backlog, it says a
 // re-embedding once happened — so the breakdown is what the dashboard reads and
 // the totals are only ever shown labelled as history.
 type Jobs struct {

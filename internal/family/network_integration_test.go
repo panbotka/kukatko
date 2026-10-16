@@ -16,45 +16,45 @@ import (
 	"github.com/panbotka/kukatko/internal/project"
 )
 
-// kozaks is the production shape the network walk exists for, seeded through
+// novaks is the shape the network walk exists for, seeded through
 // the same write paths the API uses:
 //
-//	[Ludmila, Dagmar]      (a sibling group: no partners, kind unknown)
-//	Ludmila ⚭ Aleš    Dagmar
-//	      |              |
-//	    Tomáš          Petra
+//	[Marie, Hana]          (a sibling group: no partners, kind unknown)
+//	Marie ⚭ Emil      Hana
+//	      |            |
+//	     Vít          Olga
 //
-// Dagmar (an aunt) and Petra (a cousin) sit sideways from Tomáš, through a
+// Hana (an aunt) and Olga (a cousin) sit sideways from Vít, through a
 // family that names nobody as a partner: a walk only up or only down never
 // reaches them.
-type kozaks struct {
-	tomas, ludmila, ales, dagmar, petra string
-	sisters                             string
+type novaks struct {
+	vit, marie, emil, hana, olga string
+	sisters                      string
 }
 
-// seedKozaks builds the family above and returns its uids.
-func seedKozaks(t *testing.T, fam *family.Store, ppl *people.Store, db *database.DB) kozaks {
+// seedNovaks builds the family above and returns its uids.
+func seedNovaks(t *testing.T, fam *family.Store, ppl *people.Store, db *database.DB) novaks {
 	t.Helper()
 	ctx := context.Background()
 	actor := makeUser(t, db, "usfamily0000000000000020", "network-editor")
-	k := kozaks{
-		tomas:   makeSubject(t, ppl, "Tomáš Kozák"),
-		ludmila: makeSubject(t, ppl, "Ludmila Kozáková"),
-		ales:    makeSubject(t, ppl, "Aleš Kozák"),
-		dagmar:  makeSubject(t, ppl, "Dagmar Andrlíková"),
-		petra:   makeSubject(t, ppl, "Petra Houdková"),
+	k := novaks{
+		vit:   makeSubject(t, ppl, "Vít Novák"),
+		marie: makeSubject(t, ppl, "Marie Nováková"),
+		emil:  makeSubject(t, ppl, "Emil Novák"),
+		hana:  makeSubject(t, ppl, "Hana Svobodová"),
+		olga:  makeSubject(t, ppl, "Olga Dvořáková"),
 	}
 	for _, rel := range []struct{ child, parent string }{
-		{child: k.tomas, parent: k.ludmila},
-		{child: k.tomas, parent: k.ales},
-		{child: k.petra, parent: k.dagmar},
+		{child: k.vit, parent: k.marie},
+		{child: k.vit, parent: k.emil},
+		{child: k.olga, parent: k.hana},
 	} {
 		if _, err := fam.AddParentAudited(ctx, project.BootstrapUID, rel.child, rel.parent, "",
 			entryFor(actor, audit.ActionSubjectRelationAdd)); err != nil {
 			t.Fatalf("adding parent %s of %s: %v", rel.parent, rel.child, err)
 		}
 	}
-	group := addSibling(t, fam, actor, k.ludmila, k.dagmar)
+	group := addSibling(t, fam, actor, k.marie, k.hana)
 	if group.Family.PartnerA != nil || group.Family.PartnerB != nil || group.Family.Kind != family.KindUnknown {
 		t.Fatalf("sibling group = %+v, want no partners and kind unknown", group.Family)
 	}
@@ -99,21 +99,21 @@ func assertClosed(t *testing.T, tree family.Tree) {
 func TestNetwork_reachesTheAuntAndTheCousin(t *testing.T) {
 	fam, ppl, _, db := stores(t)
 	ctx := context.Background()
-	k := seedKozaks(t, fam, ppl, db)
+	k := seedNovaks(t, fam, ppl, db)
 
-	tree, err := fam.Tree(ctx, project.BootstrapUID, k.tomas)
+	tree, err := fam.Tree(ctx, project.BootstrapUID, k.vit)
 	if err != nil {
 		t.Fatalf("Tree: %v", err)
 	}
-	want := map[string]int{k.tomas: 0, k.ludmila: -1, k.ales: -1, k.dagmar: -1, k.petra: 0}
+	want := map[string]int{k.vit: 0, k.marie: -1, k.emil: -1, k.hana: -1, k.olga: 0}
 	if got := generations(t, tree.Members); !maps.Equal(got, want) {
 		t.Errorf("generations = %v, want %v", got, want)
 	}
-	if tree.Truncated || tree.Root.UID != k.tomas {
-		t.Errorf("truncated=%v root=%s, want an untruncated network from Tomáš", tree.Truncated, tree.Root.UID)
+	if tree.Truncated || tree.Root.UID != k.vit {
+		t.Errorf("truncated=%v root=%s, want an untruncated network from Vít", tree.Truncated, tree.Root.UID)
 	}
 	if len(tree.Families) != 3 {
-		t.Fatalf("families = %d, want the couple, the sibling group and Dagmar's", len(tree.Families))
+		t.Fatalf("families = %d, want the couple, the sibling group and Hana's", len(tree.Families))
 	}
 	children := map[string][]string{}
 	for _, box := range tree.Families {
@@ -187,9 +187,9 @@ func TestNetwork_aCousinMarriageIsWalkedOnceAndTheNearestWins(t *testing.T) {
 func TestNetwork_pastTheCapKeepsTheNearest(t *testing.T) {
 	fam, ppl, _, db := stores(t)
 	ctx := context.Background()
-	k := seedKozaks(t, fam, ppl, db)
+	k := seedNovaks(t, fam, ppl, db)
 
-	tree, err := fam.NetworkWithin(ctx, project.BootstrapUID, k.tomas, 4)
+	tree, err := fam.NetworkWithin(ctx, project.BootstrapUID, k.vit, 4)
 	if err != nil {
 		t.Fatalf("NetworkWithin: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestNetwork_pastTheCapKeepsTheNearest(t *testing.T) {
 		t.Errorf("truncated = %v, total = %d; want a five-person component under a cap of four "+
 			"reported truncated, with all five counted", tree.Truncated, tree.Total)
 	}
-	want := map[string]int{k.tomas: 0, k.ludmila: -1, k.ales: -1, k.dagmar: -1}
+	want := map[string]int{k.vit: 0, k.marie: -1, k.emil: -1, k.hana: -1}
 	if got := generations(t, tree.Members); !maps.Equal(got, want) {
 		t.Errorf("generations = %v, want the four nearest %v — the cousin is the one left out", got, want)
 	}
@@ -206,7 +206,7 @@ func TestNetwork_pastTheCapKeepsTheNearest(t *testing.T) {
 	}
 	assertClosed(t, tree)
 
-	whole, err := fam.NetworkWithin(ctx, project.BootstrapUID, k.tomas, 5)
+	whole, err := fam.NetworkWithin(ctx, project.BootstrapUID, k.vit, 5)
 	if err != nil {
 		t.Fatalf("NetworkWithin: %v", err)
 	}

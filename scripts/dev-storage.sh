@@ -15,7 +15,7 @@
 # integration tests (kukatko-test*, emptied between cases). It is deliberately
 # modest: a single process, a hard memory cap, loopback-only ports outside every
 # range this host reserves (5080, 5100-5999, 9000-9999, 12345, 18789 — see
-# docs.panbotka.cz/cs/rpi/port-allocation).
+# the host's port-allocation map).
 #
 # The data lives in a NAMED volume, so `docker rm` does not take the library with
 # it. The credentials are dev credentials and are not the production ones; they

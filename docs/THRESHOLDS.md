@@ -89,7 +89,7 @@ reproduces the old count can still be admitting a different, worse population.
 
 ## Measurement, 2026-08-12
 
-Library: 20 636 photos on the production instance. Old vectors: CLIP ViT-L-14 (768-dim), read
+Library: ~20k photos on the production instance. Old vectors: CLIP ViT-L-14 (768-dim), read
 from the instance running commit `48c7c05`, i.e. before migration 0057. New vectors: the
 sidecar's `ViT-SO400M-14-SigLIP2-378` / `webli` at 1152-dim fp16, computed for this
 measurement over the same photos' `fit_720` previews.
@@ -118,7 +118,7 @@ SigLIP 2 over the same 2400 photos:
 
 Bisecting for the CLIP count lands on **0.0280** — 446 directed / 223 undirected against a
 target of 440 / 222, i.e. within one pair. The K cap does not bind there (223 = 223), so the
-number does not depend on the sample being 2400 photos rather than 20 636.
+number does not depend on the sample being 2400 photos rather than ~20k.
 
 Rounding up to 0.03 would flag 257 undirected pairs, ~16 % more than before, which is outside
 the sampling noise on 222 pairs (≈ ±15). Hence the un-round 0.028: it is a measurement, and
@@ -354,7 +354,7 @@ named faces, and it nearly quadruples the share of unnamed faces carrying a one-
 so that one is a hint rather than a figure) — and the 0.40–0.50 band measured 78.6 % here against
 85.7 % six days earlier, which is what a sample of 14 does.
 
-**The motivating case.** On production photo `phfkh30ep2j2qqgol451nu05mv`, face 3 is Tomáš Kozák at
+**The motivating case.** On a production photo (`<photo uid>`), face 3 is a named person at
 cosine distance 0.713 = **29 % confidence** — the right person, and the only face on that photo left
 without an assign button while four weaker-looking neighbours (54–61 %) each had one. The faces there
 are about 2 % of the frame wide, which is what most of this library looks like: a real person, known

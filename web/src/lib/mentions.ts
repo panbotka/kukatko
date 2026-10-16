@@ -7,7 +7,7 @@ import { foldText } from './text'
  * `@`-mentions in a comment: how one is written, how it is found in the
  * rendered Markdown, and how the composer offers and inserts one.
  *
- * A mention is stored as `@[Tomáš Kozák](user:<uid>)` — an `@` straight before
+ * A mention is stored as `@[Petr Kolář](user:<uid>)` — an `@` straight before
  * a Markdown link whose destination is the `user:` pseudo-scheme and the
  * account's uid. The uid is what counts: a renamed account keeps every old
  * mention, and the name in the token is only what to show once the account is

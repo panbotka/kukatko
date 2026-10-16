@@ -155,7 +155,7 @@ configuration key both here **and** into `config.example.yaml`.
   — before 1826 or further ahead than next year, the same range `internal/exif` enforces on an incoming
   file-name guess (`internal/exif/captureyear.go`, asked for through `exif.CaptureYearBounds()` so the two
   cannot drift apart). Those rows are what a Facebook or WhatsApp download leaves behind
-  (`90090310_638783213372240_…` reads as 9009-03-10) and no other backfill touches them: `internal/metajob` is
+  (`90090310_100000000000001_…` reads as 9009-03-10) and no other backfill touches them: `internal/metajob` is
   a gap-filler that holds the capture time outside its reach. The date is **cleared, never replaced** — the
   photo ends up with no date at all and is found with `dated:no` — because a guessed substitute would be a
   second wrong answer on top of the first. Nothing is lost: the discarded date is preserved in
@@ -821,7 +821,7 @@ hash (one listing of `<prefix>thumb/aa/bb/cc/<hash>_`, a retired size included) 
 at the **root** — a derived copy that failed, waiting for the retry — once no project is left in the root
 layout (true from the move's start, which switches the prefix). Before, those root leftovers lost their
 `storage_rekey_derived_failures` row with the photo and nothing ever removed them, so the root never ended
-empty (the 312 orphan thumbnails prod reports fit that pattern).
+empty (the few hundred orphan thumbnails prod reports fit that pattern).
 
 **Repairs during a move.** `maintenance repair --delete-orphan-segments` and `--root-derived` delete at the
 store root, which is exactly what a move is emptying: a photo it has committed but not finished has its row
@@ -1509,7 +1509,7 @@ writing `editor`/`admin`.
 
 | Command | Meaning |
 | --- | --- |
-| `ctl subjects list` | `GET /subjects` — a **bare `{"subjects":[…]}`**; `PHOTOS` = distinct photos, `MARKERS` = faces. A nickname rides inside `NAME` — `Bohumil Nečas („Bohouš")` — rather than taking a column most rows would leave empty |
+| `ctl subjects list` | `GET /subjects` — a **bare `{"subjects":[…]}`**; `PHOTOS` = distinct photos, `MARKERS` = faces. A nickname rides inside `NAME` — `Bohumil Nedvěd („Bohouš")` — rather than taking a column most rows would leave empty |
 | `ctl subjects get <uid>` | `GET /subjects/{uid}` |
 | `ctl subjects photos <uid>` | `GET /subjects/{uid}/photos`; `--limit`/`--offset` |
 | `ctl subjects create <name>` | `POST /subjects`; `--nickname`, `--type`, `--notes`, `--cover`, `--favorite`, `--private`, `--birth-year`, `--death-year` |
@@ -1591,8 +1591,8 @@ Nothing is destroyed by recording a relation, so `add` needs no `--yes`. A relat
 cycle (somebody made their own ancestor), a second parentage, a second family for one couple — is refused by
 the server with a **409** and changes nothing; the request was well formed, the tree is what stood in its way.
 
-**`remove` reads how the two are related first**, which is also what it reports: `Marie Nečasová (sub02) as the
-parent of Anna Nečasová (sub01)`. Which relation goes follows from the rows, not from the command line. Two
+**`remove` reads how the two are related first**, which is also what it reports: `Marie Nedvědová (sub02) as the
+parent of Anna Nedvědová (sub01)`. Which relation goes follows from the rows, not from the command line. Two
 people who are not related fail before a request is spent. Two **siblings** can be parted only when the family
 they share records no parent — there the link is the whole relation, and the group is deleted once it drops
 below two children; with a parent on it they are siblings *because* they are that parent's children, so the
@@ -1613,7 +1613,7 @@ leaves the uid printed as it is rather than failing a write that already happene
 
 ```bash
 kukatkoctl family relations sub1a2b3
-kukatkoctl family add sub1a2b3 parent --name "Marie Nečasová" --birth-year 1921   # creates her if new
+kukatkoctl family add sub1a2b3 parent --name "Marie Nedvědová" --birth-year 1921   # creates her if new
 kukatkoctl family add sub1a2b3 child sub9z8y7 --child-kind adopted
 kukatkoctl family edit fam1a2b3 --kind marriage --from-year 1948 --note "oddáni v Křtinách"
 kukatkoctl family remove sub1a2b3 sub9z8y7 --dry-run
@@ -1885,7 +1885,7 @@ signed-in role, viewers included; opening, editing, closing and changing members
 | Command | Meaning |
 | --- | --- |
 | `ctl tasks list` | `GET /tasks`; `--state` (comma separated), `--open`, `--answered`, `--waiting`, `--search`, `--photo`, `--participant` / `--mine`, `--limit`, `--offset` |
-| `ctl tasks show <uid>` | `GET /tasks/{uid}`; prints `Last activity` ("2026-09-19 17:21 by Tomáš Kozák") and `Waiting on you` (`yes`/`no`); an `Options` line when the task offers answers |
+| `ctl tasks show <uid>` | `GET /tasks/{uid}`; prints `Last activity` ("2026-09-19 17:21 by Jan Novák") and `Waiting on you` (`yes`/`no`); an `Options` line when the task offers answers |
 | `ctl tasks create [<photo-uid>…]` | `POST /tasks`; `--title` (required), `--body`/`--body-file`, `--query`, `--state`, `--option` (repeatable, ≤ 5), `--assign <user-uid>` (repeatable); uids from args or stdin, **or none at all** |
 | `ctl tasks update <uid>` | `PATCH /tasks/{uid}`; `--title`, `--body`/`--body-file`, `--query`, `--state`, `--resolution`/`--resolution-file`, `--option` (replaces the whole set) or `--clear-options` (mutually exclusive) |
 | `ctl tasks delete <uid>` | `DELETE /tasks/{uid}` — needs `--yes`; the photographs stay |
@@ -2549,7 +2549,7 @@ pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 
   so the recall cost is small); `max_candidates` (**default 500**) — how many voted candidates are hydrated into
   full photo records (EXIF blob included) and returned, nearest first, with the cut reported as `capped` on the
   response instead of applied silently. The last two are **memory bounds**: without them one request grows with
-  the library, and a subject holding 16 532 exemplars once grew the process to 10.9 GB and the host OOM killer
+  the library, and a subject holding ~16k exemplars once grew the process to 10.9 GB and the host OOM killer
   took the whole VPS down with it — see [`docs/PERF.md`](PERF.md) §3. A non-positive value for any key falls back
   to the default (for `min_face_px` it disables the absolute floor). Env: `KUKATKO_CANDIDATES_MAX_DISTANCE`,
   `_SEARCH_LIMIT`, `_MIN_FACE_PX`, `_CONCURRENCY`, `_MAX_EXEMPLARS`, `_MAX_CANDIDATES`.
@@ -3122,8 +3122,8 @@ the same target remotely, streaming the output back.
   gate did *not* run and that `make check` is the local fallback, and exits non-zero.
 - **Integration tests stay local.** Their database lives on the Pi, so `make test-integration`
   has no remote equivalent and the script says so at the end of a green run.
-- **Environment:** `KUKATKO_BOX_HOST` (default `box` — `~/.ssh/config` sets the user; the
-  `ssh box@box` form from the global CLAUDE.md does not authenticate), `KUKATKO_BOX_ROOT`
+- **Environment:** `KUKATKO_BOX_HOST` (default `box` — `~/.ssh/config` sets the user, so no
+  `user@` prefix is needed), `KUKATKO_BOX_ROOT`
   (remote cache dir relative to the remote `$HOME`, default `.cache/kukatko-check`),
   `KUKATKO_BOX_SLOTS` (default 4), `KUKATKO_BOX_WAKE_TIMEOUT`, `KUKATKO_BOX_LOCK_WAIT`
   (default 1800 s of waiting for a busy workspace).

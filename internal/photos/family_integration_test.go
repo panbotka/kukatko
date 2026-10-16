@@ -63,11 +63,11 @@ func seedClan(t *testing.T, store *photos.Store, db *database.DB) clan {
 
 	c := clan{subject: map[string]string{}, photo: map[string]string{}}
 	names := map[string]string{
-		"bohumil": "Bohumil Nečas", "marie": "Marie Nečasová",
-		"josef": "Josef Nečas", "ludmila": "Ludmila Nečasová",
-		"anna": "Anna Skotáková", "karel": "Karel Skoták",
-		"petr": "Petr Nečas", "eva": "Eva Skotáková", "jan": "Jan Nečas",
-		"vojtech": "Vojtěch Souček",
+		"bohumil": "Bohumil Nedvěd", "marie": "Marie Nedvědová",
+		"josef": "Josef Nedvěd", "ludmila": "Ludmila Nedvědová",
+		"anna": "Anna Skopalová", "karel": "Karel Skopal",
+		"petr": "Petr Nedvěd", "eva": "Eva Skopalová", "jan": "Jan Nedvěd",
+		"vojtech": "Vojtěch Sochor",
 	}
 	for key, name := range names {
 		subj, err := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: name})
@@ -159,7 +159,7 @@ func TestFamilyFilter_walksDescendantsAndTheirPartners(t *testing.T) {
 	}{
 		{
 			name:  "by name, from the root",
-			query: `family:"Bohumil Nečas"`,
+			query: `family:"Bohumil Nedvěd"`,
 			want:  wholeClan,
 		},
 		{

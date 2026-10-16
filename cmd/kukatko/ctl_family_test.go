@@ -10,15 +10,15 @@ import (
 // ctlRelationsBody is a GET /subjects/{uid}/relations answer carrying one of
 // each: a parent, a sibling, a marriage and a child.
 const ctlRelationsBody = `{
-	"parents":[{"uid":"sub02","slug":"marie-necasova","name":"Marie Nečasová","type":"person",
+	"parents":[{"uid":"sub02","slug":"marie-nedvedova","name":"Marie Nedvědová","type":"person",
 		"birth_year":1921,"death_year":1998,"photo_count":12,"family_uid":"fam01","child_kind":"birth"}],
-	"siblings":[{"uid":"sub03","slug":"josef-necas","name":"Josef Nečas","type":"person",
+	"siblings":[{"uid":"sub03","slug":"josef-nedved","name":"Josef Nedvěd","type":"person",
 		"birth_year":1950,"death_year":null,"photo_count":4,"family_uid":"fam01","child_kind":"birth"}],
 	"partners":[{"family":{"uid":"fam02","partner_a_uid":"sub01","partner_b_uid":"sub04",
 		"kind":"marriage","from_year":1972,"to_year":null,"note":""},
-		"partner":{"uid":"sub04","slug":"eva-necasova","name":"Eva Nečasová","type":"person",
+		"partner":{"uid":"sub04","slug":"eva-nedvedova","name":"Eva Nedvědová","type":"person",
 		"birth_year":1949,"death_year":null,"photo_count":30}}],
-	"children":[{"uid":"sub05","slug":"petr-necas","name":"Petr Nečas","type":"person",
+	"children":[{"uid":"sub05","slug":"petr-nedved","name":"Petr Nedvěd","type":"person",
 		"birth_year":1974,"death_year":null,"photo_count":7,"family_uid":"fam02","child_kind":"birth"}]
 }`
 
@@ -27,26 +27,26 @@ const ctlRelationsBody = `{
 // anybody above them.
 const ctlParentlessSiblingsBody = `{
 	"parents":[],
-	"siblings":[{"uid":"sub03","slug":"josef-necas","name":"Josef Nečas","type":"person",
+	"siblings":[{"uid":"sub03","slug":"josef-nedved","name":"Josef Nedvěd","type":"person",
 		"birth_year":1950,"death_year":null,"photo_count":4,"family_uid":"fam03","child_kind":"birth"}],
 	"partners":[],"children":[]
 }`
 
 // ctlSubjectListBody is the {"subjects": […]} list a lookup by name reads.
 const ctlSubjectListBody = `{"subjects":[
-	{"uid":"sub01","slug":"anna-necasova","name":"Anna Nečasová","type":"person"},
-	{"uid":"sub02","slug":"marie-necasova","name":"Marie Nečasová","type":"person"}
+	{"uid":"sub01","slug":"anna-nedvedova","name":"Anna Nedvědová","type":"person"},
+	{"uid":"sub02","slug":"marie-nedvedova","name":"Marie Nedvědová","type":"person"}
 ]}`
 
 // ctlRelationAddBody is a POST /subjects/{uid}/relations answer for an existing
 // person: the family the relation landed in and who it was recorded with.
 const ctlRelationAddBody = `{"family":{"uid":"fam01","partner_a_uid":"sub02","partner_b_uid":null,
 	"kind":"partnership","from_year":null,"to_year":null,"note":""},
-	"relative":{"uid":"sub02","slug":"marie-necasova","name":"Marie Nečasová","type":"person",
+	"relative":{"uid":"sub02","slug":"marie-nedvedova","name":"Marie Nedvědová","type":"person",
 	"birth_year":1921,"death_year":1998,"photo_count":12},"created":false}`
 
 // ctlAnnaBody is the subject every family command is recorded on.
-const ctlAnnaBody = `{"uid":"sub01","slug":"anna-necasova","name":"Anna Nečasová","type":"person"}`
+const ctlAnnaBody = `{"uid":"sub01","slug":"anna-nedvedova","name":"Anna Nedvědová","type":"person"}`
 
 // TestCtlFamilyKeepsThePersistentOutputFlag verifies no family subcommand defines
 // an --output flag of its own. A local one shadows the persistent -o and breaks
@@ -79,8 +79,8 @@ func TestCtlFamilyRelations(t *testing.T) {
 		t.Errorf("path = %q, want the relations endpoint", gotPath)
 	}
 	for _, want := range []string{
-		"ROLE", "parent", "Marie Nečasová (sub02)", "1921–1998", "fam01",
-		"sibling", "partner", "Eva Nečasová (sub04)", "marriage", "child", "Petr Nečas (sub05)",
+		"ROLE", "parent", "Marie Nedvědová (sub02)", "1921–1998", "fam01",
+		"sibling", "partner", "Eva Nedvědová (sub04)", "marriage", "child", "Petr Nedvěd (sub05)",
 		"1 parent · 1 sibling · 1 partner · 1 child",
 	} {
 		if !strings.Contains(out, want) {
@@ -137,7 +137,7 @@ func TestCtlFamilyAdd_byUID(t *testing.T) {
 		t.Errorf("body = %v, want the role, the person and the child kind", seen[1].body)
 	}
 	for _, want := range []string{
-		"Marie Nečasová (sub02)", "parent of Anna Nečasová (sub01)", "fam01", "no —",
+		"Marie Nedvědová (sub02)", "parent of Anna Nedvědová (sub01)", "fam01", "no —",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("relation report does not contain %q:\n%s", want, out)
@@ -163,7 +163,7 @@ func TestCtlFamilyAdd_byExistingName(t *testing.T) {
 	})
 
 	out, err := runCtl(t, "", "ctl", "--ctl-config", configPath,
-		"family", "add", "sub01", "parent", "--name", "marie nečasová")
+		"family", "add", "sub01", "parent", "--name", "marie nedvědová")
 	if err != nil {
 		t.Fatalf("family add --name returned %v", err)
 	}
@@ -174,7 +174,7 @@ func TestCtlFamilyAdd_byExistingName(t *testing.T) {
 	if _, present := post.body["new_subject"]; present {
 		t.Errorf("body = %v, want no person created for a name the library knows", post.body)
 	}
-	if !strings.Contains(out, "Marie Nečasová (sub02)") {
+	if !strings.Contains(out, "Marie Nedvědová (sub02)") {
 		t.Errorf("relation report = %q, want the resolved person named", out)
 	}
 }
@@ -194,25 +194,25 @@ func TestCtlFamilyAdd_byNewName(t *testing.T) {
 			w.WriteHeader(http.StatusCreated)
 			w.Write([]byte(`{"family":{"uid":"fam03","partner_a_uid":"sub09","partner_b_uid":null,
 				"kind":"partnership","from_year":null,"to_year":null,"note":""},
-				"relative":{"uid":"sub09","slug":"bohumila-necasova","name":"Bohumila Nečasová",
+				"relative":{"uid":"sub09","slug":"bohumila-nedvedova","name":"Bohumila Nedvědová",
 				"type":"person","birth_year":1899,"death_year":null,"photo_count":0},"created":true}`))
 		}
 	})
 
 	out, err := runCtl(t, "", "ctl", "--ctl-config", configPath,
-		"family", "add", "sub01", "parent", "--name", "Bohumila Nečasová", "--birth-year", "1899")
+		"family", "add", "sub01", "parent", "--name", "Bohumila Nedvědová", "--birth-year", "1899")
 	if err != nil {
 		t.Fatalf("family add --name returned %v", err)
 	}
 	post := seen[len(seen)-1]
 	created, _ := post.body["new_subject"].(map[string]any)
-	if created == nil || created["name"] != "Bohumila Nečasová" || created["birth_year"] != float64(1899) {
+	if created == nil || created["name"] != "Bohumila Nedvědová" || created["birth_year"] != float64(1899) {
 		t.Fatalf("body = %v, want the unknown person created inline with her birth year", post.body)
 	}
 	if _, present := post.body["subject_uid"]; present {
 		t.Errorf("body = %v, want no subject_uid beside a person being created", post.body)
 	}
-	for _, want := range []string{"Bohumila Nečasová (sub09)", "yes —", "1899–"} {
+	for _, want := range []string{"Bohumila Nedvědová (sub09)", "yes —", "1899–"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("relation report does not contain %q:\n%s", want, out)
 		}
@@ -292,7 +292,7 @@ func TestCtlFamilyRemove(t *testing.T) {
 	if writes != 1 {
 		t.Fatalf("%d relations were removed, want exactly one", writes)
 	}
-	if !strings.Contains(out, "Marie Nečasová (sub02) as the parent of Anna Nečasová (sub01)") {
+	if !strings.Contains(out, "Marie Nedvědová (sub02) as the parent of Anna Nedvědová (sub01)") {
 		t.Errorf("confirmation = %q, want both people and the role named", out)
 	}
 }
@@ -329,7 +329,7 @@ func TestCtlFamilyRemove_dryRun(t *testing.T) {
 	}
 	message, _ := ack["message"].(string)
 	if !strings.Contains(message, "dry run") ||
-		!strings.Contains(message, "Eva Nečasová (sub04) as the partner of Anna Nečasová (sub01)") {
+		!strings.Contains(message, "Eva Nedvědová (sub04) as the partner of Anna Nedvědová (sub01)") {
 		t.Errorf("llm dry run = %v, want it to name what would go", ack)
 	}
 	if writes != 0 {
@@ -413,7 +413,7 @@ func TestCtlFamilyEdit(t *testing.T) {
 		case "/api/v1/p/fam/subjects/sub01":
 			w.Write([]byte(ctlAnnaBody))
 		case "/api/v1/p/fam/subjects/sub04":
-			w.Write([]byte(`{"uid":"sub04","slug":"eva-necasova","name":"Eva Nečasová","type":"person"}`))
+			w.Write([]byte(`{"uid":"sub04","slug":"eva-nedvedova","name":"Eva Nedvědová","type":"person"}`))
 		default:
 			w.Write([]byte(`{"uid":"fam02","partner_a_uid":"sub01","partner_b_uid":"sub04",
 				"kind":"marriage","from_year":1972,"to_year":null,"note":"oddáni v Křtinách",
@@ -435,7 +435,7 @@ func TestCtlFamilyEdit(t *testing.T) {
 	if value, present := seen[0].body["to_year"]; !present || value != nil {
 		t.Errorf("body = %v, want the unstated year written as an explicit null", seen[0].body)
 	}
-	for _, want := range []string{"fam02", "Anna Nečasová (sub01) & Eva Nečasová (sub04)", "1972–", "Křtinách"} {
+	for _, want := range []string{"fam02", "Anna Nedvědová (sub01) & Eva Nedvědová (sub04)", "1972–", "Křtinách"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("family does not contain %q:\n%s", want, out)
 		}

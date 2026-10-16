@@ -169,19 +169,19 @@ describe('Markdown', () => {
       await i18n.changeLanguage('en')
     })
     const mentions = [
-      { user_uid: 'us1', name: 'Tomáš Kozák', subject_uid: 'su1' },
+      { user_uid: 'us1', name: 'Petr Kolář', subject_uid: 'su1' },
       { user_uid: 'us2', name: 'Anna Nováková', subject_uid: null },
     ]
 
     it('renders a token as a chip linking to the linked person, under the current name', () => {
       renderEn(
         <MemoryRouter>
-          <Markdown mentions={mentions}>{'Hele @[Tomas K.](user:us1), víš to?'}</Markdown>
+          <Markdown mentions={mentions}>{'Hele @[Petr K.](user:us1), víš to?'}</Markdown>
         </MemoryRouter>,
       )
 
-      // The stored name was „Tomas K."; the account is now „Tomáš Kozák".
-      const chip = screen.getByRole('link', { name: 'Tomáš Kozák' })
+      // The stored name was „Petr K."; the account is now „Petr Kolář".
+      const chip = screen.getByRole('link', { name: 'Petr Kolář' })
       expect(chip).toHaveAttribute('href', '/p/v/people/su1')
       expect(chip).toHaveClass('kk-mention')
       expect(chip).not.toHaveClass('kk-mention--me')
@@ -201,7 +201,7 @@ describe('Markdown', () => {
       const me = screen.getByText('Anna Nováková')
       expect(me).toHaveClass('kk-mention', 'kk-mention--me')
       expect(me).toHaveAttribute('title', 'Mention: Anna Nováková (that is you)')
-      expect(screen.getByText('Tomáš Kozák')).not.toHaveClass('kk-mention--me')
+      expect(screen.getByText('Petr Kolář')).not.toHaveClass('kk-mention--me')
     })
 
     it('keeps the stored name, muted and unlinked, for an account that is gone', () => {

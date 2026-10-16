@@ -43,7 +43,7 @@ describe('faceSourceSize', () => {
   })
 
   it('takes the biggest available for a face too tiny for any of them', () => {
-    // This is the Dana Levová case: a face ~2 % across the frame is 13px in
+    // The case that prompted this: a face ~2 % across the frame is 13px in
     // fit_720. No thumbnail makes it sharp, but the biggest is the least bad —
     // and it must not silently keep serving the 13px one.
     expect(faceSourceSize(crop(0.02), FRAME, 300, UNBUDGETED)).toBe('fit_1920')

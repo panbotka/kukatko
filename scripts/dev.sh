@@ -16,7 +16,7 @@
 #
 # The port lives OUTSIDE the protected production range (5080, 5100-5999,
 # 9xxx, 12345, 18789) because this is a throwaway dev instance — see
-# docs.panbotka.cz/cs/rpi/port-allocation.
+# the host's port-allocation map.
 #
 #   App (API + SPA): ${KUKATKO_DEV_PORT:-6480}
 

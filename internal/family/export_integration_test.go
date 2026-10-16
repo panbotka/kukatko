@@ -66,8 +66,8 @@ func TestExport_readsTheWholeGenealogy(t *testing.T) {
 			t.Errorf("membership names family %s, which was not exported", membership.FamilyUID)
 		}
 	}
-	if got := known[v.jan].Name; got != "Jan Nečas" {
-		t.Errorf("Jan's exported name = %q, want %q", got, "Jan Nečas")
+	if got := known[v.jan].Name; got != "Jan Nedvěd" {
+		t.Errorf("Jan's exported name = %q, want %q", got, "Jan Nedvěd")
 	}
 }
 
@@ -134,7 +134,7 @@ func TestExport_carriesWhatARebuildNeeds(t *testing.T) {
 	v := seedVillage(t, fam, ppl, db)
 
 	if _, err := ppl.UpdateSubject(ctx, project.BootstrapUID, v.bohumil, people.SubjectUpdate{
-		Name:      "Bohumil Nečas st.",
+		Name:      "Bohumil Nedvěd st.",
 		Nickname:  "Bohouš",
 		Type:      people.SubjectPerson,
 		BirthYear: new(1901),
@@ -153,7 +153,7 @@ func TestExport_carriesWhatARebuildNeeds(t *testing.T) {
 			got = subj
 		}
 	}
-	if got.Name != "Bohumil Nečas st." || got.Nickname != "Bohouš" {
+	if got.Name != "Bohumil Nedvěd st." || got.Nickname != "Bohouš" {
 		t.Errorf("exported subject = %+v, want the edited name and nickname", got)
 	}
 	if got.BirthYear == nil || *got.BirthYear != 1901 || got.DeathYear == nil || *got.DeathYear != 1978 {

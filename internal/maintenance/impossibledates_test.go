@@ -23,7 +23,7 @@ func impossibleFixture() []photos.ImpossibleDate {
 		},
 		{
 			UID:           "p-fb",
-			FileName:      "90090310_638783213372240_7483353598378639360_n.jpg",
+			FileName:      "90090310_100000000000001_1000000000000000001_n.jpg",
 			TakenAt:       time.Date(9009, 3, 10, 0, 0, 0, 0, time.UTC),
 			TakenAtSource: "filename",
 		},

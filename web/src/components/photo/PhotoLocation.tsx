@@ -133,7 +133,7 @@ export function PhotoLocation({ photo, canWrite, onUpdated }: PhotoLocationProps
 
       {/* Where the photo was taken, in words. The coordinate itself is still one
           hover away — and spelled out in full in the technical details — but
-          "49.39322, 16.70869" is not an answer to "where is this?" for anyone
+          "49.12340, 16.56780" is not an answer to "where is this?" for anyone
           who is not holding a map. */}
       <p
         className={place !== '' ? 'mb-2' : 'small text-secondary mb-2'}

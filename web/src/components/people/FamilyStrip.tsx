@@ -39,7 +39,7 @@ const CHIP_CLASS =
  * A person with no photograph is drawn as their initials, not as a hole: in a
  * family archive the great-grandmother nobody photographed is an ordinary node,
  * and a chip that looked broken would make the whole strip look broken. The life
- * span rides inside the pill where anybody recorded it — with eight Nečases and
+ * span rides inside the pill where anybody recorded it — with several Nedvěds and
  * four Novotnýs in the library, the years are what tell two people of one name
  * apart.
  */

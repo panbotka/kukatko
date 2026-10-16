@@ -30,7 +30,7 @@ const digestSlugLen = 8
 // Slugify substitutes a constant for a name it cannot slugify, and a constant key
 // is a catch-all: the first nameless face creates one empty-named subject and
 // every nameless face after it is found by that same key and assigned to it. That
-// is not hypothetical — it collapsed 16 532 markers onto a single empty-named
+// is not hypothetical — it collapsed ~16k markers onto a single empty-named
 // subject in production. See docs/OPERATIONS.md § "Nameless catch-all subject".
 //
 // A name written entirely outside ASCII (CJK, Cyrillic, Greek, …) is still a

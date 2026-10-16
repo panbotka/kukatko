@@ -365,7 +365,7 @@ describe('SearchQueryInput — value suggestions', () => {
   it('reaches a person by their nickname and still completes to the name', async () => {
     const user = userEvent.setup()
     subjectsMock.mockResolvedValue([
-      subject('Bohumil Nečas', 12, 'Bohouš'),
+      subject('Bohumil Nedvěd', 12, 'Bohouš'),
       subject('Anna Nováková', 40),
     ])
     renderInput()
@@ -376,11 +376,11 @@ describe('SearchQueryInput — value suggestions', () => {
     // one must not match anything.
     const options = screen.getAllByRole('option')
     expect(options).toHaveLength(1)
-    expect(options[0]).toHaveTextContent('Bohumil Nečas („Bohouš")')
+    expect(options[0]).toHaveTextContent('Bohumil Nedvěd („Bohouš")')
 
     await user.click(options[0])
     // The completed token is the NAME — that is what identifies the person.
-    expect(screen.getByRole('combobox')).toHaveValue('person:"Bohumil Nečas" ')
+    expect(screen.getByRole('combobox')).toHaveValue('person:"Bohumil Nedvěd" ')
   })
 
   it('matches values without diacritics', async () => {

@@ -165,11 +165,11 @@ func (f *treeFixture) export(t *testing.T) {
 // database were gone and rebuild who is whose parent from it alone.
 func TestExport_theTreeSurvivesTheDatabase(t *testing.T) {
 	fixture := newTreeFixture(t)
-	bohumil := fixture.subject(t, "Bohumil Nečas st.", new(1901))
-	marie := fixture.subject(t, "Marie Nečasová", nil)
+	bohumil := fixture.subject(t, "Bohumil Nedvěd st.", new(1901))
+	marie := fixture.subject(t, "Marie Nedvědová", nil)
 	// A great-grandchild nobody ever photographed is an ordinary node here, and the
 	// reason a photo's sidecar could never hold this: they appear on no photo.
-	jan := fixture.subject(t, "Jan Nečas", nil)
+	jan := fixture.subject(t, "Jan Nedvěd", nil)
 	fixture.addParent(t, jan, bohumil)
 	fixture.addParent(t, jan, marie)
 
@@ -205,7 +205,7 @@ func TestExport_theTreeSurvivesTheDatabase(t *testing.T) {
 			t.Errorf("the file names %s in a family but describes no such subject", uid)
 		}
 	}
-	if names[bohumil] != "Bohumil Nečas st." {
+	if names[bohumil] != "Bohumil Nedvěd st." {
 		t.Errorf("Bohumil's name = %q, want it verbatim", names[bohumil])
 	}
 }
@@ -215,8 +215,8 @@ func TestExport_theTreeSurvivesTheDatabase(t *testing.T) {
 // leaving yesterday's tree standing.
 func TestExport_isIdempotentAndFollowsARemoval(t *testing.T) {
 	fixture := newTreeFixture(t)
-	parent := fixture.subject(t, "Marie Nečasová", nil)
-	child := fixture.subject(t, "Jan Nečas", nil)
+	parent := fixture.subject(t, "Marie Nedvědová", nil)
+	child := fixture.subject(t, "Jan Nedvěd", nil)
 	fixture.addParent(t, child, parent)
 
 	fixture.export(t)

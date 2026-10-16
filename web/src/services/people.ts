@@ -90,7 +90,7 @@ export interface Subject {
   slug: string
   name: string
   /**
-   * What people actually call the subject — Bohumil Nečas („Bohouš"). Empty when
+   * What people actually call the subject — Bohumil Nedvěd („Bohouš"). Empty when
    * nobody recorded one, which is the usual case, so every surface that shows it
    * has to omit it rather than print empty brackets. It is searched exactly like
    * the name (subject search, `person:`, the global search) but it never feeds

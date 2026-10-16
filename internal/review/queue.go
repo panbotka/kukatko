@@ -8,7 +8,7 @@ package review
 //
 // The bound is the point. The game shows one question at a time, so producing a
 // library-wide work list to fill a single batch is the wrong trade: on a real
-// library (105 named subjects, 113 628 faces) sweeping every subject cost four
+// library (~100 named subjects, ~110k faces) sweeping every subject cost four
 // minutes inside one request and no browser waited that long. Each source is
 // therefore scanned in a rotating window — a handful of subjects, a handful of
 // labels — and stops as soon as the batch has enough candidates, with a deadline

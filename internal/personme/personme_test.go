@@ -332,11 +332,11 @@ func TestResolve_family(t *testing.T) {
 		},
 		{
 			name:         "a name nobody shares with the token is untouched",
-			input:        "family:Nečas",
+			input:        "family:Nedvěd",
 			linked:       new("sub123"),
 			wantUsed:     false,
 			wantResolved: true,
-			wantValues:   []string{"Nečas"},
+			wantValues:   []string{"Nedvěd"},
 		},
 	}
 

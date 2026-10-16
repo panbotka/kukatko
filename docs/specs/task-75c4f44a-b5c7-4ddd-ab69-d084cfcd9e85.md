@@ -16,7 +16,7 @@ SELECT m.photo_uid, s.name, count(*) n
 ```
 
 **23 fotek, 10 osob, 27 přebytečných markerů, nejhorší případ 3 na fotku.**
-Nejde o šum — u čtyř fotek má "Marie Němcová" tři markery vedle sebe
+Nejde o šum — u čtyř fotek má "Jana Nováková" tři markery vedle sebe
 (x 0.59 / 0.70 / 0.79), což je typický otisk špatného přiřazení skupinové fotky.
 
 Pozor na dvě různé příčiny, které v UI vypadají stejně:
@@ -70,7 +70,7 @@ cesty z `internal/peopleapi`, pokud stačí — nezdvojuj logiku).
 
 Dotaz drž nad `markers` + `subjects`, `invalid = false`, `type = 'face'`, a
 vylučuj bezejmenný subjekt (`name = ''`) — ten se řeší jinde a zatlačil by
-sem 6766 fotek.
+sem několik tisíc fotek.
 
 ## Testy (povinné)
 

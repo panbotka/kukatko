@@ -113,7 +113,7 @@ func TestExtractNamed_readsTheGivenNameNotThePath(t *testing.T) {
 			// year lands on the same no-date outcome as a name without a date,
 			// not on a state of its own.
 			name:       "implausible year in the upload name gets no date at all",
-			upload:     "90090310_638783213372240_7483353598378639360_n.jpg",
+			upload:     "90090310_100000000000001_1000000000000000001_n.jpg",
 			wantSource: SourceUnknown,
 		},
 	}

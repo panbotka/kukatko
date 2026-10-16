@@ -11,7 +11,7 @@ import { blockBodyAt, declarations, readCss, ruleBody } from '../test/css'
  * overflow. From `lg` the bar returns into a 960px container, and a maintainer's
  * row of ten labelled items measures ~958px before the user menu has spelled out
  * anything longer than "admin" — it fits by accident, and a real display name
- * pushes the menu back off the edge (1006px for "Tomáš Kozák", measured on the
+ * pushes the menu back off the edge (1006px for an 11-character display name, measured on the
  * staging box). The stylesheet therefore drops the bar's decorative glyphs for
  * this one band, which buys ~170px and costs nothing: every icon in the bar is
  * `aria-hidden` beside a label that names the destination.

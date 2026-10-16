@@ -49,7 +49,7 @@ than UI filters.
 - **R2 has no native object versioning** that could be confirmed in its documentation. The
   durability plan therefore does not depend on it (see Backup below).
 - The Worker is **not built in this repository**. It, the bucket, its bindings and its hostname
-  are defined in the infra repository (`/home/pi/projects/infra`), in the `cloudflare-r2/`
+  are defined in the infra repository (`<path>`), in the `cloudflare-r2/`
   Terraform root module, and applied by Terraform there. It does not violate the
   single-static-binary rule — it runs on Cloudflare, not in the binary — and Kukátko neither
   builds nor deploys it. What the two repositories share is a contract, not code.
@@ -96,7 +96,7 @@ in review and forces the Worker to move in step.
 
 The Worker is an **external deployable**, defined and applied by Terraform in the infra
 repository's `cloudflare-r2/` root module together with the bucket, the R2 binding, the signing
-secrets and the hostname it is served on (`kukatko-media.panbotka.cz`). Nothing about it ships
+secrets and the hostname it is served on (`media.example.org`). Nothing about it ships
 from this repository.
 
 For each request the Worker:
@@ -164,7 +164,7 @@ expired: a deleted original is a lost photo.**
 
 - `storage.backend`: `fs` (default) or `r2`
 - `storage.r2.endpoint`, `.region`, `.bucket`, `.access_key`, `.secret_key`
-- `storage.r2.media_base_url` — the Worker's domain, `https://kukatko-media.panbotka.cz`
+- `storage.r2.media_base_url` — the Worker's domain, `https://media.example.org`
 - `storage.r2.url_signing_secret` and `.url_signing_secret_previous`
 - `storage.r2.url_ttl` — default one hour
 - `storage.temp_path` — where `Materialize` writes

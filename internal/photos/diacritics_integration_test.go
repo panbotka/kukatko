@@ -105,7 +105,7 @@ func seedDiacriticsRelations(t *testing.T, pool *pgxpool.Pool, lib diacriticsLib
 	}
 
 	subject, err := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{
-		Name: "Tomáš Nečas", Nickname: "Křeček", Type: people.SubjectPerson,
+		Name: "Tomáš Nedvěd", Nickname: "Křeček", Type: people.SubjectPerson,
 	})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
@@ -119,7 +119,7 @@ func seedDiacriticsRelations(t *testing.T, pool *pgxpool.Pool, lib diacriticsLib
 
 	if _, err := pool.Exec(ctx,
 		`INSERT INTO users (uid, username, display_name, email, password_hash, role)
-		 VALUES ($1, 'dia-user', 'Tomáš Nečas', 'dia-user@example.test', 'x', 'user')`,
+		 VALUES ($1, 'dia-user', 'Tomáš Nedvěd', 'dia-user@example.test', 'x', 'user')`,
 		lib.user); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
@@ -204,10 +204,10 @@ func TestQueryLanguage_diacriticsInsensitive(t *testing.T) {
 		{"album", "album:Dovolená", "album:Dovolena", 1},
 		{"label", "label:kytička", "label:kyticka", 1},
 		{"task", "task:pouti", "task:poutí", 1},
-		{"person by name", "person:Nečas", "person:Necas", 1},
+		{"person by name", "person:Nedvěd", "person:Nedved", 1},
 		{"person by nickname", "person:Křeček", "person:Krecek", 1},
-		{"family by root name", "family:Nečas", "family:Necas", 1},
-		{"uploader", "uploader:Nečas", "uploader:Necas", 1},
+		{"family by root name", "family:Nedvěd", "family:Nedved", 1},
+		{"uploader", "uploader:Nedvěd", "uploader:Nedved", 1},
 		{"free text", "Pouť", "Pout", 2},
 	}
 

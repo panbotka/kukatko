@@ -9,7 +9,7 @@
 -- person almost every near neighbour IS assigned (they are that person's own
 -- tagged faces), so the filter throws nearly all of them away. pgvector's
 -- iterative scan compensates by walking further and further into the graph, and it
--- keeps walking until hnsw.max_scan_tuples (20 000). Measured on a 50 410-face
+-- keeps walking until hnsw.max_scan_tuples (20 000). Measured on a ~50k-face
 -- library on the Pi: 90 ms for ONE exemplar, 20 260 tuples visited, ~43 000 buffer
 -- accesses. A subject with 428 tagged photos runs 428 of those searches per
 -- request, which is where the "hledání tváří trvá extrémně dlouho" report came

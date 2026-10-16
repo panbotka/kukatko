@@ -96,7 +96,7 @@ func (q *fakeQueue) Enqueue(
 // markers and two cached faces, plus its stubs.
 func fixture() (*Service, *fakeStore, *fakeQueue) {
 	subj := people.Subject{
-		UID: "sunuikf1e9jdpjog5qgomsvgrb", Slug: "subject", Name: "", Type: people.SubjectPerson,
+		UID: "sufake0uid0for0tests000002", Slug: "subject", Name: "", Type: people.SubjectPerson,
 		CreatedAt: time.Date(2026, 8, 2, 10, 0, 0, 0, time.UTC),
 	}
 	snap := people.SubjectSnapshot{
@@ -237,7 +237,7 @@ func TestHandleDetachIsIdempotent(t *testing.T) {
 	svc, store, _ := fixture()
 	store.detachErr = people.ErrSubjectNotFound
 
-	payload, err := json.Marshal(detachPayload{SubjectUID: "sunuikf1e9jdpjog5qgomsvgrb"})
+	payload, err := json.Marshal(detachPayload{SubjectUID: "sufake0uid0for0tests000002"})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -435,7 +435,7 @@ func TestHandleRunsInThePayloadsProject(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			svc, store, _ := fixture()
-			detach, _ := json.Marshal(detachPayload{ProjectUID: tt.project, SubjectUID: "sunuikf1e9jdpjog5qgomsvgrb"})
+			detach, _ := json.Marshal(detachPayload{ProjectUID: tt.project, SubjectUID: "sufake0uid0for0tests000002"})
 			restore, _ := json.Marshal(restorePayload{
 				ProjectUID: tt.project, Snapshot: people.SubjectSnapshot{Subject: people.Subject{UID: "sub1"}},
 			})

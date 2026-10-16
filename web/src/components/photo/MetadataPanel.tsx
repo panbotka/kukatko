@@ -506,8 +506,8 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
    * the user actually changed them: both fields are lossy round-trips, so resending
    * an untouched value would quietly rewrite the catalogue — the capture time would
    * flip `taken_at_source` from `exif` to `manual`, and the coordinate would be
-   * rounded to the six decimals the text field shows (`16.7083583333333` →
-   * `16.708358`). Unparseable coordinate text is left out too (the field reports it
+   * rounded to the six decimals the text field shows (`16.5678123456789` →
+   * `16.567812`). Unparseable coordinate text is left out too (the field reports it
    * inline), so the rest of the form still saves.
    *
    * The dating note rides along only while the photo is (or has just become) an

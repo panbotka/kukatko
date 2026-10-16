@@ -68,7 +68,7 @@ describe('CommentBody', () => {
           <CommentBody
             body="@[Tom](user:us1) a @[Anna](user:us2)?"
             mentions={[
-              { user_uid: 'us1', name: 'Tomáš Kozák', subject_uid: 'su1' },
+              { user_uid: 'us1', name: 'Petr Kolář', subject_uid: 'su1' },
               { user_uid: 'us2', name: 'Anna', subject_uid: null },
             ]}
             currentUserUid="us2"
@@ -77,7 +77,7 @@ describe('CommentBody', () => {
       </I18nextProvider>,
     )
 
-    expect(screen.getByRole('link', { name: 'Tomáš Kozák' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Petr Kolář' })).toHaveAttribute(
       'href',
       '/p/v/people/su1',
     )

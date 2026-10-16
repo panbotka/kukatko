@@ -11,6 +11,6 @@ UI/UX review finding #7 (2026-10-11). At 390px the library toolbar row is: searc
 
 ## Scope and verification
 - UI only: the query language and the URL state are unchanged; chips are just another view of `q`.
-- Reference screenshots: `/mnt/nas-botka/kukatko/uiux-review-2026-10-11/shots/m-root.png`, `m-library-filtered.png`, `m-albums_aljm4oco37eeddevgdfjop9cnf.png`.
+- Reference screenshots: `<review shots>/m-root.png`, `m-library-filtered.png`, `m-albums_<album uid>.png`.
 - Check at 390px and 320px (no horizontal scroll) and at 1440px (unchanged).
 - Finish per CLAUDE.md Definition of Done (docs/FRONTEND.md, `make check-box`, commit, push).
