@@ -5,6 +5,7 @@ import { type RoundSummary, type SessionTally } from '../../hooks/useReviewGame'
 import { ProjectLink } from '../../project/ProjectLink'
 import { type Photo, thumbUrl } from '../../services/photos'
 import { Icon, type IconName } from '../Icon'
+import { ThumbImage } from '../ThumbImage'
 
 /**
  * The two cards that close something: a round, and the session.
@@ -160,7 +161,7 @@ export function SessionSummaryCard({
               {mosaic.map((photo) => (
                 <li key={photo.uid}>
                   <ProjectLink to={`/photos/${encodeURIComponent(photo.uid)}`}>
-                    <img
+                    <ThumbImage
                       src={thumbUrl(photo.uid, MOSAIC_THUMB)}
                       alt={photo.title === '' ? photo.file_name : photo.title}
                       loading="lazy"

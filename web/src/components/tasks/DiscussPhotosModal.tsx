@@ -10,6 +10,7 @@ import { createComment, taskSubject } from '../../services/comments'
 import { thumbUrl } from '../../services/photos'
 import Modal from '../Modal'
 import { useToast } from '../toast/ToastContext'
+import { ThumbImage } from '../ThumbImage'
 
 /** How many of the selected photographs the dialog previews before "+N". */
 export const DISCUSS_PREVIEW_MAX = 24
@@ -112,7 +113,12 @@ export function DiscussPhotosModal({
         >
           {preview.map((uid) => (
             <li key={uid}>
-              <img src={thumbUrl(uid, PREVIEW_THUMB_SIZE)} alt="" loading="lazy" decoding="async" />
+              <ThumbImage
+                src={thumbUrl(uid, PREVIEW_THUMB_SIZE)}
+                alt=""
+                loading="lazy"
+                decoding="async"
+              />
             </li>
           ))}
           {rest > 0 && (

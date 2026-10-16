@@ -3,6 +3,7 @@ package avatarapi_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"github.com/panbotka/kukatko/internal/avatarapi"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/thumb"
 )
 
 // fakeSubjects answers the avatar-source lookup with a canned result or error.
@@ -207,6 +209,24 @@ func TestHandleAvatar_renderFailureIs500(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500 (%s)", rec.Code, rec.Body.String())
+	}
+}
+
+// TestHandleAvatar_undecodableOriginalIs404 proves a subject whose picture is
+// cut from a photo that can never be decoded is answered like every other "no
+// picture": 404, which the people index paints its placeholder for — not a 500.
+func TestHandleAvatar_undecodableOriginalIs404(t *testing.T) {
+	t.Parallel()
+
+	subjects := &fakeSubjects{source: people.AvatarSource{PhotoUID: "ph_1"}}
+	renderer := &fakeRenderer{err: fmt.Errorf("avatar: opening fit_720 of ph_1: %w", thumb.ErrUndecodable)}
+	server := newServer(subjects, &fakePhotos{photo: photos.Photo{UID: "ph_1"}}, renderer)
+
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, avatarRequest("su_1", ""))
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404 (%s)", rec.Code, rec.Body.String())
 	}
 }
 

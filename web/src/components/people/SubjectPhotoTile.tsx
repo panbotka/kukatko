@@ -103,7 +103,7 @@ export function SubjectPhotoTile({
           ? `/photos/${photo.uid}?${detailQuery}`
           : `/photos/${photo.uid}`
       }
-      className="d-block bg-secondary-subtle overflow-hidden rounded"
+      className="d-block position-relative bg-secondary-subtle overflow-hidden rounded"
       style={{
         aspectRatio: '1 / 1',
         outline: selected ? '3px solid var(--bs-primary)' : undefined,
@@ -134,6 +134,7 @@ export function SubjectPhotoTile({
       <FadeInImage
         src={photo.thumb_url}
         alt={label}
+        unavailable
         className="w-100 h-100"
         style={{ objectFit: 'cover' }}
       />

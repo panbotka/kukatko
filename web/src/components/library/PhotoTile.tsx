@@ -16,6 +16,7 @@ import { type Photo, thumbUrl } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
 import { MorphLink } from '../morph/MorphLink'
+import { ThumbUnavailable } from '../ThumbUnavailable'
 
 import { FavoriteButton } from './FavoriteButton'
 
@@ -264,16 +265,7 @@ export function PhotoTile({
         // words as the tile shrinks, never its glyph, which then sits on its own
         // clear of both (`.kk-tile__unavailable` in `styles/tokens.css`). Its
         // name says it all at any size.
-        <span
-          className="kk-tile__unavailable text-secondary"
-          role="img"
-          aria-label={t('library.tile.unavailable')}
-        >
-          <span className="kk-tile__unavailable-body">
-            <Icon name="image" className="kk-tile__unavailable-icon" />
-            <span className="kk-tile__unavailable-text">{t('library.tile.unavailable')}</span>
-          </span>
-        </span>
+        <ThumbUnavailable variant="tile" />
       )}
       {isPlayableClip(photo) && (
         <span

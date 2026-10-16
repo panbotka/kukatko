@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import { type Bbox, faceCropUrl } from '../../services/people'
 import { FadeInImage } from '../FadeInImage'
+import { ThumbUnavailable } from '../ThumbUnavailable'
 
 /** Props for {@link FaceCrop}. */
 export interface FaceCropProps {
@@ -52,9 +53,9 @@ export interface FaceCropProps {
  * The image loads lazily ({@link FadeInImage}'s default), which is what lets a
  * section of hundreds of faces request only the ones the reader has reached. A
  * rendition that cannot be produced — a photograph with no usable preview, a box
- * naming nothing — leaves the caller's empty well rather than the browser's
- * broken-image glyph, and says so through `onUnavailable` for the callers whose
- * tile has no meaning without the picture.
+ * naming nothing — paints the "no preview available" placeholder in the well
+ * rather than the browser's broken-image glyph, and says so through
+ * `onUnavailable` for the callers whose tile has no meaning without the picture.
  */
 export function FaceCrop({ photoUid, bbox, label, size, className, onUnavailable }: FaceCropProps) {
   const [failed, setFailed] = useState(false)
@@ -78,6 +79,7 @@ export function FaceCrop({ photoUid, bbox, label, size, className, onUnavailable
           }}
         />
       )}
+      {failed && <ThumbUnavailable />}
     </div>
   )
 }

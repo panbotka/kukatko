@@ -20,6 +20,7 @@ import { ReviewLightbox } from '../review/ReviewLightbox'
 import { DuplicateMarkerCrop } from './DuplicateMarkerCrop'
 
 import '../review/review.css'
+import { ThumbImage } from '../ThumbImage'
 
 /**
  * The thumbnail the whole-photo preview is cut from. It is a `fit_*` size, so it
@@ -130,7 +131,7 @@ export function DuplicateMarkerGroupCard({
             background: 'var(--bs-dark)',
           }}
         >
-          <img
+          <ThumbImage
             {...preview.imgProps}
             src={thumbUrl(group.photo_uid, PREVIEW_SIZE)}
             alt={t('duplicateMarkers.card.previewAlt', { name: group.subject_name })}

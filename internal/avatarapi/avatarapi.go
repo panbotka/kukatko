@@ -26,6 +26,7 @@ import (
 	"github.com/panbotka/kukatko/internal/avatar"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/thumb"
 )
 
 // cacheControl is the caching policy for an avatar. Unlike a thumbnail it is
@@ -109,9 +110,10 @@ func (a *API) RegisterRoutes(r chi.Router) {
 }
 
 // handleAvatar streams the subject's avatar as a JPEG. A subject that does not
-// exist, has no picture at all, or whose picture names a photo that has since
-// gone answers 404 — the people index draws its placeholder for all three, so
-// they are the same answer to it. A caller presenting the current ETag gets 304.
+// exist, has no picture at all, whose picture names a photo that has since gone,
+// or whose photo's original cannot be decoded (thumb.ErrUndecodable) answers 404
+// — the people index draws its placeholder for all four, so they are the same
+// answer to it. A caller presenting the current ETag gets 304.
 //
 // Both lookups run inside the request's project, so a subject of another project
 // is the same 404 as a missing one, and no byte of another project's photo is
@@ -134,6 +136,12 @@ func (a *API) handleAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reader, etag, err := a.renderer.Open(r.Context(), photo, faceBox(source.Face))
+	if errors.Is(err, thumb.ErrUndecodable) {
+		// The source photo can never yield a picture: that is "no avatar", the
+		// same 404 every other kind of "no picture" answers.
+		writeError(w, http.StatusNotFound, "subject has no avatar")
+		return
+	}
 	if err != nil {
 		log.Printf("avatarapi: rendering avatar of %s: %v", source.PhotoUID, err)
 		writeError(w, http.StatusInternalServerError, "avatar unavailable")

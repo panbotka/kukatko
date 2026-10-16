@@ -14,6 +14,7 @@ import { type Photo, thumbUrl } from '../../services/photos'
 
 import { ReviewPhoto } from './ReviewPhoto'
 import { OpenPhotoLink } from './ReviewStage'
+import { ThumbImage } from '../ThumbImage'
 
 /**
  * How much of the photo around the face the crop keeps, per side. A little more
@@ -87,8 +88,9 @@ export function ReviewOutlier({ photo, bbox, href, linkState, alt }: ReviewOutli
   return (
     <div className="review-outlier" data-testid="review-outlier">
       <div className="review-outlier__face" style={frameStyle}>
-        <img
+        <ThumbImage
           src={thumbUrl(photo.uid, source)}
+          fallbackClassName="position-absolute top-0 start-0 w-100 h-100"
           data-testid="review-outlier-face"
           data-thumb-size={source}
           alt={alt}

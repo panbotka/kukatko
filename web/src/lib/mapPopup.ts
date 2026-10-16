@@ -11,6 +11,10 @@ import { type MapFeature } from '../services/map'
  * project. Without it the href is the bare `/photos/<uid>`, which the app's
  * legacy-address redirect still forwards into a project.
  *
+ * An image that fails to load is replaced by the same "no preview available"
+ * stand-in `ThumbUnavailable` draws (its markup, built by hand: a Leaflet popup
+ * is plain DOM), named `unavailableLabel`.
+ *
  * Kept out of the Leaflet component module so it can be unit-tested in isolation
  * and so the component file exports only a component (fast-refresh friendly).
  */
@@ -19,6 +23,7 @@ export function buildPopupElement(
   onSelect: (uid: string) => void,
   thumbAlt: string,
   projectPath: (path: string) => string = (path) => path,
+  unavailableLabel = '',
 ): HTMLElement {
   const { uid, title, thumb } = feature.properties
   const link = document.createElement('a')
@@ -32,6 +37,11 @@ export function buildPopupElement(
   img.style.display = 'block'
   img.style.maxWidth = '220px'
   img.style.height = 'auto'
+  // A photo without a preview (its thumbnail answers 404) gets the library's
+  // "no preview available" stand-in, never the browser's broken-image icon.
+  img.addEventListener('error', () => {
+    img.replaceWith(unavailableElement(unavailableLabel))
+  })
   link.appendChild(img)
 
   if (title !== '') {
@@ -52,4 +62,32 @@ export function buildPopupElement(
   })
 
   return link
+}
+
+/**
+ * The "no preview available" stand-in as plain DOM: `ThumbImage`'s box (a
+ * 220 × 165 well, the popup image's own width) holding `ThumbUnavailable`'s
+ * markup, announced as one image named `label`.
+ */
+function unavailableElement(label: string): HTMLElement {
+  const box = document.createElement('span')
+  box.className = 'kk-thumb-unavailable-box'
+  box.style.width = '220px'
+  box.style.height = '165px'
+  const placeholder = document.createElement('span')
+  placeholder.className = 'kk-thumb-unavailable text-secondary'
+  placeholder.setAttribute('role', 'img')
+  placeholder.setAttribute('aria-label', label)
+  const body = document.createElement('span')
+  body.className = 'kk-thumb-unavailable-body'
+  const icon = document.createElement('i')
+  icon.className = 'bi bi-image kk-thumb-unavailable-icon'
+  icon.setAttribute('aria-hidden', 'true')
+  const text = document.createElement('span')
+  text.className = 'kk-thumb-unavailable-text'
+  text.textContent = label
+  body.append(icon, text)
+  placeholder.appendChild(body)
+  box.appendChild(placeholder)
+  return box
 }

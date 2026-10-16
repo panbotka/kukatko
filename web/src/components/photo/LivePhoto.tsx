@@ -13,6 +13,11 @@ export interface LivePhotoProps {
   poster: string
   /** Download token appended to the stream URL for cookie-less contexts. */
   token?: string | null
+  /**
+   * Called when the still fails to load — the photo has no preview — so the
+   * viewer can put its "no preview" stand-in on the stage instead.
+   */
+  onPosterError?: () => void
 }
 
 /**
@@ -22,7 +27,7 @@ export interface LivePhotoProps {
  * muted and looped so it behaves like Apple/Google live photos. The motion video
  * sits over the still and cross-fades in, so there is no layout shift.
  */
-export function LivePhoto({ uid, title, poster, token }: LivePhotoProps) {
+export function LivePhoto({ uid, title, poster, token, onPosterError }: LivePhotoProps) {
   const { t } = useTranslation()
   const videoRef = useRef<HTMLVideoElement>(null)
   const [playing, setPlaying] = useState(false)
@@ -71,6 +76,7 @@ export function LivePhoto({ uid, title, poster, token }: LivePhotoProps) {
         alt={title}
         className="mw-100 d-block"
         style={{ maxHeight: '70vh', objectFit: 'contain', opacity: playing ? 0 : 1 }}
+        onError={onPosterError}
       />
       <video
         ref={videoRef}

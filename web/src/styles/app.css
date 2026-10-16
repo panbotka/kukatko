@@ -1021,7 +1021,8 @@ a.kk-chooser__tile:focus-visible .kk-chooser__picture {
   background: var(--kk-surface-sunken);
 }
 
-.kk-discuss-preview img {
+.kk-discuss-preview img,
+.kk-discuss-preview .kk-thumb-unavailable-box {
   display: block;
   width: 100%;
   height: 100%;

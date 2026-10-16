@@ -81,6 +81,14 @@ var (
 	// stale prefix; the caller generates again from the photo as it is now (the
 	// thumbnail job defers itself and re-runs).
 	ErrPrefixMoved = errors.New("thumb: the photo's storage prefix changed during generation")
+	// ErrUndecodable indicates the photo's original can never become a
+	// thumbnail as it stands: it is corrupt or truncated, in a format the
+	// pipeline cannot convert, a RAW without an embedded preview, over the pixel
+	// cap, or a converter rejected it. Generating again cannot help, so it is a
+	// state of the photo rather than a server fault — the thumbnail route answers
+	// it with 404, not 500. A cancelled context, a converter that is not
+	// installed and a storage or I/O failure never wrap it.
+	ErrUndecodable = errors.New("thumb: the original cannot be decoded")
 )
 
 // CacheSubdir is the top-level directory that holds every cached thumbnail: a

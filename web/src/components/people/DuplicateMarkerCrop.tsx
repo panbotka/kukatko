@@ -13,6 +13,7 @@ import { type DuplicateMarker } from '../../services/dupmarkers'
 import { thumbUrl } from '../../services/photos'
 
 import './outliers.css'
+import { ThumbImage } from '../ThumbImage'
 
 /** How much of the surrounding photo is kept around the marker box, per side. */
 const CONTEXT_PADDING = 0.3
@@ -77,8 +78,9 @@ export function DuplicateMarkerCrop({
 
   return (
     <div className="position-relative overflow-hidden rounded" style={frameStyle}>
-      <img
+      <ThumbImage
         src={thumbUrl(photoUid, source)}
+        fallbackClassName="position-absolute top-0 start-0 w-100 h-100"
         data-testid="dup-marker-crop"
         data-thumb-size={source}
         alt={t('duplicateMarkers.card.cropAlt')}

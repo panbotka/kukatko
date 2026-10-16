@@ -18,6 +18,7 @@ import { FaceCrop } from '../people/FaceCrop'
 import { EnlargeButton } from './EnlargeButton'
 
 import './review.css'
+import { ThumbImage } from '../ThumbImage'
 
 /**
  * How much of the photo around the face the enlarged crop keeps, per side. The
@@ -207,8 +208,9 @@ export function ReviewFaceZoom({ photo, bbox, subject, onClose }: ReviewFaceZoom
       />
       <figure className="review-face-zoom__panel">
         <div className="review-face-zoom__frame" style={frameStyle}>
-          <img
+          <ThumbImage
             src={thumbUrl(photo.uid, source)}
+            fallbackClassName="position-absolute top-0 start-0 w-100 h-100"
             data-testid="review-face-zoom-img"
             data-thumb-size={source}
             alt={t('review.facePair.zoomAlt')}

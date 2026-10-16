@@ -56,6 +56,10 @@ export function AlbumCoverMedia({ cover, alt, singleSrc, singleBlurhash }: Album
           <FadeInImage
             src={singleSrc ?? thumbUrl(cover.photoUid, GRID_THUMB_SIZE)}
             alt={alt}
+            // A cover photo without a preview says so rather than leaving a bare
+            // well. A collage cell (below) stays the bare well: it is decoration
+            // beside three more pictures of the same album.
+            unavailable
             className="w-100 h-100"
             style={{ objectFit: 'cover' }}
           />

@@ -30,6 +30,13 @@ const originalCacheControl = "private, max-age=31536000, immutable"
 // expires, so a cached redirect would eventually send the client to a 403.
 const redirectCacheControl = "private, no-store"
 
+// errUndecodableMessage is the error string a thumbnail-derived route answers
+// with 404 when the photo's original can never become a picture
+// (thumb.ErrUndecodable). It is distinct from "photo not found" so a client —
+// and an operator reading the access log — can tell "this photo has no preview"
+// from "there is no such photo".
+const errUndecodableMessage = "original cannot be thumbnailed"
+
 // wantsProxy reports whether the caller asked for the media bytes to be streamed
 // through this application rather than being answered with a redirect to a signed
 // object-store URL (?proxy=true on a media route).
@@ -61,7 +68,9 @@ func redirectToMedia(w http.ResponseWriter, r *http.Request, target string) {
 
 // handleThumb streams a cached thumbnail for the photo named in the path,
 // generating it on a cache miss. An unknown size is answered with 400, a missing
-// photo with 404. The JPEG is streamed (never buffered whole) with an ETag so
+// photo with 404, and a photo whose original cannot be decoded into a thumbnail
+// (thumb.ErrUndecodable) with 404 errUndecodableMessage; any other failure to
+// open or generate it — storage, I/O — stays a 500. The JPEG is streamed (never buffered whole) with an ETag so
 // repeat fetches can be answered 304.
 //
 // When the storage backend publishes its objects the route instead redirects to
@@ -100,6 +109,12 @@ func (a *API) handleThumb(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reader, err := a.openThumb(r, photo, size)
+	if errors.Is(err, thumb.ErrUndecodable) {
+		// An expected state of the photo, not a server fault: answered 404 so it
+		// is neither an error-level access-log line nor a 5xx in the metrics.
+		writeError(w, http.StatusNotFound, errUndecodableMessage)
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "thumbnail unavailable")
 		return

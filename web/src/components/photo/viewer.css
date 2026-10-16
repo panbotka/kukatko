@@ -66,6 +66,28 @@
     bottom var(--kk-duration-base) var(--kk-ease-standard);
 }
 
+/* A photo whose preview cannot be loaded (`StageUnavailable`): the library's
+   "no preview available" placeholder in a photo-shaped well on the sunken
+   surface, and the original's download under it. The well is the positioned
+   box the placeholder fills; its size is a modest landscape photo's, never more
+   than the stage leaves. */
+.kk-viewer__unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--kk-space-3);
+  max-width: 100%;
+  animation: kk-viewer-photo-in var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+.kk-viewer__unavailable-well {
+  position: relative;
+  width: min(24rem, 80cqw);
+  aspect-ratio: 4 / 3;
+  border-radius: var(--kk-radius-md);
+  background-color: var(--kk-surface-sunken);
+}
+
 /* The figure wraps the rendered image so the face overlay's percentage geometry
    lands on the faces; it carries the between-photos fade/scale. Keyed on the photo
    UID in JSX so a new node replays the animation on navigation. This bare form is
@@ -1436,6 +1458,15 @@
    promise playback. */
 .kk-video__still {
   cursor: default;
+}
+
+/* The held clip's poster frame could not be loaded: the "no preview" stand-in
+   (`ThumbImage`'s box) takes the still's place, a modest landscape well above
+   the encode's state — the box has no intrinsic size of its own to keep. */
+.kk-video__still-unavailable {
+  width: min(24rem, 80vw);
+  max-width: 100%;
+  aspect-ratio: 4 / 3;
 }
 
 .kk-video__prepare {

@@ -1026,6 +1026,66 @@
   }
 }
 
+/*
+ * The same "no preview available" stand-in anywhere that is not a library tile
+ * (`ThumbUnavailable`'s default `fill` variant): the viewer's stage, a similar
+ * photo, an album cover, a face crop, a task row. Such a box has no corner
+ * controls to keep clear of, so the glyph and words are simply centred in it.
+ * The words need room for two lines beside nothing (~6rem × 4.5rem); a smaller
+ * box keeps the glyph alone, which its accessible name speaks for.
+ */
+.kk-thumb-unavailable {
+  container: kk-thumb-unavailable / size;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  text-align: center;
+  text-decoration: none;
+}
+
+.kk-thumb-unavailable-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--kk-space-1);
+  max-width: 100%;
+  padding: var(--kk-space-1);
+}
+
+.kk-thumb-unavailable-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.kk-thumb-unavailable-text {
+  display: none;
+  min-width: 0;
+  font-size: var(--kk-font-size-caption);
+  line-height: var(--kk-line-height-caption);
+  overflow-wrap: anywhere;
+}
+
+@container kk-thumb-unavailable (min-width: 6rem) and (min-height: 4.5rem) {
+  .kk-thumb-unavailable-text {
+    display: block;
+  }
+}
+
+/* The box `ThumbImage` paints the placeholder in when its image fails: it takes
+   the image's place and classes, so it is a block on the sunken surface the
+   placeholder fills. Zero specificity (`:where`), so a class that positions or
+   sizes the image (an absolutely placed pane image, say) still wins. */
+:where(.kk-thumb-unavailable-box) {
+  position: relative;
+  display: block;
+  flex-shrink: 0;
+  overflow: hidden;
+  background-color: var(--kk-surface-sunken);
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* The zoom is decorative; the scrim + date reveal alone still signal hover. */
   .kukatko-photo-grid .kk-tile:hover .kk-tile__media img,
@@ -1622,7 +1682,8 @@
   opacity: 0.6;
 }
 
-.kk-picture-picker__tile img {
+.kk-picture-picker__tile img,
+.kk-picture-picker__tile .kk-thumb-unavailable-box {
   width: 100%;
   height: 100%;
   object-fit: cover;

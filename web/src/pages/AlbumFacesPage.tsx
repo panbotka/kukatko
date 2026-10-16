@@ -20,6 +20,7 @@ import { type FaceView } from '../services/people'
 import { type Photo, thumbUrl } from '../services/photos'
 
 import '../components/people/albumFaces.css'
+import { ThumbImage } from '../components/ThumbImage'
 
 /**
  * The preview size the stage requests. A `fit_*` (whole frame), never a square
@@ -73,7 +74,7 @@ function AlbumFacesStage({ photo, faces, hovered, onHover }: AlbumFacesStageProp
           maxWidth: `min(100%, calc(100cqh * ${String(ratio)}))`,
         }}
       >
-        <img
+        <ThumbImage
           {...stage.imgProps}
           src={thumbUrl(photo.uid, PREVIEW_SIZE)}
           alt={t('albumFaces.photoAlt')}

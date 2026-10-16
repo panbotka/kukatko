@@ -3,12 +3,14 @@ package thumb
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif" // register GIF decoder
 	"image/jpeg"
 	_ "image/png" // register PNG decoder
 	"os"
+	"os/exec"
 
 	_ "golang.org/x/image/bmp"  // register BMP decoder
 	_ "golang.org/x/image/tiff" // register TIFF decoder
@@ -32,6 +34,11 @@ import (
 // while the process-wide budget is spent. The returned release gives that
 // reservation back and must be called once the image is no longer used; it is
 // a no-op when the call fails.
+//
+// A failure that is a property of the original itself — it cannot be converted
+// or decoded, or it is over the pixel cap — wraps ErrUndecodable (see
+// undecodable); a cancelled context, a missing converter or an I/O failure does
+// not.
 func decodeAndOrient(
 	ctx context.Context, srcPath string, orientation int, maxPixels int64,
 	budget *imgconvert.DecodeBudget, extra func(image.Config) int64,
@@ -39,13 +46,13 @@ func decodeAndOrient(
 	noop := func() {}
 	decPath, cleanup, err := imgconvert.EnsureDecodable(ctx, srcPath)
 	if err != nil {
-		return nil, noop, fmt.Errorf("thumb: prepare %s: %w", srcPath, err)
+		return nil, noop, undecodable(ctx, fmt.Errorf("thumb: prepare %s: %w", srcPath, err))
 	}
 	defer cleanup()
 
 	release, err := imgconvert.ReserveDecode(ctx, decPath, maxPixels, budget, extra)
 	if err != nil {
-		return nil, noop, fmt.Errorf("thumb: %s: %w", srcPath, err)
+		return nil, noop, undecodable(ctx, fmt.Errorf("thumb: %s: %w", srcPath, err))
 	}
 
 	f, err := os.Open(decPath) //nolint:gosec // G304: decPath is from the trusted storage layer or imgconvert temp.
@@ -58,9 +65,35 @@ func decodeAndOrient(
 	img, _, err := image.Decode(f)
 	if err != nil {
 		release()
-		return nil, noop, fmt.Errorf("thumb: decode %s: %w", srcPath, err)
+		// The bytes were read from a local file that opened fine, so a decode
+		// failure is the content's: corrupt, truncated or not what it claims.
+		return nil, noop, fmt.Errorf("%w: decode %s: %w", ErrUndecodable, srcPath, err)
 	}
 	return imgconvert.Orient(img, orientation), release, nil
+}
+
+// undecodable marks err with ErrUndecodable when it says the original itself can
+// never become a picture: a format the pipeline cannot convert
+// (imgconvert.ErrUnsupportedFormat), a RAW without an embedded preview, an image
+// over the pixel cap or the whole decode budget (imgconvert.ErrImageTooLarge), a
+// converter that ran and refused the file (it exited non-zero),. (A decoder that
+// rejected the bytes is marked by decodeAndOrient itself.)
+//
+// It leaves err as it is — a server fault, not a fact about the photo — while
+// ctx is done (a cancelled shell-out also exits non-zero, and a cancelled RAW
+// extraction reports no preview), when a converter is not installed
+// (imgconvert.ErrConverterMissing), or for anything else, such as a stat or
+// temp-file failure. A nil err stays nil.
+func undecodable(ctx context.Context, err error) error {
+	if err == nil || ctx.Err() != nil || errors.Is(err, imgconvert.ErrConverterMissing) {
+		return err
+	}
+	var exitErr *exec.ExitError
+	if errors.Is(err, imgconvert.ErrUnsupportedFormat) || errors.Is(err, imgconvert.ErrNoEmbeddedPreview) ||
+		errors.Is(err, imgconvert.ErrImageTooLarge) || errors.As(err, &exitErr) {
+		return fmt.Errorf("%w: %w", ErrUndecodable, err)
+	}
+	return err
 }
 
 // resizeForSpec returns a new image rendered from img according to spec: a

@@ -2,6 +2,7 @@ package photoapi
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"math"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/avatar"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/thumb"
 )
 
 // faceCropCacheControl is the caching policy for a face crop. Unlike the subject
@@ -53,7 +55,8 @@ type FaceCropRenderer interface {
 // a hundredth of the preview it replaces, that is a trade worth making.
 //
 // A box that is not four finite numbers, or that has no positive size, or that
-// lies entirely outside the frame is a 400; an unknown photo a 404. A caller
+// lies entirely outside the frame is a 400; an unknown photo a 404, and so is a
+// photo whose original cannot be decoded (thumb.ErrUndecodable). A caller
 // presenting the current ETag gets a 304.
 func (a *API) handleFaceCrop(w http.ResponseWriter, r *http.Request) {
 	if a.faceCrops == nil {
@@ -72,6 +75,10 @@ func (a *API) handleFaceCrop(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reader, etag, err := a.faceCrops.Open(r.Context(), photo, &box)
+	if errors.Is(err, thumb.ErrUndecodable) {
+		writeError(w, http.StatusNotFound, errUndecodableMessage)
+		return
+	}
 	if err != nil {
 		log.Printf("photoapi: rendering face crop of %s: %v", photo.UID, err)
 		writeError(w, http.StatusInternalServerError, "face crop unavailable")

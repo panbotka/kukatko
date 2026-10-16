@@ -83,4 +83,23 @@ describe('FadeInImage', () => {
     expect(document.querySelector('.kk-media-blur')).toBeInTheDocument()
     expect(document.querySelector('.kk-skeleton')).not.toBeInTheDocument()
   })
+
+  it('paints the "no preview" placeholder on failure when asked to, and retries a new address', () => {
+    const { rerender } = render(<FadeInImage src="/a.jpg" alt="A" unavailable />)
+
+    fireEvent.error(screen.getByRole('img', { name: 'A' }))
+    expect(screen.queryByRole('img', { name: 'A' })).not.toBeInTheDocument()
+    expect(document.querySelector('.kk-thumb-unavailable')).toHaveAttribute('role', 'img')
+
+    rerender(<FadeInImage src="/b.jpg" alt="A" unavailable />)
+    expect(screen.getByRole('img', { name: 'A' })).toHaveAttribute('src', '/b.jpg')
+  })
+
+  it('leaves its own fallback to a caller that does not ask for the placeholder', () => {
+    render(<FadeInImage src="/a.jpg" alt="A" />)
+
+    fireEvent.error(screen.getByRole('img', { name: 'A' }))
+    expect(screen.getByRole('img', { name: 'A' })).toBeInTheDocument()
+    expect(document.querySelector('.kk-thumb-unavailable')).not.toBeInTheDocument()
+  })
 })

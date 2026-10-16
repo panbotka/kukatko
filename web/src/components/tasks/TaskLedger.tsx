@@ -11,6 +11,7 @@ import { ProjectLink } from '../../project/ProjectLink'
 import { type Photo, thumbUrl } from '../../services/photos'
 import { Icon } from '../Icon'
 import { type GridContext, GridFooter, type PhotoGridSelection } from '../library/PhotoGrid'
+import { ThumbImage } from '../ThumbImage'
 
 /** The square crop a row's thumbnail is drawn from — the avatar size, cache-warm. */
 const ROW_THUMB_SIZE = 'tile_100'
@@ -110,7 +111,7 @@ function LedgerRow({ photo, href, selection, orderedUids }: LedgerRowProps) {
           {selected && <Icon name="check-lg" />}
         </button>
       )}
-      <img
+      <ThumbImage
         className="kk-ledger-row__thumb"
         src={thumbUrl(photo.uid, ROW_THUMB_SIZE)}
         alt=""

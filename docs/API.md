@@ -1126,7 +1126,13 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   is fetched inline as an `<img>`/`<video>` source from one shared edge cache entry, so a disposition
   attached to the *object* would turn every such view into a download. The streaming branch of `/thumb/{size}` reads the size
   through `thumb.OpenOrGenerate` (local cache → the published object → generate), so it also answers on a
-  backend that publishes objects but mints no signed URL, where the thumbnail may exist only in the bucket. `GET /photos/{uid}/video` (session/`?t=` token) streams
+  backend that publishes objects but mints no signed URL, where the thumbnail may exist only in the bucket.
+  **An original that can never become a thumbnail** — corrupt or truncated, a format the pipeline cannot
+  convert, a RAW without an embedded preview, over the pixel cap, a converter that refused it
+  (`thumb.ErrUndecodable`) — answers **404 `{"error":"original cannot be thumbnailed"}`**: a state of the
+  photo, not a fault, so it logs at WARN and stays out of the 5xx metrics; the SPA paints its "no preview"
+  placeholder for it. Every other failure to open or generate the size (an original gone from storage, I/O,
+  a converter that is not installed, a cancelled request) stays **500 `thumbnail unavailable`**. `GET /photos/{uid}/video` (session/`?t=` token) streams
   video **with HTTP Range** (206 partial, `Accept-Ranges`, seek; a live photo = a motion clip, still → 404)
   for inline HTML5 playback, or redirects to the Worker, which serves Range directly from R2 (dropping the
   requirement of a seekable local file); an optional on-the-fly transcode of non-web-friendly codecs via
@@ -1214,7 +1220,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `Cache-Control: private, max-age=31536000, immutable`, the renderer's `ETag`, `304`. The box is four
   comma-separated numbers in the photo's **display** space (where a marker's box lives), and it may hang over
   an edge: the renderer slides it back inside rather than clipping. A box that is not four finite numbers, has
-  no positive size, or lies wholly outside the frame → **400**; an unknown photo → **404**. It exists because
+  no positive size, or lies wholly outside the frame → **400**; an unknown photo → **404**, and so is a photo
+  whose original cannot be decoded (`thumb.ErrUndecodable`, the thumb route's same
+  `original cannot be thumbnailed`). It exists because
   showing a face used to mean downloading a photograph — the outlier section of one person's page fetched 290
   `fit_1280` previews (1280×960 each) so the reader could see 290 windows of 96 px; a crop is some 15 kB. The
   crop is cut by the **same renderer as the subject avatar** (`internal/avatar`): padded 30 %, squared in pixel
@@ -2077,8 +2085,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `fit_*` ladder (720/1280/1920) and the rendition is cached under the derived-media cache's own `avatar/`
   prefix, never in the object store. `ETag` + `private, max-age=600, must-revalidate` — deliberately **not**
   immutable, since the URL names a subject and which picture stands for one changes; `If-None-Match` → 304.
-  A subject that does not exist, has no picture at all, or whose picture names a photo that is gone all
-  answer **404** (the grid draws its placeholder for each). Mounted by `server.WithAPI` (`buildAvatarAPI` in
+  A subject that does not exist, has no picture at all, whose picture names a photo that is gone, or whose
+  photo's original cannot be decoded (`thumb.ErrUndecodable`) all answer **404** (the grid draws its
+  placeholder for each). Mounted by `server.WithAPI` (`buildAvatarAPI` in
   `cmd/kukatko/avatar.go`).
 - **Profile picture (`/api/v1`, `internal/userpicapi`):** `GET /users/{uid}/avatar` (`RequireSignedIn` on
   the instance route; `RequireAuth` under `/api/v1/p/{project}`, where the SPA asks it inside a project) → the

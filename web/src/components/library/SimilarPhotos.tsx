@@ -97,6 +97,7 @@ export function SimilarPhotos({ uid, limit }: SimilarPhotosProps) {
               <FadeInImage
                 src={photo.thumb_url}
                 alt={label}
+                unavailable
                 className="w-100 h-100"
                 style={{ objectFit: 'cover' }}
               />

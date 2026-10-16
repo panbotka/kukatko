@@ -38,6 +38,7 @@ import {
 } from '../../lib/videoPlayback'
 import { type PhotoProcessing } from '../../services/photos'
 import { Icon } from '../Icon'
+import { ThumbImage } from '../ThumbImage'
 
 import { VideoScrubber } from './VideoScrubber'
 
@@ -494,7 +495,14 @@ export function VideoPlayer({
             nothing about it is clickable, and the element is deliberately an
             <img> rather than a source-less <video>: no byte of the original is
             fetched for a clip that cannot yet be watched. */}
-        <img className="kk-video__media kk-video__still" src={poster} alt={title} />
+        <ThumbImage
+          className="kk-video__media kk-video__still"
+          src={poster}
+          alt={title}
+          // A clip whose poster frame cannot be drawn shows the "no preview"
+          // stand-in above the encode's state rather than a broken image.
+          fallbackClassName="kk-video__still-unavailable"
+        />
         <div className="kk-video__prepare" role="status">
           <Icon
             name={hold === 'preparationFailed' ? 'exclamation-triangle' : 'hourglass-split'}

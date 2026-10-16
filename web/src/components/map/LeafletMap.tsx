@@ -1,5 +1,6 @@
 import L from 'leaflet'
 import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster'
@@ -273,6 +274,9 @@ export function LeafletMap({
   bottomInsetRef.current = bottomInset
   const thumbAltRef = useRef(thumbAlt)
   thumbAltRef.current = thumbAlt
+  const { t } = useTranslation()
+  const unavailableRef = useRef('')
+  unavailableRef.current = t('library.tile.unavailable')
   // The popup's href is the photo's address in the current project, so a
   // middle-click or "open in new tab" lands on it directly. A ref, like the
   // two above: the popups are built lazily, long after the effect that bound them.
@@ -552,6 +556,7 @@ export function LeafletMap({
           },
           thumbAltRef.current,
           projectPathRef.current,
+          unavailableRef.current,
         ),
       )
       cluster.addLayer(marker)

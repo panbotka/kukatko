@@ -4475,6 +4475,67 @@ describe('PhotoDetailPage — the library operations on a clip', () => {
 // edge answer with Content-Disposition: attachment. So the page must hand the
 // payload's address over verbatim; rebuilding or trimming it turns the download
 // back into "open the photo in a tab".
+describe('PhotoDetailPage — a photo without a preview', () => {
+  /** The stage's full-size image, never the smaller stand-in under it. */
+  function stageImage(): HTMLImageElement | null {
+    return document.querySelector<HTMLImageElement>(
+      'img.kk-viewer__image:not(.kk-viewer__image--under)',
+    )
+  }
+
+  /** The element `selector` names, failing the test when there is none. */
+  function required(selector: string): HTMLElement {
+    const el = document.querySelector<HTMLElement>(selector)
+    if (el === null) {
+      throw new Error(`${selector} not found`)
+    }
+    return el
+  }
+
+  it('shows the "no preview" placeholder and the download when the image fails', async () => {
+    fetchPhotoMock.mockResolvedValue(photo())
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    // An original the server cannot decode answers its thumbnail with a 404.
+    fireEvent.error(required('img.kk-viewer__image:not(.kk-viewer__image--under)'))
+
+    const stage = viewer(document.body)
+    expect(
+      await within(stage).findByRole('img', { name: 'Preview unavailable' }),
+    ).toBeInTheDocument()
+    // No image is left on stage to show the browser's broken-image icon.
+    expect(stageImage()).toBeNull()
+    // The one way forward: the original itself.
+    expect(
+      within(required('.kk-viewer__unavailable')).getByRole('button', {
+        name: 'Download original',
+      }),
+    ).toHaveAttribute('href', '/api/v1/p/v/photos/b/download?original=true')
+  })
+
+  it('puts the placeholder up for a live photo whose still fails too', async () => {
+    fetchPhotoMock.mockResolvedValue(photo({ media_type: 'live' }))
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    fireEvent.error(required('.kk-viewer__media img'))
+
+    expect(await screen.findByRole('img', { name: 'Preview unavailable' })).toBeInTheDocument()
+  })
+
+  it('keeps the photograph for an image that loads', async () => {
+    fetchPhotoMock.mockResolvedValue(photo())
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    loadPreview()
+
+    expect(stageImage()).not.toBeNull()
+    expect(screen.queryByRole('img', { name: 'Preview unavailable' })).not.toBeInTheDocument()
+  })
+})
+
 describe('PhotoDetailPage download links', () => {
   const SIGNED = 'https://media.example/2026/01/beach.jpg?dl=beach.jpg&exp=1767267600&sig=deadbeef'
 

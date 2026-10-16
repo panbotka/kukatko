@@ -4,6 +4,7 @@ import { blurPlaceholderUrl } from '../lib/blurPlaceholder'
 
 import { BlurPlaceholder } from './BlurPlaceholder'
 import { Skeleton } from './Skeleton'
+import { ThumbUnavailable } from './ThumbUnavailable'
 
 /** Props for {@link FadeInImage}: every native `<img>` attribute bar the load
  * handler this component owns. */
@@ -27,6 +28,15 @@ export interface FadeInImageProps extends Omit<ImgHTMLAttributes<HTMLImageElemen
    * more than a shimmer. Needs a positioned box, exactly as the skeleton does.
    */
   blurhash?: string
+  /**
+   * Paint the "no preview available" placeholder ({@link ThumbUnavailable}) in
+   * the image's place once it fails to load, instead of leaving the empty well.
+   * Pass it where nothing else stands in for a missing picture — a similar photo,
+   * an album cover — and leave it off where the caller draws its own fallback
+   * (the library tile retries an expired address first). Needs a positioned box,
+   * exactly as the skeleton does.
+   */
+  unavailable?: boolean
 }
 
 /**
@@ -52,6 +62,7 @@ export function FadeInImage({
   decoding = 'async',
   skeleton = false,
   blurhash,
+  unavailable = false,
   onError,
   ...rest
 }: FadeInImageProps) {
@@ -60,7 +71,9 @@ export function FadeInImage({
   // pulses forever says "still loading" about an image that has already given up.
   // The caller's own handler still runs — `OutlierCard` steps down the thumbnail
   // ladder from here — and a retry that succeeds fires `onLoad` regardless.
-  const [failed, setFailed] = useState(false)
+  // The failure is remembered per address, so a new `src` is simply tried.
+  const [failedSrc, setFailedSrc] = useState<string | undefined>(undefined)
+  const failed = rest.src !== undefined && failedSrc === rest.src
 
   // A cached image can finish decoding before React attaches `onLoad`, so its
   // load event never fires and the fade would stick at zero opacity. Catch that
@@ -81,6 +94,10 @@ export function FadeInImage({
   // back to the shimmer.
   const blurred = blurPlaceholderUrl(blurhash) !== undefined
 
+  if (failed && unavailable) {
+    return <ThumbUnavailable />
+  }
+
   return (
     <>
       <BlurPlaceholder hash={blurhash} />
@@ -99,7 +116,7 @@ export function FadeInImage({
           setLoaded(true)
         }}
         onError={(event) => {
-          setFailed(true)
+          setFailedSrc(rest.src)
           onError?.(event)
         }}
         className={classes}

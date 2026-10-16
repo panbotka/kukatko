@@ -25,6 +25,7 @@ import { SlideshowSettingsForm } from './SlideshowSettingsForm'
 import { SlideshowVideo } from './SlideshowVideo'
 
 import './slideshow.css'
+import { ThumbImage } from '../ThumbImage'
 
 /**
  * Where the slideshow stage fetches one slide from: the smallest `fit_*` rung
@@ -443,7 +444,7 @@ export function Slideshow({
             className={`slideshow__image ${effectClass}`}
           />
         ) : (
-          <img
+          <ThumbImage
             key={current.uid}
             className={`slideshow__image ${effectClass}`}
             src={slideshowSlideSrc(current, viewport)}

@@ -840,7 +840,8 @@
   width: 100%;
 }
 
-.review-summary__mosaic img {
+.review-summary__mosaic img,
+.review-summary__mosaic .kk-thumb-unavailable-box {
   display: block;
   width: 100%;
   aspect-ratio: 1;

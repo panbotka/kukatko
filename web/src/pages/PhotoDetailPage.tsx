@@ -31,6 +31,7 @@ import { PhotoFlagBadges } from '../components/photo/PhotoFlagBadges'
 import { PeoplePanel } from '../components/photo/PeoplePanel'
 import { ProcessingPanel } from '../components/photo/ProcessingPanel'
 import { StackStrip } from '../components/photo/StackStrip'
+import { StageUnavailable } from '../components/photo/StageUnavailable'
 import { TechnicalDetails } from '../components/photo/TechnicalDetails'
 import { UploadLinkLine } from '../components/photo/UploadLinkLine'
 import { VideoPlayer, type VideoKeyboardScope } from '../components/photo/VideoPlayer'
@@ -303,6 +304,12 @@ export function PhotoDetailPage() {
   // and fetching a second, smaller rendition of it would be bytes spent on a
   // frame nobody ever sees.
   const { prime, statusOf } = useImagePreloader()
+  // The stage address that failed to load, if the one on stage did: a photo whose
+  // original cannot be decoded has no preview at all (its thumbnail answers 404),
+  // and the stage then shows the "no preview" placeholder with the download
+  // instead of a broken image. Kept per address, so the next photo — or a rebuilt
+  // rendition of this one, whose address carries a new version — is tried afresh.
+  const [failedPoster, setFailedPoster] = useState<string | null>(null)
 
   // WHICH of the drawer's three views is open lives in one URL param
   // (`panel=info|faces|edits`), so all three are deep-linkable and survive
@@ -1348,10 +1355,21 @@ export function PhotoDetailPage() {
         </div>
       )
     }
+    if (failedPoster === poster) {
+      return <StageUnavailable key={photo.uid} downloadHref={photo.download_url} />
+    }
     if (photo.media_type === 'live') {
       return (
         <div className="kk-viewer__media">
-          <LivePhoto uid={photo.uid} title={title} poster={poster} token={downloadToken} />
+          <LivePhoto
+            uid={photo.uid}
+            title={title}
+            poster={poster}
+            token={downloadToken}
+            onPosterError={() => {
+              setFailedPoster(poster)
+            }}
+          />
         </div>
       )
     }
@@ -1444,6 +1462,9 @@ export function PhotoDetailPage() {
           alt={title}
           style={stillStyle}
           draggable={false}
+          onError={() => {
+            setFailedPoster(poster)
+          }}
         />
         {showFaces && facesAvailable && (
           <FaceOverlay

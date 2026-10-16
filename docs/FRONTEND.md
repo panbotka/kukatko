@@ -803,7 +803,26 @@ here.
   removing it could only flash the empty box through the fade. `PhotoTile` passes `photo.blurhash`. Replaced the manual `loaded` fade in
   `PhotoTile`/`TrashCard` and added the fade to covers/previews:
   `AlbumTile`, `SubjectTile`, `SubjectPhotoTile`, `SimilarPhotos`, `StackStrip`,
-  `DuplicateGroupCard`, `GlobalSearchSections`, `SearchCommand`. Tests: `FadeInImage.test.tsx`),
+  `DuplicateGroupCard`, `GlobalSearchSections`, `SearchCommand`. Optional **`unavailable`** paints
+  `ThumbUnavailable` in the image's place once it fails (the failure is kept **per address**, so a new
+  `src` is tried) — for a well nothing else stands in for: `SimilarPhotos` („Podobné fotky"), the single
+  album cover (`AlbumCoverMedia`, i.e. the album index and the homepage's featured strip; a collage cell
+  stays the bare well), `SubjectPhotoTile`. Tests: `FadeInImage.test.tsx`),
+  `ThumbUnavailable` (**the one „Náhled není dostupný" stand-in**: the image glyph plus the words of
+  `library.tile.unavailable`, announced as **one `role="img"`** of that name, absolutely filling the nearest
+  positioned box. `variant="tile"` is the library tile's own layout (`.kk-tile__unavailable`, clear of the
+  corner controls; `PhotoTile`, `TrashCard`); the default `fill` (`.kk-thumb-unavailable` in `tokens.css`)
+  centres the glyph and drops the words in a box under ~6×4.5rem. It is what every thumbnail consumer paints
+  when its image fails — an original the server cannot decode answers its thumbnail **404** (`docs/API.md`) —
+  so the browser's broken-image icon appears nowhere. `ThumbImage` is its plain-`<img>` wrapper: on `onError`
+  it renders a box in the image's place (`.kk-thumb-unavailable-box`, zero-specificity `:where`, carrying the
+  image's classes, its `width`/`height` attributes and `fallbackClassName`) holding the placeholder; per
+  address, `ref` and the caller's `onError` forwarded (so a source ladder — `OutlierCard`,
+  `DuplicateMarkerCrop`, `ReviewOutlier`, the face zoom — still steps down and shows the placeholder only past
+  its last rung). Used by `DuplicateMarkerGroupCard`, `AlbumFacesPage`, `CompareStage`, `ReviewSummary`,
+  `TasksPage`, `TaskLedger`, `DiscussPhotosModal`, `PhotoPickerModal`, the slideshow, `VideoPlayer`'s held
+  still; `FaceCrop` paints it itself, `lib/mapPopup` builds the same markup as plain DOM for a Leaflet
+  popup. Tests: `ThumbImage.test.tsx`),
   `BlurPlaceholder` (**the photograph's blurred stand-in**: one prop, `hash` = the photo's
   `blurhash`, decoded by `lib/blurPlaceholder` and painted as a `background-image` on a decorative
   (`aria-hidden`) `.kk-media-blur` layer. Absolutely positioned (`inset: 0`, corners inherited,
@@ -1131,7 +1150,8 @@ here.
   (`photo.blurhash` → `FadeInImage`'s `blurhash` → `BlurPlaceholder`), the neutral well for a photo
   that carries no hash, and the neutral well again once the thumbnail is beyond saving (the failed
   tile unmounts the image and the blur with it, so the „unavailable" label stays readable). That label
-  (`.kk-tile__unavailable`, shared with `TrashCard`) is an image glyph plus the words. It fills the
+  (`.kk-tile__unavailable`, drawn by `ThumbUnavailable variant="tile"`, shared with `TrashCard`) is an
+  image glyph plus the words. It fills the
   tile as a size container; its body pads a band between the corner controls (the reserves of the
   select circle and the heart), and the words show only where two lines of them fit that band —
   always with the glyph, beside them in a short band (from a ~112×123 tile), above them in a tall one.
@@ -3307,7 +3327,11 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   backdrop** (`--kk-viewer-backdrop`), reflecting the saved non-destructive edit (a live draft while the Úpravy
   panel is open) — for a **video** `VideoPlayer` instead of the image, for a **live photo** `LivePhoto` (both have
   their own fullscreen — the player's own button, the live photo's native one; the image viewer doesn't open for
-  them). The style is in
+  them). **A preview that fails to load** (an undecodable original's thumbnail is a 404) puts
+  `StageUnavailable` on the stage instead of a broken image — `ThumbUnavailable` in a photo-shaped sunken
+  well plus the original's download (`photo.download_url`); kept per stage address (`failedPoster`), so
+  the next photo or a rebuilt rendition is tried afresh, and a live photo's still reports the same through
+  `LivePhoto`'s `onPosterError`. The style is in
   `components/photo/viewer.css`, the `--kk-viewer-*` tokens (backdrop, chrome/dock scrim, z-index) in
   `tokens.css`. **It replaced the old click-opens-lightbox** — `Lightbox` and `lightbox.css` were removed
   and absorbed here.

@@ -1286,7 +1286,11 @@ to `## Package map` in `CLAUDE.md`.
   hanging a worker forever; `VipsAvailable(bin)`
   for the startup log; `Remove(prefix,hash)` deletes all cached sizes for a hash under a storage prefix
   (idempotent, skips missing ones — thumbnail cleanup on photo purge); sentinels
-  `ErrUnknownSize`/`ErrInvalidHash`/`ErrNotCached`;
+  `ErrUnknownSize`/`ErrInvalidHash`/`ErrNotCached`, and **`ErrUndecodable`** — the original itself can
+  never become a picture (corrupt/truncated bytes, `imgconvert.ErrUnsupportedFormat`/`ErrNoEmbeddedPreview`/
+  `ErrImageTooLarge`, a converter that exited non-zero), marked in `decodeAndOrient` by `undecodable`; never
+  for a cancelled context, a converter that is not installed or an I/O failure. The thumb, face-crop and
+  avatar routes answer it 404 instead of 500;
   `SizeNames()`/`IsValidSize`), `internal/imgconvert/`
   (**`Orient(img, orientation) image.Image`** (`orient.go`) is the one implementation of the EXIF
   orientation pixel transform in the codebase — 2–4 mirror/flip, 5–8 exchange the sides, `<=1` and `>8`

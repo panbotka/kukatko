@@ -9,6 +9,7 @@ import Modal from '../Modal'
 
 import { MAX_RENDITION_DPR, squareRenditionName } from '../../lib/rendition'
 import { type Photo, searchPhotos, thumbUrl } from '../../services/photos'
+import { ThumbImage } from '../ThumbImage'
 
 /** Props for {@link PhotoPickerModal}. */
 export interface PhotoPickerModalProps {
@@ -133,7 +134,7 @@ export function PhotoPickerModal({ show, onClose, onPick, busy = false }: PhotoP
                 onPick(photo.uid)
               }}
             >
-              <img
+              <ThumbImage
                 src={thumbUrl(photo.uid, TILE_SIZE)}
                 alt={photo.title === '' ? photo.file_name : photo.title}
                 loading="lazy"

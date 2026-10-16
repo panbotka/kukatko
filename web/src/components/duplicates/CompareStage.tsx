@@ -6,6 +6,7 @@ import { viewTransform } from '../../lib/compareZoom'
 import { MediaKindMark } from './MediaKindMark'
 
 import './compare.css'
+import { ThumbImage } from '../ThumbImage'
 
 /** One side of the stage. */
 export interface ComparePane {
@@ -83,7 +84,7 @@ function ComparePaneView({ pane, zoom }: { pane: ComparePane; zoom: SyncZoom }) 
         {...zoom.handlers}
         style={{ cursor: paneCursor(zoom) }}
       >
-        <img
+        <ThumbImage
           className="kk-compare-pane__image"
           src={pane.src}
           alt={pane.alt}

@@ -10,7 +10,7 @@ import { purgeCountdown } from '../../lib/trashCountdown'
 import { ProjectLink } from '../../project/ProjectLink'
 import { type Photo } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
-import { Icon } from '../Icon'
+import { ThumbUnavailable } from '../ThumbUnavailable'
 
 /** Props for {@link TrashCard}. */
 export interface TrashCardProps {
@@ -80,16 +80,7 @@ export function TrashCard({
           {thumb.failed && (
             // The library tile's fallback, which keeps clear of the corner
             // checkbox and countdown badge the same way it does of the heart.
-            <span
-              className="kk-tile__unavailable text-secondary"
-              role="img"
-              aria-label={t('library.tile.unavailable')}
-            >
-              <span className="kk-tile__unavailable-body">
-                <Icon name="image" className="kk-tile__unavailable-icon" />
-                <span className="kk-tile__unavailable-text">{t('library.tile.unavailable')}</span>
-              </span>
-            </span>
+            <ThumbUnavailable variant="tile" />
           )}
         </ProjectLink>
         <Form.Check

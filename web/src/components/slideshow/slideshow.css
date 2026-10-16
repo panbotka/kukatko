@@ -34,6 +34,13 @@
   -webkit-user-drag: none;
 }
 
+/* A slide whose image cannot be loaded: the "no preview" stand-in in a modest
+   landscape well instead of a broken image (the box has no intrinsic size). */
+.slideshow__image.kk-thumb-unavailable-box {
+  width: min(32rem, 80vw);
+  aspect-ratio: 4 / 3;
+}
+
 /* The transition durations come from the root as `--slideshow-transition`,
    which `transitionDurationMs` caps against the chosen speed: at the 1 s speed
    the comfortable 600 ms would be most of the slide, and a photo that is still

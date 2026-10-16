@@ -24,6 +24,7 @@ import {
   type TaskSummary,
 } from '../services/tasks'
 import { useTaskSummary } from '../tasks/TaskSummaryContext'
+import { ThumbImage } from '../components/ThumbImage'
 
 /**
  * How many rows one request brings. The server's own default is the same, but
@@ -385,7 +386,7 @@ function TaskRow({ task }: { task: Task }) {
         className="d-flex align-items-center gap-3 p-2 rounded text-decoration-none kk-task-row"
       >
         {task.cover_photo_uid !== undefined && task.cover_photo_uid !== '' ? (
-          <img
+          <ThumbImage
             src={thumbUrl(task.cover_photo_uid, 'tile_100')}
             alt=""
             width={56}
