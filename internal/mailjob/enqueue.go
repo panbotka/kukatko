@@ -66,6 +66,18 @@ func PasswordReset(to string, data mailer.PasswordResetData) Mail {
 	return Mail{Template: mailer.TemplatePasswordReset, To: to, Data: data}
 }
 
+// ProjectSetup is the mail telling a new project's first admin it was set up
+// for them, with the link to choose the first password of their new account.
+func ProjectSetup(to string, data mailer.ProjectSetupData) Mail {
+	return Mail{Template: mailer.TemplateProjectSetup, To: to, Data: data}
+}
+
+// ProjectAdminAdded is the mail telling somebody who already has an account
+// that a new project was set up for them, with the link to it.
+func ProjectAdminAdded(to string, data mailer.ProjectAdminAddedData) Mail {
+	return Mail{Template: mailer.TemplateProjectAdminAdded, To: to, Data: data}
+}
+
 // TasksWaitingDigest is the daily mail listing the tasks whose move is the
 // recipient's.
 func TasksWaitingDigest(to string, data mailer.TasksWaitingDigestData) Mail {
@@ -152,6 +164,15 @@ func NewEnqueuer(cfg EnqueuerConfig) *Enqueuer {
 // token, say).
 func (e *Enqueuer) Enabled() bool {
 	return e.enabled
+}
+
+// Delivers reports whether a message to `to` would really be scheduled: mail
+// is enabled and the recipient is a deliverable address, not a placeholder in
+// the reserved .invalid domain. It is the question an administrator's screen
+// asks after the fact — "was it mailed, or must I pass the link on by hand?" —
+// answered by the same two refusals Enqueue makes.
+func (e *Enqueuer) Delivers(to string) bool {
+	return e.enabled && mailer.ValidateAddress(to) == nil
 }
 
 // Enqueue schedules m for delivery, using exec — a pool or an open transaction —

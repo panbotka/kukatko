@@ -280,7 +280,28 @@ to `## Package map` in `CLAUDE.md`.
   `Service.CleanupFinishedPasswordResets` prunes expired and consumed rows on the same hourly tick as
   the expired sessions (`cleanupOnce`, called by `RunCleanup`). The link base comes from `cmd/kukatko`'s
   `passwordResetURL(cfg.Mail.BaseURL)` (`mail.base_url` + `/password-reset`); an empty base falls back
-  to the site-relative path.
+  to the site-relative path. `mintPasswordReset`/`replacePasswordReset`/`withResetDetails` are the
+  token, the "drop unused, insert" write and the audit details, shared with `ProjectSetup`.
+  **Setting a project up for somebody** (`projectsetup.go`, `store_projectsetup.go`) is `ProjectSetup`
+  (`NewProjectSetup(ProjectSetupConfig{Service, Mail SetupMail, LinkBase, ProjectURL, TTL})`, wired by
+  `cmd/kukatko/projects.go` into `projectapi.Config.Setup`; `SetupMail` = `MailScheduler` + `Delivers(to)`,
+  satisfied by `*mailjob.Enqueuer`). `Create(meta, project.CreateParams, FirstAdminInput{Email,
+  DisplayName, Username})` is **one transaction** (`Store.inTx`, the flow writes its own entries):
+  `lockAccountsByEmail` (case-insensitive, `FOR UPDATE`, two rows = `ErrEmailAmbiguous`, a blocked one =
+  `ErrUserDisabled`) → for no match a **passwordless** plain user (`password_hash = ''`; the given
+  username, taken = `ErrUsernameTaken`, or `derivedUsername` + `freeUsername`: `jana`, `jana2` …) via
+  `insertUser` without a membership + `user.create` (`via: project_setup`) → `project.CreateTx` with the
+  admin as `CreatorUID` (`project.create`, `project.member.add`; the caller never becomes a member) →
+  `welcome`: while the account has no password a set-password link (`user.password_reset` with
+  `project_uid`; link = base + `/<token>?project=<slug>`) mailed as `mailjob.ProjectSetup`, otherwise
+  `mailjob.ProjectAdminAdded` with the project's address. The answer `FirstAdmin{…, Account
+  created|existing, MailSent, SetPasswordURL, ExpiresAt}` sets `MailSent` from `Delivers` after the
+  commit. `ResendLink(meta, projectUID, userUID)` re-issues for a member with no password
+  (`project.ErrNotMember`, `ErrUserDisabled`, `ErrPasswordAlreadySet`); `AwaitingPassword(projectUID)`
+  lists such members with their live link's expiry (`Store.AwaitingPassword`). `User.HasPassword()`
+  says whether an account has one: `checkLoginPassword` compares a passwordless account against the
+  dummy hash and refuses it, and `PasswordResetStatus.FirstPassword` tells the page to say *set* rather
+  than *reset*.
   **The user listing takes an approval filter**: `Store.ListUsers(ctx, UserFilter{Pending *bool})` —
   `true` only the accounts waiting for an administrator, `false` only the ones let in, `nil` everybody —
   expressed as `($1::boolean IS NULL OR (approved_at IS NULL) = $1)` so the roster stays one query.
@@ -6674,7 +6695,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     links to its `/p/<slug>/`; without one — a job queued before projects — the old sign-in text), `RenderNewRegistrationPending`
     (`NewRegistrationPendingData{Username,DisplayName,Email,ProjectName,ApprovalURL}` — the administrator's
     copy, naming all three and linking the project's member screen),
-    and `RenderPasswordReset` (`PasswordResetData{DisplayName,ResetURL,ValidFor}`). The `Template*` name
+    and `RenderPasswordReset` (`PasswordResetData{DisplayName,ResetURL,ValidFor}`). `templates_setup.go` holds
+    the two mails of a project set up for somebody: `RenderProjectSetup` (`ProjectSetupData{DisplayName,
+    ProjectName,Username,SetPasswordURL,ValidFor}` — „Byl pro vás založen projekt „X" v Kukátku… Nastavte si
+    heslo:", the link, its validity, the username; not the reset text) and `RenderProjectAdminAdded`
+    (`ProjectAdminAddedData{DisplayName,ProjectName,Username,ProjectURL}` — for an existing account: the
+    project's link, no password link). The `Template*` name
     constants exist so a log or audit line can say which message went out without repeating its subject. Two
     details the tests pin: an empty display name degrades to the impersonal `Dobrý den,` rather than greeting a
     blank, and `ValidFor` is rendered with the **Czech plural rule** in the largest unit it divides evenly into
@@ -6725,7 +6751,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     touching the queue: `Enqueue(ctx, exec, Mail)`, where `exec` is a `jobs.Execer` — pass **the transaction of
     the mutation that caused the mail** and the message is scheduled if and only if that mutation commits, the
     way `audit.Write` joins its mutation. Build the `Mail` with `RegistrationReceived`/`AccountApproved`/
-    `NewRegistrationPending`/`PasswordReset`/`TasksWaitingDigest`/`UsernameChanged`, which pair each template with the data it expects.
+    `NewRegistrationPending`/`PasswordReset`/`TasksWaitingDigest`/`UsernameChanged`/`ProjectSetup`/`ProjectAdminAdded`, which pair each template with the data it expects.
+    **`Delivers(to)`** answers after the fact whether a message to `to` is really scheduled (mail on and
+    a deliverable, non-`.invalid` address) — the "was it mailed or must I pass the link on?" of
+    `auth.ProjectSetup`.
   - **A notification's mail is addressed.** `Mail.Addressed(notifystanding.Addressee{UserUID, ProjectUID,
     Kind})` sets `Mail.For`, stored as the payload's `for`; `internal/notifydeliver` addresses every mail it
     builds and the task digest addresses its own (kind `taskdigestjob.DigestKind`). When the job runs,
@@ -7412,7 +7441,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     unique violation → `ErrSlugTaken`; in the same transaction the project's `instance_settings` row with
     the column defaults — registration closed, empty secret, empty welcome — and, when
     `CreateParams.CreatorUID` is set, the creator's **approved `admin` membership** with its own
-    `project.member.add` entry; an unknown creator rolls it all back with `ErrUserNotFound`); `Update(uid, UpdatePatch)` → `project.update` with the
+    `project.member.add` entry; an unknown creator rolls it all back with `ErrUserNotFound`). The
+    package-level **`CreateTx(ctx, tx, meta, p)`** is the same on a caller's transaction (`Create` is
+    begin → `CreateTx` → commit), so `internal/auth`'s `ProjectSetup` creates the project together with
+    its first admin's account and rolls back with it; `Update(uid, UpdatePatch)` → `project.update` with the
     `audit.ChangesKey` old → new diff, row locked `FOR UPDATE` for the read-modify-write; **the slug is
     immutable** (no field for it); a limit is set by value or removed by its `Clear…` flag (both at once =
     `ErrInvalidLimit`); a patch that changes nothing writes neither the row nor an audit entry;
@@ -7544,13 +7576,18 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
 - **System administrator's projects API (`internal/projectapi`):** the instance-level `/projects` and
   account routes (see `docs/API.md`, *Projects (maintainer)*), mounted once with `server.WithAPI` in
   `readAPIOptions` (`cmd/kukatko/projects.go` → `buildProjectsAPI`), every route behind the injected
-  `RequireMaintainer`. Depends on two interfaces so the handlers unit-test over fakes: `Projects` (the
-  `*project.Store` methods it calls) and `Accounts` (`*auth.Store`: `ListUsers`, `GetUserByUID`,
-  `SetInstanceRoleAudited`).
+  `RequireMaintainer`. Depends on three interfaces so the handlers unit-test over fakes: `Projects` (the
+  `*project.Store` methods it calls), `Accounts` (`*auth.Store`: `ListUsers`, `GetUserByUID`,
+  `SetInstanceRoleAudited`) and `Setup` (`*auth.ProjectSetup`: `Create`, `ResendLink`,
+  `AwaitingPassword`).
   - `projectapi.go` — `Config`, `NewAPI`, `RegisterRoutes` (`/projects` as a sub-router; `GET /users` and
     `PATCH /users/{uid}` flat, because `GET /users/{uid}/avatar` shares the prefix under another guard).
-  - `projects.go` — list/get/create/update and the two membership routes. The create passes the caller as
-    `CreatorUID`; the PATCH body tells an absent limit from `null` from a number through `optionalLimit`
+  - `projects.go` — list/get/create/update, the two membership routes and the set-password pair
+    (`GET /projects/{uid}/awaiting-password`, `POST /projects/{uid}/members/{user_uid}/password-link`).
+    The create passes the caller as `CreatorUID` — unless the body carries `admin`, when
+    `handleCreateFor` hands it to `Setup.Create` and answers `createResponse{Overview, FirstAdmin}`
+    (the auth refusals map to `invalid_email`, `invalid_username`, `username_taken`, `email_ambiguous`,
+    `user_disabled`, `password_set` in `respond.go`); the PATCH body tells an absent limit from `null` from a number through `optionalLimit`
     (its `UnmarshalJSON` runs for an explicit `null` too) and refuses a `slug` key with `slug_immutable`
     before touching the store; a membership is always added **approved**.
   - `users.go` — the account list (`ListUsers` joined with `AllMemberships`: the record incl. `note`,

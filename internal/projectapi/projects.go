@@ -13,13 +13,31 @@ import (
 )
 
 // createRequest is the body of POST /projects. A limit left out (or null) is
-// no limit.
+// no limit. Admin, when present, sets the project up for somebody else (see
+// auth.ProjectSetup); without it the caller becomes the admin.
 type createRequest struct {
-	Slug          string `json:"slug"`
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	MaxFileBytes  *int64 `json:"max_file_bytes"`
-	MaxTotalBytes *int64 `json:"max_total_bytes"`
+	Slug          string        `json:"slug"`
+	Name          string        `json:"name"`
+	Description   string        `json:"description"`
+	MaxFileBytes  *int64        `json:"max_file_bytes"`
+	MaxTotalBytes *int64        `json:"max_total_bytes"`
+	Admin         *adminRequest `json:"admin"`
+}
+
+// adminRequest is the first admin of a project set up for somebody: the e-mail
+// address (required), and for a new account its display name and username
+// (derived from the address when empty).
+type adminRequest struct {
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name"`
+	Username    string `json:"username"`
+}
+
+// createResponse is the answer to POST /projects: the project, plus — for a
+// project set up for somebody — what became of its first admin.
+type createResponse struct {
+	project.Overview
+	FirstAdmin *auth.FirstAdmin `json:"first_admin,omitempty"`
 }
 
 // optionalLimit is a size limit in a PATCH body, where three things must be
@@ -106,28 +124,84 @@ func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, overview)
 }
 
-// handleCreate creates a project and makes the caller its first admin, so
-// somebody can enter it. It answers 201 with the project, 409 slug_taken, 422
-// invalid_slug (with the rule as the message), invalid_name or invalid_limit,
-// and 400 invalid_body.
+// handleCreate creates a project. Without "admin" the caller becomes its first
+// admin, so somebody can enter it; with it the project is set up for that
+// person instead (handleCreateFor). It answers 201 with the project, 409
+// slug_taken, 422 invalid_slug (with the rule as the message), invalid_name or
+// invalid_limit, and 400 invalid_body.
 func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
 	var req createRequest
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, codeInvalidBody, err.Error())
 		return
 	}
-	actor, _ := auth.UserFromContext(r.Context())
-	created, err := a.projects.Create(r.Context(), auditMeta(r), project.CreateParams{
+	params := project.CreateParams{
 		Slug: req.Slug, Name: req.Name, Description: req.Description,
 		MaxFileBytes: req.MaxFileBytes, MaxTotalBytes: req.MaxTotalBytes,
-		CreatorUID: actor.UID,
-	})
+	}
+	if req.Admin != nil {
+		a.handleCreateFor(w, r, params, *req.Admin)
+		return
+	}
+	actor, _ := auth.UserFromContext(r.Context())
+	params.CreatorUID = actor.UID
+	created, err := a.projects.Create(r.Context(), auditMeta(r), params)
 	if err != nil {
 		writeStoreError(w, err, "creating a project")
 		return
 	}
 	// A new project holds nothing yet; its only member is the creator.
-	writeJSON(w, http.StatusCreated, project.Overview{Project: *created, MembersCount: 1})
+	writeJSON(w, http.StatusCreated, createResponse{Overview: project.Overview{Project: *created, MembersCount: 1}})
+}
+
+// handleCreateFor sets the project params up for the person admin: the project,
+// their account (or the one the address already has) as its only admin, the
+// set-password link and its mail, in one transaction — the caller does not
+// become a member. Besides handleCreate's refusals it answers 422
+// invalid_email or invalid_username, 409 username_taken, email_ambiguous
+// (several accounts share the address) or user_disabled.
+func (a *API) handleCreateFor(w http.ResponseWriter, r *http.Request, params project.CreateParams, admin adminRequest) {
+	created, first, err := a.setup.Create(r.Context(), auditMeta(r), params, auth.FirstAdminInput{
+		Email: admin.Email, DisplayName: admin.DisplayName, Username: admin.Username,
+	})
+	if err != nil {
+		writeStoreError(w, err, "setting a project up")
+		return
+	}
+	// Its only member is the first admin.
+	writeJSON(w, http.StatusCreated, createResponse{
+		Overview: project.Overview{Project: *created, MembersCount: 1}, FirstAdmin: &first,
+	})
+}
+
+// handleAwaitingPassword lists the members of the project whose accounts have
+// no password yet, each with its link's expiry. It answers 200 (an empty list
+// for a project without such members) or 404 not_found for an unknown project.
+func (a *API) handleAwaitingPassword(w http.ResponseWriter, r *http.Request) {
+	uid := chi.URLParam(r, "uid")
+	if _, err := a.projects.OverviewOf(r.Context(), uid); err != nil {
+		writeStoreError(w, err, "reading a project")
+		return
+	}
+	list, err := a.setup.AwaitingPassword(r.Context(), uid)
+	if err != nil {
+		writeStoreError(w, err, "listing members awaiting a password")
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// handleResendLink issues and mails a fresh set-password link to a member
+// whose account has no password yet; the previous link stops working. It
+// answers 200 with the first-admin result (the link included), 404 not_found
+// or not_member, and 409 password_set or user_disabled.
+func (a *API) handleResendLink(w http.ResponseWriter, r *http.Request) {
+	first, err := a.setup.ResendLink(r.Context(), auditMeta(r), chi.URLParam(r, "uid"), chi.URLParam(r, "user_uid"))
+	if err != nil {
+		writeStoreError(w, err, "re-sending a set-password link")
+		return
+	}
+	writeJSON(w, http.StatusOK, first)
 }
 
 // handleUpdate edits a project and writes it as it now stands. A slug in the

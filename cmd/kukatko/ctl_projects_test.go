@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -22,6 +23,14 @@ const accountsListBody = `[{"uid":"us1","username":"anna","display_name":"Anna",
 	`"instance_role":"maintainer","disabled":false,"memberships":[{"project_slug":"club","role":"admin",` +
 	`"approved":true}]},{"uid":"us2","username":"bob","display_name":"Bob","email":"b@example.test",` +
 	`"instance_role":"user","disabled":false,"memberships":[]}]`
+
+// createdForBody is the answer to a create with a first admin while mail is
+// off: the link is answered for the administrator to pass on.
+const createdForBody = `{"uid":"pjrodina","slug":"rodina","name":"Rodina","active":true,` +
+	`"storage_prefix":"projects/pjrodina/","members_count":1,"created_at":"2026-10-16T10:00:00Z",` +
+	`"first_admin":{"user_uid":"usjana","username":"jana","email":"jana@example.com","account":"created",` +
+	`"mail_sent":false,"set_password_url":"https://k.example/password-reset/tok?project=rodina",` +
+	`"expires_at":"2026-10-23T10:00:00Z"}}`
 
 // projectRequest is one request the fake system-administrator server saw.
 type projectRequest struct {
@@ -51,6 +60,13 @@ func projectServer(t *testing.T) (string, func() []projectRequest) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/projects" && strings.Contains(string(body), `"taken"`):
 			w.WriteHeader(http.StatusConflict)
 			_, _ = w.Write([]byte(`{"error":"slug_taken"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/projects" && strings.Contains(string(body), `"admin"`):
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(createdForBody))
+		case strings.HasSuffix(r.URL.Path, "/password-link"):
+			_, _ = w.Write([]byte(`{"user_uid":"us2","username":"bob","email":"b@example.test","account":"existing",` +
+				`"mail_sent":true,"set_password_url":"https://k.example/password-reset/t2?project=club",` +
+				`"expires_at":"2026-10-23T10:00:00Z"}`))
 		case strings.HasPrefix(r.URL.Path, "/api/v1/users/"):
 			_, _ = w.Write([]byte(`{"uid":"us2","username":"bob","instance_role":"maintainer","memberships":[]}`))
 		case strings.HasSuffix(r.URL.Path, "/members"):
@@ -142,6 +158,54 @@ func TestCtlProjects_create(t *testing.T) {
 	}
 	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "projects", "create", "--name", "T"); err == nil {
 		t.Error("create without --slug succeeded")
+	}
+}
+
+// TestCtlProjects_createForSomebody verifies the --admin-* flags become the
+// body's admin object, the result names the first admin and prints the link
+// when the mail was not sent, and a name without an address is refused.
+func TestCtlProjects_createForSomebody(t *testing.T) {
+	configPath, seen := projectServer(t)
+
+	out, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "projects", "create",
+		"--slug", "rodina", "--name", "Rodina", "--admin-email", "jana@example.com",
+		"--admin-name", "Jana Nováková", "--admin-username", "jana")
+	if err != nil {
+		t.Fatalf("projects create --admin-email: %v", err)
+	}
+	var body struct {
+		Admin map[string]string `json:"admin"`
+	}
+	if err := json.Unmarshal([]byte(lastRequest(t, seen).body), &body); err != nil {
+		t.Fatalf("decoding the create body: %v", err)
+	}
+	want := map[string]string{"email": "jana@example.com", "display_name": "Jana Nováková", "username": "jana"}
+	if !maps.Equal(body.Admin, want) {
+		t.Errorf("admin = %v, want %v", body.Admin, want)
+	}
+	for _, want := range []string{"rodina", "ADMIN", "jana", "created", "not sent",
+		"https://k.example/password-reset/tok?project=rodina", "LINK EXPIRES"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("create output does not contain %q:\n%s", want, out)
+		}
+	}
+
+	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "projects", "create",
+		"--slug", "x", "--name", "X", "--admin-name", "Jana"); err == nil ||
+		!strings.Contains(err.Error(), "--admin-email") {
+		t.Errorf("create with --admin-name only = %v, want the missing --admin-email named", err)
+	}
+
+	out, err = runCtl(t, "", "ctl", "--ctl-config", configPath, "projects", "password-link", "club", "bob")
+	if err != nil {
+		t.Fatalf("projects password-link: %v", err)
+	}
+	if got := lastRequest(t, seen); got.method != http.MethodPost ||
+		got.path != "/api/v1/projects/pjclub/members/us2/password-link" {
+		t.Errorf("password-link request = %+v, want POST of the resolved uids", got)
+	}
+	if !strings.Contains(out, "sent") || strings.Contains(out, "t2?project") {
+		t.Errorf("password-link output (mail sent, so no link):\n%s", out)
 	}
 }
 

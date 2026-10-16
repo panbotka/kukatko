@@ -123,6 +123,29 @@ const insertSettingsSQL = `INSERT INTO instance_settings (project_id) VALUES ($1
 // bad input, ErrSlugTaken when another project already has the slug and
 // ErrUserNotFound when the creator names no account.
 func (s *Store) Create(ctx context.Context, meta audit.Meta, p CreateParams) (*Project, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("project: begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	created, err := CreateTx(ctx, tx, meta, p)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("project: commit transaction: %w", err)
+	}
+	return created, nil
+}
+
+// CreateTx is Create on the caller's transaction tx, so a project can be born
+// together with whatever else the caller writes — the first admin's account and
+// its set-password link (internal/auth's ProjectSetup) — and roll back with it.
+// It writes the same rows and audit entries as Create and returns the same
+// errors; committing (or rolling back) is the caller's. A refused statement
+// leaves tx aborted, so the caller must not reuse it after an error.
+func CreateTx(ctx context.Context, tx pgx.Tx, meta audit.Meta, p CreateParams) (*Project, error) {
 	name, err := validateCreate(p)
 	if err != nil {
 		return nil, err
@@ -131,31 +154,30 @@ func (s *Store) Create(ctx context.Context, meta audit.Meta, p CreateParams) (*P
 	if err != nil {
 		return nil, err
 	}
-	entry := projectEntry(meta, uid, audit.ActionProjectCreate, TargetType, uid, map[string]any{
-		"slug": p.Slug, "name": name,
-		"max_file_bytes": p.MaxFileBytes, "max_total_bytes": p.MaxTotalBytes,
-	})
-
-	var created *Project
-	err = s.inTx(ctx, entry, func(tx pgx.Tx) error {
-		var insertErr error
-		created, insertErr = scanProject(tx.QueryRow(ctx, insertSQL, uid, p.Slug, name,
-			strings.TrimSpace(p.Description), StoragePrefixFor(uid), p.MaxFileBytes, p.MaxTotalBytes))
-		if insertErr != nil {
-			return insertErr
+	created, err := scanProject(tx.QueryRow(ctx, insertSQL, uid, p.Slug, name,
+		strings.TrimSpace(p.Description), StoragePrefixFor(uid), p.MaxFileBytes, p.MaxTotalBytes))
+	if err == nil {
+		err = seedProject(ctx, tx, meta, uid, p.CreatorUID)
+	}
+	if err == nil {
+		entry := projectEntry(meta, uid, audit.ActionProjectCreate, TargetType, uid, map[string]any{
+			"slug": p.Slug, "name": name,
+			"max_file_bytes": p.MaxFileBytes, "max_total_bytes": p.MaxTotalBytes,
+		})
+		if err = audit.Write(ctx, tx, entry); err != nil {
+			err = fmt.Errorf("writing audit entry: %w", err)
 		}
-		return seedProject(ctx, tx, meta, uid, p.CreatorUID)
-	})
-	if isSlugTaken(err) {
+	}
+	switch {
+	case err == nil:
+		return created, nil
+	case isSlugTaken(err):
 		return nil, fmt.Errorf("%w: %q", ErrSlugTaken, p.Slug)
-	}
-	if errors.Is(err, ErrUserNotFound) {
+	case errors.Is(err, ErrUserNotFound):
 		return nil, err
-	}
-	if err != nil {
+	default:
 		return nil, fmt.Errorf("project: creating %q: %w", p.Slug, err)
 	}
-	return created, nil
 }
 
 // validateCreate checks every caller-supplied field of p and returns the

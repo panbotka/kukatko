@@ -526,7 +526,14 @@
     "errorPasswordMismatch": "Hesla se neshodují. Napište prosím obě stejně.",
     "errorRateLimited": "Příliš mnoho pokusů. Zkuste to prosím za chvíli.",
     "errorOffline": "Kukátko se nedovolalo serveru, heslo se tedy nezměnilo. Zkontrolujte připojení a zkuste to znovu.",
-    "errorGeneric": "Heslo se nepodařilo změnit. Zkuste to prosím znovu."
+    "errorGeneric": "Heslo se nepodařilo změnit. Zkuste to prosím znovu.",
+    "firstTitle": "Nastavte si heslo",
+    "firstIntro": "Byl pro vás založen účet v Kukátku. Zvolte si heslo, se kterým se budete přihlašovat. Odkaz jde použít jen jednou.",
+    "firstPassword": "Heslo",
+    "firstSubmit": "Nastavit heslo",
+    "firstDoneTitle": "Heslo je nastavené.",
+    "doneSignInProject": "Teď se přihlaste — otevře se vám rovnou váš projekt.",
+    "signInToProject": "Přihlásit se"
   },
   "account": {
     "title": "Můj účet",
@@ -4856,11 +4863,41 @@
       "slugTaken": "Tento slug už existuje",
       "nameRequired": "Vyplňte název.",
       "limitInvalid": "Zadejte kladné číslo, nebo pole nechte prázdné.",
-      "createFailed": "Projekt se nepodařilo založit."
+      "createFailed": "Projekt se nepodařilo založit.",
+      "emailInvalid": "Zadejte platnou e-mailovou adresu.",
+      "usernameTaken": "Toto uživatelské jméno už má jiný účet.",
+      "usernameInvalid": "Uživatelské jméno je příliš dlouhé.",
+      "emailAmbiguous": "Tuto adresu má víc účtů — Kukátko neví, který z nich má být správcem.",
+      "userDisabled": "Účet s touto adresou je zablokovaný."
     },
     "moveChip": "přesun {{percent}} %",
     "moveChipRunning": "Úložiště projektu se přesouvá",
-    "moveChipPaused": "Přesun úložiště je pozastavený"
+    "moveChipPaused": "Přesun úložiště je pozastavený",
+    "firstAdmin": {
+      "toggle": "Zakládám projekt pro někoho jiného",
+      "toggleHelp": "Projekt dostane vlastního správce. Vy se jeho členem nestanete — jako správce systému do něj vidíte i tak.",
+      "title": "První správce projektu",
+      "emailLabel": "E-mail",
+      "emailHint": "Má-li tahle adresa v Kukátku účet, stane se správcem on. Jinak se založí nový a správce dostane e-mail s odkazem, kde si nastaví heslo.",
+      "displayNameLabel": "Zobrazované jméno (nepovinné)",
+      "usernameLabel": "Uživatelské jméno (nepovinné)",
+      "usernameHint": "Prázdné = odvodí se z e-mailu.",
+      "resultTitle": "Projekt „{{name}}“ je založený",
+      "projectLabel": "Projekt",
+      "adminLabel": "Správce",
+      "accountCreated": "nový účet",
+      "accountExisting": "stávající účet",
+      "mailSent": "E-mail odeslán na {{email}}.",
+      "mailSentExisting": "Na {{email}} odešel e-mail s odkazem na projekt — správce se přihlásí svým účtem.",
+      "mailNotSent": "E-mail se neodeslal. Předejte správci tento odkaz, kde si nastaví heslo:",
+      "mailNotSentExisting": "E-mail se neodeslal. Správce se přihlásí svým stávajícím účtem.",
+      "linkLabel": "Odkaz na nastavení hesla",
+      "expires": "Odkaz platí do {{date}} a použít se dá jen jednou.",
+      "copy": "Kopírovat",
+      "copied": "Zkopírováno",
+      "openProject": "Otevřít nastavení projektu",
+      "close": "Zavřít"
+    }
   },
   "systemProject": {
     "back": "Zpět na projekty",
@@ -4887,6 +4924,16 @@
     "addMeHelp": "Přidá vás do projektu s rolí správce.",
     "addMeFailed": "Členství se nepodařilo přidat.",
     "alreadyMember": "Jste členem tohoto projektu.",
+    "awaiting": {
+      "title": "Čeká na nastavení hesla",
+      "intro": "Tito členové ještě nemají heslo. Přihlásit se půjde, až si ho nastaví přes odkaz z e-mailu.",
+      "linkExpires": "odkaz platí do {{date}}",
+      "linkExpired": "odkaz už neplatí",
+      "resend": "Poslat odkaz znovu",
+      "resendHelp": "Vydá nový odkaz a pošle ho e-mailem; předchozí odkaz přestane platit.",
+      "resendFailed": "Odkaz se nepodařilo poslat.",
+      "resentTitle": "Nový odkaz pro {{username}}"
+    },
     "usageTitle": "Využití",
     "photos": "Fotky",
     "originals": "Originály",

@@ -14,6 +14,7 @@ import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
 import { NarrowPage } from '../components/NarrowPage'
 import { SYSTEM_PROJECTS_PATH } from '../components/navItems'
+import { AwaitingPasswordCard } from '../components/system/AwaitingPasswordCard'
 import { LimitField } from '../components/system/LimitField'
 import { StorageMoveCard } from '../components/system/StorageMoveCard'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -67,7 +68,9 @@ function sameLimit(a: LimitDraft, b: LimitDraft): boolean {
  * it: its name, description and limits; whether it is active (switched behind
  * a confirmation, since deactivating locks every member out); adding oneself as
  * its admin, for a project one does not belong to; the door to its members page
- * (`/p/<slug>/members`); its usage; and where its files live in the object store.
+ * (`/p/<slug>/members`); the members still waiting to set a password, with a
+ * re-send of their link ({@link AwaitingPasswordCard}); its usage; and where its
+ * files live in the object store.
  *
  * The page is addressed by slug, as the project is everywhere else, while the
  * API addresses it by uid — so it reads the project list and picks the row. The
@@ -391,6 +394,8 @@ export function SystemProjectPage() {
           </div>
         </Card.Body>
       </Card>
+
+      <AwaitingPasswordCard key={`awaiting-${current.uid}`} projectUid={current.uid} />
 
       <Card className="mb-4">
         <Card.Body>

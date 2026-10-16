@@ -186,6 +186,13 @@ func (u User) InProject(projectUID string, role project.Role) User {
 	return u
 }
 
+// HasPassword reports whether the account has a password at all. One created
+// for somebody else (a project's first admin, see ProjectSetup) has none until
+// its owner follows their set-password link; nothing can sign in with it.
+func (u User) HasPassword() bool {
+	return u.PasswordHash != ""
+}
+
 // LinkedUser is an account as one project sees it: the account record plus the
 // person of that project the account says it is ("this is me"), nil when it has
 // not said. Who you are is a fact about one project's people, so it lives on the

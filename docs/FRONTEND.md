@@ -2179,10 +2179,16 @@ here.
   requesting a replacement they do not need. Success **replaces** the form with the confirmation
   (`data-testid="password-reset-done"`): the password is changed, **every other session of the account
   is gone**, and the next step is to sign in — nobody is signed in automatically, because the call that
-  set the password is the same one that ended every session there was. Texts in `passwordReset.*`;
+  set the password is the same one that ended every session there was. **The first password** of an
+  account set up for somebody (a project's first admin) goes through the same page: a status with
+  `first_password: true` switches the wording — title „Nastavte si heslo", `passwordReset.firstIntro`,
+  the label „Heslo", the button „Nastavit heslo", „Heslo je nastavené." with no word about other
+  sessions. The link's **`?project=<slug>`** (checked with `slugProblem`, anything else ignored) turns
+  the done screen's way out into `/login?returnTo=/p/<slug>` („Přihlásit se" — the login lands in the
+  project). Texts in `passwordReset.*`;
   `PasswordResetPage.test.tsx` covers the check-before-form state, a usable link, a successful change,
   mismatched passwords, a dead link on opening, a link that dies between opening and submitting, a
-  server-refused password and an unreachable check,
+  server-refused password and an unreachable check, the first-password wording and the project return,
   `AccountPage` = identity and **the role in every project the account may enter, each named** („Role v
 projektech": `Veselice Kurátor`, `Rodina Správce`; plus „Správce systému" for the maintainer only — a non-maintainer
 sees no instance role at all, only the project roles) — the page belongs
@@ -9195,7 +9201,19 @@ refusal lands on its field: `slug_taken` → „Tento slug už existuje", `inval
 rule, `invalid_name` → the name, `invalid_limit` → the limits; anything else is an alert. An
 unlimited limit is left out of the body. A created project opens its detail page **after
 `useAuth().refresh()`** — the creator is its admin, so the switcher lists it at once and its page offers no
-„Přidat mě jako člena". Likewise `SystemProjectPage` re-reads the session after a **rename** (only when the
+„Přidat mě jako člena". **Setting a project up for somebody else:** the switch „Zakládám projekt pro
+někoho jiného" reveals the fieldset **„První správce projektu"** — e-mail (required there, loosely
+pattern-checked before the round trip, „Zadejte platnou e-mailovou adresu."), display name and username
+(both optional; an empty username is derived by the server). The body then carries `admin` (only the
+filled fields), and an answer with `first_admin` does **not** navigate: the dialog switches to its
+**result screen** — „Projekt „X" je založený", the project link `/p/<slug>`, and
+`components/system/FirstAdminResult.tsx` (the admin's username with „nový účet"/„stávající účet",
+„E-mail odeslán na …" or — when `mail_sent` is false — „E-mail se neodeslal…" with the link in a
+read-only, select-on-focus field and a „Kopírovat" button, and the link's expiry), plus „Otevřít
+nastavení projektu" and „Zavřít" (closing forgets the result and its link). The page's `onSetUp`
+re-reads the list but **not** the session — the caller is no member. The admin refusals land on their
+field: `invalid_email`/`email_ambiguous`/`user_disabled` under the e-mail, `username_taken`/
+`invalid_username` under the username. Likewise `SystemProjectPage` re-reads the session after a **rename** (only when the
 name changed) and after (de)activating — the switcher, the tab title and the project's pages read name and
 `active` off the session's memberships.
 
@@ -9208,7 +9226,12 @@ set to the byte elsewhere is never rounded by the form), **Stav** (an `active` s
 `/p/<slug>/members`, the page a later step builds; **„Přidat mě jako člena"** POSTs the caller as
 `admin`, then `refresh()`es the session so the switcher learns the project — hidden when
 `useAuth().projects` already holds the project's uid; a `409 already_member` from a session older than the
-membership is taken as joined, never as „Členství se nepodařilo přidat."), **Využití** and **Úložiště**
+membership is taken as joined, never as „Členství se nepodařilo přidat."), **Čeká na nastavení hesla**
+(`components/system/AwaitingPasswordCard.tsx`: `fetchAwaitingPassword` — the members whose accounts have
+no password yet, each with „odkaz platí do …"/„odkaz už neplatí" and **„Poslat odkaz znovu"**
+(`resendPasswordLink`, which kills the previous link) whose outcome is a `FirstAdminResult` under the
+member, in a `role="group"` named „Nový odkaz pro …"; the card renders **nothing** while nobody waits or
+when the list cannot be read), **Využití** and **Úložiště**
 (`components/system/StorageMoveCard.tsx`, keyed by the project's uid, below).
 
 **`StorageMoveCard`** — the „Úložiště" card: the project's storage move (`internal/rekeyapi`, client

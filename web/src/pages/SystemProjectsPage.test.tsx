@@ -293,4 +293,149 @@ describe('SystemProjectsPage', () => {
     expect(screen.getByRole('link', { name: 'Veselice' })).toBeInTheDocument()
     expect(screen.queryByTestId('move-chip-v')).not.toBeInTheDocument()
   })
+
+  describe('setting a project up for somebody else', () => {
+    /** Opens the dialog, fills slug and name and switches the first-admin section on. */
+    async function openForOther(user: ReturnType<typeof userEvent.setup>) {
+      renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Nový projekt' }))
+      const dialog = await screen.findByRole('dialog')
+      await user.type(within(dialog).getByLabelText('Slug'), 'chata')
+      await user.type(within(dialog).getByLabelText('Název'), 'Chata')
+      expect(within(dialog).queryByTestId('first-admin-section')).not.toBeInTheDocument()
+      await user.click(within(dialog).getByLabelText('Zakládám projekt pro někoho jiného'))
+      expect(within(dialog).getByText('První správce projektu')).toBeInTheDocument()
+      return dialog
+    }
+
+    it('requires a valid e-mail in the section before any round trip', async () => {
+      const user = userEvent.setup()
+      const dialog = await openForOther(user)
+
+      await user.click(within(dialog).getByRole('button', { name: 'Založit projekt' }))
+      expect(within(dialog).getByLabelText('E-mail')).toHaveClass('is-invalid')
+      expect(within(dialog).getByText('Zadejte platnou e-mailovou adresu.')).toBeInTheDocument()
+      expect(createMock).not.toHaveBeenCalled()
+    })
+
+    it('sends the admin, stays on the result and says the e-mail went out', async () => {
+      const user = userEvent.setup()
+      createMock.mockResolvedValue({
+        ...project({ uid: 'pjc', slug: 'chata', name: 'Chata', members_count: 1 }),
+        first_admin: {
+          user_uid: 'usj',
+          username: 'jana',
+          display_name: 'Jana Nováková',
+          email: 'jana@example.com',
+          account: 'created',
+          mail_sent: true,
+          set_password_url: 'https://k.example/password-reset/tok?project=chata',
+          expires_at: '2026-10-23T10:00:00Z',
+        },
+      })
+      const dialog = await openForOther(user)
+      await user.type(within(dialog).getByLabelText('E-mail'), 'jana@example.com')
+      await user.type(
+        within(dialog).getByLabelText('Zobrazované jméno (nepovinné)'),
+        'Jana Nováková',
+      )
+      fetchMock.mockClear()
+      await user.click(within(dialog).getByRole('button', { name: 'Založit projekt' }))
+
+      expect(createMock).toHaveBeenCalledWith({
+        slug: 'chata',
+        name: 'Chata',
+        description: '',
+        admin: { email: 'jana@example.com', display_name: 'Jana Nováková' },
+      })
+      const result = await screen.findByTestId('first-admin-result')
+      expect(screen.getByText('Projekt „Chata“ je založený')).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: '/p/chata' })).toHaveAttribute('href', '/p/chata')
+      expect(result).toHaveTextContent('jana')
+      expect(result).toHaveTextContent('nový účet')
+      expect(result).toHaveTextContent('E-mail odeslán na jana@example.com.')
+      expect(result).toHaveTextContent(/Odkaz platí do/)
+      // Mailed: the link is not put on the screen.
+      expect(within(result).queryByRole('textbox')).not.toBeInTheDocument()
+      // The creator is no member: the session is not re-read, the list is.
+      expect(refreshMock).not.toHaveBeenCalled()
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalled()
+      })
+      expect(screen.queryByText('detail page')).not.toBeInTheDocument()
+
+      // The footer's button; the header's × carries the same name.
+      const closers = screen.getAllByRole('button', { name: 'Zavřít' })
+      await user.click(closers[closers.length - 1])
+      await waitFor(() => {
+        expect(screen.queryByTestId('first-admin-result')).not.toBeInTheDocument()
+      })
+    })
+
+    it('shows the copyable link when no e-mail was sent', async () => {
+      const user = userEvent.setup()
+      createMock.mockResolvedValue({
+        ...project({ uid: 'pjc', slug: 'chata', name: 'Chata' }),
+        first_admin: {
+          user_uid: 'usj',
+          username: 'jana',
+          display_name: '',
+          email: 'jana@example.com',
+          account: 'created',
+          mail_sent: false,
+          set_password_url: 'https://k.example/password-reset/tok?project=chata',
+          expires_at: '2026-10-23T10:00:00Z',
+        },
+      })
+      const dialog = await openForOther(user)
+      await user.type(within(dialog).getByLabelText('E-mail'), 'jana@example.com')
+      await user.click(within(dialog).getByRole('button', { name: 'Založit projekt' }))
+
+      const result = await screen.findByTestId('first-admin-result')
+      expect(result).toHaveTextContent(/E-mail se neodeslal/)
+      expect(within(result).getByLabelText('Odkaz na nastavení hesla')).toHaveValue(
+        'https://k.example/password-reset/tok?project=chata',
+      )
+      expect(within(result).getByRole('button', { name: 'Kopírovat' })).toBeInTheDocument()
+    })
+
+    it('tells an existing account apart and gives no link', async () => {
+      const user = userEvent.setup()
+      createMock.mockResolvedValue({
+        ...project({ uid: 'pjc', slug: 'chata', name: 'Chata' }),
+        first_admin: {
+          user_uid: 'usp',
+          username: 'petr',
+          display_name: 'Petr',
+          email: 'petr@example.com',
+          account: 'existing',
+          mail_sent: true,
+        },
+      })
+      const dialog = await openForOther(user)
+      await user.type(within(dialog).getByLabelText('E-mail'), 'petr@example.com')
+      await user.click(within(dialog).getByRole('button', { name: 'Založit projekt' }))
+
+      const result = await screen.findByTestId('first-admin-result')
+      expect(result).toHaveTextContent('stávající účet')
+      expect(result).toHaveTextContent(/odešel e-mail s odkazem na projekt/)
+      expect(result).not.toHaveTextContent(/Odkaz platí do/)
+    })
+
+    it('puts an admin refusal on its field', async () => {
+      const user = userEvent.setup()
+      createMock.mockRejectedValue(new ProjectApiError(409, 'username_taken', ''))
+      const dialog = await openForOther(user)
+      await user.type(within(dialog).getByLabelText('E-mail'), 'jana@example.com')
+      await user.type(within(dialog).getByLabelText('Uživatelské jméno (nepovinné)'), 'jana')
+      await user.click(within(dialog).getByRole('button', { name: 'Založit projekt' }))
+
+      expect(
+        await within(dialog).findByText('Toto uživatelské jméno už má jiný účet.'),
+      ).toBeInTheDocument()
+      expect(within(dialog).getByLabelText('Uživatelské jméno (nepovinné)')).toHaveClass(
+        'is-invalid',
+      )
+    })
+  })
 })

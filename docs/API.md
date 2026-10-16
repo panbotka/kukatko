@@ -380,7 +380,11 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   deliberately indistinguishable), and `{"valid": true, "display_name", "expires_at"}` for a usable
   one, so the page can say *this link has expired* instead of showing a form that is going to fail. It
   publishes **nothing else** about the account — a display name to greet the person with is the most a
-  bearer of the token needs.
+  bearer of the token needs — except **`first_password: true`** when the account has never had a
+  password (it was set up for its owner as a project's first admin, see `POST /projects` with
+  `admin`), so the page can say *set your password* rather than *reset* it. Such an account cannot
+  sign in until the link is used: login compares against the dummy hash and refuses, in the same time
+  as a wrong password.
   **`POST /auth/password-reset/{token}` (no authentication)** — body `{password}` (unknown fields →
   400) → **204**. The token is **consumed**, so a second use fails; **all** of that account's sessions
   are deleted, including any signed in at that moment; the password goes through the same length rule
@@ -423,7 +427,40 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     starting with a hyphen, not a reserved word such as `api`/`system`/`projects`); 422 `invalid_name`
     (empty after trimming); 422 `invalid_limit` (zero or negative); 400 `invalid_body` (malformed JSON,
     an unknown field).
+    **Setting a project up for somebody else** — the same body plus **`admin: {email, display_name?,
+    username?}`** (`internal/auth` `ProjectSetup`) → **201** + the project and **`first_admin: {user_uid,
+    username, display_name, email, account: "created"|"existing", mail_sent, set_password_url?,
+    expires_at?}`**. One transaction creates the project, then makes the person its **only** member, an
+    approved `admin` — the **caller does not become a member** (a maintainer sees every project anyway):
+    - **no account has the address** (matched case-insensitively): a new account, instance role `user`,
+      **no password**, the given display name, the given username (normalized; taken → **409
+      `username_taken`**, over-long → 422 `invalid_username`) or one derived from the address's local
+      part (`[a-z0-9._-]`, made unique as `jana`, `jana2`, …). A one-time **set-password link** is minted
+      with the reset machinery (`PasswordResetTTL`, 7 days; issuing kills any earlier link) as
+      `mail.base_url` + `/password-reset/<token>?project=<slug>` (the query is only a hint for where the
+      page sends its reader after the password is set) and mailed with the **`project_setup`** template
+      („Byl pro vás založen projekt …, Nastavte si heslo: …"). Audited: `user.create`, `project.create`,
+      `project.member.add`, `user.password_reset` (the account entries with `details.via:
+      "project_setup"`).
+    - **an account has the address**: no second account; that one becomes the admin and is mailed the
+      **`project_admin_added`** template with the link to `/p/<slug>/` (no password link — unless that
+      account has no password either, when it gets one as above). `account: "existing"`.
+    - `mail_sent` says whether the mail was really scheduled: **false with `mail.enabled: false` or a
+      `.invalid` address — everything is still created** and the administrator passes
+      `set_password_url` on by hand. The link is answered in every case, as the reset endpoint answers
+      its own.
+    Further refusals: **422 `invalid_email`**; **409 `email_ambiguous`** (several accounts share the
+    address — none is picked); **409 `user_disabled`** (the account with the address is blocked). Any
+    failure rolls everything back: no project without an admin, no orphan account, no mail job.
   - `GET /projects/{uid}` → the project; 404 `not_found`.
+  - `GET /projects/{uid}/awaiting-password` → a bare array by username of the members whose accounts
+    have **no password yet** (enabled ones): `[{user_uid, username, display_name, email, role,
+    link_expires_at}]`, `link_expires_at` `null` when no usable link is left; 404 `not_found`.
+  - `POST /projects/{uid}/members/{user_uid}/password-link` (no body) → **200** + the `first_admin`
+    shape (`account: "existing"`): a **fresh** set-password link for such a member — the previous one
+    stops working — mailed with `project_setup` and audited as `user.password_reset`; **404
+    `not_member`**, 404 `not_found`, **409 `password_set`** once the account has a password, 409
+    `user_disabled`.
   - `PATCH /projects/{uid}` `{name?, description?, active?, max_file_bytes?: number|null,
     max_total_bytes?: number|null}` → 200 + the project as it now stands. A key left out keeps the
     value, **`null` clears a limit**, a number sets it. `active: false` deactivates the project (nobody

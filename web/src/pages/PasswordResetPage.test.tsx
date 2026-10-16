@@ -22,10 +22,10 @@ const resetMock = vi.mocked(resetPassword)
 const TOKEN = 'reset-token-abc'
 
 /** Mounts the page at its route, with a sign-in route behind it for the link. */
-function renderPage() {
+function renderPage(search = '') {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={[`/password-reset/${TOKEN}`]}>
+      <MemoryRouter initialEntries={[`/password-reset/${TOKEN}${search}`]}>
         <Routes>
           <Route path="/password-reset/:token" element={<PasswordResetPage />} />
           <Route path="/login" element={<div>sign-in page</div>} />
@@ -190,6 +190,58 @@ describe('PasswordResetPage', () => {
     expect(await screen.findByLabelText('New password')).toBeInTheDocument()
     await waitFor(() => {
       expect(screen.queryByTestId('password-reset-unreachable')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('the first password of an account set up for somebody', () => {
+    beforeEach(() => {
+      statusMock.mockResolvedValue({ valid: true, display_name: 'Jana', first_password: true })
+    })
+
+    it('words the page as setting a password, not resetting one', async () => {
+      renderPage('?project=chata')
+
+      expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(
+        'Set your password',
+      )
+      expect(screen.getByText(/An account in Kukátko was set up for you/)).toBeInTheDocument()
+      expect(screen.getByLabelText('Password')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Set password' })).toBeInTheDocument()
+    })
+
+    it('sends the reader on to sign in into the project afterwards', async () => {
+      const user = userEvent.setup()
+      resetMock.mockResolvedValue()
+      renderPage('?project=chata')
+
+      await user.type(await screen.findByLabelText('Password'), 'hunter2hunter2')
+      await user.type(screen.getByLabelText('Password again'), 'hunter2hunter2')
+      await user.click(screen.getByRole('button', { name: 'Set password' }))
+
+      const done = await screen.findByTestId('password-reset-done')
+      expect(done).toHaveTextContent('Your password is set.')
+      expect(done).not.toHaveTextContent(/Every other sign-in/)
+      expect(done).toHaveTextContent(/your project opens right away/)
+      expect(within(done).getByRole('link', { name: 'Sign in' })).toHaveAttribute(
+        'href',
+        '/login?returnTo=%2Fp%2Fchata',
+      )
+    })
+
+    it('ignores a project hint that is no slug', async () => {
+      const user = userEvent.setup()
+      resetMock.mockResolvedValue()
+      renderPage('?project=%2F%2Fevil.example')
+
+      await user.type(await screen.findByLabelText('Password'), 'hunter2hunter2')
+      await user.type(screen.getByLabelText('Password again'), 'hunter2hunter2')
+      await user.click(screen.getByRole('button', { name: 'Set password' }))
+
+      const done = await screen.findByTestId('password-reset-done')
+      expect(within(done).getByRole('link', { name: 'Go to sign-in' })).toHaveAttribute(
+        'href',
+        '/login',
+      )
     })
   })
 })

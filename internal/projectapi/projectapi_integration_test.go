@@ -20,6 +20,7 @@ import (
 	"github.com/panbotka/kukatko/internal/clientip"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/projectapi"
 )
@@ -39,8 +40,16 @@ type env struct {
 }
 
 // newEnv builds the server over a freshly truncated database, mounted the way
-// the serve command mounts it: once, instance-level, under /api/v1.
+// the serve command mounts it: once, instance-level, under /api/v1, with mail
+// switched on.
 func newEnv(t *testing.T) *env {
+	t.Helper()
+	return newEnvMail(t, true)
+}
+
+// newEnvMail is newEnv with mail switched on or off (mail.enabled), which
+// decides whether a project set up for somebody schedules its mail.
+func newEnvMail(t *testing.T, mailEnabled bool) *env {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
@@ -53,6 +62,11 @@ func newEnv(t *testing.T) *env {
 		Projects:          project.NewStore(db.Pool()),
 		Accounts:          authStore,
 		RequireMaintainer: authAPI.RequireMaintainer,
+		Setup: auth.NewProjectSetup(auth.ProjectSetupConfig{
+			Service:  authSvc,
+			Mail:     mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: mailEnabled}),
+			LinkBase: "https://k.example/password-reset",
+		}),
 	})
 
 	r := chi.NewRouter()

@@ -242,3 +242,52 @@ func TestMailConstructors_pairATemplateWithItsData(t *testing.T) {
 		}
 	}
 }
+
+// TestEnqueuer_Delivers verifies the after-the-fact "was it mailed?" answer
+// matches Enqueue's two refusals: mail off, and a placeholder or malformed
+// recipient.
+func TestEnqueuer_Delivers(t *testing.T) {
+	t.Parallel()
+
+	on, _ := newEnqueuer(t, true)
+	off, _ := newEnqueuer(t, false)
+	tests := []struct {
+		name string
+		enq  *Enqueuer
+		to   string
+		want bool
+	}{
+		{"mail on, real address", on, "jana@example.com", true},
+		{"mail off", off, "jana@example.com", false},
+		{"placeholder address", on, "jana@kukatko.invalid", false},
+		{"not an address", on, "jana", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tt.enq.Delivers(tt.to); got != tt.want {
+				t.Errorf("Delivers(%q) = %v, want %v", tt.to, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestProjectSetupMails verifies the two first-admin constructors pair each
+// template with its recipient and data.
+func TestProjectSetupMails(t *testing.T) {
+	t.Parallel()
+
+	setup := ProjectSetup("jana@example.com", mailer.ProjectSetupData{ProjectName: "Rodina"})
+	added := ProjectAdminAdded("petr@example.com", mailer.ProjectAdminAddedData{ProjectName: "Rodina"})
+	if setup.Template != mailer.TemplateProjectSetup || setup.To != "jana@example.com" {
+		t.Errorf("ProjectSetup = %+v", setup)
+	}
+	if added.Template != mailer.TemplateProjectAdminAdded || added.To != "petr@example.com" {
+		t.Errorf("ProjectAdminAdded = %+v", added)
+	}
+	for _, m := range []Mail{setup, added} {
+		if _, err := encodePayload(m); err != nil {
+			t.Errorf("encodePayload(%s) = %v, want a renderable template", m.Template, err)
+		}
+	}
+}

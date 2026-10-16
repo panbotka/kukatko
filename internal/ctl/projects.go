@@ -63,13 +63,45 @@ type Account struct {
 	Memberships  []AccountMembership `json:"memberships"`
 }
 
-// ProjectInput is the body of a new project. A nil limit is no limit.
+// ProjectInput is the body of a new project. A nil limit is no limit. A nil
+// Admin makes the caller the first admin; a set one sets the project up for
+// that person instead.
 type ProjectInput struct {
-	Slug          string `json:"slug"`
-	Name          string `json:"name"`
-	Description   string `json:"description,omitempty"`
-	MaxFileBytes  *int64 `json:"max_file_bytes,omitempty"`
-	MaxTotalBytes *int64 `json:"max_total_bytes,omitempty"`
+	Slug          string        `json:"slug"`
+	Name          string        `json:"name"`
+	Description   string        `json:"description,omitempty"`
+	MaxFileBytes  *int64        `json:"max_file_bytes,omitempty"`
+	MaxTotalBytes *int64        `json:"max_total_bytes,omitempty"`
+	Admin         *ProjectAdmin `json:"admin,omitempty"`
+}
+
+// ProjectAdmin is the first admin of a project set up for somebody: the e-mail
+// address and, for a new account, its display name and username (derived from
+// the address when empty).
+type ProjectAdmin struct {
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name,omitempty"`
+	Username    string `json:"username,omitempty"`
+}
+
+// FirstAdmin is what became of a project's first admin (or of a re-sent
+// set-password link): the account, whether it was "created" or "existing",
+// whether the mail was sent and, while the account has no password, the link.
+type FirstAdmin struct {
+	UserUID        string     `json:"user_uid"`
+	Username       string     `json:"username"`
+	Email          string     `json:"email"`
+	Account        string     `json:"account"`
+	MailSent       bool       `json:"mail_sent"`
+	SetPasswordURL string     `json:"set_password_url"`
+	ExpiresAt      *time.Time `json:"expires_at"`
+}
+
+// CreatedProject is the answer to a create: the project plus, for one set up
+// for somebody, its first admin.
+type CreatedProject struct {
+	Project
+	FirstAdmin *FirstAdmin `json:"first_admin"`
 }
 
 // ProjectPatch is a project edit: a nil field is left as it is, a Clear flag
@@ -138,6 +170,20 @@ func (c *Client) GetProject(ctx context.Context, uid string) (json.RawMessage, e
 // CreateProject creates a project; the caller becomes its first admin.
 func (c *Client) CreateProject(ctx context.Context, in ProjectInput) (json.RawMessage, error) {
 	return c.send(ctx, http.MethodPost, "/projects", in)
+}
+
+// ResendPasswordLink issues and mails a fresh set-password link to the member
+// userUID of the project projectUID, whose account has no password yet, and
+// returns the first-admin result (the link included) as raw JSON.
+func (c *Client) ResendPasswordLink(ctx context.Context, projectUID, userUID string) (json.RawMessage, error) {
+	if err := requireUID("project", projectUID); err != nil {
+		return nil, err
+	}
+	if userUID == "" {
+		return nil, ErrNoUser
+	}
+	return c.send(ctx, http.MethodPost, projectPath(projectUID)+"/members/"+url.PathEscape(userUID)+"/password-link",
+		struct{}{})
 }
 
 // UpdateProject applies patch to the project uid and returns it as it now
@@ -243,6 +289,24 @@ func DecodeProject(raw json.RawMessage) (Project, error) {
 	return p, nil
 }
 
+// DecodeCreatedProject decodes the answer to a create.
+func DecodeCreatedProject(raw json.RawMessage) (CreatedProject, error) {
+	var p CreatedProject
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return CreatedProject{}, fmt.Errorf("decoding the created project: %w", err)
+	}
+	return p, nil
+}
+
+// DecodeFirstAdmin decodes a first-admin result (a re-sent link).
+func DecodeFirstAdmin(raw json.RawMessage) (FirstAdmin, error) {
+	var a FirstAdmin
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return FirstAdmin{}, fmt.Errorf("decoding the first admin: %w", err)
+	}
+	return a, nil
+}
+
 // DecodeAccounts decodes the bare array of GET /users.
 func DecodeAccounts(raw json.RawMessage) ([]Account, error) {
 	var list []Account
@@ -315,6 +379,46 @@ func WriteProject(w io.Writer, p Project) error {
 		{"STORAGE PREFIX", prefix},
 		{"CREATED", formatStamp(p.CreatedAt)},
 	})
+}
+
+// WriteCreatedProject renders a created project as WriteProject does and,
+// for one set up for somebody, its first admin after it (WriteFirstAdmin).
+func WriteCreatedProject(w io.Writer, p CreatedProject) error {
+	if err := WriteProject(w, p.Project); err != nil {
+		return err
+	}
+	if p.FirstAdmin == nil {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return fmt.Errorf("writing a separator: %w", err)
+	}
+	return WriteFirstAdmin(w, *p.FirstAdmin)
+}
+
+// WriteFirstAdmin renders a first admin as key–value lines: the account, how
+// it came to be, and whether the mail went out. The set-password link is
+// printed only when the mail was not sent — then passing it on by hand is the
+// way in; -o json carries it always.
+func WriteFirstAdmin(w io.Writer, a FirstAdmin) error {
+	rows := [][2]string{
+		{"ADMIN", a.Username},
+		{"ADMIN E-MAIL", a.Email},
+		{"ADMIN ACCOUNT", dash(a.Account)},
+	}
+	switch {
+	case a.MailSent:
+		rows = append(rows, [2]string{"MAIL", "sent"})
+	case a.SetPasswordURL != "":
+		rows = append(rows, [2]string{"MAIL", "not sent — pass the link on by hand"},
+			[2]string{"SET-PASSWORD LINK", a.SetPasswordURL})
+	default:
+		rows = append(rows, [2]string{"MAIL", "not sent"})
+	}
+	if a.ExpiresAt != nil {
+		rows = append(rows, [2]string{"LINK EXPIRES", formatStamp(*a.ExpiresAt)})
+	}
+	return writeKeyValues(w, rows)
 }
 
 // formatMemberships renders an account's memberships as "slug (role)", a

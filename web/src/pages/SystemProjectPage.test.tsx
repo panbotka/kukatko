@@ -16,6 +16,7 @@ vi.mock('../services/projects', async (importOriginal) => {
   return {
     ...actual,
     fetchAdminProjects: vi.fn(),
+    fetchAwaitingPassword: vi.fn(),
     updateProject: vi.fn(),
     addProjectMember: vi.fn(),
   }
@@ -27,7 +28,8 @@ vi.mock('../services/rekey', async (importOriginal) => {
   return { ...actual, fetchRekeyRun: vi.fn() }
 })
 
-const { fetchAdminProjects, updateProject, addProjectMember } = await import('../services/projects')
+const { fetchAdminProjects, fetchAwaitingPassword, updateProject, addProjectMember } =
+  await import('../services/projects')
 const { fetchRekeyRun } = await import('../services/rekey')
 const fetchMock = vi.mocked(fetchAdminProjects)
 const updateMock = vi.mocked(updateProject)
@@ -86,6 +88,8 @@ beforeEach(async () => {
   updateMock.mockReset()
   addMock.mockReset()
   vi.mocked(fetchRekeyRun).mockResolvedValue(null)
+  // The „Čeká na nastavení hesla" card is tested on its own; here nobody waits.
+  vi.mocked(fetchAwaitingPassword).mockResolvedValue([])
   fetchMock.mockResolvedValue([project({ uid: 'pjv', slug: 'v', name: 'Veselice' }), project()])
 })
 

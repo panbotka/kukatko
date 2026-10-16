@@ -48,11 +48,15 @@ var dummyPasswordHash = sync.OnceValue(func() string {
 // from a wrong password however it came to exist.
 func checkLoginPassword(user User, known bool, password string) error {
 	hash := user.PasswordHash
-	if !known {
+	// An account that has never had a password (a project's first admin who
+	// has not followed their link yet) is compared against the dummy too, so
+	// it costs the same as a wrong password and can never match.
+	usable := known && user.HasPassword()
+	if !usable {
 		hash = dummyPasswordHash()
 	}
 	err := CheckPassword(hash, password)
-	if !known || user.Disabled || err != nil {
+	if !usable || user.Disabled || err != nil {
 		return ErrInvalidCredentials
 	}
 	if user.ApprovedAt == nil {

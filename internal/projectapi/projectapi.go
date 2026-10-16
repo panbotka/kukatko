@@ -64,12 +64,31 @@ type Accounts interface {
 	SetInstanceRoleAudited(ctx context.Context, uid string, role auth.Role, entry audit.Entry) (auth.User, error)
 }
 
+// Setup is the "set up a project for somebody" flow (auth.ProjectSetup): a
+// project together with its first admin, and the set-password link of a member
+// who has not chosen a password yet.
+type Setup interface {
+	// Create creates the project p with the person in as its only admin, in one
+	// transaction with the account, the link and the mail.
+	Create(
+		ctx context.Context, meta audit.Meta, p project.CreateParams, in auth.FirstAdminInput,
+	) (*project.Project, auth.FirstAdmin, error)
+	// ResendLink issues and mails a fresh set-password link to a member whose
+	// account has no password yet.
+	ResendLink(ctx context.Context, meta audit.Meta, projectUID, userUID string) (auth.FirstAdmin, error)
+	// AwaitingPassword lists the members of a project whose accounts have no
+	// password yet.
+	AwaitingPassword(ctx context.Context, projectUID string) ([]auth.AwaitingMember, error)
+}
+
 // Config bundles the dependencies of NewAPI.
 type Config struct {
 	// Projects backs the /projects routes and the memberships of /users.
 	Projects Projects
 	// Accounts backs the /users routes.
 	Accounts Accounts
+	// Setup backs a create with a first admin and the set-password routes.
+	Setup Setup
 	// RequireMaintainer guards every route: the system administrator only.
 	RequireMaintainer func(http.Handler) http.Handler
 }
@@ -78,23 +97,28 @@ type Config struct {
 type API struct {
 	projects          Projects
 	accounts          Accounts
+	setup             Setup
 	requireMaintainer func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{projects: cfg.Projects, accounts: cfg.Accounts, requireMaintainer: cfg.RequireMaintainer}
+	return &API{
+		projects: cfg.Projects, accounts: cfg.Accounts, setup: cfg.Setup, requireMaintainer: cfg.RequireMaintainer,
+	}
 }
 
 // RegisterRoutes mounts the routes onto r, which the caller has scoped under
 // the API base path (/api/v1), instance-level:
 //
 //	GET    /projects                            list with members, photos and bytes
-//	POST   /projects                            create (201); the caller becomes its admin
+//	POST   /projects                            create (201); the caller — or the named first admin — is its admin
 //	GET    /projects/{uid}                      one project
 //	PATCH  /projects/{uid}                      edit name, description, active, limits
+//	GET    /projects/{uid}/awaiting-password    members whose accounts have no password yet
 //	POST   /projects/{uid}/members              add an approved membership (201)
 //	DELETE /projects/{uid}/members/{user_uid}   remove a membership (204)
+//	POST   /projects/{uid}/members/{user_uid}/password-link   re-send the set-password link
 //	GET    /users                               every account with its memberships
 //	PATCH  /users/{uid}                         set the instance role (promote/demote)
 //
@@ -106,8 +130,10 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.Post("/", a.handleCreate)
 		r.Get("/{uid}", a.handleGet)
 		r.Patch("/{uid}", a.handleUpdate)
+		r.Get("/{uid}/awaiting-password", a.handleAwaitingPassword)
 		r.Post("/{uid}/members", a.handleAddMember)
 		r.Delete("/{uid}/members/{user_uid}", a.handleRemoveMember)
+		r.Post("/{uid}/members/{user_uid}/password-link", a.handleResendLink)
 	})
 	// Flat rather than a /users sub-router: GET /users/{uid}/avatar
 	// (internal/userpicapi) shares the prefix with a different guard.

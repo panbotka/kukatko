@@ -32,7 +32,9 @@ type LoadState =
  * photos, the bytes of its originals, its limits and when it was founded. The
  * name leads to the project's detail page; „Nový projekt" opens the create
  * dialog, and a created project is opened right away, since its members and
- * limits are what one sets up next.
+ * limits are what one sets up next — unless it was set up for somebody else,
+ * when the dialog stays on its result (the admin, the e-mail or the link) and
+ * the list is re-read behind it.
  *
  * A project whose storage move is running or paused carries a chip „přesun
  * 42 %" beside its name; the runs are read once, after the list, one request per
@@ -219,6 +221,12 @@ export function SystemProjectsPage() {
           // The creator is the new project's admin: re-read the session first,
           // so the switcher lists the project and its page offers no "add me".
           void refresh().then(() => navigate(systemProjectPath(project.slug)))
+        }}
+        onSetUp={() => {
+          // Set up for somebody else: the caller is no member, so the session
+          // is unchanged; only the list gains a row. The dialog stays on its
+          // result, which may hold the set-password link.
+          void reload()
         }}
       />
     </>

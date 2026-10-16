@@ -29,6 +29,12 @@ export type ProjectErrorCode =
   | 'last_admin'
   | 'self'
   | 'last_maintainer'
+  | 'invalid_email'
+  | 'invalid_username'
+  | 'username_taken'
+  | 'email_ambiguous'
+  | 'user_disabled'
+  | 'password_set'
   | 'internal'
 
 /**
@@ -72,13 +78,62 @@ export interface AdminProject {
   updated_at: string
 }
 
-/** Body of `POST /projects`. An omitted limit means none. */
+/**
+ * The first admin of a project set up for somebody else: the address (required)
+ * and, for a new account, its display name and username — derived from the
+ * address when left out.
+ */
+export interface FirstAdminBody {
+  email: string
+  display_name?: string
+  username?: string
+}
+
+/**
+ * Body of `POST /projects`. An omitted limit means none. With `admin` the
+ * project is set up for that person, who becomes its only member; without it
+ * the caller becomes its admin.
+ */
 export interface CreateProjectBody {
   slug: string
   name: string
   description?: string
   max_file_bytes?: number
   max_total_bytes?: number
+  admin?: FirstAdminBody
+}
+
+/**
+ * What became of a project's first admin (or of a re-sent set-password link):
+ * the account, whether it was `created` or already `existing`, whether the mail
+ * went out and — while the account has no password — the one-time link, to be
+ * passed on by hand when no mail was sent.
+ */
+export interface FirstAdmin {
+  user_uid: string
+  username: string
+  display_name: string
+  email: string
+  account: 'created' | 'existing'
+  mail_sent: boolean
+  set_password_url?: string
+  expires_at?: string
+}
+
+/** The answer to `POST /projects`: the project and, when set up for somebody, its first admin. */
+export interface CreatedProject extends AdminProject {
+  first_admin?: FirstAdmin
+}
+
+/** A member whose account has no password yet (`GET /projects/{uid}/awaiting-password`). */
+export interface AwaitingMember {
+  user_uid: string
+  username: string
+  display_name: string
+  email: string
+  role: ProjectRole
+  /** When the outstanding link stops working, or null when none is usable any more. */
+  link_expires_at: string | null
 }
 
 /**
@@ -196,14 +251,46 @@ export async function fetchAdminProjects(signal?: AbortSignal): Promise<AdminPro
 }
 
 /**
- * Creates a project; the caller becomes its approved admin.
+ * Creates a project; the caller becomes its approved admin — or, with
+ * `body.admin`, the person named there does and the answer says how
+ * (`first_admin`).
  *
  * @throws ProjectApiError `slug_taken` (409), `invalid_slug`, `invalid_name`,
- *   `invalid_limit` (422).
+ *   `invalid_limit` (422); with an admin also `invalid_email`,
+ *   `invalid_username` (422), `username_taken`, `email_ambiguous`,
+ *   `user_disabled` (409).
  */
-export async function createProject(body: CreateProjectBody): Promise<AdminProject> {
+export async function createProject(body: CreateProjectBody): Promise<CreatedProject> {
   const res = await request('POST', '/projects', body)
-  return (await res.json()) as AdminProject
+  return (await res.json()) as CreatedProject
+}
+
+/** The members of a project whose accounts have no password yet. */
+export async function fetchAwaitingPassword(
+  projectUid: string,
+  signal?: AbortSignal,
+): Promise<AwaitingMember[]> {
+  const res = await request(
+    'GET',
+    `${projectRoute(projectUid)}/awaiting-password`,
+    undefined,
+    signal,
+  )
+  return (await res.json()) as AwaitingMember[]
+}
+
+/**
+ * Issues and mails a fresh set-password link to a member who has no password
+ * yet; the previous link stops working.
+ *
+ * @throws ProjectApiError `not_member` (404), `password_set`, `user_disabled` (409).
+ */
+export async function resendPasswordLink(projectUid: string, userUid: string): Promise<FirstAdmin> {
+  const res = await request(
+    'POST',
+    `${projectRoute(projectUid)}/members/${encodeURIComponent(userUid)}/password-link`,
+  )
+  return (await res.json()) as FirstAdmin
 }
 
 /**

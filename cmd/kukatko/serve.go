@@ -507,7 +507,7 @@ func readAPIOptions(
 	return []server.Option{
 		server.WithAPI(notifications.RegisterInstanceRoutes),
 		server.WithAPI(auditAPI.RegisterRoutes),
-		server.WithAPI(buildProjectsAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(buildProjectsAPI(cfg, db, authAPI).RegisterRoutes),
 		server.WithAPI(invites.RegisterPublicRoutes),
 		server.WithAPI(settingsAPI.RegisterInstanceRoutes),
 		server.WithAPI(buildResolveAPI(cfg, db, authAPI).RegisterRoutes),

@@ -500,6 +500,11 @@ export interface PasswordResetStatus {
   valid: boolean
   display_name?: string
   expires_at?: string
+  /**
+   * The account has never had a password — it was set up for its owner (a
+   * project's first admin) — so this link chooses the first one.
+   */
+  first_password?: boolean
 }
 
 /**

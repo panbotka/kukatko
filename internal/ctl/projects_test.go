@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // projectsBody is a realistic GET /projects answer: the bootstrap project in
@@ -146,6 +147,13 @@ func TestClient_projectRoutes(t *testing.T) {
 			"POST", "/api/v1/projects/pj1/members", `"role":"editor"`},
 		{func() error { _, err := client.SetInstanceRole(ctx, "us1", "maintainer"); return err },
 			"PATCH", "/api/v1/users/us1", `"instance_role":"maintainer"`},
+		{func() error {
+			_, err := client.CreateProject(ctx, ProjectInput{Slug: "s", Name: "N",
+				Admin: &ProjectAdmin{Email: "jana@example.com"}})
+			return err
+		}, "POST", "/api/v1/projects", `"admin":{"email":"jana@example.com"}`},
+		{func() error { _, err := client.ResendPasswordLink(ctx, "pj1", "us1"); return err },
+			"POST", "/api/v1/projects/pj1/members/us1/password-link", ""},
 	}
 	for _, step := range steps {
 		if err := step.call(); err != nil {
@@ -158,6 +166,48 @@ func TestClient_projectRoutes(t *testing.T) {
 	}
 	if _, err := client.AddProjectMember(ctx, "pj1", "", "viewer"); !errors.Is(err, ErrNoUser) {
 		t.Errorf("AddProjectMember without a user = %v, want ErrNoUser", err)
+	}
+}
+
+// TestWriteCreatedProject verifies a created project prints its first admin
+// after it, and the set-password link only when the mail was not sent.
+func TestWriteCreatedProject(t *testing.T) {
+	t.Parallel()
+	expires := time.Date(2026, 10, 23, 10, 0, 0, 0, time.UTC)
+	admin := FirstAdmin{Username: "jana", Email: "jana@example.com", Account: "created",
+		SetPasswordURL: "https://k.example/password-reset/tok", ExpiresAt: &expires}
+	tests := []struct {
+		name     string
+		project  CreatedProject
+		want     []string
+		wantNone []string
+	}{
+		{"no first admin", CreatedProject{Project: Project{Slug: "mine"}}, []string{"mine"}, []string{"ADMIN"}},
+		{"mail off prints the link", CreatedProject{Project: Project{Slug: "rodina"}, FirstAdmin: &admin},
+			[]string{"ADMIN", "jana", "created", "not sent", "password-reset/tok", "LINK EXPIRES"}, nil},
+		{"mail sent hides the link", CreatedProject{Project: Project{Slug: "rodina"},
+			FirstAdmin: &FirstAdmin{Username: "jana", Account: "created", MailSent: true,
+				SetPasswordURL: "https://k.example/password-reset/tok"}},
+			[]string{"MAIL", "sent"}, []string{"password-reset/tok"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			if err := WriteCreatedProject(&buf, tt.project); err != nil {
+				t.Fatalf("WriteCreatedProject: %v", err)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(buf.String(), want) {
+					t.Errorf("output lacks %q:\n%s", want, buf.String())
+				}
+			}
+			for _, unwanted := range tt.wantNone {
+				if strings.Contains(buf.String(), unwanted) {
+					t.Errorf("output has %q:\n%s", unwanted, buf.String())
+				}
+			}
+		})
 	}
 }
 

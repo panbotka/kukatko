@@ -31,6 +31,12 @@ const (
 	codeLastAdmin      = "last_admin"
 	codeSelf           = "self"
 	codeLastMaintainer = "last_maintainer"
+	codeInvalidEmail   = "invalid_email"
+	codeInvalidUser    = "invalid_username"
+	codeUsernameTaken  = "username_taken"
+	codeEmailAmbiguous = "email_ambiguous"
+	codeUserDisabled   = "user_disabled"
+	codePasswordSet    = "password_set"
 	codeInternal       = "internal"
 )
 
@@ -69,6 +75,13 @@ var projectErrors = []struct {
 	{auth.ErrUserNotFound, http.StatusNotFound, codeNotFound, false},
 	{auth.ErrInvalidRole, http.StatusUnprocessableEntity, codeInvalidRole, false},
 	{auth.ErrLastMaintainer, http.StatusConflict, codeLastMaintainer, false},
+	{auth.ErrInvalidEmail, http.StatusUnprocessableEntity, codeInvalidEmail, false},
+	{auth.ErrUsernameRequired, http.StatusUnprocessableEntity, codeInvalidUser, false},
+	{auth.ErrUsernameTooLong, http.StatusUnprocessableEntity, codeInvalidUser, false},
+	{auth.ErrUsernameTaken, http.StatusConflict, codeUsernameTaken, false},
+	{auth.ErrEmailAmbiguous, http.StatusConflict, codeEmailAmbiguous, false},
+	{auth.ErrUserDisabled, http.StatusConflict, codeUserDisabled, false},
+	{auth.ErrPasswordAlreadySet, http.StatusConflict, codePasswordSet, false},
 }
 
 // classify turns a store error into its refusal, or a 500 for anything that is

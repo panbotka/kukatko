@@ -5,8 +5,10 @@ import {
   addProjectMember,
   createProject,
   fetchAdminProjects,
+  fetchAwaitingPassword,
   fetchInstanceAccounts,
   ProjectApiError,
+  resendPasswordLink,
   setInstanceRole,
   slugProblem,
   updateProject,
@@ -78,6 +80,37 @@ describe('project API client', () => {
       url: '/api/v1/users/u2',
       method: 'PATCH',
       body: { instance_role: 'maintainer' },
+    })
+  })
+
+  it('sets a project up for somebody and manages their set-password link', async () => {
+    let mock = stubFetch(201, { slug: 'rodina', first_admin: { username: 'jana' } })
+    const created = await createProject({
+      slug: 'rodina',
+      name: 'Rodina',
+      admin: { email: 'jana@example.com', display_name: 'Jana' },
+    })
+    expect(sent(mock).body).toEqual({
+      slug: 'rodina',
+      name: 'Rodina',
+      admin: { email: 'jana@example.com', display_name: 'Jana' },
+    })
+    expect(created.first_admin?.username).toBe('jana')
+
+    mock = stubFetch(200, [])
+    await fetchAwaitingPassword('pjr')
+    expect(sent(mock)).toEqual({
+      url: '/api/v1/projects/pjr/awaiting-password',
+      method: 'GET',
+      body: undefined,
+    })
+
+    mock = stubFetch(200, { username: 'jana' })
+    await resendPasswordLink('pjr', 'u1')
+    expect(sent(mock)).toEqual({
+      url: '/api/v1/projects/pjr/members/u1/password-link',
+      method: 'POST',
+      body: undefined,
     })
   })
 

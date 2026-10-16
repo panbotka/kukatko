@@ -211,6 +211,8 @@ var renderers = map[string]func(payload) (mailer.Rendered, error){
 	mailer.TemplateAlbumFeatured:          renderer(mailer.RenderAlbumFeatured),
 	mailer.TemplateTaskAssigned:           renderer(mailer.RenderTaskAssigned),
 	mailer.TemplateCommentMention:         renderer(mailer.RenderCommentMention),
+	mailer.TemplateProjectSetup:           renderer(mailer.RenderProjectSetup),
+	mailer.TemplateProjectAdminAdded:      renderer(mailer.RenderProjectAdminAdded),
 }
 
 // renderer adapts a template's typed render function to the shape renderers

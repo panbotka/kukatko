@@ -241,7 +241,13 @@ the same way, by its slug in the URL (`/api/v1/p/<project>/…`).
   menu (`/system/projects`) every project of the instance is one row: its name and slug, whether it is
   active, its members, photos and the size of its originals, and its limits. *Nový projekt* founds
   one — the slug is checked as you type, because it is the project's address and cannot change
-  later — with an optional largest-file limit and a quota for all originals together. A project's own
+  later — with an optional largest-file limit and a quota for all originals together. To set a
+  project up **for somebody else**, switch on *Zakládám projekt pro někoho jiného* and fill in *První
+  správce projektu*: their e-mail (and optionally a name and username). They become the project's only
+  administrator — an existing account with that address, or a new one that gets an e-mail with a link
+  to choose its password (valid seven days) and then lands in the project — and you do not become a
+  member. The result screen says whether the e-mail went out or hands you the link to pass on, and the
+  project's page can send a fresh link while they have not set a password yet. A project's own
   page edits its name, description and limits, switches it off (its members can no longer open it;
   nothing is deleted — you still can, under a banner saying it is off) or back on, adds you as its administrator when you are not a member yet (the project you just founded already has you, and the switcher lists it at once), and
   shows where in the storage its files live. A project that still lives in the root of the storage

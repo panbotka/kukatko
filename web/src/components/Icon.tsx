@@ -44,6 +44,7 @@ export type IconName =
   | 'crosshair'
   | 'dash-lg'
   | 'diagram-3'
+  | 'envelope-check'
   | 'envelope-x'
   | 'exclamation-triangle'
   | 'eye'

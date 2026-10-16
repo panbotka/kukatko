@@ -37,6 +37,7 @@ const NAMES_THE_ROLE =
 const MAINTAINER_ONLY: Record<string, string> = {
   'systemUsers.': '/system/users, RequireRole maintainer',
   'systemProject.': '/system/projects/:slug, RequireRole maintainer',
+  'systemProjects.firstAdmin.toggleHelp': "/system/projects' create dialog, RequireRole maintainer",
   'nav.titles.systemUsers': 'a nav entry filtered by isMaintainer',
   'maintenance.maintainerOnly': '/maintenance, RequireRole maintainer',
   'system.maintainerOnly': '/system, RequireRole maintainer',

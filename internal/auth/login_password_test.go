@@ -42,6 +42,9 @@ func TestCheckLoginPassword_outcomes(t *testing.T) {
 	// shut out" must stay indistinguishable from a wrong password.
 	waitingDisabled := waiting
 	waitingDisabled.Disabled = true
+	// Created for somebody who has not chosen a password yet.
+	passwordless := user
+	passwordless.PasswordHash = ""
 
 	tests := []struct {
 		name     string
@@ -65,6 +68,10 @@ func TestCheckLoginPassword_outcomes(t *testing.T) {
 		{name: "unapproved user with a wrong password", user: waiting, known: true,
 			password: "not it at all", wantErr: ErrInvalidCredentials},
 		{name: "unapproved and disabled user with the right password", user: waitingDisabled, known: true,
+			password: theRealPassword, wantErr: ErrInvalidCredentials},
+		{name: "passwordless user with an empty password", user: passwordless, known: true,
+			password: "", wantErr: ErrInvalidCredentials},
+		{name: "passwordless user with any password", user: passwordless, known: true,
 			password: theRealPassword, wantErr: ErrInvalidCredentials},
 	}
 

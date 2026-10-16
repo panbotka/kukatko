@@ -4,7 +4,7 @@ import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import { AuthFrame } from '../components/AuthFrame'
 import { Icon } from '../components/Icon'
@@ -16,6 +16,7 @@ import {
   NetworkError,
   resetPassword,
 } from '../services/auth'
+import { slugProblem } from '../services/projects'
 
 /**
  * What is known about the link this page was opened with.
@@ -29,7 +30,7 @@ import {
  */
 type LinkState =
   | { status: 'checking' }
-  | { status: 'usable'; displayName: string }
+  | { status: 'usable'; displayName: string; firstPassword: boolean }
   | { status: 'unusable' }
   | { status: 'unreachable' }
 
@@ -85,9 +86,28 @@ function rejectionFor(error: unknown): Rejection {
 }
 
 /**
+ * The sign-in address the "done" screen sends its reader to: the plain sign-in,
+ * or — when the link named a project (`?project=<slug>`, which a project set up
+ * for somebody carries) — the sign-in that lands in that project. A `project`
+ * that is no slug is ignored rather than trusted.
+ */
+function signInPath(project: string | null): string {
+  if (project === null || slugProblem(project) !== null) {
+    return '/login'
+  }
+  return `/login?returnTo=${encodeURIComponent(`/p/${project}`)}`
+}
+
+/**
  * Password-reset landing page (route `/password-reset/:token`, public — the
  * reader is by definition locked out), laid out as the same one-column Superhero
  * card as sign-in and registration so the three read as one flow.
+ *
+ * The same page sets the **first** password of an account set up for somebody
+ * (a project's first admin): the link's status says so (`first_password`), and
+ * the wording follows — „Nastavte si heslo", not „Nové heslo" — with no word
+ * about other sessions, which such an account never had. When the link carries
+ * `?project=<slug>` the way to sign in afterwards lands in that project.
  *
  * The link is checked **before** the form exists: a dead link gets a plain
  * explanation and the way to sign-in, never a form that every submit would
@@ -97,10 +117,14 @@ function rejectionFor(error: unknown): Rejection {
  */
 export function PasswordResetPage() {
   const { t } = useTranslation()
-  useDocumentTitle(t('passwordReset.title'))
   const { token } = useParams<{ token: string }>()
+  const [searchParams] = useSearchParams()
+  const loginPath = signInPath(searchParams.get('project'))
 
   const [link, setLink] = useState<LinkState>({ status: 'checking' })
+  const first = link.status === 'usable' && link.firstPassword
+  const title = first ? t('passwordReset.firstTitle') : t('passwordReset.title')
+  useDocumentTitle(title)
   // Bumped by the retry button; re-running the check is the whole effect, so the
   // attempt counter is the dependency that re-runs it.
   const [attempt, setAttempt] = useState(0)
@@ -123,7 +147,11 @@ export function PasswordResetPage() {
         }
         setLink(
           status.valid
-            ? { status: 'usable', displayName: status.display_name ?? '' }
+            ? {
+                status: 'usable',
+                displayName: status.display_name ?? '',
+                firstPassword: status.first_password === true,
+              }
             : { status: 'unusable' },
         )
       })
@@ -197,7 +225,7 @@ export function PasswordResetPage() {
   const tooShort = validated && password.length < MIN_PASSWORD_LENGTH
 
   return (
-    <AuthFrame title={t('passwordReset.title')}>
+    <AuthFrame title={title}>
       {link.status === 'checking' && (
         <div className="text-center py-3" data-testid="password-reset-checking">
           <Spinner animation="border" role="status">
@@ -246,13 +274,21 @@ export function PasswordResetPage() {
           <Alert variant="success" role="status">
             <Alert.Heading as="h2" className="h5">
               <Icon name="shield-lock" className="me-2" />
-              {t('passwordReset.doneTitle')}
+              {first ? t('passwordReset.firstDoneTitle') : t('passwordReset.doneTitle')}
             </Alert.Heading>
-            <p className="mb-0">{t('passwordReset.doneSessions')}</p>
-            <p className="mb-0">{t('passwordReset.doneSignIn')}</p>
+            {!first && <p className="mb-0">{t('passwordReset.doneSessions')}</p>}
+            <p className="mb-0">
+              {loginPath === '/login'
+                ? t('passwordReset.doneSignIn')
+                : t('passwordReset.doneSignInProject')}
+            </p>
           </Alert>
-          <div className="text-center">
-            <Link to="/login">{t('passwordReset.backToLogin')}</Link>
+          <div className="d-grid">
+            <Link to={loginPath} className="btn btn-primary">
+              {loginPath === '/login'
+                ? t('passwordReset.backToLogin')
+                : t('passwordReset.signInToProject')}
+            </Link>
           </div>
         </div>
       )}
@@ -260,7 +296,9 @@ export function PasswordResetPage() {
       {link.status === 'usable' && submit.status !== 'done' && (
         <>
           <p className="mb-1">{t('passwordReset.greeting', { name: link.displayName })}</p>
-          <p className="text-secondary">{t('passwordReset.intro')}</p>
+          <p className="text-secondary">
+            {first ? t('passwordReset.firstIntro') : t('passwordReset.intro')}
+          </p>
 
           {rejection !== null && rejection.field === null && (
             <Alert variant="danger" role="alert">
@@ -276,7 +314,9 @@ export function PasswordResetPage() {
             }}
           >
             <Form.Group className="mb-3" controlId="password-reset-password">
-              <Form.Label>{t('passwordReset.password')}</Form.Label>
+              <Form.Label>
+                {first ? t('passwordReset.firstPassword') : t('passwordReset.password')}
+              </Form.Label>
               <Form.Control
                 type="password"
                 autoComplete="new-password"
@@ -336,7 +376,7 @@ export function PasswordResetPage() {
                     className="me-2"
                   />
                 )}
-                {t('passwordReset.submit')}
+                {first ? t('passwordReset.firstSubmit') : t('passwordReset.submit')}
               </Button>
             </div>
           </Form>

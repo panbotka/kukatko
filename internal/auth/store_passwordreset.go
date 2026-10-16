@@ -88,13 +88,8 @@ func (s *Store) IssuePasswordResetAudited(
 		if current.Disabled {
 			return ErrUserDisabled
 		}
-		if _, err := tx.Exec(ctx, dropUnusedPasswordResetsQuery, tok.UserUID); err != nil {
-			return fmt.Errorf("auth: dropping earlier password resets: %w", err)
-		}
-		if _, err := tx.Exec(ctx, insertPasswordResetQuery,
-			tok.ID, tok.UserUID, tok.TokenHash, tok.CreatedAt, tok.ExpiresAt, tok.IssuedByUID,
-		); err != nil {
-			return fmt.Errorf("auth: inserting password reset: %w", err)
+		if err := replacePasswordReset(ctx, tx, tok); err != nil {
+			return err
 		}
 		user = current
 		if alongside == nil {
@@ -106,6 +101,22 @@ func (s *Store) IssuePasswordResetAudited(
 		return User{}, err
 	}
 	return user, nil
+}
+
+// replacePasswordReset makes tok the account's only outstanding link on tx:
+// whatever unused links the account still held are deleted, then tok is
+// inserted. The caller holds the account's row lock (lockUser), which is what
+// makes two concurrent issuers queue instead of both inserting.
+func replacePasswordReset(ctx context.Context, tx pgx.Tx, tok PasswordResetToken) error {
+	if _, err := tx.Exec(ctx, dropUnusedPasswordResetsQuery, tok.UserUID); err != nil {
+		return fmt.Errorf("auth: dropping earlier password resets: %w", err)
+	}
+	if _, err := tx.Exec(ctx, insertPasswordResetQuery,
+		tok.ID, tok.UserUID, tok.TokenHash, tok.CreatedAt, tok.ExpiresAt, tok.IssuedByUID,
+	); err != nil {
+		return fmt.Errorf("auth: inserting password reset: %w", err)
+	}
+	return nil
 }
 
 // GetPasswordResetByToken returns the link whose token hashes to tokenHash,

@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -27,7 +28,7 @@ func newCtlProjectsCmd(opts *ctlOptions) *cobra.Command {
 	cmd.AddCommand(newCtlProjectsUseCmd(opts), newCtlProjectsListCmd(opts), newCtlProjectsGetCmd(opts),
 		newCtlProjectsCreateCmd(opts),
 		newCtlProjectsUpdateCmd(opts), newCtlProjectsActiveCmd(opts, false), newCtlProjectsActiveCmd(opts, true),
-		newCtlProjectsAddMemberCmd(opts), newCtlProjectsRekeyCmd(opts))
+		newCtlProjectsAddMemberCmd(opts), newCtlProjectsPasswordLinkCmd(opts), newCtlProjectsRekeyCmd(opts))
 	return cmd
 }
 
@@ -136,13 +137,18 @@ func newCtlProjectsGetCmd(opts *ctlOptions) *cobra.Command {
 // newCtlProjectsCreateCmd builds "ctl projects create".
 func newCtlProjectsCreateCmd(opts *ctlOptions) *cobra.Command {
 	var in ctl.ProjectInput
+	var admin ctl.ProjectAdmin
 	var maxFile, maxTotal int64
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "Create a project; you become its first admin",
+		Short: "Create a project; you — or the person --admin-email names — become its first admin",
 		Long: "Create a project. The slug is its URL (/p/<slug>/) and can never change:\n" +
 			"1–40 lowercase letters, digits or hyphens, not starting with a hyphen.\n" +
-			"Limits are in bytes; leave one out for no limit.",
+			"Limits are in bytes; leave one out for no limit.\n\n" +
+			"With --admin-email the project is set up for somebody else: an account with\n" +
+			"that address (created without a password when none has it) becomes its only\n" +
+			"admin and is mailed a link to choose a password; you do not become a member.\n" +
+			"When the mail cannot be sent the link is printed, to pass on by hand.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client, out, err := opts.resolve()
@@ -151,14 +157,23 @@ func newCtlProjectsCreateCmd(opts *ctlOptions) *cobra.Command {
 			}
 			in.MaxFileBytes = changedInt64(cmd, "max-file-bytes", maxFile)
 			in.MaxTotalBytes = changedInt64(cmd, "max-total-bytes", maxTotal)
+			if admin.Email != "" {
+				in.Admin = &admin
+			} else if admin.DisplayName != "" || admin.Username != "" {
+				return errAdminEmailRequired
+			}
 			raw, err := client.CreateProject(cmd.Context(), in)
 			if err != nil {
 				return fmt.Errorf("creating project %s: %w", in.Slug, err)
 			}
-			return renderProject(cmd.OutOrStdout(), out, raw)
+			return renderRaw(cmd.OutOrStdout(), out, raw, "project", ctl.DecodeCreatedProject, ctl.WriteCreatedProject)
 		},
 	}
 	flags := cmd.Flags()
+	flags.StringVar(&admin.Email, "admin-email", "", "set the project up for this person: the first admin's e-mail")
+	flags.StringVar(&admin.DisplayName, "admin-name", "", "the first admin's display name (a new account only)")
+	flags.StringVar(&admin.Username, "admin-username", "",
+		"the first admin's username (a new account only; derived from the e-mail when empty)")
 	flags.StringVar(&in.Slug, "slug", "", "the project's URL segment (immutable)")
 	flags.StringVar(&in.Name, "name", "", "the project's name")
 	flags.StringVar(&in.Description, "description", "", "free text about the project")
@@ -167,6 +182,42 @@ func newCtlProjectsCreateCmd(opts *ctlOptions) *cobra.Command {
 	_ = cmd.MarkFlagRequired("slug") // the flags exist; the error only names a missing one
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
+}
+
+// errAdminEmailRequired refuses --admin-name/--admin-username without the
+// address that names the first admin.
+var errAdminEmailRequired = errors.New("--admin-name and --admin-username need --admin-email")
+
+// newCtlProjectsPasswordLinkCmd builds "ctl projects password-link", the
+// re-send of a set-password link to a member who has not chosen a password yet.
+func newCtlProjectsPasswordLinkCmd(opts *ctlOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "password-link <slug> <username>",
+		Short: "Send a member who has no password yet a fresh set-password link",
+		Long: "Issue and mail a fresh link with which a member of the project whose account\n" +
+			"has no password yet (a project set up for them) chooses one. The previous link\n" +
+			"stops working. When the mail cannot be sent the link is printed.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, out, err := opts.resolve()
+			if err != nil {
+				return err
+			}
+			found, err := client.ResolveProject(cmd.Context(), args[0])
+			if err != nil {
+				return fmt.Errorf("finding project %s: %w", args[0], err)
+			}
+			account, err := client.ResolveAccount(cmd.Context(), args[1])
+			if err != nil {
+				return fmt.Errorf("finding account %s: %w", args[1], err)
+			}
+			raw, err := client.ResendPasswordLink(cmd.Context(), found.UID, account.UID)
+			if err != nil {
+				return fmt.Errorf("re-sending the link of %s: %w", args[1], err)
+			}
+			return renderRaw(cmd.OutOrStdout(), out, raw, "first admin", ctl.DecodeFirstAdmin, ctl.WriteFirstAdmin)
+		},
+	}
 }
 
 // projectUpdateFlags are the flags of "ctl projects update".

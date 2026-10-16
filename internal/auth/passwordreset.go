@@ -82,6 +82,43 @@ func hashPasswordResetToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// mintPasswordReset returns a fresh link token for the account uid and the row
+// that stores its hash, issued at now and lasting ttl. issuerUID is the account
+// handing the link out; empty records no issuer.
+func mintPasswordReset(uid, issuerUID string, now time.Time, ttl time.Duration) (string, PasswordResetToken, error) {
+	token, err := newToken()
+	if err != nil {
+		return "", PasswordResetToken{}, err
+	}
+	id, err := newPasswordResetID()
+	if err != nil {
+		return "", PasswordResetToken{}, err
+	}
+	row := PasswordResetToken{
+		ID:        id,
+		UserUID:   uid,
+		TokenHash: hashPasswordResetToken(token),
+		CreatedAt: now,
+		ExpiresAt: now.Add(ttl),
+	}
+	if issuerUID != "" {
+		row.IssuedByUID = &issuerUID
+	}
+	return token, row, nil
+}
+
+// withResetDetails stamps the link's id and expiry into an audit entry's
+// details (allocating them when nil) and returns them: the id is what ties the
+// issuing entry to the one that later spends the link.
+func withResetDetails(details map[string]any, row PasswordResetToken) map[string]any {
+	if details == nil {
+		details = map[string]any{}
+	}
+	details["reset_id"] = row.ID
+	details["expires_at"] = row.ExpiresAt.UTC().Format(time.RFC3339)
+	return details
+}
+
 // IssuedPasswordReset is what an administrator gets back for a reset they
 // started: the whole link, so they can send it by hand to somebody whose mailbox
 // is not working, plus where it was mailed and how long it lasts.
@@ -95,10 +132,16 @@ type IssuedPasswordReset struct {
 // whether it still works and, only then, whom to greet and until when. Nothing
 // else about the account is published — the token is a bearer credential of one
 // narrow power, and a page that shows a name is already the most it needs.
+//
+// FirstPassword says the account has never had a password — it was created for
+// somebody (a project's first admin, see ProjectSetup) and this link is how
+// they choose their first one — so the page can say "set your password" rather
+// than "reset" it. It is published only for a usable link, to its holder.
 type PasswordResetStatus struct {
-	Valid       bool       `json:"valid"`
-	DisplayName string     `json:"display_name,omitempty"`
-	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	Valid         bool       `json:"valid"`
+	DisplayName   string     `json:"display_name,omitempty"`
+	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
+	FirstPassword bool       `json:"first_password,omitempty"`
 }
 
 // PasswordResetConfig bundles what NewPasswordReset needs.
@@ -178,30 +221,11 @@ func (pr *PasswordReset) Issue(
 	if err := pr.svc.guardMaintainerBoundary(ctx, actor, uid, ""); err != nil {
 		return IssuedPasswordReset{}, err
 	}
-	token, err := newToken()
+	token, row, err := mintPasswordReset(uid, entry.ActorUID, pr.svc.now(), pr.ttl)
 	if err != nil {
 		return IssuedPasswordReset{}, err
 	}
-	id, err := newPasswordResetID()
-	if err != nil {
-		return IssuedPasswordReset{}, err
-	}
-	now := pr.svc.now()
-	row := PasswordResetToken{
-		ID:        id,
-		UserUID:   uid,
-		TokenHash: hashPasswordResetToken(token),
-		CreatedAt: now,
-		ExpiresAt: now.Add(pr.ttl),
-	}
-	if entry.ActorUID != "" {
-		row.IssuedByUID = &entry.ActorUID
-	}
-	if entry.Details == nil {
-		entry.Details = map[string]any{}
-	}
-	entry.Details["reset_id"] = row.ID
-	entry.Details["expires_at"] = row.ExpiresAt.UTC().Format(time.RFC3339)
+	entry.Details = withResetDetails(entry.Details, row)
 
 	link := pr.link(token)
 	user, err := pr.svc.store.IssuePasswordResetAudited(ctx, row, entry,
@@ -255,7 +279,9 @@ func (pr *PasswordReset) Status(ctx context.Context, token string) (PasswordRese
 		return PasswordResetStatus{}, nil
 	}
 	expires := row.ExpiresAt
-	return PasswordResetStatus{Valid: true, DisplayName: user.DisplayName, ExpiresAt: &expires}, nil
+	return PasswordResetStatus{
+		Valid: true, DisplayName: user.DisplayName, ExpiresAt: &expires, FirstPassword: !user.HasPassword(),
+	}, nil
 }
 
 // Consume sets newPassword for the account the link belongs to and burns the

@@ -514,7 +514,14 @@
     "errorPasswordMismatch": "The passwords do not match. Please type the same one twice.",
     "errorRateLimited": "Too many attempts. Please try again in a moment.",
     "errorOffline": "Kukátko could not reach the server, so the password has not changed. Check your connection and try again.",
-    "errorGeneric": "The password could not be changed. Please try again."
+    "errorGeneric": "The password could not be changed. Please try again.",
+    "firstTitle": "Set your password",
+    "firstIntro": "An account in Kukátko was set up for you. Choose the password you will sign in with. The link works only once.",
+    "firstPassword": "Password",
+    "firstSubmit": "Set password",
+    "firstDoneTitle": "Your password is set.",
+    "doneSignInProject": "Now sign in — your project opens right away.",
+    "signInToProject": "Sign in"
   },
   "account": {
     "title": "My account",
@@ -4610,11 +4617,41 @@
       "slugTaken": "This slug already exists",
       "nameRequired": "Fill in the name.",
       "limitInvalid": "Enter a positive number, or leave the field empty.",
-      "createFailed": "The project could not be created."
+      "createFailed": "The project could not be created.",
+      "emailInvalid": "Enter a valid e-mail address.",
+      "usernameTaken": "Another account already has this username.",
+      "usernameInvalid": "The username is too long.",
+      "emailAmbiguous": "Several accounts share this address — Kukátko cannot tell which one should be the admin.",
+      "userDisabled": "The account with this address is blocked."
     },
     "moveChip": "moving {{percent}}%",
     "moveChipRunning": "The project’s storage is being moved",
-    "moveChipPaused": "The storage move is paused"
+    "moveChipPaused": "The storage move is paused",
+    "firstAdmin": {
+      "toggle": "I am setting this project up for somebody else",
+      "toggleHelp": "The project gets its own admin. You do not become a member — as a system administrator you can see into it anyway.",
+      "title": "First project admin",
+      "emailLabel": "E-mail",
+      "emailHint": "If this address already has an account in Kukátko, that account becomes the admin. Otherwise a new one is created and the admin gets an e-mail with a link to set a password.",
+      "displayNameLabel": "Display name (optional)",
+      "usernameLabel": "Username (optional)",
+      "usernameHint": "Empty = derived from the e-mail.",
+      "resultTitle": "The project “{{name}}” is set up",
+      "projectLabel": "Project",
+      "adminLabel": "Admin",
+      "accountCreated": "new account",
+      "accountExisting": "existing account",
+      "mailSent": "E-mail sent to {{email}}.",
+      "mailSentExisting": "An e-mail with the project's link went to {{email}} — the admin signs in with their account.",
+      "mailNotSent": "No e-mail was sent. Pass this link, where the admin sets a password, on to them:",
+      "mailNotSentExisting": "No e-mail was sent. The admin signs in with their existing account.",
+      "linkLabel": "Set-password link",
+      "expires": "The link works until {{date}} and only once.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "openProject": "Open the project's settings",
+      "close": "Close"
+    }
   },
   "systemProject": {
     "back": "Back to projects",
@@ -4641,6 +4678,16 @@
     "addMeHelp": "Adds you to the project as its administrator.",
     "addMeFailed": "The membership could not be added.",
     "alreadyMember": "You are a member of this project.",
+    "awaiting": {
+      "title": "Waiting for a password",
+      "intro": "These members have no password yet. They can sign in once they set one through the link in their e-mail.",
+      "linkExpires": "link works until {{date}}",
+      "linkExpired": "link no longer works",
+      "resend": "Send the link again",
+      "resendHelp": "Issues a new link and mails it; the previous link stops working.",
+      "resendFailed": "The link could not be sent.",
+      "resentTitle": "A new link for {{username}}"
+    },
     "usageTitle": "Usage",
     "photos": "Photos",
     "originals": "Originals",
