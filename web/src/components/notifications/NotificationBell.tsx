@@ -42,8 +42,18 @@ type ListState =
  * The bell itself never moves: the badge is absolutely positioned on its corner
  * (`kk-waiting-badge--over`), so the bar's width budget pays only for the
  * button.
+ *
+ * `drop="end"` opens the list beside the bell rather than under it — the left
+ * sidebar's placement, where a menu hung below a bell near the sidebar's edge
+ * would run off the left of the screen.
  */
-export function NotificationBell({ className }: { className?: string }) {
+export function NotificationBell({
+  className,
+  drop = 'down',
+}: {
+  className?: string
+  drop?: 'down' | 'end'
+}) {
   const { t } = useTranslation()
   const { unread, refresh } = useNotificationInbox()
   const [list, setList] = useState<ListState>({ status: 'idle' })
@@ -110,7 +120,12 @@ export function NotificationBell({ className }: { className?: string }) {
   const label = count > 0 ? t('inbox.bellUnread', { count }) : t('inbox.bell')
 
   return (
-    <Dropdown align="end" onToggle={onToggle} className={className}>
+    <Dropdown
+      align={drop === 'down' ? 'end' : undefined}
+      drop={drop}
+      onToggle={onToggle}
+      className={className}
+    >
       <Dropdown.Toggle
         as={Button}
         variant="outline-secondary"

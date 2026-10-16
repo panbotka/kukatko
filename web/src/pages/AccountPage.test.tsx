@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
@@ -191,6 +191,28 @@ describe('AccountPage language section', () => {
     // The whole page follows the switch, not just the button group.
     expect(screen.getByRole('heading', { name: 'Můj účet' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Změnit heslo' })).toBeInTheDocument()
+  })
+})
+
+describe('AccountPage menu position section', () => {
+  it('offers top and left, top pressed until the account chooses', async () => {
+    const user = userEvent.setup()
+    window.localStorage.clear()
+    renderAccount()
+
+    expect(screen.getByRole('heading', { name: 'Menu position' })).toBeInTheDocument()
+    const group = screen.getByRole('group', { name: 'Menu position' })
+    expect(within(group).getByRole('button', { name: 'Top' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+
+    await user.click(within(group).getByRole('button', { name: 'Left' }))
+
+    expect(within(group).getByRole('button', { name: 'Left' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
   })
 })
 

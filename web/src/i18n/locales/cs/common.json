@@ -126,6 +126,10 @@
       "main": "Hlavní",
       "account": "Účet"
     },
+    "sidebar": {
+      "label": "Postranní navigace",
+      "accountTitle": "Otevřít nabídku účtu a správy"
+    },
     "stats": "Statistiky",
     "versionTitle": "Verze aplikace",
     "versionLabel": "Verze {{version}}",
@@ -543,6 +547,10 @@
     "errorGeneric": "Změna hesla se nezdařila. Zkuste to prosím znovu.",
     "language": "Jazyk",
     "languageHint": "Jazyk rozhraní. Výchozí je čeština.",
+    "navPosition": "Umístění menu",
+    "navPositionTop": "Nahoře",
+    "navPositionLeft": "Vlevo",
+    "navPositionHint": "Kde stojí navigace na širší obrazovce. Na telefonu zůstává menu dole. Platí jen pro tento účet v tomto prohlížeči.",
     "version": "Verze",
     "apiStatus": {
       "checking": "Ověřuji dostupnost…",

@@ -305,6 +305,12 @@ the same way, by its slug in the URL (`/api/v1/p/<project>/…`).
   told otherwise, and it writes a report of what it removed.
 ### The everyday library
 
+- **The menu on top or down the left side — your pick.** The account page's *Umístění menu* offers
+  *Nahoře* (the top bar, where everybody starts) and *Vlevo*, a sidebar with the very same destinations
+  in the same order — Procházet and Nástroje become groups that fold, the bell, search and shortcuts sit
+  at its head, the account menu at its foot. The switch applies the moment it is clicked, it is yours
+  alone (somebody else signing in on the same computer keeps their own), and it survives signing out.
+  A phone keeps its bottom tab bar either way.
 - **The library opens onto photographs, not onto its own controls.** There is no page title repeating
   what the navigation already says, the "what's new since your last visit" summary is one line you can
   unfold, and every filter — period, album, label, person and the rest — lives behind one *Filtry*

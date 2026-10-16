@@ -1,20 +1,18 @@
-import { type ReactNode, useCallback, useEffect, useState } from 'react'
+import { Fragment, type ReactNode, useCallback, useEffect, useState } from 'react'
 import Container from 'react-bootstrap/Container'
 import Dropdown from 'react-bootstrap/Dropdown'
 import Nav from 'react-bootstrap/Nav'
 import Navbar from 'react-bootstrap/Navbar'
-import NavDropdown from 'react-bootstrap/NavDropdown'
 import NavItem from 'react-bootstrap/NavItem'
 import BsNavLink from 'react-bootstrap/NavLink'
 import { useTranslation } from 'react-i18next'
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
-import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { useIsNavDrawerViewport } from '../hooks/useIsNarrowViewport'
 import { useProjectFooter } from '../hooks/useProjectFooter'
 import { LIBRARY_PATH } from '../lib/libraryView'
-import { bareVersion } from '../lib/version'
+import { useNavPosition } from '../lib/navPosition'
 import { useNeutralChrome, useProjectPath, useProjectSlug } from '../project/ProjectContext'
 import { stripProjectPrefix } from '../project/paths'
 import { useLeaveProject } from '../project/useLeaveProject'
@@ -30,28 +28,13 @@ import { MOBILE_MENU_ID, MobileNavDrawer } from './MobileNavDrawer'
 import { MobileTabBar } from './MobileTabBar'
 import { NotificationBell } from './notifications/NotificationBell'
 import { ProjectUnreadBadge } from './notifications/ProjectUnreadBadge'
-import {
-  ACCOUNT_ITEM,
-  adminItems,
-  BROWSE_GROUP,
-  HELP_ITEM,
-  myPhotosItem,
-  type NavEntry,
-  type NavGroup,
-  pathMatches,
-  PRIMARY_ITEMS,
-  PROJECTS_ITEM,
-  REVIEW_ITEM,
-  STATS_ITEM,
-  TASKS_PATH,
-  toolsGroup,
-  UPLOAD_ITEM,
-} from './navItems'
-import { PersonAvatar } from './PersonAvatar'
+import { NavSidebar } from './NavSidebar'
+import { desktopNav, type NavEntry, type NavGroup, pathMatches, TASKS_PATH } from './navItems'
 import { ProjectIdentity } from './ProjectIdentity'
 import { PushPrompt } from './push/PushPrompt'
 import { SearchCommand } from './search/SearchCommand'
 import { WaitingBadge } from './tasks/WaitingBadge'
+import { UserMenu } from './UserMenu'
 import { WelcomeModal } from './welcome/WelcomeModal'
 
 /**
@@ -161,6 +144,17 @@ import { WelcomeModal } from './welcome/WelcomeModal'
  * account and the instance: the user menu with the account, the instance's own
  * administration and sign-out. A maintainer inside a deactivated project gets
  * the full shell plus {@link DeactivatedProjectBanner}.
+ *
+ * **Top or left is the account's choice** (`lib/navPosition.ts`, set on the
+ * account page; the top bar is the default). From `lg` up an account that chose
+ * the left gets {@link NavSidebar} instead of this bar — never both — and the
+ * shell gives the sidebar a lane of its own (`.kukatko-shell--sidebar`), so the
+ * page, its sticky toolbars and the fixed chrome that centres on the content
+ * keep clear of it. Both layouts render one {@link desktopNav} model, which is
+ * what keeps their destinations, order and role gating identical; the user menu
+ * is one {@link UserMenu} in either. Below `lg` the choice is not read at all:
+ * the tab bar and the drawer are the phone's navigation whatever the desktop
+ * wears.
  */
 export function Layout({ children }: { children?: ReactNode }) {
   const { t } = useTranslation()
@@ -184,10 +178,6 @@ export function Layout({ children }: { children?: ReactNode }) {
   const openPalette = useCallback(() => {
     setPaletteOpen(true)
   }, [])
-  // The build the server runs, printed at the foot of the user menu. It rides
-  // along on the capabilities the shell already holds, so opening the menu costs
-  // no request; `null` (nothing loaded yet, or the call failed) shows nothing.
-  const version = bareVersion(useCapabilities().version)
   // How many tasks wait on the reader — the one count the bar carries. Zero
   // (or unknown) draws nothing.
   const waitingOnMe = useWaitingOnMe()
@@ -203,18 +193,25 @@ export function Layout({ children }: { children?: ReactNode }) {
   const settleWelcome = useCallback(() => {
     setWelcomeSettled(true)
   }, [])
-  // "My photos", offered only to an account that has said which person of the
-  // library it is. An entry that leads nowhere is worse than no entry, so an
-  // unlinked account simply does not get one.
-  const myPhotos = neutral ? null : myPhotosItem(user?.subject_uid)
-  // The user menu's "Správa" section, filtered per item rather than as a whole:
-  // empty for a viewer or an editor, two entries for an admin, all five for a
-  // maintainer.
-  const admin = adminItems({ isAdmin, isMaintainer, instanceOnly: neutral })
-  // The "Nástroje" dropdown, likewise gated per item: the face and collection
-  // tools for a curator, duplicates and the trash on top for an editor, and no
-  // dropdown at all for a viewer.
-  const tools = toolsGroup({ canCurate, canWrite })
+  // Everything the desktop navigation offers this account, in either layout:
+  // the main run (with the review game for a curator, the tools per item by
+  // role, no dropdown at all for a viewer), the account block ("my photos" only
+  // for an account linked to a person — an entry that leads nowhere is worse
+  // than none) and the "Správa" section, filtered per item. The top bar and the
+  // sidebar both render exactly this, so neither can offer what the other lacks.
+  const nav = desktopNav({
+    canCurate,
+    canWrite,
+    isAdmin,
+    isMaintainer,
+    neutral,
+    subjectUid: user?.subject_uid,
+  })
+  // Where this account wants the desktop navigation. A phone ignores it — the
+  // tab bar and the drawer are the only navigation below `lg` — and so does a
+  // signed-out screen, which has no account to ask.
+  const [navPosition] = useNavPosition()
+  const sidebar = !drawerNav && user !== null && navPosition === 'left'
   // The tasks count belongs to the project; a neutral shell wears none.
   const waiting = neutral ? 0 : waitingOnMe
   // "Switch library" and the news waiting behind it, in the other projects.
@@ -293,26 +290,6 @@ export function Layout({ children }: { children?: ReactNode }) {
   }
 
   /**
-   * Renders one entry of the user menu: icon, label, action tooltip. A plain
-   * `Link` rather than a `NavLink` — the menu is closed while you are on the page
-   * it points at, so an active highlight in there would never be seen.
-   */
-  function renderMenuItem(entry: NavEntry) {
-    return (
-      <NavDropdown.Item
-        key={entry.to}
-        as={Link}
-        to={projectPath(entry.to)}
-        title={t(entry.titleKey)}
-        className="d-flex align-items-center gap-2"
-      >
-        <Icon name={entry.icon} />
-        {t(entry.labelKey)}
-      </NavDropdown.Item>
-    )
-  }
-
-  /**
    * Renders a grouped dropdown. It is assembled from `Dropdown` rather than
    * `NavDropdown` because the latter spends the `title` prop on the toggle's
    * visible content, leaving no way to also set the `title` tooltip attribute.
@@ -356,215 +333,132 @@ export function Layout({ children }: { children?: ReactNode }) {
     // real height here rather than an estimate, and `.kukatko-page` takes what is
     // left (see `.kukatko-shell` in `app.css`). The fixed chrome below — the
     // drawer, the tab bar, the modal — is out of flow and unaffected.
-    <div className="kukatko-shell">
-      <Navbar
-        expand="lg"
-        variant="dark"
-        sticky="top"
-        expanded={expanded}
-        onToggle={(next) => {
-          setExpanded(next)
-        }}
-        className="kukatko-navbar"
-      >
-        <Container>
-          {/* Search leads the bar, as a bare icon button: it opens a dialog, so it
-              does not need the width of something you can type into. Below `lg`
-              the tab bar's search tab is the palette's door instead, so only the
-              dialog and its shortcuts are mounted there. */}
-          {!neutral && (
-            <SearchCommand
-              open={paletteOpen}
-              onOpenChange={setPaletteOpen}
-              showTrigger={!drawerNav}
-            />
-          )}
-          {/* Where the reader stands: the current project's name, a link to its
-              library — never a menu (switching is the user menu's "Switch
-              library"). It is the one item of the row that gives way to a long
-              name (it shrinks and ellipsises, see `.kk-project-identity`); below
-              `lg` it takes the leading edge the phone row otherwise leaves
-              empty. */}
-          <ProjectIdentity />
-          {/* The inline bar is the `lg`+ navigation only: below that the same
-              items are the drawer's, so rendering both would duplicate every
-              link in the DOM. */}
-          {!drawerNav && (
-            <Navbar.Collapse id={MOBILE_MENU_ID}>
-              {/* The library's navigation, or — in the neutral shell — just the
-                  room it would take, so the user menu stays at the far end. */}
-              <Nav className="me-auto">
-                {!neutral && (
-                  <>
-                    {/* The everyday loop, loudest first. Library (the homepage), Albums,
-                        Labels and Search are the always-visible entry points. */}
-                    {PRIMARY_ITEMS.map((entry) => renderLink(entry))}
-                    {/* The remaining browse destinations — saved searches and the
-                        leaderboard among them — one level down. */}
-                    {renderGroup(BROWSE_GROUP)}
-                    {/* The review game: curators and above, and kept in plain sight. */}
-                    {canCurate && renderLink(REVIEW_ITEM)}
-                    {/* Adding photos is the loop's payoff: the bar's one filled CTA,
-                        open to every signed-in role. */}
-                    {renderLink(UPLOAD_ITEM, { cta: true })}
-
-                    {/* A divider fences off the quieter power-user cluster, but only
-                        when the current role actually has something below it. */}
-                    {tools !== null && <div className="kukatko-nav-divider" aria-hidden="true" />}
-
-                    {/* The tools (expand, faces, duplicates, …), per item by role;
-                        hidden from viewers. The administration that used to follow
-                        it here now hangs off the user menu instead. */}
-                    {tools !== null && renderGroup(tools)}
-                  </>
-                )}
-              </Nav>
-              {/* The bell (the in-app inbox) and the shortcuts: two bare icon
-                  buttons, ~39px of the bar's slack for the bell — its badge sits
-                  on the corner and costs no width. */}
-              <Nav className="align-items-center gap-2">
-                {!neutral && <NotificationBell />}
-                <KeyboardShortcutsHelp />
-              </Nav>
-              {user && (
-                <Nav className="ms-3">
-                  <NavDropdown
-                    align="end"
-                    // A picture where the name alone used to stand: whatever the
-                    // account resolves to, and the coloured initial — the common
-                    // case — when it resolves to nothing. It is `sm` because the
-                    // bar's width is already spoken for; a full-size disc here
-                    // pushes the menu past the container on a narrow desktop.
-                    title={
-                      <span className="d-inline-flex align-items-center gap-2">
-                        {/* The other projects' news rides on the picture's
-                            corner, so it costs the bar no width. */}
-                        <span className="kk-user-menu__picture">
-                          <PersonAvatar
-                            name={user.display_name || user.username}
-                            userUid={user.uid}
-                            className="kk-avatar--sm"
-                          />
-                          <ProjectUnreadBadge
-                            count={othersUnread}
-                            label={t('projectSwitcher.othersUnread', { count: othersUnread })}
-                            className="kk-project-unread--over"
-                          />
-                        </span>
-                        {/* Out of sight (not out of the accessible name) in
-                            the 992–1399px band, where the project's name
-                            took its width; see `.kk-user-menu__name`. */}
-                        <span className="kk-user-menu__name">
-                          {user.display_name || user.username}
-                        </span>
-                      </span>
-                    }
-                    id="user-menu"
-                  >
-                    {/* Leaving the project for the chooser leads the menu: it
-                        is about which library the account is in, before
-                        anything about the account itself. */}
-                    {leave.offered && (
-                      <>
-                        <NavDropdown.Item
-                          as={Link}
-                          to={PROJECTS_ITEM.to}
-                          title={t(PROJECTS_ITEM.titleKey)}
-                          className="d-flex align-items-center gap-2"
-                        >
-                          <Icon name={PROJECTS_ITEM.icon} />
-                          <span className="flex-grow-1">{t(PROJECTS_ITEM.labelKey)}</span>
-                          <ProjectUnreadBadge
-                            count={othersUnread}
-                            label={t('projectSwitcher.othersUnread', { count: othersUnread })}
-                          />
-                        </NavDropdown.Item>
-                        <NavDropdown.Divider />
-                      </>
-                    )}
-                    {renderMenuItem(ACCOUNT_ITEM)}
-                    {/* The photos the signed-in person is on. It hangs off the
-                        user menu because it is a fact about them, not another
-                        way of browsing the library — and because the bar has no
-                        room left. */}
-                    {myPhotos && renderMenuItem(myPhotos)}
-                    {/* The library statistics: open to every signed-in role, so
-                        they hang off the user menu rather than a gated group. */}
-                    {!neutral && renderMenuItem(STATS_ITEM)}
-                    {!neutral && renderMenuItem(HELP_ITEM)}
-                    {/* Administration, once two dropdowns of its own in the bar:
-                        one labelled section between the account block and
-                        sign-out. Rendered only for the entries the role actually
-                        clears, so a viewer sees neither heading nor divider. */}
-                    {admin.length > 0 && (
-                      <>
-                        <NavDropdown.Divider />
-                        <NavDropdown.Header className="kk-menu-section">
-                          {t('nav.admin')}
-                        </NavDropdown.Header>
-                        {admin.map((entry) => renderMenuItem(entry))}
-                      </>
-                    )}
-                    <NavDropdown.Divider />
-                    <NavDropdown.Item
-                      title={t('nav.titles.logout')}
-                      className="d-flex align-items-center gap-2"
-                      onClick={() => {
-                        void handleLogout()
-                      }}
-                    >
-                      <Icon name="box-arrow-right" />
-                      {t('nav.logout')}
-                    </NavDropdown.Item>
-                    {/* The build, as a small muted footnote under the last action:
-                        an `ItemText` is not a menu item, so it neither takes focus
-                        when arrowing through the menu nor invites a click, and the
-                        "Verze" label says what the bare string (`stage`, `dev`)
-                        is. The full form — with the commit — lives on the help
-                        page. */}
-                    {version && (
-                      <NavDropdown.ItemText
-                        className="kk-menu-version"
-                        title={t('nav.versionTitle')}
-                      >
-                        {t('nav.versionLabel', { version })}
-                      </NavDropdown.ItemText>
-                    )}
-                  </NavDropdown>
-                </Nav>
-              )}
-            </Navbar.Collapse>
-          )}
-          {/* The hamburger is the whole phone row, held at the trailing edge
-              (`ms-auto`): a menu button sits best under the thumb there. It is
-              `display: none` on `lg`+, so the desktop bar is unmoved by where it
-              stands in the DOM. It wears the tasks-waiting count on its corner:
-              Úkoly is inside the menu, and a summons behind a closed menu is no
-              summons. The children replace react-bootstrap's default glyph, so
-              the glyph is restated alongside the badge. */}
-          {/* On a phone the bell stands just before the hamburger: the inbox
-              is news, and news behind a closed menu is no news. It takes the
-              trailing push (`ms-auto`) so the pair sits together at the edge. */}
-          {drawerNav && user && !neutral && <NotificationBell className="ms-auto me-2" />}
-          <Navbar.Toggle
-            aria-controls={MOBILE_MENU_ID}
-            label={t('nav.openMenu')}
-            className={`position-relative${drawerNav && user && !neutral ? '' : ' ms-auto'}`}
-          >
-            <span className="navbar-toggler-icon" />
-            <WaitingBadge count={waiting} over />
-            {/* The other projects' news, on the opposite corner from the
-                tasks count: "Switch library" is inside the drawer. */}
-            {drawerNav && (
-              <ProjectUnreadBadge
-                count={othersUnread}
-                label={t('projectSwitcher.othersUnread', { count: othersUnread })}
-                className="kk-project-unread--over-start"
+    <div className={`kukatko-shell${sidebar ? ' kukatko-shell--sidebar' : ''}`}>
+      {/* The account's choice of desktop layout: the left sidebar, or — the
+          default, and always below `lg` — the top bar. Never both. The sidebar
+          is fixed to the left edge and out of flow; the shell's start padding
+          (`.kukatko-shell--sidebar`) gives it its lane, so nothing of the page
+          ends up underneath. */}
+      {sidebar ? (
+        <NavSidebar
+          nav={nav}
+          neutral={neutral}
+          waitingOnMe={waiting}
+          paletteOpen={paletteOpen}
+          onPaletteOpenChange={setPaletteOpen}
+          onLogout={() => {
+            void handleLogout()
+          }}
+        />
+      ) : (
+        <Navbar
+          expand="lg"
+          variant="dark"
+          sticky="top"
+          expanded={expanded}
+          onToggle={(next) => {
+            setExpanded(next)
+          }}
+          className="kukatko-navbar"
+        >
+          <Container>
+            {/* Search leads the bar, as a bare icon button: it opens a dialog, so it
+                does not need the width of something you can type into. Below `lg`
+                the tab bar's search tab is the palette's door instead, so only the
+                dialog and its shortcuts are mounted there. */}
+            {!neutral && (
+              <SearchCommand
+                open={paletteOpen}
+                onOpenChange={setPaletteOpen}
+                showTrigger={!drawerNav}
               />
             )}
-          </Navbar.Toggle>
-        </Container>
-      </Navbar>
+            {/* Where the reader stands: the current project's name, a link to its
+                library — never a menu (switching is the user menu's "Switch
+                library"). It is the one item of the row that gives way to a long
+                name (it shrinks and ellipsises, see `.kk-project-identity`); below
+                `lg` it takes the leading edge the phone row otherwise leaves
+                empty. */}
+            <ProjectIdentity />
+            {/* The inline bar is the `lg`+ navigation only: below that the same
+                items are the drawer's, so rendering both would duplicate every
+                link in the DOM. */}
+            {!drawerNav && (
+              <Navbar.Collapse id={MOBILE_MENU_ID}>
+                {/* The library's navigation, or — in the neutral shell — just the
+                    room it would take, so the user menu stays at the far end. */}
+                <Nav className="me-auto">
+                  {/* The everyday loop, loudest first — Library (the homepage),
+                      Albums, Labels and Search — then the browse dropdown, the
+                      review game (curators and above), Upload as the bar's one
+                      filled CTA, and behind a divider the quieter tools, per item
+                      by role. The order and the gating are `desktopNav`'s, shared
+                      with the sidebar; the administration hangs off the user menu. */}
+                  {nav.main.map((slot, index) =>
+                    slot.kind === 'link' ? (
+                      renderLink(slot.entry, { cta: slot.cta === true })
+                    ) : slot.kind === 'group' ? (
+                      <Fragment key={slot.group.id}>{renderGroup(slot.group)}</Fragment>
+                    ) : (
+                      <div
+                        key={`divider-${String(index)}`}
+                        className="kukatko-nav-divider"
+                        aria-hidden="true"
+                      />
+                    ),
+                  )}
+                </Nav>
+                {/* The bell (the in-app inbox) and the shortcuts: two bare icon
+                    buttons, ~39px of the bar's slack for the bell — its badge sits
+                    on the corner and costs no width. */}
+                <Nav className="align-items-center gap-2">
+                  {!neutral && <NotificationBell />}
+                  <KeyboardShortcutsHelp />
+                </Nav>
+                {user && (
+                  <Nav className="ms-3">
+                    <UserMenu
+                      nav={nav}
+                      placement="bar"
+                      onLogout={() => {
+                        void handleLogout()
+                      }}
+                    />
+                  </Nav>
+                )}
+              </Navbar.Collapse>
+            )}
+            {/* The hamburger is the whole phone row, held at the trailing edge
+                (`ms-auto`): a menu button sits best under the thumb there. It is
+                `display: none` on `lg`+, so the desktop bar is unmoved by where it
+                stands in the DOM. It wears the tasks-waiting count on its corner:
+                Úkoly is inside the menu, and a summons behind a closed menu is no
+                summons. The children replace react-bootstrap's default glyph, so
+                the glyph is restated alongside the badge. */}
+            {/* On a phone the bell stands just before the hamburger: the inbox
+                is news, and news behind a closed menu is no news. It takes the
+                trailing push (`ms-auto`) so the pair sits together at the edge. */}
+            {drawerNav && user && !neutral && <NotificationBell className="ms-auto me-2" />}
+            <Navbar.Toggle
+              aria-controls={MOBILE_MENU_ID}
+              label={t('nav.openMenu')}
+              className={`position-relative${drawerNav && user && !neutral ? '' : ' ms-auto'}`}
+            >
+              <span className="navbar-toggler-icon" />
+              <WaitingBadge count={waiting} over />
+              {/* The other projects' news, on the opposite corner from the
+                  tasks count: "Switch library" is inside the drawer. */}
+              {drawerNav && (
+                <ProjectUnreadBadge
+                  count={othersUnread}
+                  label={t('projectSwitcher.othersUnread', { count: othersUnread })}
+                  className="kk-project-unread--over-start"
+                />
+              )}
+            </Navbar.Toggle>
+          </Container>
+        </Navbar>
+      )}
       {/* Phone only: the hamburger opens a real drawer of labelled sections
           rather than expanding the whole nav inline into the bar. */}
       {drawerNav && (

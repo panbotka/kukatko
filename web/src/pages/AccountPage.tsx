@@ -17,6 +17,7 @@ import { PasskeysCard } from '../components/account/PasskeysCard'
 import { Icon } from '../components/Icon'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
 import { NarrowPage } from '../components/NarrowPage'
+import { NavPositionSwitcher } from '../components/NavPositionSwitcher'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { ACTIVITY_PATH } from '../lib/activityView'
 import { isEnterable } from '../project/paths'
@@ -83,6 +84,9 @@ function errorKeyFor(error: unknown): AccountErrorKey {
  * Under the password form sits {@link PasskeysCard} — the passkeys this account
  * signs in with instead of typing that password. It appears only on an instance
  * that has passkeys configured.
+ *
+ * Under the language sits the menu position ({@link NavPositionSwitcher}):
+ * the top bar or a left sidebar on a desktop, chosen per account.
  *
  * Beside the language sits {@link NotificationsCard} — this browser's push
  * switch and the devices registered for pushes, then which messages the
@@ -221,6 +225,19 @@ export function AccountPage() {
           </Card.Title>
           <LanguageSwitcher />
           <div className="text-secondary small mt-2">{t('account.languageHint')}</div>
+        </Card.Body>
+      </Card>
+
+      {/* Where the navigation stands on a desktop. It sits with the language:
+            both are about how the app looks to this one person, not about the
+            photos. */}
+      <Card text="light" className="mb-4">
+        <Card.Body>
+          <Card.Title as="h2" className="kk-section-title mb-3">
+            {t('account.navPosition')}
+          </Card.Title>
+          <NavPositionSwitcher />
+          <div className="text-secondary small mt-2">{t('account.navPositionHint')}</div>
         </Card.Body>
       </Card>
 

@@ -58,6 +58,16 @@
   --kk-timeline-bubble-width: 5.75rem;
   --kk-timeline-lane: calc(var(--kk-timeline-rail-width) + var(--kk-timeline-bubble-width));
 
+  /* The left sidebar an account may pick instead of the top bar (`NavSidebar`,
+     desktop only): its width, and the room it takes off the left edge. The
+     inset is `0px` while no sidebar is mounted — the top bar, every phone — and
+     the sidebar's full width while one is (the `:has()` rule below), so
+     anything fixed to the viewport that should centre on the *content* rather
+     than on the window (the batch dock, the PWA note) reads it and keeps clear
+     of the sidebar in both layouts. */
+  --kk-sidebar-width: 15rem;
+  --kk-sidebar-inset: 0px;
+
   /* Bottom clearance a photo grid reserves while the floating batch bar is up, so
      its last row can always scroll fully clear of the bar — however many actions
      it shows or how it wraps. `--kk-batch-bar-height` is published live by
@@ -77,6 +87,8 @@
        1018  timeline rail            over the grid, under everything sticky
        1019  in-page sticky toolbars  come to rest just below…
        1020  the sticky navbar        (Bootstrap `.sticky-top` — not ours to set)
+       1020  the left sidebar         `--kk-sidebar-z`, the navbar's rung: an
+                                      account has one or the other, never both
        1025  mobile bottom tab bar    above the rail, which stops short of it
        1030  floating batch dock      above the tab bar it rises over
        1035  overlay menus            above all of the page chrome above
@@ -111,6 +123,7 @@
      backdrop. */
   --kk-timeline-z: 1018;
   --kk-sticky-toolbar-z: 1019;
+  --kk-sidebar-z: 1020;
   --kk-tabbar-z: 1025;
   --kk-batch-dock-z: 1030;
   --kk-overlay-menu-z: 1035;
@@ -121,6 +134,16 @@
   --kk-modal-nested-backdrop-z: 1086;
   --kk-modal-nested-z: 1087;
   --kk-pwa-status-z: 1090;
+}
+
+/* With the sidebar the top edge belongs to nobody: there is no bar for a sticky
+   toolbar, the timeline rail or the toast stack to keep under, so the bar's
+   height is zero — and the left edge is the sidebar's (see `--kk-sidebar-inset`
+   above). On the root, not the shell, because the toasts and the PWA note are
+   portalled outside it. */
+:root:has(.kukatko-shell--sidebar) {
+  --kukatko-navbar-height: 0px;
+  --kk-sidebar-inset: calc(var(--kk-sidebar-width) + env(safe-area-inset-left, 0px));
 }
 
 /* ---- The dialog band ----------------------------------------------------
@@ -819,11 +842,11 @@ a.kk-chooser__tile:focus-visible .kk-chooser__picture {
  * beside it says the same), so the project's name fits whole. From 1400px the
  * container has the room and both come back. */
 @media (min-width: 992px) and (max-width: 1399.98px) {
-  .kk-project-identity__mark {
+  .kukatko-navbar .kk-project-identity__mark {
     display: none;
   }
 
-  .kk-user-menu__name {
+  .kukatko-navbar .kk-user-menu__name {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -880,7 +903,7 @@ a.kk-chooser__tile:focus-visible .kk-chooser__picture {
    empty pill. Only a viewport narrower than the content makes it wrap. */
 .kk-batch-dock {
   position: fixed;
-  left: 0;
+  left: var(--kk-sidebar-inset);
   right: 0;
   bottom: calc(var(--kk-bottom-edge) + var(--kk-space-4));
   margin-inline: auto;
@@ -1384,6 +1407,242 @@ a.kk-chooser__tile:focus-visible .kk-chooser__picture {
   padding: var(--kk-space-1) var(--kk-space-3);
   color: var(--kk-text-muted);
   font-size: var(--kk-font-size-caption);
+}
+
+/* ---- The left sidebar (`NavSidebar`) -------------------------------------
+ *
+ * The desktop navigation an account may pick instead of the top bar: the same
+ * destinations in the same order, turned on its side. It wears the drawer's
+ * plate (`--kk-surface-1` behind a hairline edge) rather than the bar's frosted
+ * glass, for two reasons: nothing scrolls under it, so there is nothing to
+ * frost, and a `backdrop-filter` would make it the containing block of every
+ * fixed descendant — the menus it opens would be clipped to its width.
+ *
+ * Fixed to the left edge and out of flow; the shell gives it a lane of its own
+ * (`.kukatko-shell--sidebar`'s start padding), so the page, its sticky
+ * toolbars and its footer start where it ends. The immersive viewer (1080) and
+ * the dialog band above it cover it like any other chrome.
+ *
+ * Three stacked parts: the head (where you are, search, bell, shortcuts), the
+ * one scroller (the destinations — a maintainer's unfolded list is taller than
+ * a laptop screen), and the foot (the account menu, which must stay in reach
+ * and must not be clipped by the scroller, so it lives outside it). */
+.kukatko-shell--sidebar {
+  padding-inline-start: var(--kk-sidebar-inset);
+}
+
+.kk-sidebar {
+  position: fixed;
+  inset-block: 0;
+  left: 0;
+  z-index: var(--kk-sidebar-z);
+  display: flex;
+  flex-direction: column;
+  width: var(--kk-sidebar-inset);
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  background-color: var(--kk-surface-1);
+  border-right: 1px solid var(--kk-header-border);
+}
+
+.kk-sidebar__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kk-space-2);
+  padding: var(--kk-space-3);
+  border-bottom: 1px solid var(--kk-header-border);
+}
+
+/* The project's identity takes the head's whole width: the bar's caps on it
+   (`max-width`, the trailing margin) are about a crowded row this is not. */
+.kk-sidebar .kk-project-identity {
+  flex: none;
+  max-width: none;
+  margin-inline-end: 0;
+}
+
+.kk-sidebar__tools {
+  display: flex;
+  gap: var(--kk-space-2);
+  align-items: center;
+}
+
+.kk-sidebar__nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--kk-space-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.kk-sidebar__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A group's rows hang off a hairline under the group's own glyph — the line
+   says which rows the toggle above folds, so the indent is information, not
+   decoration. */
+.kk-sidebar__list--nested {
+  margin-block: 0.125rem var(--kk-space-1);
+  margin-inline-start: calc(var(--kk-space-3) + 0.625rem);
+  padding-inline-start: var(--kk-space-2);
+  border-inline-start: 1px solid var(--kk-header-border);
+}
+
+/* One row — links and the group toggles alike, so the button defaults
+   (border, background, centred text) are reset here. Quiet at rest like the
+   bar's links (muted text, no fill); hover lifts it; the current page wears
+   the accent-tinted pill of the bar, the drawer and the tab bar. */
+.kk-sidebar__link {
+  display: flex;
+  gap: var(--kk-space-2);
+  align-items: center;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--kk-space-1) var(--kk-space-3);
+  border: 0;
+  border-radius: var(--kk-radius-sm);
+  background-color: transparent;
+  color: var(--kk-text-muted);
+  text-align: left;
+  text-decoration: none;
+  transition:
+    color var(--kk-duration-fast) var(--kk-ease-standard),
+    background-color var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+/* A mouse needs no finger floor: the rows tighten like the bar's links do. */
+@media (pointer: fine) {
+  .kk-sidebar__link {
+    min-height: 2.25rem;
+  }
+}
+
+.kk-sidebar__link:hover,
+.kk-sidebar__link:focus-visible {
+  background-color: var(--kk-surface-raised);
+  color: var(--kk-text);
+  text-decoration: none;
+}
+
+.kk-sidebar__link.active {
+  background-color: var(--kk-accent-subtle);
+  color: var(--kk-accent);
+}
+
+.kk-sidebar__link:focus-visible {
+  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
+  outline-offset: calc(-1 * var(--kk-focus-ring-width));
+}
+
+/* Upload stays the one filled call-to-action, as in the bar. */
+.kk-sidebar__link--cta,
+.kk-sidebar__link--cta:hover,
+.kk-sidebar__link--cta:focus-visible,
+.kk-sidebar__link--cta.active {
+  margin-block: var(--kk-space-1);
+  background-color: var(--kk-accent-solid);
+  color: var(--kk-on-accent);
+}
+
+.kk-sidebar__link--cta:hover,
+.kk-sidebar__link--cta:focus-visible {
+  background-color: var(--kk-accent-solid-hover);
+}
+
+/* A fixed glyph column keeps every label starting on the same vertical line. */
+.kk-sidebar__icon {
+  flex: none;
+  width: 1.25rem;
+  text-align: center;
+}
+
+.kk-sidebar__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The group's chevron points down while open and to the side while folded. */
+.kk-sidebar__chevron {
+  flex: none;
+  font-size: var(--kk-font-size-caption);
+  transition: transform var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kk-sidebar__toggle[aria-expanded='false'] .kk-sidebar__chevron {
+  transform: rotate(-90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kk-sidebar__chevron {
+    transition: none;
+  }
+}
+
+/* The bar's divider, lying down: it fences the tools off the everyday loop. */
+.kk-sidebar__divider {
+  height: 1px;
+  margin: var(--kk-space-2) var(--kk-space-3);
+  background-color: var(--bs-border-color);
+}
+
+.kk-sidebar__foot {
+  padding: var(--kk-space-2);
+  border-top: 1px solid var(--kk-header-border);
+}
+
+/* The account row: the bar's user-menu toggle, given the sidebar's width — the
+   name ellipsises, the caret keeps to the end. */
+.kk-sidebar__account-toggle {
+  display: flex;
+  gap: var(--kk-space-2);
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--kk-space-1) var(--kk-space-3);
+  border-radius: var(--kk-radius-sm);
+  color: var(--kk-text);
+  text-decoration: none;
+}
+
+.kk-sidebar__account-toggle:hover,
+.kk-sidebar__account-toggle:focus-visible,
+.kk-sidebar__account-toggle.show {
+  background-color: var(--kk-surface-raised);
+  color: var(--kk-text);
+}
+
+.kk-sidebar__account-toggle .kk-user-menu__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kk-sidebar__account-toggle > span {
+  min-width: 0;
+}
+
+/* The other projects' count hangs off the picture's corner; with the name
+   right beside it here (the bar hides it in its tight band) it needs a step
+   of room so the pill does not sit on the first letter. */
+.kk-sidebar__account-toggle .kk-user-menu__picture {
+  margin-inline-end: var(--kk-space-1);
+}
+
+.kk-sidebar__account-menu {
+  min-width: 15rem;
 }
 
 /* Icon-only controls (e.g. the favorite heart overlay) need a finger-friendly
@@ -3887,7 +4146,7 @@ a.kk-chooser__tile:focus-visible .kk-chooser__picture {
    desktop. */
 .kk-pwa-status {
   position: fixed;
-  inset-inline: 0;
+  inset-inline: var(--kk-sidebar-inset) 0;
   bottom: calc(1rem + var(--kk-bottom-edge));
   z-index: var(--kk-pwa-status-z);
   display: flex;

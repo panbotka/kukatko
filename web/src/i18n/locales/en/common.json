@@ -118,6 +118,10 @@
       "main": "Main",
       "account": "Account"
     },
+    "sidebar": {
+      "label": "Side navigation",
+      "accountTitle": "Open the account and administration menu"
+    },
     "stats": "Statistics",
     "versionTitle": "App version",
     "versionLabel": "Version {{version}}",
@@ -531,6 +535,10 @@
     "errorGeneric": "Could not change password. Please try again.",
     "language": "Language",
     "languageHint": "The language of the interface. Czech is the default.",
+    "navPosition": "Menu position",
+    "navPositionTop": "Top",
+    "navPositionLeft": "Left",
+    "navPositionHint": "Where the navigation sits on a wider screen. On a phone the menu stays at the bottom. Applies to this account in this browser only.",
     "version": "Version",
     "apiStatus": {
       "checking": "Checking availability…",

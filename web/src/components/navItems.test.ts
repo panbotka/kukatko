@@ -4,6 +4,8 @@ import { isInstancePath, projectPathFor } from '../project/paths'
 
 import {
   adminItems,
+  desktopNav,
+  desktopNavRoutes,
   PRIMARY_ITEMS,
   PROJECTS_ITEM,
   systemProjectPath,
@@ -103,5 +105,81 @@ describe('adminItems', () => {
 describe('systemProjectPath', () => {
   it('addresses a project detail by its slug', () => {
     expect(systemProjectPath('rodina')).toBe('/system/projects/rodina')
+  })
+})
+
+/** The roles of a maintainer, the widest ladder. */
+const MAINTAINER = { canCurate: true, canWrite: true, isAdmin: true, isMaintainer: true }
+/** The roles of a viewer, the narrowest. */
+const VIEWER = { canCurate: false, canWrite: false, isAdmin: false, isMaintainer: false }
+
+describe('desktopNav', () => {
+  it('lays the main run out in the bar’s order, the tools fenced off by a divider', () => {
+    const nav = desktopNav({ ...MAINTAINER, neutral: false })
+    expect(
+      nav.main.map((slot) =>
+        slot.kind === 'link'
+          ? `${slot.entry.to}${slot.cta === true ? ' (cta)' : ''}`
+          : slot.kind === 'group'
+            ? `[${slot.group.id}]`
+            : '|',
+      ),
+    ).toEqual([
+      '/',
+      '/albums',
+      '/labels',
+      '/search',
+      '[nav-browse]',
+      '/review',
+      '/upload (cta)',
+      '|',
+      '[nav-tools]',
+    ])
+  })
+
+  it('gives a viewer no review game, no tools, no divider and no administration', () => {
+    const nav = desktopNav({ ...VIEWER, neutral: false })
+    expect(nav.main.some((slot) => slot.kind === 'divider')).toBe(false)
+    expect(desktopNavRoutes(nav)).not.toContain('/review')
+    expect(desktopNavRoutes(nav)).not.toContain('/trash')
+    expect(nav.admin).toEqual([])
+    expect(nav.account.map((entry) => entry.to)).toEqual(['/account', '/stats', '/help'])
+  })
+
+  it('offers "my photos" only to an account linked to a person', () => {
+    const linked = desktopNav({ ...VIEWER, neutral: false, subjectUid: 'sub1' })
+    expect(linked.account.map((entry) => entry.to)).toEqual([
+      '/account',
+      '/?person=sub1',
+      '/stats',
+      '/help',
+    ])
+  })
+
+  it('keeps only the account and the instance’s own pages in the neutral shell', () => {
+    const nav = desktopNav({ ...MAINTAINER, neutral: true, subjectUid: 'sub1' })
+    expect(nav.main).toEqual([])
+    expect(desktopNavRoutes(nav)).toEqual([
+      '/account',
+      '/maintenance',
+      '/system',
+      '/system/projects',
+      '/system/users',
+      '/system/audit',
+    ])
+  })
+
+  it('lists every destination once, groups unfolded in place', () => {
+    const routes = desktopNavRoutes(desktopNav({ ...MAINTAINER, neutral: false }))
+    expect(new Set(routes).size).toBe(routes.length)
+    expect(routes.slice(0, 6)).toEqual([
+      '/',
+      '/albums',
+      '/labels',
+      '/search',
+      '/favorites',
+      '/saved',
+    ])
+    expect(routes.at(-1)).toBe('/settings')
   })
 })

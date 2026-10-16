@@ -454,3 +454,87 @@ export const PROJECTS_ITEM: NavEntry = {
 export function pathMatches(pathname: string, route: string): boolean {
   return pathname === route || pathname.startsWith(`${route}/`)
 }
+
+/**
+ * One slot of the desktop navigation's main run, in the order the top bar
+ * draws it from left to right and the sidebar from top to bottom: a link (the
+ * upload one the filled call-to-action), a group of destinations (a dropdown in
+ * the bar, a collapsible section in the sidebar), or the divider that fences
+ * the quieter tools off from the everyday loop.
+ */
+export type NavSlot =
+  | { kind: 'link'; entry: NavEntry; cta?: boolean }
+  | { kind: 'group'; group: NavGroup }
+  | { kind: 'divider' }
+
+/**
+ * Everything the desktop navigation offers one account, whichever way it is
+ * laid out. **The one source of truth for both layouts:** the top bar and the
+ * left sidebar render this and nothing else (plus the identity, search, bell and
+ * shortcuts controls, which are not destinations), so a destination cannot exist
+ * in one of them and not the other — `navItems.test` holds it.
+ */
+export interface DesktopNav {
+  /** The library's navigation, in bar order; empty in the neutral shell. */
+  main: NavSlot[]
+  /** The account block of the user menu: account, my photos, statistics, help. */
+  account: NavEntry[]
+  /** The user menu's "Správa" section, per item by role; empty hides it. */
+  admin: NavEntry[]
+}
+
+/**
+ * Builds the {@link DesktopNav} for an account: the roles gate the review game,
+ * the tools (per item) and the administration (per item); `neutral` (a page
+ * outside any project) drops every library destination and keeps only the
+ * instance's own administration; `subjectUid` offers "my photos" when the account
+ * has said which person it is. "Switch library" is not here — whether it is
+ * offered depends on the other projects (`useLeaveProject`), and it leads the
+ * user menu in both layouts alike.
+ */
+export function desktopNav(opts: {
+  canCurate: boolean
+  canWrite: boolean
+  isAdmin: boolean
+  isMaintainer: boolean
+  neutral: boolean
+  subjectUid?: string | null
+}): DesktopNav {
+  const { canCurate, canWrite, isAdmin, isMaintainer, neutral } = opts
+  const admin = adminItems({ isAdmin, isMaintainer, instanceOnly: neutral })
+  if (neutral) {
+    return { main: [], account: [ACCOUNT_ITEM], admin }
+  }
+  const tools = toolsGroup({ canCurate, canWrite })
+  const myPhotos = myPhotosItem(opts.subjectUid)
+  const main: NavSlot[] = [
+    ...PRIMARY_ITEMS.map((entry): NavSlot => ({ kind: 'link', entry })),
+    { kind: 'group', group: BROWSE_GROUP },
+    ...(canCurate ? [{ kind: 'link', entry: REVIEW_ITEM } satisfies NavSlot] : []),
+    { kind: 'link', entry: UPLOAD_ITEM, cta: true },
+    ...(tools === null
+      ? []
+      : [{ kind: 'divider' } satisfies NavSlot, { kind: 'group', group: tools } satisfies NavSlot]),
+  ]
+  return {
+    main,
+    account: [ACCOUNT_ITEM, ...(myPhotos === null ? [] : [myPhotos]), STATS_ITEM, HELP_ITEM],
+    admin,
+  }
+}
+
+/**
+ * Every route a {@link DesktopNav} leads to, in reading order: the main run with
+ * each group unfolded in place, then the account block, then administration.
+ * What a parity check compares two renderings against.
+ */
+export function desktopNavRoutes(nav: DesktopNav): string[] {
+  const main = nav.main.flatMap((slot) =>
+    slot.kind === 'link'
+      ? [slot.entry.to]
+      : slot.kind === 'group'
+        ? slot.group.items.map((entry) => entry.to)
+        : [],
+  )
+  return [...main, ...nav.account.map((entry) => entry.to), ...nav.admin.map((entry) => entry.to)]
+}

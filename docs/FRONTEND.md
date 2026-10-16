@@ -163,6 +163,9 @@ here.
   name leads the bar** (since 2026-10-16 as `ProjectIdentity`, no longer a switcher) and the user menu
   shows only its avatar from 992 to 1399px to pay for it — the re-measured budget is under "Projects in
   the address bar" below,
+  `NavSidebar`, `UserMenu` and `NavPositionSwitcher` (the left-sidebar layout an account may pick instead
+  of this bar, the user menu both layouts share, and the account page's switch — see **Navigation position**
+  below),
   `MobileNavDrawer` (**the phone menu, as a real drawer** — `components/MobileNavDrawer.tsx`, rendered by
   `Layout` only below the navbar's `lg` breakpoint — a phone's menu, and a portrait tablet's — and opened by
   the hamburger, whose `aria-controls` points at
@@ -683,7 +686,7 @@ here.
   its options reachable **above the on-screen keyboard**. The desktop overlay also carries
   **`.kk-overlay-menu`**, which lifts it off Bootstrap's `.dropdown-menu` z-index (1000 — under every
   sticky bar the app draws) onto the app's own **layering scale** (the `--kk-*-z` block on `:root` in
-  `app.css`: timeline rail 1018 < sticky toolbar 1019 < navbar 1020 < tab bar 1025 < batch dock 1030
+  `app.css`: timeline rail 1018 < sticky toolbar 1019 < navbar 1020 (or the left sidebar, same rung) < tab bar 1025 < batch dock 1030
   < **overlay menu 1035** < full-screen sheets 1080 < Bootstrap's dialog band, lifted to 1082–1085). Without it the sticky bar under `/upload`'s
   album picker (1019 — the progress header of the day, `.kk-upload-rail` now) painted over the open
   album list and swallowed its clicks —
@@ -8684,7 +8687,7 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
   (local — the "from whom" typed on a public upload-link page; no account to scope it to and the same person in
   every project, but a person's name, so a sign-out on a shared browser clears it with the rest).
   **User-scoped, kept across sign-out:** `kukatko.language.<uid>` (a preference, and signing back in should
-  find it) and `kukatko.pushPrompt.answered.<uid>` (the answer is the account's on this browser; signing out drops the
+  find it), `kukatko.navPosition.<uid>` (the desktop menu's position, `top`/`left` — likewise a preference) and `kukatko.pushPrompt.answered.<uid>` (the answer is the account's on this browser; signing out drops the
   subscription itself, and the settings page turns it back on — forgetting the answer would only ask again). **Per device by design, never cleared:**
   `kukatko.grid.density`, `kukatko.review.density`, `kukatko.slideshow.settings`, `kukatko.viewer.chromeHintSeen`,
   `kukatko.uploadLink.batch` (the
@@ -8756,6 +8759,65 @@ among several, the re-read after a sign-in,
 never calls `apiPath` and fetches only unprefixed routes). `src/test/setup.ts` starts every test in
 project `v`, so component and service tests expect `/api/v1/p/v/…` for project routes; a test about
 the signed-out state sets `null` itself.
+
+## Navigation position: top bar or left sidebar
+
+Each account picks where the **desktop** navigation stands — the account page's „Umístění menu: nahoře /
+vlevo" (`NavPositionSwitcher`, a button group under the language). **Top is the default.**
+
+- **The preference** — `lib/navPosition.ts`: `readNavPosition(uid)` / `writeNavPosition(uid, pos)` over
+  `localStorage` key `kukatko.navPosition.<uid>` (`accountStorageKey`, exactly as `kukatko.language.<uid>`),
+  every access in `try`, so a blocked or empty storage, an unknown value or no account all read as `top`;
+  not cleared at sign-out; no server copy. `useNavPosition()` is a `useSyncExternalStore` over a module
+  listener set (this tab's writes) and the `storage` event (another tab's), so **a click on the account
+  page moves the shell at once, without a reload**. Tests: `lib/navPosition.test.ts` (default, per account,
+  two accounts apart, storage throwing, live update, another tab).
+- **One model, two layouts.** `navItems.ts` `desktopNav({ canCurate, canWrite, isAdmin, isMaintainer,
+  neutral, subjectUid })` returns `{ main, account, admin }`: `main` is the bar's run as `NavSlot`s (link,
+  the upload link as the CTA, group, divider) in bar order — primary items, „Procházet", the review game
+  (curator+), Upload, divider + „Nástroje" (per item by role) — `account` the user menu's account block and
+  `admin` its „Správa" section; the neutral shell gets no `main`. `Layout`'s top bar and `NavSidebar` both
+  render it, and the user menu is one `UserMenu` component in either (`placement="bar"` — the old
+  `NavDropdown`, `placement="sidebar"` — a `Dropdown` with `drop="up"`), so no destination can exist in one
+  layout and not the other. `desktopNavRoutes(nav)` flattens it in reading order. Guarded by
+  `navItems.test.ts` (order and role gating of the model) and `NavSidebar.test.tsx`, which renders the shell
+  in both positions as a maintainer linked to a person, opens every dropdown of the bar and the sidebar's
+  account menu, and asserts **the two lists of `href`s are identical, order included**.
+- **`NavSidebar`** (`components/NavSidebar.tsx`) — mounted by `Layout` instead of the `Navbar` when the
+  viewport is `lg`+ (`!useIsNavDrawerViewport()`), an account is signed in and it chose `left`; never both.
+  Head: `ProjectIdentity`, then the `SearchCommand` trigger, the `NotificationBell` (`drop="end"` — its list
+  opens beside the sidebar rather than off the left edge) and `KeyboardShortcutsHelp`; in the neutral shell
+  only the identity (the app title) and the shortcuts. Middle — the one scroller — `<nav aria-label=
+  "Postranní navigace">` with a list of `NavLink` rows (`end` for the library root and `exact` entries, so
+  `.active` lights only the current page) and the groups as **collapsible sections**: a `<button
+  aria-expanded aria-controls>` over a `hidden` list. „Procházet" starts open, „Nástroje" folded, a group
+  holding the current page open; a folded group's toggle is `.active` when it holds the current page and
+  carries the tasks `WaitingBadge`, which the Úkoly row carries while it is visible. Foot (outside the
+  scroller, so the upward menu is not clipped): `UserMenu placement="sidebar"` — switch library with the
+  other projects' unread count, account block, „Správa", sign-out, version. Keyboard: native links and
+  buttons in DOM order, the menus are react-bootstrap's.
+- **Layout and layering** (`app.css`, „The left sidebar"): the sidebar is `position: fixed` on the left
+  edge, `--kk-sidebar-width` (15rem) wide plus the left safe-area inset, on `--kk-surface-1` with a
+  `--kk-header-border` hairline — no `backdrop-filter`, which would make it the containing block of its
+  fixed descendants. `z-index: var(--kk-sidebar-z)` = **1020, the navbar's rung** (an account has one or the
+  other), so its menus paint over the page's sticky toolbars (1019) and the immersive viewer (1080), the
+  dialog band (1082–1087) and the toasts (1100) still cover it. The shell gets `.kukatko-shell--sidebar`
+  (start padding = the sidebar's lane), so the page keeps its own container beside it. While it is mounted,
+  `:root:has(.kukatko-shell--sidebar)` sets `--kukatko-navbar-height: 0px` (sticky toolbars, the timeline
+  rail and the toast stack rest at the top — there is no bar to keep under) and `--kk-sidebar-inset` to the
+  sidebar's width (`0px` otherwise); the fixed chrome centred on the content reads it — the batch dock's
+  `left` and the PWA note's `inset-inline` — so neither slides under the sidebar. The bar's tight-band rules
+  that hide the project mark and the user's name (992–1399px) are scoped to `.kukatko-navbar`, so the
+  sidebar keeps both. Rows are 2.75rem (touch floor), 2.25rem on a fine pointer, like the bar's links.
+- **Phones and tablets (< 992px) are unchanged**: the preference is not read there — `MobileTabBar` +
+  `MobileNavDrawer`, whatever the account chose (`NavSidebar.test.tsx` „ignores the choice on a phone").
+- **Verified** (2026-10-16, working-tree Vite against the box staging stack, maintainer): at 1440 and
+  1024px with the sidebar — library (no horizontal overflow, document = viewport width), the photo
+  viewer covers the sidebar (`elementFromPoint` at x=100 hits the viewer stage), the shortcuts modal and
+  its backdrop cover it, `/system` with the upward account menu, the bell's list beside the sidebar; a
+  probe `.kk-batch-dock` centres on the content (240–1009px at 1024), `.kukatko-sticky-toolbar` resolves
+  `top: 0px`; at 390px the tab bar + drawer and no sidebar, shell padding 0. The top bar at 1440px is
+  unchanged. Not done: the optional icon-only rail.
 
 ## Projects in the address bar
 
