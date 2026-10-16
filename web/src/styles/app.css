@@ -553,53 +553,240 @@ body {
 
 /* ---- The project chooser (`/projects`, `ProjectsPage`) -------------------
  *
- * One card per membership. An enterable card is one big target (its name is a
- * `stretched-link`), so it says so on hover and on keyboard focus; a project
- * that is switched off is greyed — muted text on no surface, a dashed edge —
- * rather than faded with `opacity`, which would drag its badges under AA. The
- * description is clamped to three lines so one long text cannot make a row of
- * cards ragged. */
-.kk-project-card--enterable {
-  transition: border-color var(--kk-duration-fast) var(--kk-ease-standard);
+ * A "who's watching" picker: a calm, centred question and one large square
+ * picture per library, the name under it. The pictures are the one bold thing
+ * on the page; everything around them — the account row, the role line, the
+ * switched-off section — stays quiet and small.
+ *
+ * Tiles flow centred, so two projects sit in the middle rather than hugging the
+ * left edge: two per row on a phone, three on a small tablet, and from `lg` a
+ * fixed 12rem tile in a 72rem column — four to five per row. A whole tile is
+ * one link; hover and keyboard focus ring the picture in the accent (focus with
+ * the focus-ring token), never by fading anything under AA. A tile that cannot
+ * be entered keeps its shape and quietens its picture with a desaturating
+ * filter (the text is untouched, so its contrast holds). */
+.kk-chooser {
+  max-width: 72rem;
+  padding-top: var(--kk-space-4);
 }
 
-.kk-project-card--enterable:hover,
-.kk-project-card--enterable:focus-within {
-  border-color: var(--kk-accent);
+.kk-chooser__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--kk-space-1) var(--kk-space-4);
 }
 
-.kk-project-card--enterable:focus-within {
-  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
-  outline-offset: 2px;
-}
-
-.kk-project-card__name {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.kk-project-card__name .stretched-link {
-  color: var(--kk-text);
+.kk-chooser__actions .kk-chooser__action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kk-space-2);
+  padding: var(--kk-space-1) 0;
+  border: 0;
+  color: var(--kk-text-muted);
+  font-size: 0.875rem;
   text-decoration: none;
 }
 
-.kk-project-card__name .stretched-link:focus-visible {
+.kk-chooser__actions .kk-chooser__action:hover,
+.kk-chooser__actions .kk-chooser__action:focus-visible {
+  color: var(--kk-text);
+  text-decoration: underline;
+}
+
+.kk-chooser__heading {
+  margin: var(--kk-space-6) 0 var(--kk-space-6);
+  font-size: clamp(1.625rem, 1.1rem + 2.4vw, 2.75rem);
+  font-weight: 300;
+  line-height: 1.15;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.kk-chooser__grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--kk-space-5) var(--kk-space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kk-chooser__cell {
+  flex: 0 0 calc((100% - var(--kk-space-4)) / 2);
+  min-width: 0;
+}
+
+@media (min-width: 576px) {
+  .kk-chooser__cell {
+    flex-basis: calc((100% - 2 * var(--kk-space-4)) / 3);
+  }
+}
+
+@media (min-width: 992px) {
+  .kk-chooser__cell {
+    flex-basis: 12rem;
+  }
+}
+
+.kk-chooser__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--kk-space-1);
+  border-radius: var(--kk-radius-md);
+  color: var(--kk-text);
+  text-align: center;
+  text-decoration: none;
+}
+
+.kk-chooser__tile:hover {
+  color: var(--kk-text);
+}
+
+.kk-chooser__tile:focus-visible {
   outline: none;
 }
 
-.kk-project-card__description {
-  display: -webkit-box;
-  overflow: hidden;
-  color: var(--kk-text-muted);
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
+.kk-chooser__picture {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  margin-bottom: var(--kk-space-2);
+  border-radius: var(--kk-radius-md);
+  background-color: var(--kk-surface-1);
+  box-shadow: 0 0 0 0 transparent;
+  transition:
+    box-shadow var(--kk-duration-fast) var(--kk-ease-standard),
+    transform var(--kk-duration-base) var(--kk-ease-standard);
 }
 
-.kk-project-card--inactive {
-  border-style: dashed;
-  background-color: transparent;
+a.kk-chooser__tile:hover .kk-chooser__picture {
+  box-shadow: 0 0 0 var(--kk-focus-ring-width) var(--kk-accent);
+  transform: translateY(-2px);
+}
+
+a.kk-chooser__tile:focus-visible .kk-chooser__picture {
+  box-shadow: 0 0 0 var(--kk-focus-ring-width) var(--kk-focus-ring-color);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kk-chooser__picture {
+    transition: none;
+  }
+
+  a.kk-chooser__tile:hover .kk-chooser__picture {
+    transform: none;
+  }
+}
+
+.kk-chooser__photo,
+.kk-chooser__initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.kk-chooser__initial {
+  color: var(--kk-avatar-fg);
+  font-size: clamp(2.5rem, 12vw, 4.5rem);
+  font-weight: 300;
+  line-height: 1;
+  user-select: none;
+}
+
+.kk-chooser__picture .kk-chooser__unread {
+  position: absolute;
+  font-size: 0.875rem;
+  top: var(--kk-space-2);
+  right: var(--kk-space-2);
+}
+
+.kk-chooser__name,
+.kk-chooser__description,
+.kk-chooser__role {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kk-chooser__name {
+  font-size: 1.0625rem;
+  font-weight: 700;
+}
+
+.kk-chooser__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 100%;
+}
+
+.kk-chooser__description {
   color: var(--kk-text-muted);
+  font-size: 0.875rem;
+}
+
+.kk-chooser__role {
+  color: var(--kk-text-subtle);
+  font-size: 0.8125rem;
+}
+
+.kk-chooser__tile--blocked {
+  cursor: not-allowed;
+}
+
+.kk-chooser__tile--blocked .kk-chooser__picture {
+  filter: grayscale(1) brightness(0.6);
+}
+
+.kk-chooser__off {
+  margin-top: var(--kk-space-7);
+  padding-top: var(--kk-space-4);
+  border-top: 1px solid var(--kk-surface-border);
+}
+
+.kk-chooser__off-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kk-space-2);
+  min-height: 44px;
+  color: var(--kk-text-muted);
+  font-size: 0.9375rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.kk-chooser__off-summary::-webkit-details-marker {
+  display: none;
+}
+
+.kk-chooser__off-chevron {
+  display: inline-block;
+  transition: transform var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kk-chooser__off[open] .kk-chooser__off-chevron {
+  transform: rotate(90deg);
+}
+
+.kk-chooser__grid--off {
+  justify-content: flex-start;
+  margin-top: var(--kk-space-4);
+}
+
+@media (min-width: 992px) {
+  .kk-chooser__grid--off .kk-chooser__cell {
+    flex-basis: 9rem;
+  }
 }
 
 /* The width the switcher costs is paid by the user menu's display name in the

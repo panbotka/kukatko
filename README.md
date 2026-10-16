@@ -232,8 +232,10 @@ the same way, by its slug in the URL (`/api/v1/p/<project>/…`).
   phone menu, and the browser tab's title). In more than one project it opens a menu of the others:
   switching keeps the page you were on when it is a list — albums stay albums, the people stay the
   people — and opens the other library's home when you were looking at one photo, album or person.
-  *Všechny projekty…* leads to `/projects`, a card per project with its description and your role
-  there, including the ones you cannot open yet and why.
+  *Všechny projekty…* leads to `/projects`, a "who's watching" picker: one large picture per
+  library — its featured album's cover or its newest photo — the one you visited last first, with
+  its description, your role and its unread notifications; the ones you cannot open yet say why, and
+  switched-off projects wait in a collapsed section below.
 - **Správce systému — the system administrator — runs the projects.** Under *Projekty* in the user
   menu (`/system/projects`) every project of the instance is one row: its name and slug, whether it is
   active, its members, photos and the size of its originals, and its limits. *Nový projekt* founds

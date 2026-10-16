@@ -629,7 +629,9 @@ describe('routing — projects', () => {
     await waitFor(() => {
       expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/projects$/)
     })
-    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'Which library do you want to open?' }),
+    ).toBeInTheDocument()
   })
 
   it('sends the front door to the chooser for an account without a project', async () => {

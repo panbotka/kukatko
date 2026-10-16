@@ -8886,20 +8886,29 @@ project's people (the backend's `user` carries neither `role` nor `subject_uid`)
 project there is neither a project role nor a person. `RequireRole` refuses a signed-in user with no
 role at all (no project) with `ForbiddenPage` instead of bouncing to `/login`.
 
-**`/projects` — the chooser** (`pages/ProjectsPage.tsx`, signed in, no project `Layout`): a grid
-(`Row xs=1 md=2 xl=3`) of one `Card` per membership — the name, the description clamped to three
-lines (`.kk-project-card__description`, `line-clamp: 3`; `GET /auth/me` sends each membership's
-`description`, and an empty one draws nothing) and the role as a badge
-(`roles.*`). An enterable card (approved, active) is one big target: the name is a `stretched-link`
-to `/p/<slug>`, hover/focus-within lights the border. A deactivated project is greyed
-(`.kk-project-card--inactive`: muted text, no surface, dashed edge — not `opacity`, which would drag
-the badges under AA) with „Nedostupné"; an unapproved membership says „Čeká na schválení"; both are
-`aria-disabled` and carry no link. No membership at all is an `EmptyState` „Nejste členem žádného
-projektu. Požádejte správce projektu o pozvánku." The page header holds the ways out an account needs
-whatever it belongs to — **Účet** and **Odhlásit se** — and, for a maintainer, **Správa projektů** →
-`/system/projects` (`PROJECT_ADMIN_PATH` = `SYSTEM_PROJECTS_PATH`). A card whose project holds
-unread notifications for the reader wears `ProjectUnreadBadge` before the role badge (only enterable
-projects are ever counted, so it never lands on a greyed card).
+**`/projects` — the chooser** (`pages/ProjectsPage.tsx`, signed in, no project `Layout`): a
+"who's watching" profile picker. A quiet `<nav>` row top-right (`.kk-chooser__actions`, muted text
+links: **Správa projektů** → `/system/projects` for a maintainer — `PROJECT_ADMIN_PATH` =
+`SYSTEM_PROJECTS_PATH` — then **Účet** and **Odhlásit se**), a centred light-weight question
+„Kam se chcete podívat?" (`projects.heading`; the tab title stays „Projekty"), then the tiles. Each
+membership is one square picture with its name under it (`.kk-chooser__tile`, one line with an
+ellipsis and the full name in `title`), the description as an optional one-line subtitle and the role
+as a subtle last line (`roles.*`, no badge). The picture is `cover_thumb_url` from `GET /auth/me`
+(the first featured album's cover, else the newest photo; `alt=""`, the name is written out), and
+when there is none — or it fails to load — the project's initial on its `avatarTone` colour
+(`kk-avatar--tone-N`, as `InitialAvatar`). An enterable tile (approved, active) is **one link** to
+`/p/<slug>` (`aria-labelledby` the name, `aria-describedby` the subtitle/role); hover lifts the
+picture and rings it in the accent, keyboard focus rings it with the focus-ring token. A membership
+waiting for approval is the same tile without the link, `aria-disabled`, its picture desaturated and
+its role line „Editor, čeká na schválení". Order (`project/chooserOrder.ts`,
+`chooserSections`): active projects, the most recently visited first (`last_visit_at`), the
+never-visited after them by name (`Intl.Collator`); deactivated ones (only a maintainer has any)
+go into a collapsed `<details>` „Vypnuté projekty (n)" below a rule, smaller unlinked tiles saying
+„…, projekt je vypnutý". The grid is a centred flex wrap: 2 per row on a phone, 3 from `sm`, a
+12rem tile from `lg` in a 72rem column (4–5 per row). A tile whose project holds unread
+notifications wears `ProjectUnreadBadge` in the picture's corner (only enterable projects are ever
+counted). No membership at all is an `EmptyState` „Nejste členem žádného projektu. Požádejte správce
+projektu o pozvánku."; a single enterable project never reaches the page (the entry rule enters it).
 
 **The header switcher** (`components/ProjectSwitcher.tsx`). It reads `ProjectContext` directly and
 renders nothing outside a provider or for an account with no project. `variant="bar"` sits in the

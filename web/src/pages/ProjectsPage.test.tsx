@@ -1,6 +1,7 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
@@ -62,7 +63,10 @@ function renderChooser(
             value={{ ...NOTIFICATION_INBOX_DEFAULT, unreadByProject }}
           >
             <MemoryRouter initialEntries={['/projects']}>
-              <ProjectsPage />
+              <Routes>
+                <Route path="/projects" element={<ProjectsPage />} />
+                <Route path="/p/:slug" element={<p>entered the project</p>} />
+              </Routes>
             </MemoryRouter>
           </NotificationInboxContext.Provider>
         </ProjectContext.Provider>
@@ -71,15 +75,22 @@ function renderChooser(
   )
 }
 
-/** The card of the project named `name`. */
-function cardOf(name: string): HTMLElement {
-  const card = screen
+/** The tile of the project named `name`. */
+function tileOf(name: string): HTMLElement {
+  const tile = screen
     .getAllByTestId('project-card')
-    .find((el) => within(el).queryByRole('heading', { name }) !== null)
-  if (card === undefined) {
-    throw new Error(`no card for ${name}`)
+    .find((el) => el.querySelector('.kk-chooser__name')?.textContent === name)
+  if (tile === undefined) {
+    throw new Error(`no tile for ${name}`)
   }
-  return card
+  return tile
+}
+
+/** The names of the tiles inside `root`, in document order. */
+function tileNames(root: HTMLElement): string[] {
+  return within(root)
+    .getAllByTestId('project-card')
+    .map((el) => el.querySelector('.kk-chooser__name')?.textContent ?? '')
 }
 
 beforeEach(async () => {
@@ -87,53 +98,118 @@ beforeEach(async () => {
 })
 
 describe('ProjectsPage', () => {
-  it('draws a card per membership: name, description, role, a link home', () => {
+  it('asks where to go and draws one linked tile per project', () => {
     renderChooser([
       member('v', { name: 'Veselice', description: 'Obecní archiv', role: 'curator' }),
       member('rodina', { name: 'Rodina', role: 'admin' }),
     ])
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Projekty' })).toBeInTheDocument()
-    const v = cardOf('Veselice')
-    expect(within(v).getByRole('link', { name: 'Veselice' })).toHaveAttribute('href', '/p/v')
-    expect(within(v).getByRole('link', { name: 'Veselice' })).toHaveClass('stretched-link')
-    expect(within(v).getByText('Obecní archiv')).toHaveClass('kk-project-card__description')
-    expect(within(v).getByText('Kurátor')).toBeInTheDocument()
-    expect(v).not.toHaveAttribute('aria-disabled')
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Kam se chcete podívat?' }),
+    ).toBeInTheDocument()
+    const v = screen.getByRole('link', { name: 'Veselice' })
+    expect(v).toHaveAttribute('href', '/p/v')
+    expect(v).toBe(tileOf('Veselice'))
+    expect(v).toHaveAccessibleDescription('Obecní archiv Kurátor')
+    expect(within(v).getByText('Obecní archiv')).toHaveAttribute('title', 'Obecní archiv')
+    // The role is a quiet line, not a badge.
+    expect(within(v).getByText('Kurátor')).toHaveClass('kk-chooser__role')
+    expect(v.querySelector('.badge')).toBeNull()
 
-    const rodina = cardOf('Rodina')
-    expect(within(rodina).getByRole('link', { name: 'Rodina' })).toHaveAttribute(
-      'href',
-      '/p/rodina',
-    )
-    expect(within(rodina).getByText('Správce')).toBeInTheDocument()
-    // No description, no empty paragraph standing in for one.
-    expect(rodina.querySelector('.kk-project-card__description')).toBeNull()
+    const rodina = screen.getByRole('link', { name: 'Rodina' })
+    expect(rodina).toHaveAttribute('href', '/p/rodina')
+    // No description, no empty line standing in for one.
+    expect(rodina.querySelector('.kk-chooser__description')).toBeNull()
   })
 
-  it('greys a deactivated project and does not link it', () => {
+  it('keeps a long name whole in its title', () => {
+    const long = 'Sbor dobrovolných hasičů a přátelé obecní knihovny z horní vsi'
+    renderChooser([member('v', { name: long })])
+
+    expect(within(tileOf(long)).getByText(long)).toHaveAttribute('title', long)
+  })
+
+  it('puts the most recently visited project first, then the rest by name', () => {
     renderChooser([
-      member('v', { name: 'Veselice' }),
-      member('off', { name: 'Staré', active: false }),
+      member('a', { name: 'Archiv' }),
+      member('c', { name: 'Chalupa', last_visit_at: '2026-10-01T08:00:00Z' }),
+      member('r', { name: 'Rodina', last_visit_at: '2026-10-15T08:00:00Z' }),
+      member('b', { name: 'Brno' }),
     ])
 
-    const off = cardOf('Staré')
-    expect(off).toHaveClass('kk-project-card--inactive')
+    expect(tileNames(document.body)).toEqual(['Rodina', 'Chalupa', 'Archiv', 'Brno'])
+  })
+
+  it('sets deactivated projects apart in a collapsed section, unlinked', () => {
+    renderChooser([
+      member('v', { name: 'Veselice' }),
+      member('off', { name: 'Staré', active: false, last_visit_at: '2026-10-16T08:00:00Z' }),
+    ])
+
+    const section = screen.getByTestId('projects-inactive')
+    expect(section.tagName).toBe('DETAILS')
+    expect(section).not.toHaveAttribute('open')
+    expect(within(section).getByText('Vypnuté projekty (1)')).toBeInTheDocument()
+    expect(tileNames(section)).toEqual(['Staré'])
+    const off = tileOf('Staré')
     expect(off).toHaveAttribute('aria-disabled', 'true')
-    expect(within(off).getByText('Nedostupné')).toBeInTheDocument()
+    expect(off).toHaveClass('kk-chooser__tile--inactive')
+    expect(off).toHaveAttribute('title', 'Projekt je vypnutý, nelze ho otevřít.')
+    expect(within(off).getByText('Prohlížeč, projekt je vypnutý')).toBeInTheDocument()
     expect(within(off).queryByRole('link')).not.toBeInTheDocument()
+    // The active grid holds only the active project.
+    expect(screen.getAllByRole('link', { name: 'Veselice' })).toHaveLength(1)
   })
 
   it('says a membership awaits approval and does not link it', () => {
     renderChooser([member('wait', { name: 'Škola', approved: false, role: 'editor' })])
 
-    const wait = cardOf('Škola')
-    expect(within(wait).getByText('Čeká na schválení')).toBeInTheDocument()
-    expect(within(wait).getByText('Editor')).toBeInTheDocument()
-    expect(within(wait).queryByRole('link')).not.toBeInTheDocument()
+    const wait = tileOf('Škola')
+    expect(within(wait).getByText('Editor, čeká na schválení')).toBeInTheDocument()
+    expect(wait).toHaveAttribute('title', 'Vaše členství ještě musí schválit správce projektu.')
+    expect(wait).not.toHaveAttribute('href')
     expect(wait).toHaveAttribute('aria-disabled', 'true')
-    // Not switched off — so not greyed like one.
-    expect(wait).not.toHaveClass('kk-project-card--inactive')
+    // Not switched off — so not in the switched-off section.
+    expect(screen.queryByTestId('projects-inactive')).not.toBeInTheDocument()
+  })
+
+  it('shows the cover photo the server names', () => {
+    renderChooser([
+      member('v', { name: 'Veselice', cover_thumb_url: '/api/v1/p/v/photos/ph1/thumb/tile_500' }),
+    ])
+
+    const cover = within(tileOf('Veselice')).getByTestId('project-cover')
+    expect(cover).toHaveAttribute('src', '/api/v1/p/v/photos/ph1/thumb/tile_500')
+    // Decorative: the name is written out under it.
+    expect(cover).toHaveAttribute('alt', '')
+    expect(within(tileOf('Veselice')).queryByTestId('project-placeholder')).not.toBeInTheDocument()
+  })
+
+  it('falls back to the initial when there is no cover or it fails to load', () => {
+    renderChooser([
+      member('v', { name: 'Veselice', cover_thumb_url: '/broken.jpg' }),
+      member('r', { name: 'rodina', cover_thumb_url: '' }),
+    ])
+
+    const rodina = within(tileOf('rodina')).getByTestId('project-placeholder')
+    expect(rodina).toHaveTextContent(/^R$/)
+    expect(rodina.className).toMatch(/kk-avatar--tone-\d/)
+
+    fireEvent.error(within(tileOf('Veselice')).getByTestId('project-cover'))
+    expect(within(tileOf('Veselice')).queryByTestId('project-cover')).not.toBeInTheDocument()
+    expect(within(tileOf('Veselice')).getByTestId('project-placeholder')).toHaveTextContent('V')
+  })
+
+  it('enters a project from the keyboard', async () => {
+    const user = userEvent.setup()
+    renderChooser([member('v', { name: 'Veselice' }), member('r', { name: 'Rodina' })])
+
+    await user.tab()
+    await user.tab()
+    await user.tab()
+    expect(screen.getByRole('link', { name: 'Rodina' })).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(await screen.findByText('entered the project')).toBeInTheDocument()
   })
 
   it('asks for an invitation when the account belongs nowhere', () => {
@@ -150,18 +226,18 @@ describe('ProjectsPage', () => {
 
   it('says it in English too', async () => {
     await i18n.changeLanguage('en')
-    renderChooser([])
+    renderChooser([member('v', { name: 'Veselice', active: false })])
 
     expect(
-      screen.getByText(
-        'You are not a member of any project. Ask a project administrator for an invitation.',
-      ),
+      screen.getByRole('heading', { level: 1, name: 'Which library do you want to open?' }),
     ).toBeInTheDocument()
+    expect(screen.getByText('Switched-off projects (1)')).toBeInTheDocument()
   })
 
-  it('offers project administration to a maintainer only', () => {
+  it('offers project administration to a maintainer only, in the quiet account row', () => {
     const { unmount } = renderChooser([member('v')], true)
-    expect(screen.getByRole('link', { name: 'Správa projektů' })).toHaveAttribute(
+    const row = screen.getByRole('navigation', { name: 'Účet a správa' })
+    expect(within(row).getByRole('link', { name: 'Správa projektů' })).toHaveAttribute(
       'href',
       '/system/projects',
     )
@@ -177,11 +253,11 @@ describe('ProjectsPage', () => {
       'p-skola': 0,
     })
 
-    const badge = within(cardOf('Projekt rodina')).getByTestId('project-unread')
+    const badge = within(tileOf('Projekt rodina')).getByTestId('project-unread')
     expect(badge).toHaveTextContent(/^3/)
     expect(badge).toHaveAttribute('title', '3 nepřečtená oznámení')
-    expect(within(cardOf('Projekt v')).queryByTestId('project-unread')).not.toBeInTheDocument()
-    expect(within(cardOf('Projekt skola')).queryByTestId('project-unread')).not.toBeInTheDocument()
+    expect(within(tileOf('Projekt v')).queryByTestId('project-unread')).not.toBeInTheDocument()
+    expect(within(tileOf('Projekt skola')).queryByTestId('project-unread')).not.toBeInTheDocument()
   })
 
   it('draws no unread mark while the counts are unknown', () => {

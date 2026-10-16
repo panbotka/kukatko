@@ -113,10 +113,18 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   administrative record never leave the database, because the query selects two of them. It sits beside
   `GET /users/{uid}/avatar` (`internal/userpicapi`), which is the picture for the same uid.
   **`GET /auth/me`** → the login payload (`user` + `download_token`) plus `instance_role`
-  (`user`|`maintainer`), `projects: [{uid, slug, name, description, active, role, approved, subject_uid}]` (every
+  (`user`|`maintainer`), `projects: [{uid, slug, name, description, active, role, approved, subject_uid,
+  last_visit_at, cover_thumb_url}]` (every
   membership, inactive projects included, by name; `description` is the project's text for the chooser,
   `""` when none; `subject_uid` is the account's "this is me" in that
-  project) and `last_project_slug` (the project the account last entered, `""` when none — **and `""`
+  project; `last_visit_at` is when the account was last active there — the what's-new visit clock,
+  `null` when it never entered; `cover_thumb_url` is the chooser's picture of the project — the cover of
+  its first featured album the reader may see (hand-picked, else the album's newest photo), else the
+  project's most recently added photo, never a hidden, private or archived one — minted like every
+  `thumb_url` (signed edge URL, else `/api/v1/p/<slug>/photos/{uid}/thumb/tile_500`), and `""` for a
+  membership the account cannot enter (waiting for approval, deactivated project) or a library with
+  no photo; `internal/organize` `ProjectCover`, scoped to the one project, wired through
+  `auth.ProjectCovers`) and `last_project_slug` (the project the account last entered, `""` when none — **and `""`
   once it can no longer enter it**: removed, waiting for approval or locked out by a deactivation; a
   maintainer keeps a deactivated one, which it still enters). The
   per-project facts live in `projects`: the frontend reads the role and the linked person of the

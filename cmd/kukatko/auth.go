@@ -24,7 +24,8 @@ import (
 // buildAuth assembles the auth subsystem from configuration and the database:
 // the store, the session service, the login rate limiter, the self-service
 // registration flow, the password-reset flow, the passkey flow, and the HTTP
-// API — which forgets a browser's push subscription when it signs out. The
+// API — which forgets a browser's push subscription when it signs out, and
+// names each enterable project's picture on the chooser. The
 // returned API mounts the auth routes;
 // the returned Service is used for bootstrap and the background session-cleanup
 // loop. It fails only on a passkey relying party the WebAuthn library refuses.
@@ -71,6 +72,10 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service, e
 			return nil, nil, err
 		}
 	}
+	covers, err := buildProjectCovers(cfg, db)
+	if err != nil {
+		return nil, nil, err
+	}
 	api := auth.NewAPI(auth.APIConfig{
 		Service:       svc,
 		Limiter:       limiter,
@@ -82,6 +87,7 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service, e
 		Passkeys:      passkeys,
 		SecureCookies: cfg.Web.SecureCookies,
 		PushDevices:   push.NewStore(db.Pool()),
+		Covers:        covers,
 	})
 	return api, svc, nil
 }

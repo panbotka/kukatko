@@ -55,7 +55,9 @@ type API struct {
 	// pushDevices forgets the browser a sign-out happens in, or nil when the
 	// instance wires no push subscriptions.
 	pushDevices PushDevices
-	now         func() time.Time
+	// covers finds the chooser's project pictures, or nil for none.
+	covers ProjectCovers
+	now    func() time.Time
 }
 
 // PushDevices forgets a browser's Web Push subscription when its account signs
@@ -119,6 +121,10 @@ type APIConfig struct {
 	// PushDevices forgets the push subscription of the browser a sign-out
 	// happens in. Optional: when nil, signing out ends the session only.
 	PushDevices PushDevices
+	// Covers finds each enterable project's picture for the project chooser.
+	// Optional: when nil, GET /auth/me names no cover and the chooser draws
+	// placeholders.
+	Covers ProjectCovers
 }
 
 // NewAPI returns an API from cfg, using time.Now as its clock.
@@ -139,6 +145,7 @@ func NewAPI(cfg APIConfig) *API {
 		projects:           projectsFor(cfg),
 		lastProject:        &lastProjectThrottle{},
 		pushDevices:        cfg.PushDevices,
+		covers:             cfg.Covers,
 		now:                time.Now,
 	}
 }

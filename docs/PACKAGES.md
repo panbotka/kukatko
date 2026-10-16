@@ -4063,6 +4063,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   statement whose CTEs scan only the featured albums' membership) and `FeaturedAlbumTx(ctx, tx, uid)` (the
   same record for one album on the caller's transaction, private or not, `ErrNotFeatured` when the strip
   would not list it — for the announcement job); validating `until` is the caller's job.
+  **`ProjectCover(ctx, projectUID, includePrivate)`** (`projectcover.go`) → `(Cover, ok)`: the picture
+  the project chooser shows for a project — the first featured album's hand-picked cover, else that
+  album's newest photo, else the project's most recently added photo; only a live, library-visible,
+  non-private photo, a private album only with `includePrivate`, every statement confined to the
+  project. `cmd/kukatko` (`projectcover.go`) turns it into `GET /auth/me`'s `cover_thumb_url` through
+  `mediaurl` behind `auth.APIConfig.Covers` (`auth.ProjectCovers`), asked only for an enterable membership.
   **Project scope** (`store_project.go`, the `internal/photos` convention): every method takes `projectUID`
   after `ctx` (`AddPhotoTx`/`AttachLabelTx` after the `tx`), never defaulted — empty is `ErrNoProject`.
   `albums`/`labels` carry `project_id` (every insert writes it, slugs are unique per project); the join

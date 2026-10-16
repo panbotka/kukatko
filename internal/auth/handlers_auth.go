@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/panbotka/kukatko/internal/clientip"
 	"github.com/panbotka/kukatko/internal/project"
@@ -219,6 +220,14 @@ type meProject struct {
 	// SubjectUID is the person the caller says it is in this project ("this is
 	// me"), nil when it has not said: who you are is a fact about one project.
 	SubjectUID *string `json:"subject_uid"`
+	// LastVisitAt is when the caller was last active in the project, nil when it
+	// never entered it; the chooser puts the most recently visited project first.
+	LastVisitAt *time.Time `json:"last_visit_at"`
+	// CoverThumbURL is where the chooser fetches the project's picture: the
+	// cover of its first featured album, else its newest photo. It is set only
+	// for a project the caller may enter (approved, active), "" otherwise or
+	// when the project has no photo — the chooser then draws a placeholder.
+	CoverThumbURL string `json:"cover_thumb_url"`
 }
 
 // meResponse is the body of GET /auth/me: the login response plus the caller's
@@ -243,9 +252,14 @@ func (a *API) meResponseFor(ctx context.Context, p principal) (meResponse, error
 	}
 	projects := make([]meProject, 0, len(memberships))
 	for _, ms := range memberships {
+		cover, err := a.coverThumbURL(ctx, ms)
+		if err != nil {
+			// A missing picture is no reason to fail the whole session read.
+			slog.WarnContext(ctx, "auth: reading a project cover", "project", ms.ProjectUID, "error", err)
+		}
 		projects = append(projects, meProject{
 			UID: ms.ProjectUID, Slug: ms.Slug, Name: ms.Name, Active: ms.Active, Role: ms.Role, Approved: ms.Approved,
-			Description: ms.Description, SubjectUID: ms.SubjectUID,
+			Description: ms.Description, SubjectUID: ms.SubjectUID, LastVisitAt: ms.LastSeenAt, CoverThumbURL: cover,
 		})
 	}
 	last, err := a.svc.store.LastProjectSlug(ctx, p.user.UID)

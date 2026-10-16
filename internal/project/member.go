@@ -173,4 +173,8 @@ type MembershipSummary struct {
 	// administrator's account list) fills it; MembershipsOf leaves it empty —
 	// the account resolves its own person inside the project.
 	SubjectName string `json:"subject_name,omitempty"`
+	// LastSeenAt is when the account was last active in the project (the
+	// what's-new visit clock), nil when it never entered it. Only MembershipsOf
+	// fills it; the chooser puts the most recently visited project first.
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
 }

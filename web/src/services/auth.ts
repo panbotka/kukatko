@@ -91,6 +91,18 @@ export interface ProjectMembership {
    * `user.subject_uid`.
    */
   subject_uid?: string | null
+  /**
+   * When the account was last active in the project (ISO timestamp), null when
+   * it never entered it; the chooser puts the most recently visited first.
+   */
+  last_visit_at?: string | null
+  /**
+   * The thumbnail standing for the project on the chooser — the cover of its
+   * first featured album, else its newest photo. `""` (or absent) when it has
+   * none or the account may not enter the project; the chooser then draws the
+   * project's initial instead.
+   */
+  cover_thumb_url?: string
 }
 
 /** Successful auth response body (`POST /auth/login`, `GET /auth/me`). */
