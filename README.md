@@ -230,10 +230,11 @@ the same way, by its slug in the URL (`/api/v1/p/<project>/…`).
   approved you yet says it is *waiting for approval*. Pages outside any project — your account, the
   system pages, a page that does not exist — wear no project's name, menu or banner. A dead invitation
   link says it is no longer valid and to ask whoever sent it for a new one.
-- **Which project you are in is always on screen.** The project's name leads the top bar (and the
-  browser tab's title) and takes you to its library. Switching works like leaving a profile:
-  *Přepnout projekt* in the account menu (and the phone menu) leads to `/projects`, a "who's watching"
-  picker — and a small red mark on your picture says news is waiting in another project. The picker
+- **Which project you are in is always on screen.** The project's letter mark leads the top bar
+  (its name is the mark's tooltip, and leads the browser tab's title). Switching works like leaving a
+  profile: the mark — or *Přepnout projekt* in the account menu (and the phone menu) — leads to
+  `/projects`, a "who's watching" picker; with only one project to enter, the mark takes you to its
+  library instead. A small red mark on your picture says news is waiting in another project. The picker
   shows one large picture per library — its featured album's cover or its newest photo — the one you
   visited last first, with its description, your role and its unread notifications; the ones you
   cannot open yet say why, and switched-off projects wait in a collapsed section below.

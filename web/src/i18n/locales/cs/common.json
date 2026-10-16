@@ -3454,7 +3454,7 @@
     "othersUnread": "Nepřečtená oznámení v jiných projektech: {{count}}"
   },
   "projectIdentity": {
-    "title": "Knihovna projektu {{name}}",
+    "switchTitle": "{{name}} — přepnout projekt",
     "neutral": "Kukátko",
     "neutralTitle": "Do vaší knihovny"
   },

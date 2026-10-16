@@ -135,7 +135,7 @@ export function NavSidebar({
   return (
     <div className="kk-sidebar">
       <div className="kk-sidebar__head">
-        <ProjectIdentity />
+        <ProjectIdentity withName />
         <div className="kk-sidebar__tools">
           {!neutral && <SearchCommand open={paletteOpen} onOpenChange={onPaletteOpenChange} />}
           {!neutral && <NotificationBell drop="end" />}

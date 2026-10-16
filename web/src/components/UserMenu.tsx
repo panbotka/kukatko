@@ -64,7 +64,7 @@ export function UserMenu({
         />
       </span>
       {/* In the bar: out of sight (not out of the accessible name) in the
-          992–1399px band, where the project's name took its width; see
+          992–1399px band, where the row is tight; see
           `.kk-user-menu__name`. In the sidebar there is room for it. */}
       <span className="kk-user-menu__name">{name}</span>
     </span>

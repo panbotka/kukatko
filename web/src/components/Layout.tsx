@@ -126,11 +126,12 @@ import { WelcomeModal } from './welcome/WelcomeModal'
  * items there are, and on a touch screen it is the better navigation anyway.
  *
  * **Switching projects is leaving one** (the way a streaming service's
- * "who's watching" works): the bar leads with the current project as a calm
- * identity ({@link ProjectIdentity} — a link to its library, no menu), and the
- * user menu carries one "Switch library" entry to the chooser at `/projects`,
- * the one place a project is picked. The entry is offered only when there is
- * somewhere else to go ({@link useLeaveProject}); the unread notifications
+ * "who's watching" works): the bar leads with the current project's letter
+ * mark ({@link ProjectIdentity} — no name, no menu), and the mark and the user
+ * menu's one "Switch library" entry both lead to the chooser at `/projects`,
+ * the one place a project is picked. Both are offered only when there is
+ * somewhere else to go ({@link useLeaveProject}) — otherwise the mark is a
+ * link to the project's library; the unread notifications
  * waiting in the other projects ride on it and on the avatar that opens the
  * menu (on a phone, on the hamburger), and the chooser's tiles break them
  * down per project.
@@ -373,12 +374,11 @@ export function Layout({ children }: { children?: ReactNode }) {
                 showTrigger={!drawerNav}
               />
             )}
-            {/* Where the reader stands: the current project's name, a link to its
-                library — never a menu (switching is the user menu's "Switch
-                library"). It is the one item of the row that gives way to a long
-                name (it shrinks and ellipsises, see `.kk-project-identity`); below
-                `lg` it takes the leading edge the phone row otherwise leaves
-                empty. */}
+            {/* Where the reader stands: the current project's letter mark alone
+                (the name is its label and tooltip), the door to the chooser when
+                there is another project to pick — never a menu. It costs the row
+                one 1.5rem square; below `lg` it takes the phone row's leading
+                edge. */}
             <ProjectIdentity />
             {/* The inline bar is the `lg`+ navigation only: below that the same
                 items are the drawer's, so rendering both would duplicate every

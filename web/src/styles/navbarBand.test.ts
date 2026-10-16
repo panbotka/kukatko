@@ -72,19 +72,24 @@ describe('the navbar band between the drawer and a roomy container', () => {
 })
 
 describe('the project identity’s width', () => {
-  it('is the one item of the bar that shrinks, never below a readable stub', () => {
+  it('is the mark alone in the bar, a fixed square that never gives way', () => {
     const base = declarations(ruleBody(css, /\.kk-project-identity(?=\s*\{)/) ?? '')
-    expect(base.get('min-width')).toBe('0')
-    const name = declarations(ruleBody(css, /\.kk-project-identity__name(?=\s*\{)/) ?? '')
+    expect(base.get('flex')).toBe('none')
+    // The sidebar still draws the name, and lets it ellipsise.
+    const name = declarations(
+      ruleBody(css, /\.kk-project-identity__name(?=\s*\{)/, /text-overflow/) ?? '',
+    )
     expect(name.get('text-overflow')).toBe('ellipsis')
+    // No band hides the mark: in the bar it is all the identity has.
+    expect(css).not.toMatch(/\.kk-project-identity__mark\s*\{[^}]*display:\s*none/)
+    // Nothing caps or pads it out to the width a name used to take.
     const lg = ruleBody(css, /@media \(min-width: 992px\)(?=\s*\{)/, /\.kk-project-identity/)
     const atLg = declarations(ruleBody(lg ?? '', /\.kk-project-identity(?=\s*\{)/) ?? '')
-    expect(atLg.get('flex')).toBe('0 1 auto')
-    expect(atLg.get('min-width')).toBe('3.5rem')
-    expect(atLg.get('max-width')).toBe('14rem')
+    expect(atLg.has('min-width')).toBe(false)
+    expect(atLg.has('max-width')).toBe(false)
   })
 
-  it('is paid for by the user menu’s name, hidden visually only up to 1400px', () => {
+  it('leaves the user menu’s name hidden visually only up to 1400px', () => {
     const band = ruleBody(
       css,
       /@media \(min-width: 992px\) and \(max-width: 1399\.98px\)/,

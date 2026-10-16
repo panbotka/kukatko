@@ -967,14 +967,18 @@ describe('the project in the bar, and leaving it', () => {
 
   const TWO = [member('v', 'Veselice'), member('rodina', 'Rodina')]
 
-  it('leads the bar with the project as a link to its library, not a menu', () => {
+  it('leads the bar with the project’s letter mark, opening the switch, not a menu', () => {
     const { container } = renderInProject(TWO)
 
     const identity = screen.getByTestId('project-identity')
     expect(identity.tagName).toBe('A')
-    expect(identity).toHaveAttribute('href', '/p/v')
-    expect(identity).toHaveTextContent('Veselice')
-    expect(identity).toHaveAttribute('title', 'The library of the project Veselice')
+    // The switch: the same chooser the user menu's "Switch library" leads to.
+    expect(identity).toHaveAttribute('href', '/projects')
+    expect(screen.getByRole('link', { name: 'Veselice — switch library' })).toBe(identity)
+    expect(identity).toHaveAttribute('title', 'Veselice — switch library')
+    // Only the mark is drawn: the name is the label, not text in the bar.
+    expect(identity).toHaveTextContent(/^V$/)
+    expect(screen.queryByText('Veselice')).not.toBeInTheDocument()
     expect(identity).not.toHaveClass('dropdown-toggle')
     expect(screen.queryByRole('button', { name: /Veselice/ })).not.toBeInTheDocument()
     // The leading block: before every link of the inline bar.
@@ -1012,7 +1016,12 @@ describe('the project in the bar, and leaving it', () => {
     // A second membership still waiting for approval is not somewhere to go.
     renderInProject([member('v', 'Veselice'), member('rodina', 'Rodina', { approved: false })])
 
-    expect(screen.getByTestId('project-identity')).toHaveTextContent('Veselice')
+    // The mark is no switch then: a link home, named for the project alone.
+    const identity = screen.getByRole('link', { name: 'Veselice' })
+    expect(identity).toBe(screen.getByTestId('project-identity'))
+    expect(identity).toHaveAttribute('href', '/p/v')
+    expect(identity).toHaveAttribute('title', 'Veselice')
+    expect(identity).toHaveTextContent(/^V$/)
     await user.click(screen.getByRole('button', { name: /User One/ }))
     expect(await screen.findByRole('link', { name: 'My account' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Switch library' })).not.toBeInTheDocument()
@@ -1022,6 +1031,7 @@ describe('the project in the bar, and leaving it', () => {
     const user = userEvent.setup()
     renderInProject([member('v', 'Veselice')], { value: auth({ isMaintainer: true }) })
 
+    expect(screen.getByTestId('project-identity')).toHaveAttribute('href', '/projects')
     await user.click(screen.getByRole('button', { name: /User One/ }))
     expect(await screen.findByRole('link', { name: 'Switch library' })).toHaveAttribute(
       'href',
@@ -1060,11 +1070,14 @@ describe('the project in the bar, and leaving it', () => {
     expect(screen.queryByTestId('project-unread')).not.toBeInTheDocument()
   })
 
-  it('is the bare identity on a phone, the news on the hamburger', () => {
+  it('is the bare mark on a phone, the news on the hamburger', () => {
     mockViewport(true)
     renderInProject(TWO, { unreadByProject: { 'p-rodina': 2 } })
 
-    expect(screen.getByTestId('project-identity')).toHaveAttribute('href', '/p/v')
+    // The phone row's identity is the same mark, the same switch.
+    const identity = screen.getByTestId('project-identity')
+    expect(identity).toHaveAttribute('href', '/projects')
+    expect(identity).toHaveTextContent(/^V$/)
     const hamburger = screen.getByRole('button', { name: 'Open the menu' })
     const marker = within(hamburger).getByTestId('project-unread')
     expect(marker).toHaveTextContent('2')

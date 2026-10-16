@@ -251,7 +251,11 @@ describe('NavSidebar', () => {
     const aside = sidebar(container)
     if (aside === null) throw new Error('no sidebar')
 
-    expect(within(aside).getByTestId('project-identity')).toHaveAttribute('href', '/p/v')
+    // The same switch as the bar's mark, with room here for the name beside it.
+    const identity = within(aside).getByTestId('project-identity')
+    expect(identity).toHaveAttribute('href', '/projects')
+    expect(identity).toHaveAccessibleName('Veselice — switch library')
+    expect(identity).toHaveTextContent('Veselice')
     expect(within(aside).getByRole('button', { name: 'Search' })).toBeInTheDocument()
     expect(within(aside).getByRole('button', { name: /notifications/i })).toBeInTheDocument()
     expect(within(aside).getByRole('button', { name: /keyboard shortcuts/i })).toBeInTheDocument()

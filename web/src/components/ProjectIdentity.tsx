@@ -6,18 +6,28 @@ import { avatarInitial, avatarTone } from '../lib/avatarIdentity'
 import { LIBRARY_PATH } from '../lib/libraryView'
 import { ProjectContext } from '../project/ProjectContext'
 import { projectPathFor } from '../project/paths'
+import { useLeaveProject } from '../project/useLeaveProject'
+
+import { PROJECTS_ITEM } from './navItems'
 
 /**
  * Where the reader stands, at the leading edge of the bar: the current
- * project as a calm identity — a small square with its initial (the chooser's
- * stand-in, on the same colour drawn from the name) and its name — that links
- * to the project's library, the way a brand link goes home.
+ * project's mark — a small square with its initial, the chooser's stand-in on
+ * the same colour drawn from the name — and the door to the project switch.
  *
- * It is deliberately **not a switcher**: no caret, no menu, no other project's
- * name or badge. Switching is leaving — the account menu's "Switch library"
- * entry ({@link useLeaveProject}) leads to the chooser at `/projects`, the one
- * place a project is picked, and that is where the other projects' unread
- * counts are shown, one per tile.
+ * **Clicking the mark switches.** When there is somewhere else to go
+ * ({@link useLeaveProject}: a second enterable project, or the system
+ * administrator) it leads to the chooser at `/projects` — the very destination
+ * of the account menu's "Switch library" entry ({@link PROJECTS_ITEM}), the one
+ * place a project is picked. An account that can enter only this project is
+ * offered no switch, so the mark then links to the project's library the way a
+ * brand link goes home, and its label names only the project: nothing promises
+ * a chooser that would list a single project. No caret and no menu either way.
+ *
+ * **Only the mark in the bar.** The project's name is not drawn there — it took
+ * width in a tight row whose "Library" item already leads home — but it stays
+ * the link's accessible name and tooltip (`aria-label`/`title`). The left
+ * sidebar has the room, so it passes `withName` and the name follows the mark.
  *
  * **Outside a project** (an instance page, or a `/p/<slug>` the account may
  * not enter — see `useNeutralChrome`) the context's project is only the entry
@@ -26,15 +36,11 @@ import { projectPathFor } from '../project/paths'
  * picks the project (or the chooser when it cannot). Outside a provider (an
  * isolated component test) and for an account with no project at all nothing
  * is rendered.
- *
- * **Width.** The name is the one item of the bar that may give way: the
- * stylesheet lets it shrink and ellipsise (`.kk-project-identity`), with the
- * whole name in the `title`, so a long project name never pushes the row past
- * its container — see `docs/FRONTEND.md` for the measurements.
  */
-export function ProjectIdentity() {
+export function ProjectIdentity({ withName = false }: { withName?: boolean }) {
   const { t } = useTranslation()
   const ctx = useContext(ProjectContext)
+  const leave = useLeaveProject()
   if (ctx === null) {
     return null
   }
@@ -54,10 +60,14 @@ export function ProjectIdentity() {
   if (current === null) {
     return null
   }
+  const label = leave.offered
+    ? t('projectIdentity.switchTitle', { name: current.name })
+    : current.name
   return (
     <Link
-      to={projectPathFor(current.slug, LIBRARY_PATH)}
-      title={t('projectIdentity.title', { name: current.name })}
+      to={leave.offered ? PROJECTS_ITEM.to : projectPathFor(current.slug, LIBRARY_PATH)}
+      title={label}
+      aria-label={label}
       className="kukatko-tap-target kk-project-identity"
       data-testid="project-identity"
     >
@@ -67,7 +77,7 @@ export function ProjectIdentity() {
       >
         {avatarInitial(current.name)}
       </span>
-      <span className="kk-project-identity__name">{current.name}</span>
+      {withName && <span className="kk-project-identity__name">{current.name}</span>}
     </Link>
   )
 }

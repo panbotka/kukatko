@@ -159,10 +159,10 @@ here.
   (53px left) and in the 1248px collapse at 1400px (233px left) — nothing wraps, nothing scrolls, and the
   document stays exactly as wide as the viewport at every width. The badge takes no margin of its own so it
   costs only its 17px plus the link's `gap`. Guarded by the "tasks-waiting
-  badge" cases in `Layout.test.tsx` and `MobileNavDrawer.test.tsx`. **Since 2026-10-12 the project's
-  name leads the bar** (since 2026-10-16 as `ProjectIdentity`, no longer a switcher) and the user menu
-  shows only its avatar from 992 to 1399px to pay for it — the re-measured budget is under "Projects in
-  the address bar" below,
+  badge" cases in `Layout.test.tsx` and `MobileNavDrawer.test.tsx`. **Since 2026-10-12 the project
+  leads the bar** (since 2026-10-16 as `ProjectIdentity`, its letter mark alone — the door to the
+  project switch) and the user menu shows only its avatar from 992 to 1399px — the re-measured budget
+  is under "Projects in the address bar" below,
   `NavSidebar`, `UserMenu` and `NavPositionSwitcher` (the left-sidebar layout an account may pick instead
   of this bar, the user menu both layouts share, and the account page's switch — see **Navigation position**
   below),
@@ -8888,7 +8888,7 @@ vlevo" (`NavPositionSwitcher`, a button group under the language). **Top is the 
   account menu, and asserts **the two lists of `href`s are identical, order included**.
 - **`NavSidebar`** (`components/NavSidebar.tsx`) — mounted by `Layout` instead of the `Navbar` when the
   viewport is `lg`+ (`!useIsNavDrawerViewport()`), an account is signed in and it chose `left`; never both.
-  Head: `ProjectIdentity`, then the `SearchCommand` trigger, the `NotificationBell` (`drop="end"` — its list
+  Head: `ProjectIdentity withName` (the mark and the name, the same switch as the bar's mark), then the `SearchCommand` trigger, the `NotificationBell` (`drop="end"` — its list
   opens beside the sidebar rather than off the left edge) and `KeyboardShortcutsHelp`; in the neutral shell
   only the identity (the app title) and the shortcuts. Middle — the one scroller — `<nav aria-label=
   "Postranní navigace">` with a list of `NavLink` rows (`end` for the library root and `exact` entries, so
@@ -9095,11 +9095,20 @@ projektu o pozvánku."; a single enterable project never reaches the page (the e
 **Switching is leaving** (2026-10-16; before, a dropdown of the other projects led the bar). Like a
 streaming service's "who's watching", a project is picked in one place only — the chooser above — and
 the shell offers the way back to it rather than a list of its own. **`ProjectIdentity`**
-(`components/ProjectIdentity.tsx`) leads the navbar, right after the search button: a calm identity, a
-**link to the project's library** (`/p/<slug>`, `title` „Knihovna projektu <name>",
-`projectIdentity.title`) — the project's initial in a small rounded square on its `avatarTone` colour
-(`.kk-project-identity__mark`, `aria-hidden`, the chooser's stand-in) and its name — with no caret, no
-menu and no other project. Outside a provider, and for an account with no project, it renders nothing;
+(`components/ProjectIdentity.tsx`) leads the navbar, right after the search button: **only the
+project's letter mark** — its initial in a small rounded square on its `avatarTone` colour
+(`.kk-project-identity__mark`, `aria-hidden`, the chooser's stand-in), the name not drawn as text
+(2026-10-16: it took width in a tight row whose „Knihovna" already leads home). **Clicking the mark
+opens the project switch**: when `useLeaveProject().offered` it links to `/projects`
+(`PROJECTS_ITEM.to`, the destination of „Přepnout projekt" below), `aria-label` = `title` „Veselice —
+přepnout projekt" (`projectIdentity.switchTitle`); when not (one enterable project, not the system
+administrator) it links to the project's library `/p/<slug>` and both name only the project
+(„Veselice") — nothing promises a chooser listing one project. No caret, no menu, no other project.
+The phone row (below `lg`) shows the same mark with the same rule; the drawer never named the
+project. **`NavSidebar`** passes `withName`, so the sidebar's head draws the name beside the mark
+(`.kk-project-identity__name`, ellipsised) with the same target and label. On hover the bar's mark
+answers with a ring in its letter's colour (`outline: currentColor`) and the sidebar's name is
+underlined — never the letter. Outside a provider, and for an account with no project, it renders nothing;
 in the neutral shell it is the neutral title „Kukátko" (`projectIdentity.neutral`), a link to `/`,
 where the entry rule picks the project (or the chooser). **„Přepnout projekt"** (en „Switch library",
 `PROJECTS_ITEM` in `navItems.ts`, icon `arrow-left-right`, `title` „Opustit tento projekt a vybrat
@@ -9130,18 +9139,16 @@ same function (Back/Forward keep the same rule). `ProjectContextValue.inAddress`
 it. When it is false (the neutral shell) there is no current project to name.
 
 **Width** (Chromium over the real `Layout` against the box staging stack, maintainer, Czech labels, a
-task waiting, 2026-10-16). The project's name pays its way as the switcher did: the user menu's display
-name is hidden **visually only** between 992 and 1399.98px (`.kk-user-menu__name`, clipped — the toggle
-keeps it as its accessible name; the avatar stays), and so is the identity's decorative mark
-(`.kk-project-identity__mark { display: none }` in the same band: with it „Veselice" ellipsised to
-78px at 1200–1399). The identity is the one item of the row that may shrink (`flex: 0 1 auto;
-min-width: 3.5rem; max-width: 14rem`, `min-width: 0` down to the ellipsised
-`.kk-project-identity__name`, full name in the `title`). Result: one 53px row ending 12px inside the
-container (its padding) at 992/1199/1200/1399/1400/1440px, „Veselice" whole everywhere (59px in the
-band, 91px with the mark from 1400px), slack before the bell 31px at 992–1199, 19px at 1200–1399 and
-115px at 1440 with the display name back. Below `lg` the identity takes what the row leaves beside the
-bell and the hamburger (`flex: 1 1 0`, never wraps them). Guarded by the „project identity's width"
-cases in `styles/navbarBand.test.ts`.
+task waiting, re-measured 2026-10-16 after the name left the bar). The identity is the mark alone and
+never gives way (`flex: none`): one 1.5rem square in a 44px tap target (`kukatko-tap-target`), the
+same at every width — no band hides the mark any more, and nothing caps or pads it out
+(`margin-inline-end: 0.375rem` from `lg` only). The user menu's display name stays hidden **visually
+only** between 992 and 1399.98px (`.kk-user-menu__name`, clipped — the toggle keeps it as its
+accessible name; the avatar stays). Result: one row ending 12px inside the container (its padding) at
+992/1199/1200/1399/1440px, no overflow; slack before the bell **46px** at 992–1199 (was 31px with the
+name), **34px** at 1200–1399 (was 19px) and **163px** at 1440 (was 115px). Below `lg` the mark holds the
+phone row's leading edge and the bell (or the hamburger) takes the trailing push (`ms-auto`). Guarded by
+the „project identity's width" cases in `styles/navbarBand.test.ts`.
 
 **PWA:** `start_url` stays `/` (the entry rule
 does the rest); the service worker answers every navigation outside `/api/`, `/healthz`,
@@ -9149,10 +9156,12 @@ does the rest); the service worker answers every navigation outside `/api/`, `/h
 
 Tests: `project/paths.test.ts` (entry rule's three branches + the unusable-last cases,
 `projectPathFor`, prefix parsing, `projectRoleOf`, `routeAfterSwitch`: every kept list page, uid
-pages, query/hash dropped, instance pages), `components/ProjectIdentity.test.tsx` (a link to the
-library, no menu or other project, the neutral title, nothing without a provider, Czech),
+pages, query/hash dropped, instance pages), `components/ProjectIdentity.test.tsx` (the mark
+alone opening `/projects` when switching is offered — the system administrator too —, a link to the
+library named for the project alone when not, the sidebar's name, no menu or other project, the
+neutral title, nothing without a provider, Czech),
 `pages/ProjectsPage.test.tsx` (normal / inactive / pending / empty, the
-maintainer link, the unread pill, the tab title), the „project in the bar, and leaving it" cases (the identity leads, no project list, „Switch library"
+maintainer link, the unread pill, the tab title), the „project in the bar, and leaving it" cases (the mark leads and opens `/projects`, or the library with nowhere to switch, no project list, „Switch library"
 first in the user menu, offered only with a second enterable project or to the maintainer, the others-only
 unread total on the avatar and the item, the hamburger's dot) and „neutral shell outside a project" cases (no project
 chrome on an instance page or a not-member slug, instance-only administration, no tab bar/library

@@ -3284,7 +3284,7 @@
     "othersUnread": "Unread notifications in other projects: {{count}}"
   },
   "projectIdentity": {
-    "title": "The library of the project {{name}}",
+    "switchTitle": "{{name}} — switch library",
     "neutral": "Kukátko",
     "neutralTitle": "To your library"
   },
