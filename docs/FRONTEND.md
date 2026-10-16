@@ -2060,6 +2060,19 @@ here.
   `InvitePage.test.tsx` (signed in, signed out, dead — and identical for two reasons).
   `LoginPage` honours a **`?returnTo=`** query ahead of the guard's stashed location, but only a local path
   (one leading `/`, never `//` or `/\`), so a link cannot send a fresh sign-in to another host,
+  and **only when the account that signed in may use it** (`auth/signInTarget.ts`, `signInTarget`/`mayUseTarget`):
+  the stashed address belongs to whoever was signed in before, so a system administrator's `/system/…` or a
+  project the new account is not in would greet it with „Sem nemáte přístup" / „Stránka nenalezena". A
+  `/p/<slug>/…` target needs an approved membership of an active `<slug>` (a maintainer enters any) — an
+  unknown slug and a foreign project fall back alike, revealing nothing — and every `RequireRole` /
+  `RequireImport` on the matched branch must be met by the role there (outside a project: maintainer or
+  nothing). The gates are **read off the route elements of `App.tsx`'s `GUARDED_ROUTES`** (handed to
+  `LoginPage` as `routes`), so they cannot drift from what the page would render; an address the table
+  does not know (the invite page) has no gate. Anything refused lands **silently on `/`**, the front door a
+  plain sign-in reaches. The judgement uses the session `login()`/`loginWithPasskey()` **resolve to** (the
+  re-read `/auth/me`, projects and instance role included) — the context still describes the render before
+  the sign-in — and the already-signed-in bounce uses the context. The return address keeps the guard's
+  query **and hash**,
   `UploadLinkPage` (route **`/u/:code`**, **public** — whoever holds an upload link may upload without
   an account; outside `RequireAuth` and `Layout`): reads `fetchPublicUploadLink`; a link whose project
   has used up its quota (`storage_full`, or a file refused `quota_exceeded` mid-batch) shows

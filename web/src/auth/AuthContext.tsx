@@ -8,6 +8,7 @@ import {
   canWrite,
   isAdmin,
   isMaintainer,
+  type AuthSession,
   type InstanceRole,
   type ProjectMembership,
   type Role,
@@ -86,7 +87,13 @@ export interface AuthContextValue {
    * change, after the server has confirmed it.
    */
   pictureChanged: () => void
-  login: (username: string, password: string) => Promise<void>
+  /**
+   * Signs in with a username and password and publishes the session. Resolves
+   * to that session — the one `GET /auth/me` returned, projects and instance
+   * role included — so the caller can decide where the account goes next
+   * without waiting for a render to bring the new context.
+   */
+  login: (username: string, password: string) => Promise<AuthSession>
   /**
    * Signs in with a passkey instead of a password: runs the discoverable WebAuthn
    * ceremony and, on success, publishes the session it yields — the very same one
@@ -94,8 +101,9 @@ export interface AuthContextValue {
    *
    * It rejects with a `PasskeyError` (`internal` reasons like a dismissed prompt
    * or an account still awaiting approval), which the sign-in screen translates.
+   * Resolves to the published session, like {@link login}.
    */
-  loginWithPasskey: () => Promise<void>
+  loginWithPasskey: () => Promise<AuthSession>
   logout: () => Promise<void>
   /**
    * Re-reads the session from the backend — after a role change, or when the

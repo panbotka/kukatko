@@ -1,12 +1,25 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  createRoutesFromChildren,
+  useLocation,
+} from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
+import { RequireImport, RequireRole } from '../auth/ProtectedRoute'
 import i18n from '../i18n'
-import { ApiError, NetworkError } from '../services/auth'
+import {
+  ApiError,
+  type AuthSession,
+  type InstanceRole,
+  NetworkError,
+  type ProjectMembership,
+} from '../services/auth'
 import { PasskeyError } from '../services/passkeys'
 
 import { LoginPage } from './LoginPage'
@@ -30,6 +43,80 @@ const settingsMock = vi.mocked(fetchPublicSettings)
 const projectSettingsMock = vi.mocked(fetchProjectPublicSettings)
 const { isPasskeySupported } = await import('../services/passkeys')
 const supportedMock = vi.mocked(isPasskeySupported)
+
+/**
+ * A stand-in for the app's guarded route table, shaped like the real one: the
+ * front door, a project's pages under `/p/:slug` with their role gates, the
+ * maintainer-only operations and the legacy catch-all. The login page reads the
+ * gates off the `RequireRole`/`RequireImport` elements, so these are the real
+ * guards; the wiring of the real table is App.test's business.
+ */
+const GUARDED_ROUTES = createRoutesFromChildren(
+  <>
+    <Route path="/" element={<div />} />
+    <Route path="/share-target" element={<div />} />
+    <Route path="/p/:slug" element={<div />}>
+      <Route path="photos/:uid" element={<div />} />
+      <Route element={<div />}>
+        <Route index element={<div />} />
+        <Route path="albums" element={<div />} />
+        <Route element={<RequireImport />}>
+          <Route path="import" element={<div />} />
+        </Route>
+        <Route element={<RequireRole role="admin" />}>
+          <Route path="members" element={<div />} />
+        </Route>
+        <Route path="*" element={<div />} />
+      </Route>
+    </Route>
+    <Route element={<div />}>
+      <Route path="/account" element={<div />} />
+      <Route element={<RequireRole role="maintainer" />}>
+        <Route path="/system" element={<div />} />
+        <Route path="/system/projects" element={<div />} />
+      </Route>
+      <Route path="*" element={<div />} />
+    </Route>
+  </>,
+)
+
+/** A membership of the project `slug`, approved and active unless overridden. */
+function membership(slug: string, overrides: Partial<ProjectMembership> = {}): ProjectMembership {
+  return {
+    uid: `pr-${slug}`,
+    slug,
+    name: slug,
+    active: true,
+    role: 'admin',
+    approved: true,
+    ...overrides,
+  }
+}
+
+/**
+ * What a sign-in resolves to: the session `GET /auth/me` returned. By default an
+ * ordinary account that is admin of the one project `v`.
+ */
+function session(
+  projects: ProjectMembership[] = [membership('v')],
+  instanceRole: InstanceRole = 'user',
+): AuthSession {
+  return {
+    user: {
+      uid: 'us-alice',
+      username: 'alice',
+      display_name: 'Alice',
+      email: 'alice@example.test',
+      disabled: false,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+    download_token: 'dl',
+    instance_role: instanceRole,
+    projects,
+    last_project_slug: '',
+  }
+}
 
 function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue {
   return {
@@ -55,10 +142,10 @@ function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue 
   }
 }
 
-/** Surfaces where login sent the user, query string included. */
+/** Surfaces where login sent the user, query string and hash included. */
 function LocationProbe() {
-  const { pathname, search } = useLocation()
-  return <span data-testid="location">{`${pathname}${search}`}</span>
+  const { pathname, search, hash } = useLocation()
+  return <span data-testid="location">{`${pathname}${search}${hash}`}</span>
 }
 
 /**
@@ -68,7 +155,7 @@ function LocationProbe() {
  */
 function renderLogin(
   value: AuthContextValue,
-  state?: { from: { pathname: string; search: string } },
+  state?: { from: { pathname: string; search: string; hash?: string } },
   search = '',
 ) {
   return render(
@@ -76,8 +163,10 @@ function renderLogin(
       <AuthContext.Provider value={value}>
         <MemoryRouter initialEntries={[{ pathname: '/login', search, state }]}>
           <Routes>
-            <Route path="/login" element={<LoginPage />} />
+            <Route path="/login" element={<LoginPage routes={GUARDED_ROUTES} />} />
             <Route path="/" element={<div>home page</div>} />
+            <Route path="/system/*" element={<div>system page</div>} />
+            <Route path="/p/:slug/*" element={<div>project page</div>} />
             <Route path="/share-target" element={<div>share page</div>} />
             <Route path="/invite/:code" element={<div>invite page</div>} />
           </Routes>
@@ -125,7 +214,7 @@ describe('LoginPage', () => {
 
   it('submits trimmed credentials when fields are filled', async () => {
     const user = userEvent.setup()
-    const login = vi.fn().mockResolvedValue(undefined)
+    const login = vi.fn().mockResolvedValue(session())
     renderLogin(authValue({ login }))
 
     await user.type(screen.getByLabelText('Username'), '  alice  ')
@@ -151,7 +240,7 @@ describe('LoginPage', () => {
     // The query is not decoration: a share from the phone names the files
     // waiting in the cache with it, so dropping it loses the photos.
     const user = userEvent.setup()
-    const login = vi.fn().mockResolvedValue(undefined)
+    const login = vi.fn().mockResolvedValue(session())
     renderLogin(authValue({ login }), {
       from: { pathname: '/share-target', search: '?share=1700000000000-1' },
     })
@@ -175,7 +264,7 @@ describe('LoginPage', () => {
 
   it('returns to a ?returnTo= path, ahead of the stashed address', async () => {
     const user = userEvent.setup()
-    const login = vi.fn().mockResolvedValue(undefined)
+    const login = vi.fn().mockResolvedValue(session())
     renderLogin(
       authValue({ login }),
       { from: { pathname: '/share-target', search: '' } },
@@ -198,7 +287,7 @@ describe('LoginPage', () => {
 
   it('falls back to the library when the guard stashed nothing', async () => {
     const user = userEvent.setup()
-    const login = vi.fn().mockResolvedValue(undefined)
+    const login = vi.fn().mockResolvedValue(session())
     renderLogin(authValue({ login }))
 
     await user.type(screen.getByLabelText('Username'), 'alice')
@@ -394,7 +483,7 @@ describe('LoginPage', () => {
       mail_enabled: true,
     })
     const user = userEvent.setup()
-    const loginWithPasskey = vi.fn().mockResolvedValue(undefined)
+    const loginWithPasskey = vi.fn().mockResolvedValue(session())
     renderLogin(authValue({ loginWithPasskey }), {
       from: { pathname: '/share-target', search: '?share=abc' },
     })
@@ -444,5 +533,115 @@ describe('LoginPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Sign in with a passkey' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/waiting for an administrator/i)
+  })
+  describe('only returns the account to a page it may use', () => {
+    /** Signs in through the password form as the account `signedIn` names. */
+    async function signInAs(
+      signedIn: AuthSession,
+      state?: { from: { pathname: string; search: string; hash?: string } },
+      search = '',
+    ) {
+      const user = userEvent.setup()
+      const login = vi.fn().mockResolvedValue(signedIn)
+      renderLogin(authValue({ login }), state, search)
+      await user.type(screen.getByLabelText('Username'), 'alice')
+      await user.type(screen.getByLabelText('Password'), 'secret')
+      await user.click(screen.getByRole('button', { name: 'Sign in' }))
+    }
+
+    it("sends an ordinary account off a system administrator's page to its home", async () => {
+      // Signed out as the system administrator on /system/projects, signed in as
+      // a project admin: the stashed page would only say "no access".
+      await signInAs(session([membership('v', { role: 'admin' })]), {
+        from: { pathname: '/system/projects', search: '' },
+      })
+
+      expect(await screen.findByText('home page')).toBeInTheDocument()
+      expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/)
+      expect(screen.queryByText('system page')).not.toBeInTheDocument()
+    })
+
+    it('returns a system administrator to the /system page it was on', async () => {
+      await signInAs(session([], 'maintainer'), {
+        from: { pathname: '/system/projects', search: '?q=rod' },
+      })
+
+      expect(await screen.findByText('system page')).toBeInTheDocument()
+      expect(screen.getByTestId('location')).toHaveTextContent('/system/projects?q=rod')
+    })
+
+    it('sends an account away from a project it is not in, exactly as from one that does not exist', async () => {
+      await signInAs(session([membership('v')]), {
+        from: { pathname: '/p/rodina/albums', search: '' },
+      })
+
+      expect(await screen.findByText('home page')).toBeInTheDocument()
+      expect(screen.queryByText('project page')).not.toBeInTheDocument()
+    })
+
+    it('returns the same person to their own deep link, query and hash included', async () => {
+      await signInAs(session([membership('v', { role: 'viewer' })]), {
+        from: { pathname: '/p/v/photos/ph123', search: '?panel=info', hash: '#c-7' },
+      })
+
+      expect(await screen.findByText('project page')).toBeInTheDocument()
+      expect(screen.getByTestId('location')).toHaveTextContent('/p/v/photos/ph123?panel=info#c-7')
+    })
+
+    it('falls back when the project page needs a higher role than the account holds', async () => {
+      await signInAs(session([membership('v', { role: 'viewer' })]), {
+        from: { pathname: '/p/v/members', search: '' },
+      })
+
+      expect(await screen.findByText('home page')).toBeInTheDocument()
+    })
+
+    it('falls back from a maintainer-only project page for a project admin', async () => {
+      await signInAs(session([membership('v', { role: 'admin' })]), {
+        from: { pathname: '/p/v/import', search: '' },
+      })
+
+      expect(await screen.findByText('home page')).toBeInTheDocument()
+    })
+
+    it('falls back from a project whose membership still waits for approval', async () => {
+      await signInAs(session([membership('v', { approved: false })]), {
+        from: { pathname: '/p/v/albums', search: '' },
+      })
+
+      expect(await screen.findByText('home page')).toBeInTheDocument()
+    })
+
+    it('keeps an invitation ?returnTo= for an account that belongs to no project yet', async () => {
+      await signInAs(
+        session([]),
+        { from: { pathname: '/system/projects', search: '' } },
+        '?returnTo=%2Finvite%2FAB3DEF7H',
+      )
+
+      expect(await screen.findByText('invite page')).toBeInTheDocument()
+      expect(screen.getByTestId('location')).toHaveTextContent('/invite/AB3DEF7H')
+    })
+
+    it('judges a passkey sign-in by the account it signed in', async () => {
+      settingsMock.mockResolvedValue({ passkeys_enabled: true, mail_enabled: true })
+      const user = userEvent.setup()
+      const loginWithPasskey = vi.fn().mockResolvedValue(session([membership('v')]))
+      renderLogin(authValue({ loginWithPasskey }), {
+        from: { pathname: '/p/rodina', search: '' },
+      })
+
+      await user.click(await screen.findByRole('button', { name: 'Sign in with a passkey' }))
+
+      expect(await screen.findByText('home page')).toBeInTheDocument()
+    })
+
+    it('sends an already-signed-in visitor home from a page it may not use', async () => {
+      renderLogin(authValue({ status: 'authenticated', instanceRole: 'user', projects: [] }), {
+        from: { pathname: '/system', search: '' },
+      })
+
+      expect(await screen.findByText('home page')).toBeInTheDocument()
+    })
   })
 })

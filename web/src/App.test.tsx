@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
+import { type InitialEntry, MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AppRoutes } from './App'
@@ -211,7 +211,7 @@ function LocationProbe() {
 }
 
 /** Mounts the real route table at `entries[index]`, signed in as `auth`. */
-function renderRoutes(entries: string[], index = entries.length - 1, auth = viewerAuth) {
+function renderRoutes(entries: InitialEntry[], index = entries.length - 1, auth = viewerAuth) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth}>
@@ -402,6 +402,34 @@ describe('routing', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Projects' })).toBeInTheDocument()
     expect(screen.getByTestId('pathname')).toHaveTextContent('/system/projects')
+  })
+
+  it("lands a project admin signing in off a system administrator's page on its home", async () => {
+    // The login page is handed the real guarded table: /system/projects is
+    // maintainer-only there, so the stashed address falls back to the front
+    // door, which forwards into the account's project — never "no access".
+    renderRoutes(
+      [{ pathname: '/login', state: { from: { pathname: '/system/projects' } } }],
+      0,
+      adminAuth,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/p\/v$/)
+    })
+    expect(screen.queryByTestId('forbidden-page')).not.toBeInTheDocument()
+  })
+
+  it('returns a signed-in member to its own project page from the login screen', async () => {
+    renderRoutes(
+      [{ pathname: '/login', state: { from: { pathname: '/p/v/albums', search: '?sort=name' } } }],
+      0,
+      adminAuth,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/p\/v\/albums$/)
+    })
   })
 
   it('keeps the system project and account pages from an admin', async () => {

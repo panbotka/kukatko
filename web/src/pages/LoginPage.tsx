@@ -4,9 +4,10 @@ import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, type RouteObject, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { type SignedInAccount, signInTarget } from '../auth/signInTarget'
 import { AuthFrame } from '../components/AuthFrame'
 import { Icon } from '../components/Icon'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -14,12 +15,12 @@ import { mailEnabledFrom } from '../hooks/useMailEnabled'
 import { useProjectPublicSettings } from '../hooks/useProjectPublicSettings'
 import { usePublicSettings } from '../hooks/usePublicSettings'
 import { projectRegisterPath, projectSlugInPath } from '../project/paths'
-import { ApiError, NetworkError } from '../services/auth'
+import { ApiError, type AuthSession, NetworkError } from '../services/auth'
 import { isPasskeySupported, PasskeyError, type PasskeyErrorReason } from '../services/passkeys'
 
 /** Shape of the history state set by the route guard on redirect to login. */
 interface LocationState {
-  from?: { pathname?: string; search?: string }
+  from?: { pathname?: string; search?: string; hash?: string }
 }
 
 /**
@@ -33,7 +34,8 @@ function isLocalPath(path: string): boolean {
 }
 
 /**
- * Rebuilds the address the guard bounced the visitor off, query string and all.
+ * Rebuilds the address the guard bounced the visitor off, query string and hash
+ * and all (the hash points at one comment of a thread, say).
  *
  * The search matters: it is where the app keeps view state (filters, sorting,
  * paging), and it is how a share from the phone's share sheet names the files
@@ -51,7 +53,20 @@ function returnTo(state: LocationState | null, query: string | null): string {
   if (pathname === undefined || pathname === '') {
     return '/'
   }
-  return `${pathname}${state?.from?.search ?? ''}`
+  return `${pathname}${state?.from?.search ?? ''}${state?.from?.hash ?? ''}`
+}
+
+/**
+ * The account a sign-in answered with, in the shape {@link signInTarget} judges
+ * a return address by. Only `GET /auth/me` carries the instance role and the
+ * projects; a session without them (the re-read failed) is an ordinary account
+ * in no project, which can only ever be sent to the front door.
+ */
+function accountOf(session: AuthSession): SignedInAccount {
+  return {
+    instanceRole: session.instance_role ?? session.user.instance_role ?? 'user',
+    projects: session.projects ?? [],
+  }
 }
 
 /**
@@ -181,6 +196,14 @@ function errorKeyFor(error: unknown): LoginErrorKey {
  * rate-limit and unreachable-backend errors, and on success redirects to the originally
  * requested route (or home).
  *
+ * The requested route is honoured only when the account that signed in may use
+ * it — judged against `routes`, the app's guarded route table, by
+ * {@link signInTarget}. The address was stashed for whoever was signed in
+ * before, and that need not be the same person: a system administrator's
+ * `/system/…` page, or a project the new account is not in, would greet it with
+ * "no access" or "page not found". Such a target falls back, silently, to the
+ * front door a plain sign-in reaches.
+ *
  * A guarded route with no backend now shows the offline page instead of sending
  * anyone here, but this address is still reachable on its own — a bookmark, or
  * the installed app reopening on the screen it was last left on. So when the
@@ -196,10 +219,10 @@ function errorKeyFor(error: unknown): LoginErrorKey {
  * link to a form that refuses every submit costs the reader the whole form
  * before they learn it.
  */
-export function LoginPage() {
+export function LoginPage({ routes }: { routes: RouteObject[] }) {
   const { t } = useTranslation()
   useDocumentTitle(t('login.title'))
-  const { status: authStatus, login, loginWithPasskey } = useAuth()
+  const { status: authStatus, instanceRole, projects, login, loginWithPasskey } = useAuth()
   // The instance's anonymous facts: whether it can run a passkey ceremony, and
   // whether an approval is followed by an e-mail at all.
   const publicSettings = usePublicSettings()
@@ -226,12 +249,22 @@ export function LoginPage() {
 
   const from = returnTo(location.state as LocationState | null, searchParams.get('returnTo'))
 
-  // If an already-authenticated user lands on /login, bounce them onward.
+  // If an already-authenticated user lands on /login, bounce them onward — to
+  // the requested page only when it is theirs to use.
   useEffect(() => {
     if (authStatus === 'authenticated') {
-      void navigate(from, { replace: true })
+      void navigate(signInTarget(routes, from, { instanceRole, projects }), { replace: true })
     }
-  }, [authStatus, from, navigate])
+  }, [authStatus, from, instanceRole, navigate, projects, routes])
+
+  /**
+   * Leaves the sign-in screen for the account `session` names. The session the
+   * sign-in returned is what decides, not the context: that still describes the
+   * render before the sign-in, and so possibly somebody else.
+   */
+  function proceed(session: AuthSession) {
+    void navigate(signInTarget(routes, from, accountOf(session)), { replace: true })
+  }
 
   async function handleSubmit(event: SyntheticEvent) {
     event.preventDefault()
@@ -241,8 +274,7 @@ export function LoginPage() {
     }
     setSubmit({ status: 'submitting', method: 'password' })
     try {
-      await login(username.trim(), password)
-      void navigate(from, { replace: true })
+      proceed(await login(username.trim(), password))
     } catch (error: unknown) {
       setSubmit({ status: 'error', messageKey: errorKeyFor(error) })
     }
@@ -256,8 +288,7 @@ export function LoginPage() {
   async function handlePasskey() {
     setSubmit({ status: 'submitting', method: 'passkey' })
     try {
-      await loginWithPasskey()
-      void navigate(from, { replace: true })
+      proceed(await loginWithPasskey())
     } catch (error: unknown) {
       setSubmit({ status: 'error', messageKey: passkeyErrorKeyFor(error) })
     }

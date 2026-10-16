@@ -219,6 +219,47 @@ describe('AuthProvider passkey sign-in', () => {
     expect(screen.getByTestId('user')).toHaveTextContent('alice')
   })
 
+  it('resolves to the session it published, re-read with its projects', async () => {
+    // The sign-in screen decides where to go from this value — before any render
+    // brings the new context — so it must be the full `/auth/me` session, not
+    // the bare sign-in answer, which names neither projects nor instance role.
+    const full: AuthSession = {
+      ...SESSION,
+      instance_role: 'user',
+      projects: [
+        { uid: 'pv', slug: 'v', name: 'Veselice', active: true, role: 'viewer', approved: true },
+      ],
+    }
+    fetchMe.mockResolvedValueOnce(null).mockResolvedValue(full)
+    signIn.mockResolvedValue(SESSION)
+    let resolved: AuthSession | undefined
+    function Probe() {
+      const { status, loginWithPasskey } = useAuth()
+      return (
+        <button
+          onClick={() => {
+            void loginWithPasskey().then((session) => {
+              resolved = session
+            })
+          }}
+        >
+          {status}
+        </button>
+      )
+    }
+    const user = userEvent.setup()
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'unauthenticated' }))
+
+    expect(await screen.findByRole('button', { name: 'authenticated' })).toBeInTheDocument()
+    expect(resolved).toEqual(full)
+  })
+
   it('leaves the session alone when the ceremony is refused', async () => {
     const user = userEvent.setup()
     fetchMe.mockResolvedValue(null)

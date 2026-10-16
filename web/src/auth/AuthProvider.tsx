@@ -53,11 +53,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * Publishes a session a sign-in returned. A sign-in answer carries no
    * projects (only `GET /auth/me` does), so the session is re-read to learn
    * which project to work in; should that read find no session after all, the
-   * sign-in answer stands.
+   * sign-in answer stands. Resolves to the session it published, so the
+   * sign-in screen can judge its return address by the account that has just
+   * signed in rather than by whoever was signed in before.
    */
   const applySignIn = useCallback(
-    async (session: AuthSession) => {
-      applySession(session.projects ? session : ((await authService.fetchMe()) ?? session))
+    async (session: AuthSession): Promise<AuthSession> => {
+      const applied = session.projects ? session : ((await authService.fetchMe()) ?? session)
+      applySession(applied)
+      return applied
     },
     [applySession],
   )
@@ -99,9 +103,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadSession])
 
   const login = useCallback(
-    async (username: string, password: string) => {
-      await applySignIn(await authService.login(username, password))
-    },
+    async (username: string, password: string) =>
+      applySignIn(await authService.login(username, password)),
     [applySignIn],
   )
 
@@ -110,9 +113,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * is obtained: the ceremony runs in `services/passkeys`, and what comes back is
    * the same `AuthSession` the password endpoint returns, applied the same way.
    */
-  const loginWithPasskey = useCallback(async () => {
-    await applySignIn(await signInWithPasskey())
-  }, [applySignIn])
+  const loginWithPasskey = useCallback(
+    async () => applySignIn(await signInWithPasskey()),
+    [applySignIn],
+  )
 
   // The storage is cleared whether or not the server heard the sign-out: the
   // person clicking it is leaving this browser either way. So is the push

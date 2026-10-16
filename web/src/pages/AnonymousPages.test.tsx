@@ -87,7 +87,7 @@ beforeEach(() => {
 })
 
 describe.each([
-  { name: 'login', url: '/login', path: '/login', page: <LoginPage /> },
+  { name: 'login', url: '/login', path: '/login', page: <LoginPage routes={[]} /> },
   // The bare /register asks nothing at all; through an upload link it shows the
   // form, which reads the instance's mail flag.
   {

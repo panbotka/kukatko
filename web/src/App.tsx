@@ -216,6 +216,63 @@ const PROJECT_ROUTES = (
 const PROJECT_ROUTE_OBJECTS = createRoutesFromChildren(PROJECT_ROUTES)
 
 /**
+ * Every page that needs a session, mounted under {@link RequireAuth} by
+ * {@link AppRoutes}: the front door, the chooser, the share landing, every
+ * project's pages under `/p/:slug` and the instance's own (the account and the
+ * maintainer-only operations), with the legacy forwarder catching the rest.
+ * Defined apart so the sign-in screen can be handed it as route objects
+ * ({@link GUARDED_ROUTE_OBJECTS}) and judge whether a return address is one the
+ * account that just signed in may use — against the same gates the pages
+ * themselves apply.
+ */
+const GUARDED_ROUTES = (
+  <>
+    {/* The front door: into the project the account works in, or to the
+        chooser when there is no single one to pick. */}
+    <Route path="/" element={<EntryRedirect />} />
+    <Route path="/projects" element={<ProjectsPage />} />
+    {/* Where the phone's share sheet lands. Instance-level like the chooser
+        above: the share carries no project, so the page names the one
+        the files go into, or asks which when the account has several,
+        before anything is uploaded. */}
+    <Route path={SHARE_TARGET_PATH} element={<ShareTargetPage />} />
+    <Route path="/p/:slug" element={<ProjectGate />}>
+      {PROJECT_ROUTES}
+    </Route>
+    <Route element={<Layout />}>
+      <Route path="/account" element={<AccountPage />} />
+      {/* One user's own actions, from the audit trail narrowed to them by the
+          server. No role gate: it is self-repair ("what did I just click
+          wrong?"), not the governance view of everybody, which stays admin
+          only at /audit. It lives under the account (and reads the
+          instance-wide audit trail), so it carries no project. */}
+      <Route path={ACTIVITY_PATH} element={<MyActivityPage />} />
+      {/* Operations — library upkeep and system status — are the instance's
+          own business: maintainer only, the top of the role ladder. */}
+      <Route element={<RequireRole role="maintainer" />}>
+        <Route path="/maintenance" element={<MaintenancePage />} />
+        <Route path="/system" element={<SystemStatusPage />} />
+        {/* The instance's projects and accounts: the system administrator
+            manages every library from here, member of it or not. */}
+        <Route path="/system/projects" element={<SystemProjectsPage />} />
+        <Route path="/system/projects/:slug" element={<SystemProjectPage />} />
+        <Route path="/system/users" element={<SystemUsersPage />} />
+        {/* The whole instance's trail: every project's entries and the
+            instance's own (accounts, instance roles), which no project's
+            audit page shows. */}
+        <Route path={SYSTEM_AUDIT_PATH} element={<AuditPage scope="instance" />} />
+      </Route>
+      {/* Everything else is either an address from before projects existed
+          — forwarded into the entry project — or simply unknown. */}
+      <Route path="*" element={<LegacyRedirect routes={PROJECT_ROUTE_OBJECTS} />} />
+    </Route>
+  </>
+)
+
+/** {@link GUARDED_ROUTES} as route objects, for judging a sign-in's return address. */
+const GUARDED_ROUTE_OBJECTS = createRoutesFromChildren(GUARDED_ROUTES)
+
+/**
  * The app's route table. `/login`, `/register`, a project's registration page
  * `/p/:slug/register`, `/password-reset/:token`, the upload-link page `/u/:code`
  * and the invitation page `/invite/:code` are public; everything else is gated by {@link RequireAuth}. A library's pages
@@ -230,7 +287,7 @@ const PROJECT_ROUTE_OBJECTS = createRoutesFromChildren(PROJECT_ROUTES)
 export function AppRoutes() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
+      <Route path="/login" element={<LoginPage routes={GUARDED_ROUTE_OBJECTS} />} />
       {/* Self-service registration, public like sign-in: the whole point is that
           nobody signed in yet. Every account joins a project, so the instance's
           /register only serves invitations and upload links, forwards
@@ -254,47 +311,7 @@ export function AppRoutes() {
           signed out it offers registering through it or signing in first. It
           belongs to no project until the invite is accepted. */}
       <Route path="/invite/:code" element={<InvitePage />} />
-      <Route element={<RequireAuth />}>
-        {/* The front door: into the project the account works in, or to the
-            chooser when there is no single one to pick. */}
-        <Route path="/" element={<EntryRedirect />} />
-        <Route path="/projects" element={<ProjectsPage />} />
-        {/* Where the phone's share sheet lands. Instance-level like the chooser
-            above: the share carries no project, so the page names the one
-            the files go into, or asks which when the account has several,
-            before anything is uploaded. */}
-        <Route path={SHARE_TARGET_PATH} element={<ShareTargetPage />} />
-        <Route path="/p/:slug" element={<ProjectGate />}>
-          {PROJECT_ROUTES}
-        </Route>
-        <Route element={<Layout />}>
-          <Route path="/account" element={<AccountPage />} />
-          {/* One user's own actions, from the audit trail narrowed to them by the
-              server. No role gate: it is self-repair ("what did I just click
-              wrong?"), not the governance view of everybody, which stays admin
-              only at /audit. It lives under the account (and reads the
-              instance-wide audit trail), so it carries no project. */}
-          <Route path={ACTIVITY_PATH} element={<MyActivityPage />} />
-          {/* Operations — library upkeep and system status — are the instance's
-              own business: maintainer only, the top of the role ladder. */}
-          <Route element={<RequireRole role="maintainer" />}>
-            <Route path="/maintenance" element={<MaintenancePage />} />
-            <Route path="/system" element={<SystemStatusPage />} />
-            {/* The instance's projects and accounts: the system administrator
-                manages every library from here, member of it or not. */}
-            <Route path="/system/projects" element={<SystemProjectsPage />} />
-            <Route path="/system/projects/:slug" element={<SystemProjectPage />} />
-            <Route path="/system/users" element={<SystemUsersPage />} />
-            {/* The whole instance's trail: every project's entries and the
-                instance's own (accounts, instance roles), which no project's
-                audit page shows. */}
-            <Route path={SYSTEM_AUDIT_PATH} element={<AuditPage scope="instance" />} />
-          </Route>
-          {/* Everything else is either an address from before projects existed
-              — forwarded into the entry project — or simply unknown. */}
-          <Route path="*" element={<LegacyRedirect routes={PROJECT_ROUTE_OBJECTS} />} />
-        </Route>
-      </Route>
+      <Route element={<RequireAuth />}>{GUARDED_ROUTES}</Route>
     </Routes>
   )
 }
