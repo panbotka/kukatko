@@ -34,7 +34,7 @@ func RenderProjectSetup(d ProjectSetupData) Rendered {
 		Template: TemplateProjectSetup,
 		Subject:  "Byl pro vás založen projekt „" + d.ProjectName + "“ v Kukátku",
 		Body: body(
-			greeting(d.DisplayName),
+			greeting,
 			"",
 			"byl pro vás založen projekt „"+d.ProjectName+"“ v Kukátku a jste jeho správce.",
 			"Nastavte si heslo:",
@@ -69,7 +69,7 @@ func RenderProjectAdminAdded(d ProjectAdminAddedData) Rendered {
 		Template: TemplateProjectAdminAdded,
 		Subject:  "Byl pro vás založen projekt „" + d.ProjectName + "“ v Kukátku",
 		Body: body(
-			greeting(d.DisplayName),
+			greeting,
 			"",
 			"byl pro vás založen projekt „"+d.ProjectName+"“ v Kukátku a jste jeho správce.",
 			"Přihlaste se svým účtem „"+d.Username+"“, projekt otevřete tady:",

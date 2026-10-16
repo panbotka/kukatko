@@ -201,7 +201,7 @@ func TestRun_onePairOneMail(t *testing.T) {
 	if !slices.Equal(q.standing.asked, wantAsked) {
 		t.Errorf("standing asked about %+v, want %+v", q.standing.asked, wantAsked)
 	}
-	if sent[0].To != "a@example.com" || sent[0].Subject != "Kukátko · Knihovna v: Čekají na tebe 2 úkoly" {
+	if sent[0].To != "a@example.com" || sent[0].Subject != "Kukátko · Knihovna v: Čekají na vás 2 úkoly" {
 		t.Errorf("first mail = %q %q, want a's two tasks, the subject naming the project", sent[0].To, sent[0].Subject)
 	}
 	if !strings.Contains(sent[0].Body, "Projekt Knihovna v\n\n- Otázka A (čeká na odpověď)\n"+

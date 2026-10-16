@@ -117,7 +117,7 @@ func TestHandle_rendersEveryTemplate(t *testing.T) {
 		{
 			name:     "tagged",
 			mail:     Tagged("jan@example.com", mailer.TaggedData{Count: 3, URL: "https://kukatko.example/n/nt1"}),
-			wantBody: "označil na 3 fotkách.\n\nPodívat se na ně můžeš tady:\n\nhttps://kukatko.example/n/nt1",
+			wantBody: "označil na 3 fotkách.\n\nPodívat se na ně můžete tady:\n\nhttps://kukatko.example/n/nt1",
 		},
 		{
 			name: "generic notification",

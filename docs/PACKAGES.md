@@ -6702,32 +6702,36 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     (`ProjectAdminAddedData{DisplayName,ProjectName,Username,ProjectURL}` — for an existing account: the
     project's link, no password link). The `Template*` name
     constants exist so a log or audit line can say which message went out without repeating its subject. Two
-    details the tests pin: an empty display name degrades to the impersonal `Dobrý den,` rather than greeting a
-    blank, and `ValidFor` is rendered with the **Czech plural rule** in the largest unit it divides evenly into
-    (`jednu hodinu`, `2 hodiny`, `7 dnů`), with a non-positive duration falling back to
+    details the tests pin: every mail opens with the bare `Dobrý den,` — never the display name, whose
+    vocative cannot be derived and whose nominative reads wrong — and `ValidFor` is rendered with the
+    **Czech plural rule** in the largest unit it divides evenly into (`jednu hodinu`, `2 hodiny`, `7 dnů`), with a non-positive duration falling back to
     `Odkaz má omezenou platnost.` instead of printing a zero. The fifth, `RenderTasksWaitingDigest`
     (`TasksWaitingDigestData{DisplayName,Total,Tasks []DigestTask{Title,State,URL},QueueURL}`), is the
-    daily digest of tasks waiting on a person: subject `Čeká na tebe N úkolů` (the verb and the noun follow
-    the plural rule — `Čeká na tebe 1 úkol`, `Čekají na tebe 3 úkoly`), one line per listed task with its
+    daily digest of tasks waiting on a person: subject `Čeká na vás N úkolů` (the verb and the noun follow
+    the plural rule — `Čeká na vás 1 úkol`, `Čekají na vás 3 úkoly`), one line per listed task with its
     state in the queue's own words (`čeká na odpověď`/`pracuje se`/`ke schválení`, an unknown state printed
     as it is) and its absolute link, `…a dalších M úkolů.` when the list was cut, and the link to
-    `/tasks?waiting=1`. It is **informal** (`Ahoj, …`) like the queue in the app, unlike the account mails.
+    `/tasks?waiting=1`. It is formal like every mail, although the queue in the app says „na tebe".
+    **One register for every e-mail:** all templates speak the formal „vy" (`Dobrý den,`, „vás", „můžete"),
+    since a mail may reach somebody the sender does not know; the app UI keeps its own voice.
+    `templates_register_test.go` renders every template and fails on an informal word („Ahoj", „tě", „ti",
+    „můžeš", „sis"…) in a subject or body, and on a greeting that names the recipient.
     The sixth, `RenderUsernameChanged` (`UsernameChangedData{DisplayName,Username,SignInURL}`), tells somebody an
     administrator renamed their account: the new name in the subject and the body, that the password stays the
     same, and the sign-in link — left out entirely when `SignInURL` is blank.
-    The last three are the **e-mail channel of the notification kinds** (`templates_notification.go`, all
-    informal and closed by a footer saying the mail was switched on in the notification settings and can be
-    switched off there): `RenderTagged` (`TaggedData{DisplayName,Count,URL,Groups}` — "označil na jedné
+    The last three are the **e-mail channel of the notification kinds** (`templates_notification.go`, each
+    closed by the footer „Tento e-mail vám chodí, protože jste si ho zapnul(a) v nastavení oznámení… Tam ho
+    můžete i vypnout."): `RenderTagged` (`TaggedData{DisplayName,Count,URL,Groups}` — "označil na jedné
     fotce / 3 fotkách", subject „Označili vás na fotce/fotkách", the link to the notification's page; with
     `Groups` (`TaggedGroup{Album,Count,URL}`, the tagging window split by album) one mail all the same: the
     total, "Podle alb:", then one line per album — title, "5 fotek" and its link — and the photos outside
     the albums last as "Další fotky", `Groups` winning over `URL`), `RenderAlbumFeatured`
     (`AlbumFeaturedData{DisplayName,Title,URL}` — subject „Nové doporučené album: <title>", the album is
     on the homepage, the link to it; a blank title reads „(bez názvu)"), `RenderTaskAssigned`
-    (`TaskAssignedData{DisplayName,Who,Title,URL}` — subject „<who> tě přidal(a) k úkolu: <title>", the
-    body „v Kukátku tě <who> přidal(a) k úkolu „<title>"." and the link to the task; a blank `Who` reads
+    (`TaskAssignedData{DisplayName,Who,Title,URL}` — subject „<who> vás přidal(a) k úkolu: <title>", the
+    body „v Kukátku vás <who> přidal(a) k úkolu „<title>"." and the link to the task; a blank `Who` reads
     „Někdo", a blank title „(bez názvu)"), `RenderCommentMention`
-    (`CommentMentionData{DisplayName,Who,OnTask,Title,Excerpt,URL}` — subject „<who> tě zmínil(a) v
+    (`CommentMentionData{DisplayName,Who,OnTask,Title,Excerpt,URL}` — subject „<who> vás zmínil(a) v
     komentáři u úkolu „<title>"" / „u fotky „<title>"" / bare „u fotky" for an untitled photo, the excerpt
     indented as a quote, the link to the comment) and the
     generic `RenderNotification` (`NotificationData{DisplayName,Title,Body,URL}` — the title as the subject,

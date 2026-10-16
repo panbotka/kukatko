@@ -62,8 +62,7 @@ func (r Rendered) Message(to string) Message {
 }
 
 // RegistrationReceivedData is what the "registration received" message needs:
-// who registered (DisplayName may be empty — then the greeting is impersonal),
-// under which username and into which project.
+// who registered, under which username and into which project.
 //
 // ProjectName is the project the registration asked to join; the subject and
 // the body name it. Empty (a mail queued before projects) names none.
@@ -81,7 +80,7 @@ func RenderRegistrationReceived(d RegistrationReceivedData) Rendered {
 		Template: TemplateRegistrationReceived,
 		Subject:  InProject(d.ProjectName, "Registrace do Kukátka čeká na schválení"),
 		Body: body(
-			greeting(d.DisplayName),
+			greeting,
 			"",
 			"vaši registraci "+intoKukatko(d.ProjectName)+" jsme přijali. Účet „"+d.Username+"“ je založený,",
 			"zatím ale není aktivní — musí ho nejdřív schválit správce.",
@@ -118,7 +117,7 @@ func RenderAccountApproved(d AccountApprovedData) Rendered {
 			Template: TemplateAccountApproved,
 			Subject:  "Váš účet v Kukátku byl schválen",
 			Body: body(
-				greeting(d.DisplayName),
+				greeting,
 				"",
 				"váš účet v Kukátku je od teď aktivní. Přihlásit se můžete tady:",
 				"",
@@ -136,7 +135,7 @@ func RenderAccountApproved(d AccountApprovedData) Rendered {
 		Template: TemplateAccountApproved,
 		Subject:  "Přístup do projektu „" + d.ProjectName + "“ v Kukátku byl schválen",
 		Body: body(
-			greeting(d.DisplayName),
+			greeting,
 			"",
 			"správce vás schválil jako člena projektu „"+d.ProjectName+"“ v Kukátku.",
 			"Projekt otevřete tady:",
@@ -164,7 +163,7 @@ type UsernameChangedData struct {
 // pure function of d.
 func RenderUsernameChanged(d UsernameChangedData) Rendered {
 	lines := []string{
-		greeting(d.DisplayName),
+		greeting,
 		"",
 		"správce změnil uživatelské jméno vašeho účtu v Kukátku. Od teď se",
 		"přihlašujete jménem „" + d.Username + "“; heslo zůstává stejné.",
@@ -198,7 +197,7 @@ type NewRegistrationPendingData struct {
 // printing a label with no address. It is a pure function of d.
 func RenderNewRegistrationPending(d NewRegistrationPendingData) Rendered {
 	lines := []string{
-		"Dobrý den,",
+		greeting,
 		"",
 		intoKukatko(d.ProjectName) + " se zaregistroval nový uživatel a čeká na schválení:",
 		"",
@@ -236,7 +235,7 @@ func RenderPasswordReset(d PasswordResetData) Rendered {
 		Template: TemplatePasswordReset,
 		Subject:  "Obnovení hesla do Kukátka",
 		Body: body(
-			greeting(d.DisplayName),
+			greeting,
 			"",
 			"na této adrese si můžete nastavit nové heslo do Kukátka:",
 			"",
@@ -277,16 +276,16 @@ type TasksWaitingDigestData struct {
 }
 
 // RenderTasksWaitingDigest builds the once-a-day message listing the open tasks
-// whose move is the recipient's. It is a pure function of d. The register is
-// informal, like the task queue in the app ("Na mně", "3 úkoly čekají na
-// tebe"), and unlike the account mails — those speak to a stranger, this one to
-// somebody already at work in the library.
+// whose move is the recipient's. It is a pure function of d. Like every mail it
+// speaks formally ("na vás čekají"), even though the task queue in the app says
+// "na tebe": a mail may reach somebody the sender does not know, and one voice
+// across all of them reads better than a voice per template.
 func RenderTasksWaitingDigest(d TasksWaitingDigestData) Rendered {
 	lines := []string{
-		informalGreeting(d.DisplayName),
+		greeting,
 		"",
 		// The project is named by the heading under this line, not twice.
-		"v Kukátku na tebe " + waitVerb(d.Total) + " " + taskCount(d.Total) + ":",
+		"v Kukátku na vás " + waitVerb(d.Total) + " " + taskCount(d.Total) + ":",
 		"",
 	}
 	if name := strings.TrimSpace(d.ProjectName); name != "" {
@@ -303,13 +302,13 @@ func RenderTasksWaitingDigest(d TasksWaitingDigestData) Rendered {
 	}
 	lines = append(lines,
 		"",
-		"Všechno, co na tebe čeká: "+d.QueueURL,
+		"Všechno, co na vás čeká: "+d.QueueURL,
 		"",
 		signature,
 	)
 	return Rendered{
 		Template: TemplateTasksWaitingDigest,
-		Subject:  InProject(d.ProjectName, capitalize(waitVerb(d.Total))+" na tebe "+taskCount(d.Total)),
+		Subject:  InProject(d.ProjectName, capitalize(waitVerb(d.Total))+" na vás "+taskCount(d.Total)),
 		Body:     body(lines...),
 	}
 }
@@ -364,16 +363,6 @@ func taskStateWords(state string) string {
 	}
 }
 
-// informalGreeting opens a message to somebody at work in the library, falling
-// back to a bare "Ahoj," when the display name is empty.
-func informalGreeting(name string) string {
-	trimmed := strings.TrimSpace(name)
-	if trimmed == "" {
-		return "Ahoj,"
-	}
-	return "Ahoj, " + trimmed + ","
-}
-
 // InProject is a mail's subject naming the project it is about:
 // "Kukátko · Veselice: Označili vás na fotkách". A recipient in several
 // projects sorts the mail by the project before they open it. An empty project
@@ -414,15 +403,13 @@ func body(lines ...string) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
-// greeting opens a message addressed to name, falling back to an impersonal
-// greeting when the display name is empty — better than greeting a blank.
-func greeting(name string) string {
-	trimmed := strings.TrimSpace(name)
-	if trimmed == "" {
-		return "Dobrý den,"
-	}
-	return "Dobrý den, " + trimmed + ","
-}
+// greeting opens every message, in the formal register all of them share. It
+// is "Dobrý den," whatever the display name: a Czech greeting wants the name in
+// the vocative ("Dobrý den, Pavlo,"), which cannot be derived reliably from a
+// free-form display name, and the nominative ("Dobrý den, Pavla Pětková,")
+// reads wrong. The name stays in the data structs, so a queued job's payload
+// keeps decoding; the greeting just does not print it.
+const greeting = "Dobrý den,"
 
 // orDash renders an empty value as an em dash, so a listing line never ends in a
 // colon with nothing behind it.

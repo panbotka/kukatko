@@ -42,7 +42,7 @@ func RenderTagged(d TaggedData) Rendered {
 	if d.Count == 1 {
 		subject = taggedSubjectOne
 	}
-	lines := []string{informalGreeting(d.DisplayName), ""}
+	lines := []string{greeting, ""}
 	switch {
 	case len(d.Groups) > 0:
 		lines = append(lines, inKukatko(d.ProjectName)+" vás někdo označil na "+photos+". Podle alb:")
@@ -55,7 +55,7 @@ func RenderTagged(d TaggedData) Rendered {
 	default:
 		lines = append(lines, inKukatko(d.ProjectName)+" vás někdo označil na "+photos+".")
 		if url := strings.TrimSpace(d.URL); url != "" {
-			lines = append(lines, "", "Podívat se na ně můžeš tady:", "", url)
+			lines = append(lines, "", "Podívat se na ně můžete tady:", "", url)
 		}
 	}
 	lines = append(lines, "", notificationFooter, "", signature)
@@ -96,7 +96,7 @@ type NotificationData struct {
 // the message, under a line naming the project. It is what lets a new kind be
 // mailed from the day it exists. It is a pure function of d.
 func RenderNotification(d NotificationData) Rendered {
-	lines := []string{informalGreeting(d.DisplayName), ""}
+	lines := []string{greeting, ""}
 	if name := strings.TrimSpace(d.ProjectName); name != "" {
 		lines = append(lines, "Z projektu „"+name+"“ v Kukátku:", "")
 	}
@@ -118,8 +118,8 @@ func RenderNotification(d NotificationData) Rendered {
 
 // notificationFooter closes every notification mail: it says why the message
 // came and where to stop it, because the recipient chose it and can unchoose it.
-const notificationFooter = "Tenhle e-mail ti chodí, protože sis ho zapnul(a) v nastavení oznámení\n" +
-	"v Kukátku (Účet → Oznámení). Tam ho můžeš i vypnout."
+const notificationFooter = "Tento e-mail vám chodí, protože jste si ho zapnul(a) v nastavení oznámení\n" +
+	"v Kukátku (Účet → Oznámení). Tam ho můžete i vypnout."
 
 // AlbumFeaturedData is what the "a new album is featured" message needs: whom
 // to greet, the album's title and the absolute link to the album. An empty URL
@@ -142,11 +142,11 @@ func RenderAlbumFeatured(d AlbumFeaturedData) Rendered {
 		title = untitled
 	}
 	lines := []string{
-		informalGreeting(d.DisplayName), "",
+		greeting, "",
 		inKukatko(d.ProjectName) + " je na úvodní stránce nově doporučené album " + title + ".",
 	}
 	if url := strings.TrimSpace(d.URL); url != "" {
-		lines = append(lines, "", "Podívat se na něj můžeš tady:", "", url)
+		lines = append(lines, "", "Podívat se na něj můžete tady:", "", url)
 	}
 	lines = append(lines, "", notificationFooter, "", signature)
 	return Rendered{
@@ -181,16 +181,16 @@ func RenderTaskAssigned(d TaskAssignedData) Rendered {
 		title = untitled
 	}
 	lines := []string{
-		informalGreeting(d.DisplayName), "",
-		inKukatko(d.ProjectName) + " tě " + who + " přidal(a) k úkolu „" + title + "“.",
+		greeting, "",
+		inKukatko(d.ProjectName) + " vás " + who + " přidal(a) k úkolu „" + title + "“.",
 	}
 	if url := strings.TrimSpace(d.URL); url != "" {
-		lines = append(lines, "", "Podívat se na něj a odpovědět můžeš tady:", "", url)
+		lines = append(lines, "", "Podívat se na něj a odpovědět můžete tady:", "", url)
 	}
 	lines = append(lines, "", notificationFooter, "", signature)
 	return Rendered{
 		Template: TemplateTaskAssigned,
-		Subject:  InProject(d.ProjectName, who+" tě přidal(a) k úkolu: "+title),
+		Subject:  InProject(d.ProjectName, who+" vás přidal(a) k úkolu: "+title),
 		Body:     body(lines...),
 	}
 }
@@ -226,19 +226,19 @@ func RenderCommentMention(d CommentMentionData) Rendered {
 	}
 	place := mentionPlace(d)
 	lines := []string{
-		informalGreeting(d.DisplayName), "",
-		inKukatko(d.ProjectName) + " tě " + who + " zmínil(a) v komentáři u " + place + ":",
+		greeting, "",
+		inKukatko(d.ProjectName) + " vás " + who + " zmínil(a) v komentáři u " + place + ":",
 	}
 	if excerpt := strings.TrimSpace(d.Excerpt); excerpt != "" {
 		lines = append(lines, "", "    "+excerpt)
 	}
 	if url := strings.TrimSpace(d.URL); url != "" {
-		lines = append(lines, "", "Podívat se na komentář můžeš tady:", "", url)
+		lines = append(lines, "", "Podívat se na komentář můžete tady:", "", url)
 	}
 	lines = append(lines, "", notificationFooter, "", signature)
 	return Rendered{
 		Template: TemplateCommentMention,
-		Subject:  InProject(d.ProjectName, who+" tě zmínil(a) v komentáři u "+place),
+		Subject:  InProject(d.ProjectName, who+" vás zmínil(a) v komentáři u "+place),
 		Body:     body(lines...),
 	}
 }

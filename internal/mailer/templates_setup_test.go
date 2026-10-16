@@ -23,7 +23,7 @@ func TestRenderProjectSetup(t *testing.T) {
 				SetPasswordURL: "https://k.example/password-reset/tok?project=rodina", ValidFor: 7 * 24 * time.Hour,
 			},
 			wantSubject: "Byl pro vás založen projekt „Rodina“ v Kukátku",
-			wantBody: "Dobrý den, Jana Nováková,\n\nbyl pro vás založen projekt „Rodina“ v Kukátku a jste jeho správce.\n" +
+			wantBody: "Dobrý den,\n\nbyl pro vás založen projekt „Rodina“ v Kukátku a jste jeho správce.\n" +
 				"Nastavte si heslo:\n\nhttps://k.example/password-reset/tok?project=rodina\n\n" +
 				"Odkaz platí 7 dnů. Použít se dá jen jednou.\nPřihlašovací jméno: jana\n\n" +
 				"Po nastavení hesla se přihlaste a otevře se vám rovnou váš projekt.\n\nKukátko\n",
@@ -69,7 +69,7 @@ func TestRenderProjectAdminAdded(t *testing.T) {
 	if want := "Byl pro vás založen projekt „Rodina“ v Kukátku"; got.Subject != want {
 		t.Errorf("Subject = %q, want %q", got.Subject, want)
 	}
-	want := "Dobrý den, Petr,\n\nbyl pro vás založen projekt „Rodina“ v Kukátku a jste jeho správce.\n" +
+	want := "Dobrý den,\n\nbyl pro vás založen projekt „Rodina“ v Kukátku a jste jeho správce.\n" +
 		"Přihlaste se svým účtem „petr“, projekt otevřete tady:\n\nhttps://k.example/p/rodina/\n\nKukátko\n"
 	if got.Body != want {
 		t.Errorf("Body =\n%q\nwant\n%q", got.Body, want)

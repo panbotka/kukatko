@@ -24,12 +24,12 @@ func TestRenderTasksWaitingDigest(t *testing.T) {
 	if got.Template != TemplateTasksWaitingDigest {
 		t.Errorf("Template = %q, want %q", got.Template, TemplateTasksWaitingDigest)
 	}
-	if want := "Čeká na tebe 7 úkolů"; got.Subject != want {
+	if want := "Čeká na vás 7 úkolů"; got.Subject != want {
 		t.Errorf("Subject = %q, want %q", got.Subject, want)
 	}
-	want := "Ahoj, Jan Novák,\n" +
+	want := "Dobrý den,\n" +
 		"\n" +
-		"v Kukátku na tebe čeká 7 úkolů:\n" +
+		"v Kukátku na vás čeká 7 úkolů:\n" +
 		"\n" +
 		"- Kdy byl dům přestavěn? (čeká na odpověď)\n" +
 		"  https://kukatko.example.com/tasks/tk-1\n" +
@@ -38,7 +38,7 @@ func TestRenderTasksWaitingDigest(t *testing.T) {
 		"\n" +
 		"…a dalších 5 úkolů.\n" +
 		"\n" +
-		"Všechno, co na tebe čeká: https://kukatko.example.com/tasks?waiting=1\n" +
+		"Všechno, co na vás čeká: https://kukatko.example.com/tasks?waiting=1\n" +
 		"\n" +
 		"Kukátko\n"
 	if got.Body != want {
@@ -57,12 +57,12 @@ func TestRenderTasksWaitingDigest_projectHeading(t *testing.T) {
 		Tasks:    []DigestTask{{Title: "Rok?", State: "question", URL: "https://k.example/p/v/tasks/tk-1"}},
 		QueueURL: "https://k.example/p/v/tasks?waiting=1",
 	}
-	want := "v Kukátku na tebe čeká 1 úkol:\n\nProjekt Veselice\n\n- Rok? (čeká na odpověď)\n"
+	want := "v Kukátku na vás čeká 1 úkol:\n\nProjekt Veselice\n\n- Rok? (čeká na odpověď)\n"
 	got := RenderTasksWaitingDigest(data)
 	if !strings.Contains(got.Body, want) {
 		t.Errorf("Body =\n%s\nwant it to contain %q", got.Body, want)
 	}
-	if wantSubject := "Kukátko · Veselice: Čeká na tebe 1 úkol"; got.Subject != wantSubject {
+	if wantSubject := "Kukátko · Veselice: Čeká na vás 1 úkol"; got.Subject != wantSubject {
 		t.Errorf("Subject = %q, want %q", got.Subject, wantSubject)
 	}
 	data.ProjectName = ""
@@ -70,7 +70,7 @@ func TestRenderTasksWaitingDigest_projectHeading(t *testing.T) {
 	if strings.Contains(got.Body, "Projekt") {
 		t.Errorf("Body without a project name = %q, want no heading", got.Body)
 	}
-	if got.Subject != "Čeká na tebe 1 úkol" {
+	if got.Subject != "Čeká na vás 1 úkol" {
 		t.Errorf("Subject without a project name = %q", got.Subject)
 	}
 }
@@ -91,29 +91,29 @@ func TestRenderTasksWaitingDigest_counts(t *testing.T) {
 	}{
 		{
 			name: "one task", total: 1, listed: 1,
-			wantSubject: "Čeká na tebe 1 úkol", wantOpening: "v Kukátku na tebe čeká 1 úkol:",
+			wantSubject: "Čeká na vás 1 úkol", wantOpening: "v Kukátku na vás čeká 1 úkol:",
 		},
 		{
 			name: "three tasks take the plural verb", total: 3, listed: 3,
-			wantSubject: "Čekají na tebe 3 úkoly", wantOpening: "v Kukátku na tebe čekají 3 úkoly:",
+			wantSubject: "Čekají na vás 3 úkoly", wantOpening: "v Kukátku na vás čekají 3 úkoly:",
 		},
 		{
 			name: "five tasks", total: 5, listed: 5,
-			wantSubject: "Čeká na tebe 5 úkolů", wantOpening: "v Kukátku na tebe čeká 5 úkolů:",
+			wantSubject: "Čeká na vás 5 úkolů", wantOpening: "v Kukátku na vás čeká 5 úkolů:",
 		},
 		{
 			name: "one more than listed", total: 4, listed: 3,
-			wantSubject: "Čekají na tebe 4 úkoly", wantOpening: "v Kukátku na tebe čekají 4 úkoly:",
+			wantSubject: "Čekají na vás 4 úkoly", wantOpening: "v Kukátku na vás čekají 4 úkoly:",
 			wantTail: "…a další 1 úkol.",
 		},
 		{
 			name: "three more than listed", total: 6, listed: 3,
-			wantSubject: "Čeká na tebe 6 úkolů", wantOpening: "v Kukátku na tebe čeká 6 úkolů:",
+			wantSubject: "Čeká na vás 6 úkolů", wantOpening: "v Kukátku na vás čeká 6 úkolů:",
 			wantTail: "…a další 3 úkoly.",
 		},
 		{
 			name: "many more than listed", total: 30, listed: 20,
-			wantSubject: "Čeká na tebe 30 úkolů", wantOpening: "v Kukátku na tebe čeká 30 úkolů:",
+			wantSubject: "Čeká na vás 30 úkolů", wantOpening: "v Kukátku na vás čeká 30 úkolů:",
 			wantTail: "…a dalších 10 úkolů.",
 		},
 	}
@@ -145,7 +145,7 @@ func TestRenderTasksWaitingDigest_counts(t *testing.T) {
 }
 
 // TestRenderTasksWaitingDigest_emptyNameAndUnknownState verifies the greeting
-// degrades to a bare "Ahoj," and an unknown state is printed as it is rather
+// is the bare "Dobrý den," and an unknown state is printed as it is rather
 // than dropped.
 func TestRenderTasksWaitingDigest_emptyNameAndUnknownState(t *testing.T) {
 	t.Parallel()
@@ -154,7 +154,7 @@ func TestRenderTasksWaitingDigest_emptyNameAndUnknownState(t *testing.T) {
 		Total: 1,
 		Tasks: []DigestTask{{Title: "  Otázka  ", State: "odd", URL: "/tasks/tk-1"}},
 	})
-	if !strings.HasPrefix(got.Body, "Ahoj,\n\n") {
+	if !strings.HasPrefix(got.Body, "Dobrý den,\n\n") {
 		t.Errorf("Body = %q, want it to open with a bare greeting", got.Body)
 	}
 	if !strings.Contains(got.Body, "- Otázka (odd)\n  /tasks/tk-1\n") {

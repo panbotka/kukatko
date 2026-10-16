@@ -19,7 +19,7 @@ func TestRenderRegistrationReceived(t *testing.T) {
 	if want := "Registrace do Kukátka čeká na schválení"; got.Subject != want {
 		t.Errorf("Subject = %q, want %q", got.Subject, want)
 	}
-	want := "Dobrý den, Jan Novák,\n" +
+	want := "Dobrý den,\n" +
 		"\n" +
 		"vaši registraci do Kukátka jsme přijali. Účet „jan“ je založený,\n" +
 		"zatím ale není aktivní — musí ho nejdřív schválit správce.\n" +
@@ -48,7 +48,7 @@ func TestRenderAccountApproved(t *testing.T) {
 	if want := "Váš účet v Kukátku byl schválen"; got.Subject != want {
 		t.Errorf("Subject = %q, want %q", got.Subject, want)
 	}
-	want := "Dobrý den, Eva,\n" +
+	want := "Dobrý den,\n" +
 		"\n" +
 		"váš účet v Kukátku je od teď aktivní. Přihlásit se můžete tady:\n" +
 		"\n" +
@@ -75,7 +75,7 @@ func TestRenderAccountApproved_namesTheProject(t *testing.T) {
 	if want := "Přístup do projektu „Hasiči“ v Kukátku byl schválen"; got.Subject != want {
 		t.Errorf("Subject = %q, want %q", got.Subject, want)
 	}
-	want := "Dobrý den, Eva,\n" +
+	want := "Dobrý den,\n" +
 		"\n" +
 		"správce vás schválil jako člena projektu „Hasiči“ v Kukátku.\n" +
 		"Projekt otevřete tady:\n" +
@@ -113,7 +113,7 @@ func TestRenderUsernameChanged(t *testing.T) {
 			data: UsernameChangedData{
 				DisplayName: "Jan", Username: "jan.novak", SignInURL: "https://kukatko.example.com/login",
 			},
-			want: "Dobrý den, Jan,\n\n" + intro +
+			want: "Dobrý den,\n\n" + intro +
 				"\nPřihlásit se můžete tady:\n\nhttps://kukatko.example.com/login\n\nKukátko\n",
 		},
 		{
@@ -210,7 +210,7 @@ func TestRenderPasswordReset(t *testing.T) {
 	if want := "Obnovení hesla do Kukátka"; got.Subject != want {
 		t.Errorf("Subject = %q, want %q", got.Subject, want)
 	}
-	want := "Dobrý den, Jan,\n" +
+	want := "Dobrý den,\n" +
 		"\n" +
 		"na této adrese si můžete nastavit nové heslo do Kukátka:\n" +
 		"\n" +
@@ -238,30 +238,6 @@ func TestRenderPasswordReset_unknownValidity(t *testing.T) {
 	}
 	if !strings.HasPrefix(got.Body, "Dobrý den,\n") {
 		t.Errorf("Body =\n%s\nwant the impersonal greeting", got.Body)
-	}
-}
-
-// TestGreeting covers the personal and impersonal openings.
-func TestGreeting(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{name: "with a name", in: "Jan", want: "Dobrý den, Jan,"},
-		{name: "trims", in: "  Jan  ", want: "Dobrý den, Jan,"},
-		{name: "empty", in: "", want: "Dobrý den,"},
-		{name: "blank", in: "   ", want: "Dobrý den,"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := greeting(tt.in); got != tt.want {
-				t.Errorf("greeting(%q) = %q, want %q", tt.in, got, tt.want)
-			}
-		})
 	}
 }
 

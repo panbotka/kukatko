@@ -14,11 +14,11 @@ func TestRenderTagged(t *testing.T) {
 	if got.Template != TemplateTagged || got.Subject != taggedSubjectOne {
 		t.Errorf("template %q, subject %q", got.Template, got.Subject)
 	}
-	want := "Ahoj, Anna,\n" +
+	want := "Dobrý den,\n" +
 		"\n" +
 		"v Kukátku vás někdo označil na jedné fotce.\n" +
 		"\n" +
-		"Podívat se na ně můžeš tady:\n" +
+		"Podívat se na ně můžete tady:\n" +
 		"\n" +
 		"https://kukatko.example/n/nt1\n" +
 		"\n" +
@@ -34,7 +34,7 @@ func TestRenderTagged(t *testing.T) {
 		if r.Subject != taggedSubject || !strings.Contains(r.Body, phrase) {
 			t.Errorf("count %d: subject %q, body %q; want %q", count, r.Subject, r.Body, phrase)
 		}
-		if strings.Contains(r.Body, "tady:") || !strings.HasPrefix(r.Body, "Ahoj,\n") {
+		if strings.Contains(r.Body, "tady:") || !strings.HasPrefix(r.Body, "Dobrý den,\n") {
 			t.Errorf("count %d without link or name: body %q", count, r.Body)
 		}
 	}
@@ -54,7 +54,7 @@ func TestRenderTagged_groups(t *testing.T) {
 	if got.Template != TemplateTagged || got.Subject != taggedSubject {
 		t.Errorf("template %q, subject %q", got.Template, got.Subject)
 	}
-	want := "Ahoj, Anna,\n" +
+	want := "Dobrý den,\n" +
 		"\n" +
 		"v Kukátku vás někdo označil na 8 fotkách. Podle alb:\n" +
 		"\n" +
@@ -92,13 +92,13 @@ func TestRenderNotification(t *testing.T) {
 	if got.Template != TemplateNotification || got.Subject != "Nové album" {
 		t.Errorf("template %q, subject %q", got.Template, got.Subject)
 	}
-	want := "Ahoj, Eva,\n\nPřibylo album Pouť.\n\nhttps://k.example/albums/a1\n\n" + notificationFooter + "\n\nKukátko\n"
+	want := "Dobrý den,\n\nPřibylo album Pouť.\n\nhttps://k.example/albums/a1\n\n" + notificationFooter + "\n\nKukátko\n"
 	if got.Body != want {
 		t.Errorf("Body =\n%q\nwant\n%q", got.Body, want)
 	}
 
 	bare := RenderNotification(NotificationData{Title: "Jen titulek"})
-	if want := "Ahoj,\n\nJen titulek\n\n" + notificationFooter + "\n\nKukátko\n"; bare.Body != want {
+	if want := "Dobrý den,\n\nJen titulek\n\n" + notificationFooter + "\n\nKukátko\n"; bare.Body != want {
 		t.Errorf("bare Body =\n%q\nwant\n%q", bare.Body, want)
 	}
 }
@@ -114,11 +114,11 @@ func TestRenderAlbumFeatured(t *testing.T) {
 	if got.Template != TemplateAlbumFeatured || got.Subject != "Nové doporučené album: Pouť 2026" {
 		t.Errorf("template %q, subject %q", got.Template, got.Subject)
 	}
-	want := "Ahoj, Anna,\n" +
+	want := "Dobrý den,\n" +
 		"\n" +
 		"v Kukátku je na úvodní stránce nově doporučené album Pouť 2026.\n" +
 		"\n" +
-		"Podívat se na něj můžeš tady:\n" +
+		"Podívat se na něj můžete tady:\n" +
 		"\n" +
 		"https://kukatko.example/albums/al1\n" +
 		"\n" +
@@ -130,7 +130,7 @@ func TestRenderAlbumFeatured(t *testing.T) {
 	}
 
 	bare := RenderAlbumFeatured(AlbumFeaturedData{Title: "  "})
-	if bare.Subject != "Nové doporučené album: (bez názvu)" || !strings.HasPrefix(bare.Body, "Ahoj,\n") {
+	if bare.Subject != "Nové doporučené album: (bez názvu)" || !strings.HasPrefix(bare.Body, "Dobrý den,\n") {
 		t.Errorf("untitled: subject %q, body %q", bare.Subject, bare.Body)
 	}
 	if strings.Contains(bare.Body, "tady:") || !strings.Contains(bare.Body, "album (bez názvu).") {
@@ -147,14 +147,14 @@ func TestRenderTaskAssigned(t *testing.T) {
 	got := RenderTaskAssigned(TaskAssignedData{
 		DisplayName: "Anna", Who: " Pan Botka ", Title: " Kdy to bylo? ", URL: "https://kukatko.example/tasks/pt1",
 	})
-	if got.Template != TemplateTaskAssigned || got.Subject != "Pan Botka tě přidal(a) k úkolu: Kdy to bylo?" {
+	if got.Template != TemplateTaskAssigned || got.Subject != "Pan Botka vás přidal(a) k úkolu: Kdy to bylo?" {
 		t.Errorf("template %q, subject %q", got.Template, got.Subject)
 	}
-	want := "Ahoj, Anna,\n" +
+	want := "Dobrý den,\n" +
 		"\n" +
-		"v Kukátku tě Pan Botka přidal(a) k úkolu „Kdy to bylo?“.\n" +
+		"v Kukátku vás Pan Botka přidal(a) k úkolu „Kdy to bylo?“.\n" +
 		"\n" +
-		"Podívat se na něj a odpovědět můžeš tady:\n" +
+		"Podívat se na něj a odpovědět můžete tady:\n" +
 		"\n" +
 		"https://kukatko.example/tasks/pt1\n" +
 		"\n" +
@@ -166,10 +166,10 @@ func TestRenderTaskAssigned(t *testing.T) {
 	}
 
 	bare := RenderTaskAssigned(TaskAssignedData{Who: " ", Title: "  "})
-	if bare.Subject != "Někdo tě přidal(a) k úkolu: (bez názvu)" || !strings.HasPrefix(bare.Body, "Ahoj,\n") {
+	if bare.Subject != "Někdo vás přidal(a) k úkolu: (bez názvu)" || !strings.HasPrefix(bare.Body, "Dobrý den,\n") {
 		t.Errorf("nameless and untitled: subject %q, body %q", bare.Subject, bare.Body)
 	}
-	if strings.Contains(bare.Body, "tady:") || !strings.Contains(bare.Body, "tě Někdo přidal(a) k úkolu „(bez názvu)“.") {
+	if strings.Contains(bare.Body, "tady:") || !strings.Contains(bare.Body, "vás Někdo přidal(a) k úkolu „(bez názvu)“.") {
 		t.Errorf("nameless and untitled without link: body %q", bare.Body)
 	}
 }
@@ -185,16 +185,16 @@ func TestRenderCommentMention(t *testing.T) {
 		Excerpt: "Hele @Anna, víš to?", URL: "https://kukatko.example/tasks/pt1#comment-cm1",
 	})
 	if got.Template != TemplateCommentMention ||
-		got.Subject != "Pan Botka tě zmínil(a) v komentáři u úkolu „Kdy to bylo?“" {
+		got.Subject != "Pan Botka vás zmínil(a) v komentáři u úkolu „Kdy to bylo?“" {
 		t.Errorf("template %q, subject %q", got.Template, got.Subject)
 	}
-	want := "Ahoj, Anna,\n" +
+	want := "Dobrý den,\n" +
 		"\n" +
-		"v Kukátku tě Pan Botka zmínil(a) v komentáři u úkolu „Kdy to bylo?“:\n" +
+		"v Kukátku vás Pan Botka zmínil(a) v komentáři u úkolu „Kdy to bylo?“:\n" +
 		"\n" +
 		"    Hele @Anna, víš to?\n" +
 		"\n" +
-		"Podívat se na komentář můžeš tady:\n" +
+		"Podívat se na komentář můžete tady:\n" +
 		"\n" +
 		"https://kukatko.example/tasks/pt1#comment-cm1\n" +
 		"\n" +
@@ -206,26 +206,26 @@ func TestRenderCommentMention(t *testing.T) {
 	}
 
 	photo := RenderCommentMention(CommentMentionData{Who: "Anna", Title: "Pouť 1987"})
-	if photo.Subject != "Anna tě zmínil(a) v komentáři u fotky „Pouť 1987“" {
+	if photo.Subject != "Anna vás zmínil(a) v komentáři u fotky „Pouť 1987“" {
 		t.Errorf("photo subject %q", photo.Subject)
 	}
 	bare := RenderCommentMention(CommentMentionData{Who: " "})
-	if bare.Subject != "Někdo tě zmínil(a) v komentáři u fotky" || !strings.HasPrefix(bare.Body, "Ahoj,\n") {
+	if bare.Subject != "Někdo vás zmínil(a) v komentáři u fotky" || !strings.HasPrefix(bare.Body, "Dobrý den,\n") {
 		t.Errorf("nameless on an untitled photo: subject %q, body %q", bare.Subject, bare.Body)
 	}
 	if strings.Contains(bare.Body, "tady:") || strings.Contains(bare.Body, "    ") {
 		t.Errorf("no link and no excerpt expected: body %q", bare.Body)
 	}
 	task := RenderCommentMention(CommentMentionData{Who: "Anna", OnTask: true})
-	if task.Subject != "Anna tě zmínil(a) v komentáři u úkolu „(bez názvu)“" {
+	if task.Subject != "Anna vás zmínil(a) v komentáři u úkolu „(bez názvu)“" {
 		t.Errorf("untitled task subject %q", task.Subject)
 	}
 	album := RenderCommentMention(CommentMentionData{Who: "Anna", OnAlbum: true, Title: "Svatba 1987"})
-	if album.Subject != "Anna tě zmínil(a) v komentáři u alba „Svatba 1987“" {
+	if album.Subject != "Anna vás zmínil(a) v komentáři u alba „Svatba 1987“" {
 		t.Errorf("album subject %q", album.Subject)
 	}
 	if bareAlbum := RenderCommentMention(CommentMentionData{Who: "Anna", OnAlbum: true}); bareAlbum.Subject !=
-		"Anna tě zmínil(a) v komentáři u alba „(bez názvu)“" {
+		"Anna vás zmínil(a) v komentáři u alba „(bez názvu)“" {
 		t.Errorf("untitled album subject %q", bareAlbum.Subject)
 	}
 }
