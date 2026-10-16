@@ -1194,18 +1194,20 @@ Verified, already optimal — no change required:
   page, cancels the previous in-flight request via `AbortController`, and ignores
   stale responses via a sequence guard; `loadMore` is a no-op while loading or at
   the end (`web/src/hooks/usePaginatedPhotos.ts`).
-- **Windowed library grid (jump cost independent of distance)**: the library does
-  *not* accumulate pages — `useWindowedPhotos`
-  (`web/src/hooks/useWindowedPhotos.ts`) sizes the grid to the result's `total`
-  from the first response and loads only the pages under the visible range
-  (`ensureRange` from `onRangeChanged`, ±`WINDOW_PREFETCH_PAGES`), aborting
-  requests a jump has travelled past and evicting down to `WINDOW_MAX_PAGES`
-  (~2 400 photos) so memory stays bounded. Unloaded slots render as placeholder
-  tiles. A timeline jump is therefore `scrollToIndex` to the month's `cumulative`
-  (counted in SQL by `GET /photos/timeline`) plus one page fetch. Measured in
-  Chromium against a seeded **20 889-photo** library, clicking the rail's oldest
-  year: **40.3 s / 102 sequential page requests → ~3.1 s**, the same as jumping
-  one month back (6.2 s → 3.2 s) — the point being that the two are now equal.
+- **Library grid: appending, prefetched half a page early**: since 2026-10-16
+  the library accumulates pages again (`usePhotoLibrary`), at the owner's
+  request — the windowed list made the scrollbar span the whole library from the
+  first response. Time to first thumbnails is unchanged (one 100-photo request,
+  as before), rows stay virtualized, and the next page is requested once the
+  visible range is within `LIBRARY_PREFETCH_PHOTOS` (50) photos of the last
+  loaded one, not when the last row reaches the screen. Back reloads the pages
+  the reader had (`initialCount`, at most `RESTORE_MAX_PAGES`) behind the
+  skeleton. The **windowed** shape (`useWindowedPhotos`: grid sized to `total`,
+  pages loaded under the visible range ±`WINDOW_PREFETCH_PAGES`, evicted down to
+  `WINDOW_MAX_PAGES`) now serves the album grid only; it was what made a timeline
+  jump cost independent of distance (measured on a 20 889-photo library: the
+  rail's oldest year **40.3 s / 102 sequential page requests → ~3.1 s**), which
+  matters again only if the rail is reworked and re-enabled.
 - **Search debounce**: `SearchPage` debounces typed queries by 350 ms (immediate
   on submit), so keystrokes don't each fire a semantic search
   (`web/src/pages/SearchPage.tsx`).

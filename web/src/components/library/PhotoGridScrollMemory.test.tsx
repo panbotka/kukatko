@@ -23,11 +23,13 @@ import { PhotoGrid } from './PhotoGrid'
 const virtuoso: {
   restoreStateFrom: StateSnapshot | undefined
   rangeChanged: ((range: ListRange) => void) | undefined
+  isScrolling: ((scrolling: boolean) => void) | undefined
   state: StateSnapshot
   scrollToIndex: ReturnType<typeof vi.fn>
 } = {
   restoreStateFrom: undefined,
   rangeChanged: undefined,
+  isScrolling: undefined,
   state: { ranges: [], scrollTop: 0 },
   scrollToIndex: vi.fn(),
 }
@@ -36,6 +38,7 @@ interface MockListProps {
   data: JustifiedRow[]
   itemContent: (index: number, row: JustifiedRow) => ReactNode
   rangeChanged?: (range: ListRange) => void
+  isScrolling?: (scrolling: boolean) => void
   restoreStateFrom?: StateSnapshot
 }
 
@@ -45,11 +48,12 @@ interface MockListProps {
 // play the part the browser plays.
 vi.mock('react-virtuoso', () => ({
   Virtuoso: forwardRef<unknown, MockListProps>(function MockList(
-    { data, itemContent, rangeChanged, restoreStateFrom },
+    { data, itemContent, rangeChanged, isScrolling, restoreStateFrom },
     ref,
   ) {
     virtuoso.restoreStateFrom = restoreStateFrom
     virtuoso.rangeChanged = rangeChanged
+    virtuoso.isScrolling = isScrolling
     useImperativeHandle(ref, () => ({
       scrollToIndex: virtuoso.scrollToIndex,
       getState: (callback: (state: StateSnapshot) => void) => {
@@ -270,6 +274,38 @@ describe('a grid page remembering where it was left', () => {
     putWindowAt(4000)
     reportRange(36, 42)
 
+    expect(virtuoso.scrollToIndex).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets a smooth restore finish before revealing, then settles where it stopped', () => {
+    writeGridScroll('u1', '/', {
+      count: PHOTOS.length,
+      scrollY: 4000,
+      snapshot: virtuosoSnapshot(3872),
+      uid: 'p40',
+    })
+
+    render(<GridPage />)
+    // The restore is an animated scroll (the root's `scroll-behavior: smooth`):
+    // a few pixels off the top is the animation starting, not the place it is
+    // going, and a reveal issued now would cancel it.
+    act(() => {
+      virtuoso.isScrolling?.(true)
+    })
+    putWindowAt(3)
+    reportRange(0, 2)
+    expect(virtuoso.scrollToIndex).not.toHaveBeenCalled()
+    // Nearly there, but still moving: the range is about to change again.
+    putWindowAt(3900)
+    reportRange(0, 2)
+    expect(virtuoso.scrollToIndex).not.toHaveBeenCalled()
+
+    // At rest the debt is settled against the rows it stopped on, with no
+    // further range change needed to trigger it.
+    putWindowAt(4000)
+    act(() => {
+      virtuoso.isScrolling?.(false)
+    })
     expect(virtuoso.scrollToIndex).toHaveBeenCalledTimes(1)
   })
 

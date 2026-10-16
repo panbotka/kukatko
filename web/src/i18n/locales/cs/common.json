@@ -975,6 +975,7 @@
     "countNoTextMatch": "Přesné shody: 0 — vizuálně nejbližší: {{count}}",
     "loading": "Načítání fotek…",
     "loadingMore": "Načítání dalších fotek…",
+    "end": "To je všechno.",
     "selectAll": "Vybrat vše",
     "filters": {
       "barLabel": "Filtry fotek",

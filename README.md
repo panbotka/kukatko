@@ -68,8 +68,10 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   there when you want to search the signs and nothing else. (Print, not handwriting — no engine here
   reads Czech cursive.)
 - **A time axis shaped like memory** — a period filter offering the decades your library actually
-  holds, each expanding to its years and then to exact dates. (The timeline rail beside the grid is
-  switched off for now while it is reworked.)
+  holds, each expanding to its years and then to exact dates. The library itself loads more as you
+  reach the bottom, says so when there is nothing more, and Back from a photo returns to the same spot
+  with everything you had scrolled through. (The timeline rail that once stood beside it is gone from
+  the library; an album keeps it, switched off while it is reworked.)
 - **Filter by who brought the photos in** — after a family event several people upload into the same
   album; the filter bar offers that album's contributors with their counts (and the imported photos as a
   group of their own), so one person's share is one click, ready to select and download. `uploader:me`,

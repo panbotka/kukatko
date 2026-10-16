@@ -15,10 +15,10 @@ import { type Photo, type PhotoListResponse, type Timeline } from '../services/p
 
 import { LibraryPage } from './LibraryPage'
 
-// Shared spy captured across renders so tests can assert the scrubber scrolled
-// the grid. Hoisted so the (hoisted) vi.mock factory can reference it.
+// Shared spy captured across renders so tests can drive and inspect the grid.
+// Hoisted so the (hoisted) vi.mock factory can reference it.
 const grid = vi.hoisted(() => ({
-  /** Every jump the page asked for, in photo indices (see the mock below). */
+  /** Every scroll the page asked for, in photo indices (see the mock below). */
   scrollToIndex: vi.fn(),
   /** Set by the mock grid: scrolls its window so the given PHOTO sits at the top. */
   scrollTo: null as ((photoIndex: number) => void) | null,
@@ -28,40 +28,22 @@ const grid = vi.hoisted(() => ({
   reportState: null as ((state: StateSnapshot) => void) | null,
 }))
 
-// The timeline rail ships switched off (TIMELINE_SCRUBBER_ENABLED). The tests of
-// its wiring into this page force it back on through this override, so they stay
-// honest for the day it is re-enabled; null means "as shipped".
-const scrubberSwitch = vi.hoisted(() => ({ enabled: null as boolean | null }))
-vi.mock('../components/library/TimelineScrubber', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../components/library/TimelineScrubber')>()
-  return {
-    ...actual,
-    get TIMELINE_SCRUBBER_ENABLED() {
-      return scrubberSwitch.enabled ?? actual.TIMELINE_SCRUBBER_ENABLED
-    },
-  }
-})
-
-/** Turns the shipped-off timeline rail on for one test (reset in `afterEach`). */
-function forceRailOn(): void {
-  scrubberSwitch.enabled = true
-}
-
 /**
- * How many photos the mock list keeps "on screen". The library hands the grid an
- * array as long as the whole result, so a mock that rendered all of it would
- * mount 20 000 nodes for the very tests that care about a big library.
+ * How many photos the mock list keeps "on screen" — well under a page, so the
+ * first page alone does not already reach the prefetch distance and the tests
+ * decide when the reader nears the end.
  */
-const MOCK_WINDOW = 100
+const MOCK_WINDOW = 30
 
 // Minimal stand-in for react-virtuoso's list: jsdom has no layout, so the real
 // virtualized list would render nothing. The photo wall virtualizes by justified
 // *row*, so this is handed rows: it renders about MOCK_WINDOW photos' worth of
-// them starting where the last `scrollToIndex` landed — which is what makes it a
-// faithful stand-in for a windowed list — reports that window through
-// `rangeChanged`, and forwards a `scrollToIndex` handle so the timeline scrubber
-// can drive it. Both the handle's record and the `scrollTo` helper speak in
-// *photo* indices; which row a photo ended up in is the grid's own business.
+// them starting where the last `scrollToIndex` landed, reports that window
+// through `rangeChanged`, calls `endReached` and renders the footer once the
+// window holds the last row — as virtuoso does — and forwards a `scrollToIndex`
+// handle so the keyboard focus can drive it. Both the handle's record and the
+// `scrollTo` helper speak in *photo* indices; which row a photo ended up in is
+// the grid's own business.
 interface MockRow {
   start: number
   tiles: { index: number }[]
@@ -71,12 +53,24 @@ interface MockListProps {
   itemContent: (index: number, row: MockRow) => ReactNode
   computeItemKey?: (index: number, row: MockRow) => string
   rangeChanged?: (range: ListRange) => void
+  endReached?: (index: number) => void
   restoreStateFrom?: StateSnapshot
   isScrolling?: (scrolling: boolean) => void
+  components?: { Footer?: (props: { context?: unknown }) => ReactNode }
+  context?: unknown
 }
 vi.mock('react-virtuoso', () => ({
   Virtuoso: forwardRef<VirtuosoHandle, MockListProps>(function MockList(
-    { data, itemContent, computeItemKey, rangeChanged, restoreStateFrom },
+    {
+      data,
+      itemContent,
+      computeItemKey,
+      rangeChanged,
+      endReached,
+      restoreStateFrom,
+      components,
+      context,
+    },
     ref,
   ) {
     const [start, setStart] = useState(0)
@@ -98,6 +92,8 @@ vi.mock('react-virtuoso', () => ({
     grid.restoredFrom = restoreStateFrom ?? null
     const rangeRef = useRef(rangeChanged)
     rangeRef.current = rangeChanged
+    const endReachedRef = useRef(endReached)
+    endReachedRef.current = endReached
     // The last row currently "on screen", for the reveal-only scroll below.
     const endRef = useRef(0)
     useImperativeHandle(ref, () => ({
@@ -113,8 +109,8 @@ vi.mock('react-virtuoso', () => ({
           first: row?.start ?? -1,
           last: row === undefined ? -1 : row.start + row.tiles.length - 1,
         })
-        // `align: 'start'` puts the row at the top (a timeline jump); a bare
-        // index only scrolls far enough to reveal it (the keyboard focus).
+        // `align: 'start'` puts the row at the top; a bare index only scrolls
+        // far enough to reveal it (the keyboard focus).
         setStart((current) => {
           if (align === 'start' || index < current) {
             return index
@@ -142,36 +138,29 @@ vi.mock('react-virtuoso', () => ({
     }
     end = Math.max(start, end - 1)
     endRef.current = end
+    const atEnd = data.length > 0 && end >= data.length - 1
     useEffect(() => {
       if (data.length > 0) {
         rangeRef.current?.({ startIndex: start, endIndex: end })
       }
-    }, [start, end, data.length])
+      if (atEnd) {
+        endReachedRef.current?.(data.length - 1)
+      }
+    }, [start, end, data.length, atEnd])
     const window = []
     for (let index = start; index <= end && index < data.length; index++) {
       const row = data[index]
       window.push(<div key={computeItemKey?.(index, row) ?? index}>{itemContent(index, row)}</div>)
     }
-    return <div data-testid="grid">{window}</div>
+    const Footer = components?.Footer
+    return (
+      <div data-testid="grid">
+        {window}
+        {atEnd && Footer !== undefined && <Footer context={context} />}
+      </div>
+    )
   }),
 }))
-
-/**
- * Asserts the last jump the page asked for landed on the photo at `index`. The
- * wall scrolls by justified *row*, so the grid reports the row's first and last
- * photo rather than the index it was handed — which row a photo sits in is the
- * grid's own business, and asserting on it would be asserting on the layout.
- */
-function expectJumpedTo(index: number) {
-  const jump = grid.scrollToIndex.mock.calls.at(-1)?.[0] as {
-    align?: string
-    first: number
-    last: number
-  }
-  expect(jump.align).toBe('start')
-  expect(jump.first).toBeLessThanOrEqual(index)
-  expect(jump.last).toBeGreaterThanOrEqual(index)
-}
 
 // Keep the real thumbUrl/GRID_THUMB_SIZE; only the network calls are faked.
 vi.mock('../services/photos', async (importOriginal) => {
@@ -290,18 +279,18 @@ function page(photos: Photo[], total: number, nextOffset: number | null): PhotoL
 }
 
 /**
- * One page of a library of `total` photos, holding a single photo named after
- * its own offset — enough to tell from the DOM which page the grid is showing
- * without building 20 000 fixtures.
+ * One full page of a library of `total` photos, each photo named after its
+ * position (`p0`, `p1`, …) — enough to tell from the DOM which stretch of the
+ * library the grid holds. A page is as long as the API makes it (100), because
+ * how near the reader is to the end of what is loaded is measured in photos.
  */
 function pageAt(total: number, offset: number): PhotoListResponse {
-  return {
-    photos: [photo(`p${String(offset)}`, `p${String(offset)}.jpg`)],
-    total,
-    limit: 100,
-    offset,
-    next_offset: offset + 100 < total ? offset + 100 : null,
+  const end = Math.min(offset + 100, total)
+  const photos: Photo[] = []
+  for (let i = offset; i < end; i++) {
+    photos.push(photo(`p${String(i)}`, `p${String(i)}.jpg`))
   }
+  return { photos, total, limit: 100, offset, next_offset: end < total ? end : null }
 }
 
 /** Answers every page request from a library of `total` photos. */
@@ -396,7 +385,6 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   fetchMock.mockReset()
   timelineMock.mockReset()
-  // Default: no timeline, so the scrubber renders nothing unless a test opts in.
   timelineMock.mockResolvedValue(EMPTY_TIMELINE)
   // Default facet options; a test that cares about the facet row overrides them.
   yearsMock.mockReset()
@@ -413,10 +401,6 @@ beforeEach(async () => {
   grid.restoredFrom = null
   grid.reportState = null
   window.sessionStorage.clear()
-})
-
-afterEach(() => {
-  scrubberSwitch.enabled = null
 })
 
 describe('LibraryPage', () => {
@@ -731,106 +715,130 @@ describe('LibraryPage', () => {
     expect(calls[calls.length - 1][0].sort).toBe('newest')
   })
 
-  it('loads the page the visible range needs, not everything before it', async () => {
-    // A production-sized library: 20 000 photos, ~200 pages.
-    servePagesOf(20000)
+  it('loads only the first page on arrival', async () => {
+    // A production-sized library: the first screen costs one request, and the
+    // grid holds what it loaded — not 20 000 placeholders.
+    servePagesOf(20_000)
     renderLibrary()
 
     await screen.findByRole('link', { name: 'p0.jpg' })
-    // The first load is the visible page plus the prefetch one behind it, and it
-    // already reports the full total — which is what fixes the grid's index space
-    // and makes any position reachable.
+    expect(offsetsRequested()).toEqual([0])
+    expect(document.querySelectorAll('.kk-skeleton')).toHaveLength(0)
+    // The count still tells the whole library, not what is on screen.
+    expect(screen.getByText('Photos: 20000')).toBeInTheDocument()
+  })
+
+  it('asks for the next page a little before the end of what is loaded', async () => {
+    servePagesOf(20_000)
+    renderLibrary()
+    await screen.findByRole('link', { name: 'p0.jpg' })
+
+    // Halfway down the first page nothing more is needed yet.
+    act(() => {
+      grid.scrollTo?.(10)
+    })
+    expect(offsetsRequested()).toEqual([0])
+
+    // Within half a page of the end the next page is on its way — while the
+    // last loaded row is not even on screen, so the reader never waits at a
+    // boundary.
+    act(() => {
+      grid.scrollTo?.(55)
+    })
+    await waitFor(() => {
+      expect(offsetsRequested()).toEqual([0, 100])
+    })
+    expect(screen.queryByRole('link', { name: 'p99.jpg' })).toBeNull()
+
+    // The page lands after the ones already loaded.
+    act(() => {
+      grid.scrollTo?.(150)
+    })
+    expect(await screen.findByRole('link', { name: 'p150.jpg' })).toBeInTheDocument()
+  })
+
+  it('appends the next page when the end is reached, with a spinner meanwhile', async () => {
+    const held: (() => void)[] = []
+    fetchMock.mockImplementation(async (params) => {
+      const offset = params.offset ?? 0
+      if (offset > 0) {
+        await new Promise<void>((resolve) => {
+          held.push(resolve)
+        })
+      }
+      return pageAt(250, offset)
+    })
+    renderLibrary()
+    await screen.findByRole('link', { name: 'p0.jpg' })
+
+    act(() => {
+      grid.scrollTo?.(90)
+    })
+    expect(await screen.findByText('Loading more photos…')).toBeInTheDocument()
+    expect(offsetsRequested()).toEqual([0, 100])
+
+    act(() => {
+      for (const resolve of held.splice(0)) {
+        resolve()
+      }
+    })
+    await waitFor(() => {
+      expect(screen.queryByText('Loading more photos…')).toBeNull()
+    })
+    act(() => {
+      grid.scrollTo?.(120)
+    })
+    expect(await screen.findByRole('link', { name: 'p120.jpg' })).toBeInTheDocument()
+  })
+
+  it('closes the wall with an end note once the whole library is in', async () => {
+    servePagesOf(150)
+    renderLibrary()
+    await screen.findByRole('link', { name: 'p0.jpg' })
+    expect(screen.queryByText('That’s everything.')).toBeNull()
+
+    act(() => {
+      grid.scrollTo?.(90)
+    })
+    await waitFor(() => {
+      expect(offsetsRequested()).toEqual([0, 100])
+    })
+    act(() => {
+      grid.scrollTo?.(140)
+    })
+    expect(await screen.findByRole('link', { name: 'p149.jpg' })).toBeInTheDocument()
+    expect(screen.getByText('That’s everything.')).toBeInTheDocument()
+    // Nothing is left to ask for, however often the end is reached again.
+    act(() => {
+      grid.scrollTo?.(149)
+    })
+    expect(offsetsRequested()).toEqual([0, 100])
+  })
+
+  it('starts again from the first page when the view changes', async () => {
+    servePagesOf(20_000)
+    const user = userEvent.setup()
+    renderLibrary()
+    await screen.findByRole('link', { name: 'p0.jpg' })
+    act(() => {
+      grid.scrollTo?.(90)
+    })
     await waitFor(() => {
       expect(offsetsRequested()).toEqual([0, 100])
     })
 
-    // Scrolling deep into the archive fetches the pages under the viewport plus
-    // one on each side — a handful of requests, not the 190 a walk from the top
-    // costs. The window opens at the top of the justified row holding photo
-    // 19 000, which can be a photo or two into the previous page, so that page
-    // and its own prefetch neighbour are under the viewport too.
-    act(() => {
-      grid.scrollTo?.(19000)
+    fetchMock.mockClear()
+    await user.selectOptions(screen.getByLabelText('Sort'), 'oldest')
+    await waitFor(() => {
+      expect(screen.getByTestId('search')).toHaveTextContent('sort=oldest')
     })
-    expect(await screen.findByRole('link', { name: 'p19000.jpg' })).toBeInTheDocument()
-    const offsets = offsetsRequested()
-    expect(offsets.slice(0, 2)).toEqual([0, 100])
-    expect(offsets).toContain(19000)
-    expect(offsets.length).toBeLessThanOrEqual(6)
-    expect(offsets.filter((offset) => offset > 100 && offset < 18800)).toEqual([])
-  })
-
-  it('leaves a placeholder tile where a page has not arrived yet', async () => {
-    const held: (() => void)[] = []
-    fetchMock.mockImplementation(async (params) => {
-      if ((params.offset ?? 0) === 0) {
-        return pageAt(500, 0)
-      }
-      await new Promise<void>((resolve) => {
-        held.push(resolve)
-      })
-      return pageAt(500, params.offset ?? 0)
-    })
-    renderLibrary()
-
     await screen.findByRole('link', { name: 'p0.jpg' })
-    act(() => {
-      grid.scrollTo?.(300)
-    })
-
-    // The slot exists in the grid from the outset — the total said so — so the
-    // reader sees a tile-shaped placeholder rather than a shorter list.
-    await waitFor(() => {
-      expect(document.querySelectorAll('.kk-skeleton').length).toBeGreaterThan(0)
-    })
-    act(() => {
-      for (const resolve of held) {
-        resolve()
-      }
-    })
-    expect(await screen.findByRole('link', { name: 'p300.jpg' })).toBeInTheDocument()
-  })
-
-  it('records the jumped-to month in the URL so Back returns to the prior view', async () => {
-    forceRailOn()
-    servePagesOf(3)
-    timelineMock.mockResolvedValue({
-      buckets: [
-        { year: 2026, month: 2, count: 2, cumulative: 0 },
-        { year: 2026, month: 1, count: 1, cumulative: 2 },
-      ],
-      total: 3,
-    })
-    const user = userEvent.setup()
-    renderLibrary()
-
-    await user.click(await screen.findByRole('button', { name: 'Jump to Jan 2026' }))
-    await waitFor(() => {
-      expect(screen.getByTestId('search')).toHaveTextContent('at=2026-01')
-    })
-
-    await user.click(screen.getByRole('button', { name: '__back' }))
-    await waitFor(() => {
-      expect(screen.getByTestId('search')).not.toHaveTextContent('at=2026-01')
-    })
-  })
-
-  it('restores the anchored month from the URL on load', async () => {
-    forceRailOn()
-    servePagesOf(3)
-    timelineMock.mockResolvedValue({
-      buckets: [
-        { year: 2026, month: 2, count: 2, cumulative: 0 },
-        { year: 2026, month: 1, count: 1, cumulative: 2 },
-      ],
-      total: 3,
-    })
-    renderLibrary('/?at=2026-01')
-
-    await waitFor(() => {
-      expect(grid.scrollToIndex).toHaveBeenCalled()
-    })
-    expectJumpedTo(2)
+    // One request for the new view's first page — nothing of the old view's
+    // length carries over — and the wall opens at its top.
+    expect(fetchMock.mock.calls.map((call) => [call[0].sort, call[0].offset])).toEqual([
+      ['oldest', 0],
+    ])
+    expect(screen.queryByRole('link', { name: 'p100.jpg' })).toBeNull()
   })
 
   it('shows favorite hearts to a viewer but no selection / bulk-edit controls', async () => {
@@ -1033,63 +1041,20 @@ describe('LibraryPage', () => {
 
     expect(document.querySelector('[data-focused="true"]')).toBeNull()
   })
-
-  it('clicking a timeline month scrolls the grid to that month’s index', async () => {
-    forceRailOn()
-    // Three loaded photos spanning two months; the scrubber's January bucket
-    // starts at grid index 2 (its cumulative), which is already loaded.
-    fetchMock.mockResolvedValue(
-      page([photo('a', 'a.jpg'), photo('b', 'b.jpg'), photo('c', 'c.jpg')], 3, null),
-    )
-    timelineMock.mockResolvedValue({
-      buckets: [
-        { year: 2026, month: 2, count: 2, cumulative: 0 },
-        { year: 2026, month: 1, count: 1, cumulative: 2 },
-      ],
-      total: 3,
-    })
-    const user = userEvent.setup()
-    renderLibrary()
-
-    const jan = await screen.findByRole('button', { name: 'Jump to Jan 2026' })
-    await user.click(jan)
-
-    await waitFor(() => {
-      expect(grid.scrollToIndex).toHaveBeenCalled()
-    })
-    expectJumpedTo(2)
-  })
 })
 
-describe('LibraryPage with the timeline rail switched off', () => {
-  // Shipped state: the rail is hidden until it is reworked. Even a library with a
-  // timeline to show gets no rail, no lane reserved for one, and no request for
-  // the histogram that would feed it.
-  const spanning = {
-    buckets: [
-      { year: 2026, month: 2, count: 2, cumulative: 0 },
-      { year: 2026, month: 1, count: 1, cumulative: 2 },
-    ],
-    total: 3,
-  }
-
+describe('LibraryPage without a timeline rail', () => {
+  // The library grows by appending pages, so it has no index space for a rail to
+  // jump across: no rail, no lane reserved for one, no request for the histogram
+  // that would feed it — and an old link carrying a month anchor simply opens at
+  // the top.
   it('renders no rail, reserves no lane and never fetches the timeline', async () => {
     servePagesOf(3)
-    timelineMock.mockResolvedValue(spanning)
-    renderLibrary()
+    renderLibrary('/?at=2026-01')
 
     await screen.findByRole('link', { name: 'p0.jpg' })
     expect(screen.queryByRole('navigation', { name: 'Timeline' })).toBeNull()
     expect(document.querySelector('.kukatko-grid-timeline-lane')).toBeNull()
-    expect(timelineMock).not.toHaveBeenCalled()
-  })
-
-  it('opens a link carrying a month anchor at the top, without the rail', async () => {
-    servePagesOf(3)
-    timelineMock.mockResolvedValue(spanning)
-    renderLibrary('/?at=2026-01')
-
-    await screen.findByRole('link', { name: 'p0.jpg' })
     expect(grid.scrollToIndex).not.toHaveBeenCalled()
     expect(timelineMock).not.toHaveBeenCalled()
   })
@@ -1152,7 +1117,84 @@ describe('LibraryPage scroll position', () => {
     // Opening a photo unmounts the library; the position has to survive that.
     unmount()
 
-    expect(readGridScroll('u1', '/')).toEqual({ count: 0, scrollY: 0, snapshot: gridState(4000) })
+    // How long the list was goes with it, so the way back can reload as much.
+    expect(readGridScroll('u1', '/')).toEqual({
+      count: 100,
+      scrollY: 0,
+      snapshot: gridState(4000),
+    })
+  })
+
+  it('comes back from a photo several pages deep with those pages and the position', async () => {
+    servePagesOf(20_000)
+    const user = userEvent.setup()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <AuthContext.Provider value={viewerAuth}>
+          <MemoryRouter initialEntries={['/']}>
+            <Routes>
+              <Route path="/" element={<LibraryPage />} />
+              <Route path="/p/:slug/photos/:uid" element={<span data-testid="viewer" />} />
+            </Routes>
+            <LocationProbe />
+          </MemoryRouter>
+        </AuthContext.Provider>
+      </I18nextProvider>,
+    )
+    await screen.findByRole('link', { name: 'p0.jpg' })
+
+    // Scroll three pages deep, one prefetch at a time.
+    act(() => {
+      grid.scrollTo?.(90)
+    })
+    await screen.findByRole('link', { name: 'p100.jpg' })
+    act(() => {
+      grid.scrollTo?.(190)
+    })
+    await waitFor(() => {
+      expect(offsetsRequested()).toEqual([0, 100, 200])
+    })
+    act(() => {
+      grid.scrollTo?.(215)
+    })
+    act(() => {
+      grid.reportState?.(gridState(9000))
+    })
+    await user.click(await screen.findByRole('link', { name: 'p220.jpg' }))
+    await screen.findByTestId('viewer')
+
+    // Back: the three pages come again behind the skeleton — no wall growing
+    // a page at a time under the reader — and only then does the grid mount, at
+    // the remembered offset.
+    fetchMock.mockClear()
+    const held: (() => void)[] = []
+    fetchMock.mockImplementation(async (params) => {
+      if ((params.offset ?? 0) === 200) {
+        await new Promise<void>((resolve) => {
+          held.push(resolve)
+        })
+      }
+      return pageAt(20_000, params.offset ?? 0)
+    })
+    await user.click(screen.getByRole('button', { name: '__back' }))
+    await waitFor(() => {
+      expect(offsetsRequested()).toEqual([0, 100, 200])
+    })
+    expect(screen.queryByRole('link', { name: 'p0.jpg' })).toBeNull()
+    act(() => {
+      for (const resolve of held) {
+        resolve()
+      }
+    })
+    await screen.findByRole('link', { name: 'p0.jpg' })
+    expect(grid.restoredFrom).toEqual(gridState(9000))
+
+    // Everything the reader had is there again without another request.
+    act(() => {
+      grid.scrollTo?.(215)
+    })
+    expect(screen.getByRole('link', { name: 'p220.jpg' })).toBeInTheDocument()
+    expect(offsetsRequested()).toEqual([0, 100, 200])
   })
 
   it('puts the grid back where it was on the way in', async () => {
@@ -1223,9 +1265,10 @@ describe('LibraryPage scroll position', () => {
     expect(grid.restoredFrom).toBeNull()
   })
 
-  it('restores across a timeline jump, which is the same view', async () => {
-    // `at` records which month the scrubber is parked on — a position, not a
-    // filter — so it must not split one view's memory in two.
+  it('restores under a link that still carries a month anchor, which is the same view', async () => {
+    // `at` recorded which month the old timeline rail was parked on — a
+    // position, not a filter — so a link from those days must not split one
+    // view's memory in two.
     writeGridScroll('u1', '/', { count: 0, scrollY: 4000, snapshot: gridState(4000) })
     servePagesOf(20_000)
 

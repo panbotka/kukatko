@@ -963,6 +963,7 @@
     "countNoTextMatch": "Exact matches: 0 — visually closest: {{count}}",
     "loading": "Loading photos…",
     "loadingMore": "Loading more photos…",
+    "end": "That’s everything.",
     "selectAll": "Select all",
     "filters": {
       "barLabel": "Photo filters",

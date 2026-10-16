@@ -10,7 +10,7 @@ import { useGridDensity } from '../../hooks/useGridDensity'
 import { type GridScrollMemory } from '../../hooks/useGridScrollMemory'
 import { useLongPressSelect } from '../../hooks/useLongPressSelect'
 import { type GridDensityScope, LIBRARY_GRID_SCOPE } from '../../lib/gridDensity'
-import { revealAlign } from '../../lib/gridScroll'
+import { restoreArrived, revealAlign } from '../../lib/gridScroll'
 import {
   DEFAULT_TILE_RATIO,
   type JustifiedRow,
@@ -33,10 +33,17 @@ export interface GridContext {
   loadingMore: boolean
   moreError: boolean
   onRetry: () => void
+  /**
+   * The line closing a list that has nothing more to load, or undefined for a
+   * footer that says nothing once the last page is in (see
+   * {@link PhotoGridProps.endNote}).
+   */
+  endNote?: string
 }
 
 /**
- * Footer slot: a spinner while a page loads, or a retry control if one failed.
+ * Footer slot: a spinner while a page loads, or a retry control if one failed —
+ * and, for a list that asked for one, a quiet line once it is complete.
  * Exported for the other virtualized photo list (the task ledger), so a paging
  * failure looks the same under a list of lines as under the wall.
  */
@@ -64,12 +71,19 @@ export function GridFooter({ context }: { context?: GridContext }) {
       </div>
     )
   }
+  if (context.endNote !== undefined) {
+    return (
+      <p className="kukatko-grid-end text-secondary small text-center py-4 mb-0">
+        {context.endNote}
+      </p>
+    )
+  }
   return null
 }
 
 /**
  * Stand-in for a photo the grid knows exists but has not loaded yet — a slot the
- * windowed library list leaves empty until the page covering it arrives. It fills
+ * windowed album list leaves empty until the page covering it arrives. It fills
  * the box the row laid out for it, so the row it sits in has the right height
  * from the outset and nothing shifts when the photo lands.
  */
@@ -137,7 +151,7 @@ export interface PhotoGridHandle {
 export interface PhotoGridProps {
   /**
    * The photos to render, in order. A slot may be `undefined`: the windowed
-   * library list sizes this array to the *whole* result and fills only the pages
+   * album list sizes this array to the *whole* result and fills only the pages
    * it has loaded, so an index here is a photo's absolute position and a hole is
    * a photo whose page is still on its way. Holes render as
    * {@link TilePlaceholder} in a default-shaped box; a plain `Photo[]` (every
@@ -161,6 +175,13 @@ export interface PhotoGridProps {
    */
   onEndReached?: () => void
   onRetry: () => void
+  /**
+   * What the footer says once an appending list is complete — no page left to
+   * load, none loading, none failed — so the end of the wall reads as the end of
+   * the result rather than as a page that never came. Omit it (every grid but
+   * the library) for a wall that simply stops.
+   */
+  endNote?: string
   /** Optional selection mode; when omitted the grid is a plain link grid. */
   selection?: PhotoGridSelection
   /**
@@ -249,8 +270,9 @@ export interface PhotoGridProps {
  * indices — the range it watches, the index it scrolls to — because which row a
  * photo landed in is the grid's business and nobody else's.
  *
- * It serves both loading shapes. A grid that grows by appending pages requests
- * the next one via `onEndReached`. A *windowed* grid (the library) instead hands
+ * It serves both loading shapes. A grid that grows by appending pages (the
+ * library among them) requests the next one via `onEndReached`. A *windowed*
+ * grid (an album) instead hands
  * over an array as long as the whole result with holes where pages are not
  * loaded, watches `onRangeChanged` to fetch what came into view, and leaves
  * `onEndReached` off — that is what lets it jump straight to any position
@@ -268,6 +290,7 @@ export function PhotoGrid({
   moreError,
   onEndReached,
   onRetry,
+  endNote,
   selection,
   favoritable = false,
   favoriteHoverOnly = false,
@@ -381,6 +404,11 @@ export function PhotoGrid({
   // first — a fallback restore has not moved yet — and the photograph after it,
   // once it is loaded: `revealAlign` leaves the wall alone when it is already
   // visible, which is the ordinary case of stepping into a photo and back out.
+  // Whether the wall is moving right now, as virtuoso reports it. A restore is a
+  // smooth scroll, and the photograph owed to the reader is revealed only once it
+  // has come to rest (see `handleIsScrolling`) — a reveal issued mid-flight both
+  // cancels the restore and aligns against a range that is about to change.
+  const scrollingRef = useRef(false)
   const land = useCallback((range: ListRange) => {
     const owed = owedRef.current
     if (owed.scrollY > 0) {
@@ -391,10 +419,19 @@ export function PhotoGrid({
     if (owed.uid === undefined) {
       return
     }
-    if (owed.expect > 0 && window.scrollY === 0) {
-      // The first range a restored grid reports is the layout it had *before* the
-      // restore landed. Aligning the photograph against that would position it
-      // off an offset nobody is at, and undo the restore on the way.
+    if (
+      scrollingRef.current ||
+      !restoreArrived(
+        window.scrollY,
+        owed.expect,
+        document.documentElement.scrollHeight - window.innerHeight,
+        window.innerHeight,
+      )
+    ) {
+      // The ranges a restored grid reports on the way are the layouts it passes
+      // *before* the restore lands — and the restore is a smooth scroll, which a
+      // reveal would cancel mid-flight. Aligning the photograph against them
+      // would position it off an offset nobody is at, and undo the restore.
       return
     }
     const index = photosRef.current.findIndex((photo) => photo?.uid === owed.uid)
@@ -454,11 +491,17 @@ export function PhotoGrid({
 
   const handleIsScrolling = useCallback(
     (scrolling: boolean) => {
+      scrollingRef.current = scrolling
       if (!scrolling) {
         captureState()
+        // The restore may have come to rest without the visible rows changing
+        // again, so settle what it still owes against where it stopped.
+        if (visibleRowsRef.current !== null) {
+          land(visibleRowsRef.current)
+        }
       }
     },
-    [captureState],
+    [captureState, land],
   )
 
   // Shift+click selects the contiguous range between the anchor and the clicked
@@ -567,7 +610,7 @@ export function PhotoGrid({
         ref={virtuosoRef}
         useWindowScroll
         data={rows}
-        context={{ loadingMore, moreError, onRetry }}
+        context={{ loadingMore, moreError, onRetry, endNote }}
         endReached={onEndReached}
         rangeChanged={handleRangeChanged}
         isScrolling={handleIsScrolling}

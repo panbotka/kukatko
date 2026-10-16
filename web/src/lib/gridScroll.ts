@@ -22,6 +22,36 @@ export function revealAlign(row: number, visible: ListRange | null): 'start' | '
 }
 
 /**
+ * Whether a restoring grid has got where it was going, so the photograph owed to
+ * the reader may be revealed. The restore is a *scroll* — and, the root carrying
+ * `scroll-behavior: smooth` (Bootstrap's reboot), an animated one, which any
+ * other programmatic scroll cancels on the spot. Revealing the photograph the
+ * moment the window has left the top therefore stopped the restore a few pixels
+ * down and aligned against that instead; it went unnoticed while the photograph's
+ * page was never loaded that early (the windowed list), and broke the day it was.
+ *
+ * Arrived means within half a viewport of the remembered offset — or of the
+ * deepest offset the document now allows, should the list have come back
+ * shorter (a document with no scroll room is one not laid out yet, and clamps
+ * nothing). Nothing remembered (`expect` 0) has nothing to wait for. Pure, so the
+ * decision is testable without layout.
+ */
+export function restoreArrived(
+  scrollY: number,
+  expect: number,
+  maxScroll: number,
+  viewport: number,
+): boolean {
+  if (expect <= 0) {
+    return true
+  }
+  // No scroll room at all is a document with no layout yet (or none, under
+  // jsdom), not a list that came back shorter: there is nothing to clamp to.
+  const target = maxScroll > 0 ? Math.min(expect, maxScroll) : expect
+  return Math.abs(scrollY - target) <= viewport / 2
+}
+
+/**
  * sessionStorage key prefix under which an account's remembered grid positions
  * live; the account's uid completes it (see {@link accountStorageKey}). Session
  * storage rather than local: a position is worth restoring while the reader is

@@ -1174,8 +1174,9 @@ here.
   (`onRangeChanged`, `gridRef.scrollToIndex`), because which row a photo landed in is the grid's own
   business. The layout needs a real width, so the grid measures its own box (`useElementWidth`, a
   `ResizeObserver`) and re-lays itself out when that moves. It serves **two loading shapes**: a grid that
-  grows by appending pages passes `onEndReached` (→ next page), while a **windowed** grid (the library)
-  omits it and instead hands over `photos` as long as the *whole* result with `undefined` where
+  grows by appending pages (the library among them) passes `onEndReached` (→ next page) — and, optionally,
+  `endNote`, the footer line `GridFooter` shows once nothing is left to load (`GridContext.endNote`; only the
+  library passes one) — while a **windowed** grid (an album) omits it and instead hands over `photos` as long as the *whole* result with `undefined` where
   a page is not loaded — a hole is laid out as a default 3:2 box and rendered as a `Skeleton` placeholder, and
   a Shift+click range only spans the loaded uids. An index is then
   a photo's **absolute** position, which is what lets the timeline jump anywhere in one scroll; the `favoritable` prop
@@ -1211,16 +1212,23 @@ here.
   so the grid reads the snapshot off the handle's `getState` whenever the visible rows change and once more
   when the scroll settles), falls back to `restoreScrollY` where that snapshot could not be read at all, and
   **reveals `restoreUid`** — the photograph the reader last had open from this view — once the restore has
-  landed (the first range a restored grid reports is its *pre-restore* layout, so the reveal waits for the
-  window to have moved; `revealAlign` then leaves the wall alone when the tile is already on screen, and the
+  landed (the ranges a restored grid reports on the way are *pre-restore* layouts, and the restore is a
+  **smooth** scroll — Bootstrap's reboot puts `scroll-behavior: smooth` on `:root` — that any other
+  programmatic scroll cancels, so the reveal waits until the pure `restoreArrived` in `lib/gridScroll` puts
+  the window within half a viewport of the remembered offset *and* virtuoso reports it at rest, settling on
+  `isScrolling(false)` against the rows it stopped on. Waiting only for the window to leave the top cut the
+  library's restore off a few pixels down once every page was loaded up front — measured on staging, Back
+  from 2500 px landed at 2653 with the tile 148 px off, now 2500 → 2500 with the tile unmoved; `revealAlign`
+  then leaves the wall alone when the tile is already on screen, and the
   whole debt is dropped the moment the reader scrolls, keys or taps for themselves). Each tile gets
   `scroll.key` as its `gridOrigin` prop and carries it into the viewer in the link's state, next to the
   rendition handoff, so the viewer records paging against this grid and no other.
   The grid remembers nothing itself, the page does — see `useGridScrollMemory`),
   `TimelineScrubber` (**temporarily disabled** — it failed more often than it worked and waits for a rework.
-  The one switch is `TIMELINE_SCRUBBER_ENABLED` exported next to the component; off, `LibraryPage` and
-  `AlbumDetailPage` render no rail, apply no `.kukatko-grid-timeline-lane` and never call `useTimeline`, so
-  the timeline endpoint is not requested. `at=YYYY-MM` is written and resolved only by the rail, so an old
+  The one switch is `TIMELINE_SCRUBBER_ENABLED` exported next to the component; off, `AlbumDetailPage`
+  renders no rail, applies no `.kukatko-grid-timeline-lane` and never calls `useTimeline`, so the timeline
+  endpoint is not requested. `LibraryPage` no longer wires it at all (since 2026-10-16 its grid appends pages,
+  so there is no absolute index space for a jump to land in). `at=YYYY-MM` is written and resolved only by the rail, so an old
   link carrying it opens at the top; grid scroll memory is unaffected. The component, `useTimeline`, the
   endpoint and their tests stay; the page tests force the switch on through a mock to keep the wiring
   covered. Re-enabling is flipping the constant. What follows describes it when on.
@@ -1393,7 +1401,7 @@ here.
   `totalPending={status === 'loading'}`), and while the request is in flight the footer button and the
   `.kukatko-filter-status` line both read „Počítám fotky…" — the button keeping a `Spinner` beside the
   wording and its ability to close, because waiting for a number must not cost the way out. Without it the
-  drawer stated a *false zero*: `useWindowedPhotos` resets `total` to 0 the moment the query changes, so
+  drawer stated a *false zero*: the list hook resets `total` to 0 the moment the query changes, so
   every refetch flashed „Žádné fotky — zavřít". Measured on the deployed build at 393 × 852: typing
   `svatba` walked the count „Počet fotek: 12619" → „0" → „146"; the same typing now goes „436" →
   „Počítám fotky…" → the answer, with no wrong number in between. And the two free-text fields — the quick
@@ -2327,15 +2335,18 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   inherited from the **previous instance** whose domain this one took over — it kept its
   entire UI under `/library/…`, so `/library/login` and friends used to hit the 404 page, and did so
   *after* a successful sign-in (the guard returns the visitor to the address they asked for),
-  plus **the timeline** (`TimelineScrubber`, **currently switched off** — see `TIMELINE_SCRUBBER_ENABLED`
-  under `TimelineScrubber` above) beside the grid for quick jumps to a month — the grid
-  is a **window** over the whole result (`useWindowedPhotos`; `gridRef`+`onRangeChanged` drive both the
-  highlighted month and `ensureRange`), so a jump is `scrollToIndex({index,align:'start'})` to the month's
-  absolute index plus the one page that lands there — **the cost does not depend on how far it jumps**.
-  The month rides in the URL as `at=YYYY-MM` (via `useSearchParams`, deliberately **not** a `LibraryView`
-  key: it filters nothing, so it must not reach the API nor be stored in a saved search — and `writeUrlState`
-  dropping it on any filter change is right, a new filter renumbers every position). Shown only for the
-  default newest sort and outside selection (`selection.count === 0`),
+  and the grid **loads more as the reader reaches its end** (since 2026-10-16, at the owner's request — the
+  scrollbar spanning the whole library from the first response felt wrong): `usePhotoLibrary` fetches the
+  first page, `onRangeChanged` asks for the next one once the visible range is within
+  `LIBRARY_PREFETCH_PHOTOS` (half a page) of the last loaded photo — before the last row is even on screen,
+  so a page boundary is no stall — with `onEndReached` as the backstop, the footer spinner while a page is in
+  flight and `endNote` („To je všechno.") once nothing is left. The scrollbar measures only what is loaded;
+  the count line stays the API's real `total`, and rows stay virtualized (only the loading changed). Back
+  restores through `useRememberedGridScroll(key).count` → `initialCount`: the pages the reader had are
+  walked again behind the skeleton (capped at `RESTORE_MAX_PAGES`) and mounted at once at the remembered
+  offset. Changing a filter, sort or search is a new query and starts again at the first page. There is no
+  timeline rail here any more (it needs the windowed list; `AlbumDetailPage` keeps it, switched off), and an
+  old link carrying `at=YYYY-MM` opens at the top (`at` stays a transient param of `gridScrollKey`),
   plus for editors **a modern multi-select** — `useBulkEdit({hoverSelect:true})`: each tile has
   a corner checkbox (hover; Shift+click a range), **no „Vybrat" button** is needed anymore, and
   once something is selected, **`BatchActionBar`** slides up (a floating bottom bar: album/labels/favorites/
@@ -6316,7 +6327,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   place name, just a keystroke on the way to one) and the statuses 424/502/503 get their own state
   `unavailable` (it is the provider's side that is broken, retrying makes no sense) as opposed to `error` (the rest,
   incl. 429 — retrying does make sense); `useWindowedPhotos(params,{reloadKey?})`
-  = the library grid as a **window** over the result instead of a growing prefix of it: the first request
+  = the album grid as a **window** over the result instead of a growing prefix of it: the first request
   reports `total`, which fixes the item count, and `photos` is that long from then on with `undefined`
   where a page is not loaded; `ensureRange(start,end)` (called from `onRangeChanged`) loads the pages
   covering the visible range plus `WINDOW_PREFETCH_PAGES` either side, **aborts** the requests a jump has
@@ -6346,8 +6357,8 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   clicking „Knihovna" or „Oblíbené" landed mid-list after a burst of eagerly refetched pages. A view arrived at
   without a pop counts as touched (its top is what the reader sees), so the entry an earlier visit left is
   overwritten on the way out and a photo opened from it unscrolled comes back to the top, not to that older
-  position. `GridScrollMemory.key` is the key itself, which the grid hands to the viewer (see `GridOrigin`). Wired into `LibraryPage` (windowed, so
-  `count` stays 0: the grid is as tall as the whole result from its first response), `AlbumDetailPage`,
+  position. `GridScrollMemory.key` is the key itself, which the grid hands to the viewer (see `GridOrigin`). Wired into `AlbumDetailPage` (windowed,
+  so `count` stays 0: the grid is as tall as the whole result from its first response), `LibraryPage`,
   `LabelDetailPage`, `SubjectPage` (no `PhotoGrid`: it restores the window offset itself once the gallery is
   as long as it was), `FavoritesPage`, `SearchPage` and `PlacesPage`.
   A failed page is retried on the next range change up to `WINDOW_MAX_ATTEMPTS`, then surfaces as `moreError`
@@ -6964,7 +6975,10 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   costs the reader their position and nothing else. It also holds `revealAlign(row, visibleRange)` — the pure
   rule behind `PhotoGridHandle.scrollToIndex`'s bare-index form: `null` (don't move) while the row sits
   *inside* the visible range, `'start'`/`'end'` otherwise, with the rows *at* either edge counted as needing
-  the scroll since virtuoso reports a half-shown row as visible;
+  the scroll since virtuoso reports a half-shown row as visible — and `restoreArrived(scrollY, expect,
+  maxScroll, viewport)`, whether a restoring grid is within half a viewport of its remembered offset (or of
+  the deepest one a shorter document allows; no scroll room at all clamps nothing), the gate on revealing
+  the photograph owed to the reader;
   `urlState.ts` = the `useUrlState` hook +
   the pure `readUrlState`/`writeUrlState`: the view state ↔ the URL query via the History API, „Back always
   works"; `libraryView.ts` = the `LibraryView` type (incl. `min_rating`/`flag`, the `favorite` toggle, the

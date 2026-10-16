@@ -3042,6 +3042,42 @@ describe('PhotoDetailPage — immersive viewer', () => {
       })
     })
 
+    it('pages on past the last photo of a page, fetching the next one', async () => {
+      // The library grid only holds the pages the reader scrolled through, so
+      // the viewer cannot lean on it: stepping off the last photo of a page asks
+      // the list for the page after it, wherever the grid stopped loading.
+      const uids = Array.from({ length: 150 }, (_, i) => `p${String(i)}`)
+      fetchPhotosMock.mockImplementation((params) => {
+        const offset = params.offset ?? 0
+        const end = Math.min(offset + 100, uids.length)
+        return Promise.resolve({
+          photos: uids.slice(offset, end).map(listPhoto),
+          total: uids.length,
+          limit: 100,
+          offset,
+          next_offset: end < uids.length ? end : null,
+        })
+      })
+      renderPage(true, '/p/v/photos/p99?sort=oldest')
+
+      const next = await screen.findByRole('link', { name: 'Next' })
+      expect(next.getAttribute('href')).toContain('/p/v/photos/p100')
+      expect(fetchPhotosMock.mock.calls.map((call) => call[0].offset ?? 0)).toContain(100)
+      expect(screen.getByRole('link', { name: 'Previous' }).getAttribute('href')).toContain(
+        '/p/v/photos/p98',
+      )
+
+      fireEvent.keyDown(document, { key: 'ArrowRight' })
+      await waitFor(() => {
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/p100')
+      })
+      await waitFor(() => {
+        expect(screen.getByRole('link', { name: 'Previous' }).getAttribute('href')).toContain(
+          '/p/v/photos/p99',
+        )
+      })
+    })
+
     it('keeps the current photo mounted while a neighbour loads, then swaps in place', async () => {
       let resolveNext!: (p: PhotoDetail) => void
       const pendingNext = new Promise<PhotoDetail>((resolve) => {

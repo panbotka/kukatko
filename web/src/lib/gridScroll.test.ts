@@ -5,6 +5,7 @@ import {
   GRID_SCROLL_MAX_ENTRIES,
   gridScrollKey,
   readGridScroll,
+  restoreArrived,
   writeGridScroll,
 } from './gridScroll'
 
@@ -188,5 +189,34 @@ describe('readGridScroll / writeGridScroll', () => {
   it('drops an entry with a nonsensical offset', () => {
     window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ '/': { count: 1, scrollY: -5 } }))
     expect(readGridScroll('u1', '/')).toBeNull()
+  })
+})
+
+describe('restoreArrived', () => {
+  it('has nothing to wait for when nothing was remembered', () => {
+    expect(restoreArrived(0, 0, 5000, 800)).toBe(true)
+  })
+
+  it('waits while a smooth restore is still on its way', () => {
+    // The animation has only just left the top: revealing now would cancel it.
+    expect(restoreArrived(3, 2500, 5600, 800)).toBe(false)
+    expect(restoreArrived(1190, 2500, 5600, 800)).toBe(false)
+  })
+
+  it('counts half a viewport either side of the target as arrived', () => {
+    expect(restoreArrived(2500, 2500, 5600, 800)).toBe(true)
+    expect(restoreArrived(2150, 2500, 5600, 800)).toBe(true)
+    expect(restoreArrived(2900, 2500, 5600, 800)).toBe(true)
+    expect(restoreArrived(2901, 2500, 5600, 800)).toBe(false)
+  })
+
+  it('settles for the deepest offset a shorter document allows', () => {
+    // The list came back shorter than it was: the bottom is as far as it goes.
+    expect(restoreArrived(1200, 2500, 1200, 800)).toBe(true)
+  })
+
+  it('clamps nothing against a document with no scroll room, which is not laid out yet', () => {
+    expect(restoreArrived(0, 2500, 0, 800)).toBe(false)
+    expect(restoreArrived(2500, 2500, -800, 800)).toBe(true)
   })
 })
