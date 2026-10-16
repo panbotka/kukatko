@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/url"
 	"strings"
 
@@ -65,12 +66,9 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service, e
 	// Passkeys are wired only when this instance is a relying party at all;
 	// otherwise the flow stays nil and the endpoints answer "not available",
 	// which is what "cleanly off" means here.
-	var passkeys *auth.Passkeys
-	if rp := cfg.Passkey(); rp.Enabled {
-		var err error
-		if passkeys, err = buildPasskeys(rp, svc); err != nil {
-			return nil, nil, err
-		}
+	passkeys, err := resolvePasskeys(cfg.Passkey(), svc, slog.Default())
+	if err != nil {
+		return nil, nil, err
 	}
 	covers, err := buildProjectCovers(cfg, db)
 	if err != nil {
@@ -99,6 +97,36 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service, e
 func uploadLinkGate(cfg *config.Config, db *database.DB) *uploadlinkapi.RegistrationGate {
 	sidecar := sidecarSchedulerFor(cfg, jobs.NewEnqueuer(jobs.NewStore(db.Pool())))
 	return uploadlinkapi.NewRegistrationGate(uploadlink.NewStore(db.Pool()), sidecar, nil)
+}
+
+// resolvePasskeys decides whether this instance offers passkeys and builds the
+// flow when it does. A nil flow (with a nil error) is "passkeys off": the
+// endpoints answer "not available" and GET /capabilities says the same.
+//
+// It is off when the configuration resolved no relying party at all, and also
+// when the relying party was merely derived from mail.base_url (rp.Derived) and
+// the WebAuthn library refuses it — an IP address or a single-label host, as a
+// LAN or staging deployment has. The operator configured nothing about
+// passkeys there, so refusing to start would punish them for a feature they
+// never asked for; one WARN says why passkeys are off and how to turn them on.
+// A relying party the operator did configure still fails startup (see
+// buildPasskeys).
+func resolvePasskeys(rp config.RelyingParty, svc *auth.Service, logger *slog.Logger) (*auth.Passkeys, error) {
+	if !rp.Enabled {
+		return nil, nil //nolint:nilnil // a nil flow is the documented "passkeys off"
+	}
+	passkeys, err := buildPasskeys(rp, svc)
+	if err == nil {
+		return passkeys, nil
+	}
+	if !rp.Derived {
+		return nil, err
+	}
+	logger.Warn("passkeys are off: the relying party derived from mail.base_url is not usable "+
+		"(a passkey needs a domain name, not an IP address or a single-label host); "+
+		"set auth.passkey.rp_id and auth.passkey.origins to offer them",
+		"rp_id", rp.ID, "error", err)
+	return nil, nil //nolint:nilnil // a nil flow is the documented "passkeys off"
 }
 
 // buildPasskeys assembles the WebAuthn sign-in flow for the resolved relying

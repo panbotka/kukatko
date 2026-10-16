@@ -415,10 +415,14 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   project.
   - `GET /projects` → a bare array, by name: `[{uid, slug, name, description, active, storage_prefix,
     max_file_bytes, max_total_bytes, members_count, photos_count, originals_bytes, created_at,
-    updated_at}]`. A limit is bytes or `null` (none); `storage_prefix` is `""` for the storage root
+    updated_at, rekey}]`. A limit is bytes or `null` (none); `storage_prefix` is `""` for the storage root
     (the bootstrap project until its storage move) or `projects/<uid>/`; `members_count` counts
     approved and waiting memberships; `photos_count`/`originals_bytes` are every photo row of the
     project, archived included (their originals stay stored until purged) — one query, not cached.
+    `rekey` is the project's most recent storage move as `{state, done_photos, total_photos}`
+    (`state` `running`/`paused`/`done`/`failed`), or `null` when it never had one — so the list
+    needs no `GET /projects/{uid}/rekey` per row. Every route answering a project (`GET`/`PATCH
+    /projects/{uid}`, `POST /projects`) carries it the same way.
   - `POST /projects` `{slug, name, description?, max_file_bytes?, max_total_bytes?}` → **201** + the
     project (same shape, `members_count: 1`). In the same transaction: the project's settings row
     (registration closed, empty secret, empty welcome) and the **caller as its approved `admin`**, so

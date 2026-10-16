@@ -3,7 +3,7 @@
 The multi-tenancy programme (`docs/superpowers/specs/2026-10-11-multi-tenancy-design.md`) restructures the
 schema of a library that exists once. The rule is that **nothing may be lost** — no row, photo, album
 membership, face or account — and that the outage is no more than a restart. This document records how the
-migration chain (0100–0119) was checked, what was measured and what the checks changed in the software. It
+migration chain (0100–0120) was checked, what was measured and what the checks changed in the software. It
 describes the software, not any one deployment: how to upgrade lives in [`OPERATIONS.md`](OPERATIONS.md)
 ("Upgrading — migrations, the inventory and rollback"), the down scripts and the `inventory-diff` expect list
 in [`migrations-rollback/`](migrations-rollback/README.md).
@@ -15,6 +15,9 @@ Each rehearsal ran on a **copy of a real pre-tenancy library** (schema 0099, rel
 `pgvector/pgvector:pg17` container on the build box. Every working database was a `CREATE DATABASE … TEMPLATE`
 copy of the restore, so each experiment started from the same bytes; the dump and the copies were deleted
 afterwards. Both binaries were built `CGO_ENABLED=0` from the 0.31.0 tag (old) and the rehearsed commit (new).
+Remove a throwaway `pgvector/pgvector` container with **`docker rm -fv`**, not `rm -f`: the image declares a
+`VOLUME` for the data directory, so a plain `rm -f` leaves an anonymous volume behind that still holds the copy
+of the library (`docker volume ls -qf dangling=true` finds what an earlier rehearsal left).
 
 - **Inventory A → B.** `kukatko maintenance inventory` (always the **new** binary — it never migrates, so it
   reads the old schema as it is) before and after the migration, judged by `inventory-diff` with the documented
@@ -39,7 +42,7 @@ query). Locks are held for the file's whole wall time; only table locks of `SHAR
 | --- | ---: | --- |
 | `0100_projects` | 4–11 ms | `ACCESS EXCLUSIVE` on the new `projects` only |
 | `0101_project_members` | 5–12 ms | `ACCESS EXCLUSIVE` on `users` and the new `project_members`; `SHARE ROW EXCLUSIVE` on `subjects`, `projects` |
-| `0102_project_id_root_tables` | **230–324 ms** | `ACCESS EXCLUSIVE` on the 18 root tables (`photos`, `subjects`, `albums`, `labels`, `faces`, `embeddings`, `face_clusters`, `subject_families`, `photo_tasks`, `upload_links`, `import_runs`, `saved_searches`, `notifications`, `search_history`, `instance_settings`, `announcements`, `photoprism_aliases`, `audit_log`) |
+| `0102_project_id_root_tables` | **230–324 ms** (233 ms on the full-chain run) | `ACCESS EXCLUSIVE` on the 18 root tables (`photos`, `subjects`, `albums`, `labels`, `faces`, `embeddings`, `face_clusters`, `subject_families`, `photo_tasks`, `upload_links`, `import_runs`, `saved_searches`, `notifications`, `search_history`, `instance_settings`, `announcements`, `photoprism_aliases`, `audit_log`) |
 | `0103_users_role_instance` | 2–9 ms | `ACCESS EXCLUSIVE` on `users`, `sessions` |
 | `0104_immutable_unaccent_qualified` | 1–10 ms | none on a table (replaces a function body) |
 | `0105_face_tooling_project_jobs` | 34–40 ms | `SHARE` on `jobs`, `face_clusters` (index builds: writes wait, reads do not) |
@@ -54,11 +57,16 @@ query). Locks are held for the file's whole wall time; only table locks of `SHAR
 | `0114_project_id_drop_defaults` | 2–10 ms | `ACCESS EXCLUSIVE` on the 17 root tables that had a default (catalogue only, no rewrite) |
 | `0115_storage_rekey_derived_failures` | 2–10 ms | `SHARE ROW EXCLUSIVE` on `photos`, `projects` (foreign keys) |
 | `0116`–`0119` | ≤ 1 ms each | a nullable column each |
-| `0120_audit_log_project_backfill` | not part of this rehearsal | `ROW EXCLUSIVE` on `audit_log` (an `UPDATE` of the pre-tenancy library entries, no DDL: reads go on), `ACCESS SHARE` on `projects` |
-| **Total** (`kukatko migrate`, process wall) | **~0.65 s** | |
+| `0120_audit_log_project_backfill` | **~400 ms** | `ROW EXCLUSIVE` on `audit_log` (an `UPDATE` of the pre-tenancy library entries, no DDL: reads go on), `ACCESS SHARE` on `projects` |
+| **Total** (`kukatko migrate` 0100–0120, process wall) | **~0.88 s** | |
 
-**No file is anywhere near 30 s, so none is split.** A server started on the copy answered `/healthz` 0.63 s
-after `docker run`, migrations included: the outage is the restart plus the migrations, and during 0102
+0120 gave the bootstrap project to about **99.8 %** of the audit rows. The remaining ~0.2 % are instance-level
+account actions (`passkey.login`, `user.register`, `user.approve`, `user.create`, `api_token.*`,
+`password_reset*`), which belong to no project and correctly stay `NULL`. The full-chain run was rehearsed
+back as well: the down chain 0120 → 0100 took ~2 s and `inventory-diff A C` reported **0 differences**.
+
+**No file is anywhere near 30 s, so none is split.** A server started on the copy answered `/healthz` ~0.9 s
+after start on the full chain (0.63 s before 0120 existed), migrations included: the outage is the restart plus the migrations, and during 0102
 requests touching a catalogue table wait, nothing fails. Because every `ACCESS EXCLUSIVE` queues behind a
 running transaction — a `pg_dump` holds `ACCESS SHARE` on everything for minutes — an upgrade must not overlap
 a database backup (OPERATIONS.md, "Lock queueing"); 0106–0108 add `jobs`, the worker's hottest table, to that.
@@ -152,10 +160,12 @@ asks first and puts nothing into the other project.
 
 Should-fix, not blockers:
 
-1. **Pre-tenancy audit history has no project.** 0102 adds `audit_log.project_id` nullable and nothing
+1. ~~**Pre-tenancy audit history has no project.** 0102 adds `audit_log.project_id` nullable and nothing
    backfills it, so after the upgrade the bootstrap project's audit page and review leaderboard start empty and
-   the history shows only in the instance audit. Not a leak, nothing lost; a migration can set the project of
-   the `NULL` rows of project-scoped actions at any time.
+   the history shows only in the instance audit.~~ **Closed by 0120** (`audit_log_project_backfill`),
+   rehearsed on the full chain 0100–0120: ~400 ms, an `UPDATE` under `ROW EXCLUSIVE` (reads go on), ~99.8 % of
+   the rows now carry the bootstrap project; the instance-level account actions (~0.2 %) stay `NULL` by design.
+   Whole `kukatko migrate` ~0.88 s, `/healthz` ~0.9 s after start, rollback 0120 → 0100 ~2 s and clean.
 2. ~~**An uploaded profile picture is served across projects** (`GET /users/{uid}/avatar` answers any signed-in
    account; SEC-025) — an existence oracle. A library photo picked as the picture does not leak.~~
    **Closed 2026-10-15** (multi-tenancy review III): an account's picture is served only to itself, a

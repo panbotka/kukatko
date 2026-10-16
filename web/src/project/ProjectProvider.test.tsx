@@ -93,6 +93,7 @@ function adminProject(slug: string, active: boolean): AdminProject {
     originals_bytes: 0,
     created_at: '2026-10-01T00:00:00Z',
     updated_at: '2026-10-01T00:00:00Z',
+    rekey: null,
   }
 }
 

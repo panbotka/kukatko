@@ -6,8 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
-import type { AdminProject } from '../services/projects'
-import type { RekeyRun, RekeyState } from '../services/rekey'
+import type { AdminProject, AdminProjectRekey } from '../services/projects'
+import type { RekeyState } from '../services/rekey'
 
 import { SystemProjectsPage } from './SystemProjectsPage'
 
@@ -45,28 +45,14 @@ function project(overrides: Partial<AdminProject> = {}): AdminProject {
     originals_bytes: 3 * GB,
     created_at: '2026-10-01T08:00:00Z',
     updated_at: '2026-10-01T08:00:00Z',
+    rekey: null,
     ...overrides,
   }
 }
 
-/** A storage move of `projectUid` in `state`, `done` of 200 photos moved. */
-function move(projectUid: string, state: RekeyState, done: number): RekeyRun {
-  return {
-    uid: `rk-${projectUid}`,
-    project_uid: projectUid,
-    state,
-    target_prefix: `projects/${projectUid}/`,
-    total_photos: 200,
-    total_bytes: 200 * 1024,
-    done_photos: done,
-    done_bytes: done * 1024,
-    last_key: '',
-    errors: [],
-    error_count: 0,
-    derived_failed: 0,
-    started_at: '2026-10-13T08:00:00Z',
-    updated_at: '2026-10-13T08:00:00Z',
-  }
+/** A storage-move summary in `state`, `done` of 200 photos moved. */
+function move(state: RekeyState, done: number): AdminProjectRekey {
+  return { state, done_photos: done, total_photos: 200 }
 }
 
 /** The session's re-read, which a created project's creator needs. */
@@ -94,7 +80,6 @@ beforeEach(async () => {
   createMock.mockReset()
   refreshMock = vi.fn().mockResolvedValue(undefined)
   rekeyMock.mockReset()
-  rekeyMock.mockResolvedValue(null)
   fetchMock.mockResolvedValue([
     project(),
     project({
@@ -266,25 +251,26 @@ describe('SystemProjectsPage', () => {
   })
 
   it('marks a project whose storage move is running or paused with its percent', async () => {
-    rekeyMock.mockImplementation((uid) =>
-      Promise.resolve(uid === 'pjv' ? move('pjv', 'running', 84) : move('pjr', 'done', 200)),
-    )
+    fetchMock.mockResolvedValue([
+      project({ rekey: move('running', 84) }),
+      project({ uid: 'pjr', slug: 'rodina', name: 'Rodina', rekey: move('done', 200) }),
+    ])
     renderPage()
 
     const chip = await screen.findByTestId('move-chip-v')
     expect(chip).toHaveTextContent('přesun 42 %')
     expect(chip).toHaveAttribute('title', 'Úložiště projektu se přesouvá')
-    expect(rekeyMock).toHaveBeenCalledTimes(2)
     // A done move is history, not news.
     expect(screen.queryByTestId('move-chip-rodina')).not.toBeInTheDocument()
+    // The list carries the moves: no rekey request per project.
+    expect(rekeyMock).not.toHaveBeenCalled()
   })
 
-  it('marks a paused move too, and shows the list when a run cannot be read', async () => {
-    rekeyMock.mockImplementation((uid) =>
-      uid === 'pjv'
-        ? Promise.reject(new Error('offline'))
-        : Promise.resolve(move('pjr', 'paused', 50)),
-    )
+  it('marks a paused move too, and leaves a project without a move unmarked', async () => {
+    fetchMock.mockResolvedValue([
+      project(),
+      project({ uid: 'pjr', slug: 'rodina', name: 'Rodina', rekey: move('paused', 50) }),
+    ])
     renderPage()
 
     const chip = await screen.findByTestId('move-chip-rodina')
@@ -292,6 +278,7 @@ describe('SystemProjectsPage', () => {
     expect(chip).toHaveAttribute('title', 'Přesun úložiště je pozastavený')
     expect(screen.getByRole('link', { name: 'Veselice' })).toBeInTheDocument()
     expect(screen.queryByTestId('move-chip-v')).not.toBeInTheDocument()
+    expect(rekeyMock).not.toHaveBeenCalled()
   })
 
   describe('setting a project up for somebody else', () => {

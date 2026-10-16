@@ -1034,6 +1034,10 @@
   display: flex;
   gap: var(--kk-space-2);
   align-items: flex-start;
+  /* Room a linked comment keeps from its scroller's edges when the thread
+     reveals it (`revealWithin` honours it), so its `:target` outline below is
+     not cut off at the top of the info sheet. */
+  scroll-margin-block: var(--kk-space-3);
 }
 
 .kk-comment__main {

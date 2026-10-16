@@ -23,6 +23,12 @@ type RelyingParty struct {
 	Origins []string
 	// Enabled reports whether passkeys can be offered at all.
 	Enabled bool
+	// Derived reports that neither auth.passkey.rp_id nor auth.passkey.origins
+	// was configured, so the ID and the origin both came from mail.base_url. An
+	// operator who set neither never asked for passkeys; the wiring therefore
+	// treats a derived relying party the WebAuthn library refuses (an IP
+	// address, a single-label host) as "passkeys off", not as a startup failure.
+	Derived bool
 }
 
 // defaultRPDisplayName is the relying-party name shown when the operator
@@ -44,12 +50,13 @@ func (c *Config) Passkey() RelyingParty {
 		rp.DisplayName = defaultRPDisplayName
 	}
 	rp.Origins = normalizeOrigins(c.Auth.Passkey.Origins)
+	rp.ID = strings.TrimSpace(c.Auth.Passkey.RPID)
+	rp.Derived = rp.ID == "" && len(rp.Origins) == 0
 	if len(rp.Origins) == 0 {
 		if derived, _, err := parseOrigin(c.Mail.BaseURL); err == nil && derived != "" {
 			rp.Origins = []string{derived}
 		}
 	}
-	rp.ID = strings.TrimSpace(c.Auth.Passkey.RPID)
 	if rp.ID == "" && len(rp.Origins) > 0 {
 		if _, host, err := parseOrigin(rp.Origins[0]); err == nil {
 			rp.ID = host

@@ -2404,6 +2404,13 @@ pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 
   key invalidates every registered key**; there is no migration, they have to be added again. The
   password is never taken away, so nobody is locked out by that — which is also why deleting the
   last passkey is allowed.
+  **A relying party derived from an unusable `mail.base_url` is off, not fatal:** WebAuthn binds a
+  key to a domain name, so a base URL that is an IP address or a single-label host
+  (`http://192.0.2.10:6490`, a LAN or staging deployment) cannot be a relying party. With neither
+  `rp_id` nor `origins` set, the server logs one WARN naming the derived ID and the two keys to set,
+  and starts with passkeys off (501 + `passkeys: false`, as above). An **explicitly configured**
+  `rp_id` or `origins` the WebAuthn library refuses still fails startup — the operator asked for the
+  feature, and silently withholding it would hide the mistake.
   A ceremony is a two-request exchange: the begin endpoint mints a challenge, holds it **in memory**
   for 5 minutes and names it in an HttpOnly `kukatko_passkey_ceremony` cookie, and the finish
   endpoint spends it exactly once. Ceremonies therefore do not survive a restart (cost: one retry of

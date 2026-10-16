@@ -110,7 +110,8 @@ const FAILURE_MESSAGE: Record<CommentFailure, ParseKeys> = {
  *
  * A link into a thread may name one comment (`#comment-<uid>`, what a mention
  * notification opens): once the thread has loaded, the panel scrolls that
- * comment into view, and the row lights up while it is the URL's target.
+ * comment into view — with the thread's heading when both fit the scroller —
+ * and the row lights up while it is the URL's target.
  */
 export function CommentsPanel({
   subject,
@@ -138,6 +139,10 @@ export function CommentsPanel({
   // so the panel repeats it — once per hash, so a post or an edit afterwards
   // does not drag the reader back up; the highlight itself is CSS (`:target`).
   const scrolledTo = useRef<string | null>(null)
+  // The thread's heading, revealed together with the linked comment when both
+  // fit: on a phone the info sheet is short, and a centred comment alone left
+  // "3 komentáře" cut off at the sheet's top edge, under its header.
+  const headingRef = useRef<HTMLParagraphElement>(null)
   useEffect(() => {
     const hash = window.location.hash
     if (status !== 'ready' || !hash.startsWith('#comment-') || scrolledTo.current === hash) {
@@ -149,7 +154,7 @@ export function CommentsPanel({
       scrolledTo.current = hash
       // Only the thread's own scroller moves: `scrollIntoView` would also scroll
       // the photo viewer around it and push its toolbar off the screen.
-      revealWithin(target, 'center')
+      revealWithin(target, 'center', headingRef.current)
     }
   }, [status, comments])
 
@@ -182,7 +187,7 @@ export function CommentsPanel({
           both the section's name and the discoverability the badge on the toggle
           promised. i18next owns the plural form — Czech needs three of them. */}
       {heading && (
-        <p className="kk-text-eyebrow mb-2">
+        <p ref={headingRef} className="kk-text-eyebrow mb-2">
           {count > 0 ? t('photo.comments.count', { count }) : t('photo.comments.title')}
         </p>
       )}

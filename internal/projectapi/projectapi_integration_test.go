@@ -167,6 +167,11 @@ type overview struct {
 	PhotosCount    int64  `json:"photos_count"`
 	OriginalsBytes int64  `json:"originals_bytes"`
 	CreatedAt      string `json:"created_at"`
+	Rekey          *struct {
+		State       string `json:"state"`
+		DonePhotos  int64  `json:"done_photos"`
+		TotalPhotos int64  `json:"total_photos"`
+	} `json:"rekey"`
 }
 
 // account is the wire shape of one /users entry.
@@ -282,6 +287,14 @@ func TestCreate_listGetAndSeeding(t *testing.T) {
 		}
 	}
 
+	// The list carries each project's storage move, so the page asks no
+	// per-project rekey status: a paused run here, none on the bootstrap project.
+	if _, err := e.db.Pool().Exec(t.Context(), `INSERT INTO storage_rekey_runs
+		(uid, project_uid, state, target_prefix, total_photos, done_photos)
+		VALUES ('rkapi000000000000000001', $1, 'paused', $2, 8, 2)`,
+		created.UID, created.StoragePrefix); err != nil {
+		t.Fatalf("seeding a rekey run: %v", err)
+	}
 	var list []overview
 	e.mustDo(t, token, http.MethodGet, "/api/v1/projects", "", http.StatusOK, &list)
 	slugs := map[string]overview{}
@@ -290,6 +303,13 @@ func TestCreate_listGetAndSeeding(t *testing.T) {
 	}
 	if len(list) != 2 || slugs["hasici"].MembersCount != 1 || slugs[project.BootstrapSlug].UID != project.BootstrapUID {
 		t.Errorf("list = %+v, want the bootstrap project and hasici", list)
+	}
+	if move := slugs["hasici"].Rekey; move == nil || move.State != "paused" || move.DonePhotos != 2 ||
+		move.TotalPhotos != 8 {
+		t.Errorf("hasici rekey = %+v, want paused 2/8", move)
+	}
+	if move := slugs[project.BootstrapSlug].Rekey; move != nil {
+		t.Errorf("bootstrap rekey = %+v, want null", move)
 	}
 
 	var one overview

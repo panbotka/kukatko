@@ -163,8 +163,8 @@ internal/phototask/store_write.go:353 touch is only called from AddPhotos/Remove
 internal/processing/store.go:90 evidenceFrom fragment; the uid query runs only on photos loaded scoped (photoInProject, ingest); the scan has project_id
 
 # internal/project
-internal/project/overview.go:58 the system administrator's project list (projectapi, RequireMaintainer): every project, each photos count confined to its own project
-internal/project/overview.go:97 the system administrator's account list (projectapi, RequireMaintainer): every membership, each linked subject read in the membership's own project
+internal/project/overview.go:77 the system administrator's project list (projectapi, RequireMaintainer): every project, each photos count confined to its own project
+internal/project/overview.go:124 the system administrator's account list (projectapi, RequireMaintainer): every membership, each linked subject read in the membership's own project
 
 # internal/rekey
 internal/rekey/step.go:183 rekey service; deliberately checks every project before deleting an old object key that any row still names

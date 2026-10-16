@@ -8,7 +8,7 @@ import (
 // Overview is one project as the system administrator's project list shows it:
 // the row itself plus how much of the instance it occupies. The embedded
 // Project's fields are promoted, so the wire shape is the project plus the
-// three counts.
+// three counts and the state of its storage move.
 type Overview struct {
 	Project
 	// MembersCount is the number of memberships, approved or still waiting.
@@ -17,20 +17,39 @@ type Overview struct {
 	PhotosCount int64 `json:"photos_count"`
 	// OriginalsBytes is the summed size of those photos' originals.
 	OriginalsBytes int64 `json:"originals_bytes"`
+	// Rekey is the project's most recent storage move, or nil when it never had
+	// one. It is carried here so the list needs no request per project to learn
+	// which projects are moving; the run itself is read from the rekey API.
+	Rekey *RekeySummary `json:"rekey"`
+}
+
+// RekeySummary is what the project list shows of a storage move: its state
+// (running, paused, done or failed — the states of internal/rekey) and how
+// many photos of how many have moved.
+type RekeySummary struct {
+	State       string `json:"state"`
+	DonePhotos  int64  `json:"done_photos"`
+	TotalPhotos int64  `json:"total_photos"`
 }
 
 // overviewSQL reads projects with their member count and library usage in one
 // round trip; $1 narrows it to one uid, NULL lists every project by name. The
-// usage is the same sum Usage computes, so the two can never disagree.
+// usage is the same sum Usage computes, so the two can never disagree. The move
+// is the project's most recent storage_rekey_runs row (the same pick as
+// internal/rekey's Status), all NULL when there is none.
 const overviewSQL = `
 SELECT ` + columns + `,
        (SELECT count(*) FROM project_members m WHERE m.project_uid = projects.uid),
-       usage.photos, usage.bytes
+       usage.photos, usage.bytes, move.state, move.done_photos, move.total_photos
 FROM projects
 CROSS JOIN LATERAL (
     SELECT count(*) AS photos, COALESCE(sum(file_size), 0)::bigint AS bytes
     FROM photos WHERE project_id = projects.uid
 ) usage
+LEFT JOIN LATERAL (
+    SELECT r.state, r.done_photos, r.total_photos FROM storage_rekey_runs r
+    WHERE r.project_uid = projects.uid ORDER BY r.started_at DESC, r.uid DESC LIMIT 1
+) move ON true
 WHERE $1::text IS NULL OR projects.uid = $1
 ORDER BY name, uid`
 
@@ -63,11 +82,19 @@ func (s *Store) overviews(ctx context.Context, uid *string) ([]Overview, error) 
 
 	out := []Overview{}
 	for rows.Next() {
-		var o Overview
+		var (
+			o                   Overview
+			moveState           *string
+			moveDone, moveTotal *int64
+		)
 		if err := rows.Scan(&o.UID, &o.Slug, &o.Name, &o.Description, &o.Active, &o.StoragePrefix,
 			&o.MaxFileBytes, &o.MaxTotalBytes, &o.CreatedAt, &o.UpdatedAt,
-			&o.MembersCount, &o.PhotosCount, &o.OriginalsBytes); err != nil {
+			&o.MembersCount, &o.PhotosCount, &o.OriginalsBytes,
+			&moveState, &moveDone, &moveTotal); err != nil {
 			return nil, fmt.Errorf("project: scanning overview: %w", err)
+		}
+		if moveState != nil && moveDone != nil && moveTotal != nil {
+			o.Rekey = &RekeySummary{State: *moveState, DonePhotos: *moveDone, TotalPhotos: *moveTotal}
 		}
 		out = append(out, o)
 	}

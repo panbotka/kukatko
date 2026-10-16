@@ -817,6 +817,7 @@ describe('routing — projects', () => {
         originals_bytes: 0,
         created_at: '2026-10-01T00:00:00Z',
         updated_at: '2026-10-01T00:00:00Z',
+        rekey: null,
       },
     ])
     renderRoutes(['/p/stary/members'], 0, maintainer)

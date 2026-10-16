@@ -392,56 +392,91 @@ describe('CommentsPanel', () => {
     )
   })
 
-  it('reveals a linked comment by scrolling only the drawer body, never the viewer', async () => {
-    // The photo viewer in miniature: a fixed, clipping root, and the drawer body
-    // inside it as the one scroller the thread lives in.
-    const root = document.createElement('div')
-    root.style.position = 'fixed'
-    root.style.overflow = 'hidden'
-    const body = document.createElement('div')
-    body.style.overflowY = 'auto'
-    root.append(body)
-    document.body.append(root)
-    Object.defineProperty(body, 'clientHeight', { configurable: true, value: 400 })
-    Object.defineProperty(body, 'scrollHeight', { configurable: true, value: 3000 })
-    // jsdom has no layout: the linked row sits far down the thread.
-    const rect = vi
-      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-      .mockImplementation(function (this: HTMLElement) {
-        return this.id === 'comment-cm_2' ? new DOMRect(0, 1600, 300, 80) : new DOMRect()
-      })
-    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView')
-    window.history.replaceState(null, '', '#comment-cm_2')
-    try {
-      fetchCommentsMock.mockResolvedValue([comment(), comment({ uid: 'cm_2' })])
-      render(
-        <I18nextProvider i18n={i18n}>
-          <MemoryRouter>
-            <CommentsPanel
-              subject={PHOTO_SUBJECT}
-              currentUserUid="usr_jarmila"
-              canModerate={false}
-            />
-          </MemoryRouter>
-        </I18nextProvider>,
-        { container: body },
-      )
+  it.each([
+    {
+      // A phone's info sheet: the heading sits right above the linked comment,
+      // and centring the comment alone (1600 - (300 - 80) / 2 = 1490) would
+      // leave the heading cut off at the sheet's top edge. Heading to comment
+      // (1500..1680) fits, so that stretch is centred: 1500 - (300 - 180) / 2.
+      name: 'with its heading when both fit',
+      clientHeight: 300,
+      headingTop: 1500,
+      want: 1440,
+      headingVisible: true,
+    },
+    {
+      // The heading is far above (a long thread): the comment alone is centred
+      // in the 400px body — 1600 - (400 - 80) / 2.
+      name: 'alone when the heading is too far above',
+      clientHeight: 400,
+      headingTop: 100,
+      want: 1440,
+      headingVisible: false,
+    },
+  ])(
+    'reveals a linked comment $name, scrolling only the drawer body, never the viewer',
+    async ({ clientHeight, headingTop, want, headingVisible }) => {
+      // The photo viewer in miniature: a fixed, clipping root, and the drawer body
+      // inside it as the one scroller the thread lives in.
+      const root = document.createElement('div')
+      root.style.position = 'fixed'
+      root.style.overflow = 'hidden'
+      const body = document.createElement('div')
+      body.style.overflowY = 'auto'
+      root.append(body)
+      document.body.append(root)
+      Object.defineProperty(body, 'clientHeight', { configurable: true, value: clientHeight })
+      Object.defineProperty(body, 'scrollHeight', { configurable: true, value: 3000 })
+      // jsdom has no layout: the linked row sits far down the thread, and the
+      // thread's heading somewhere above it. Content positions are measured
+      // against an unscrolled body, as getBoundingClientRect would be at rest.
+      const rect = vi
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockImplementation(function (this: HTMLElement) {
+          if (this.id === 'comment-cm_2') {
+            return new DOMRect(0, 1600, 300, 80)
+          }
+          if (this.classList.contains('kk-text-eyebrow')) {
+            return new DOMRect(0, headingTop, 300, 20)
+          }
+          return new DOMRect()
+        })
+      const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView')
+      window.history.replaceState(null, '', '#comment-cm_2')
+      try {
+        fetchCommentsMock.mockResolvedValue([comment(), comment({ uid: 'cm_2' })])
+        render(
+          <I18nextProvider i18n={i18n}>
+            <MemoryRouter>
+              <CommentsPanel
+                subject={PHOTO_SUBJECT}
+                currentUserUid="usr_jarmila"
+                canModerate={false}
+              />
+            </MemoryRouter>
+          </I18nextProvider>,
+          { container: body },
+        )
 
-      // Centred in the 400px body: 1600 - (400 - 80) / 2.
-      await waitFor(() => {
-        expect(body.scrollTop).toBe(1440)
-      })
-      expect(root.scrollTop).toBe(0)
-      expect(document.documentElement.scrollTop).toBe(0)
-      // `scrollIntoView` scrolls every ancestor, the viewer root included.
-      expect(scrollIntoView).not.toHaveBeenCalled()
-    } finally {
-      window.history.replaceState(null, '', window.location.pathname)
-      rect.mockRestore()
-      scrollIntoView.mockRestore()
-      root.remove()
-    }
-  })
+        await waitFor(() => {
+          expect(body.scrollTop).toBe(want)
+        })
+        const shown = (top: number, height: number): boolean =>
+          top >= body.scrollTop && top + height <= body.scrollTop + clientHeight
+        expect(shown(1600, 80)).toBe(true)
+        expect(shown(headingTop, 20)).toBe(headingVisible)
+        expect(root.scrollTop).toBe(0)
+        expect(document.documentElement.scrollTop).toBe(0)
+        // `scrollIntoView` scrolls every ancestor, the viewer root included.
+        expect(scrollIntoView).not.toHaveBeenCalled()
+      } finally {
+        window.history.replaceState(null, '', window.location.pathname)
+        rect.mockRestore()
+        scrollIntoView.mockRestore()
+        root.remove()
+      }
+    },
+  )
 
   it('speaks Czech, with the plural the count needs', async () => {
     await i18n.changeLanguage('cs')

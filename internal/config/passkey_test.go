@@ -19,14 +19,36 @@ func TestConfigPasskey(t *testing.T) {
 		wantID      string
 		wantOrigins []string
 		wantEnabled bool
+		wantDerived bool
 	}{
 		{
 			name:        "nothing configured stays off",
 			wantEnabled: false,
+			wantDerived: true,
 		},
 		{
 			name:        "derived from the mail base URL",
 			baseURL:     "https://photos.example.com/",
+			wantID:      "photos.example.com",
+			wantOrigins: []string{"https://photos.example.com"},
+			wantEnabled: true,
+			wantDerived: true,
+		},
+		{
+			// Enabled as far as the configuration can tell; the WebAuthn library
+			// refuses an IP ID, and Derived is what lets the wiring answer that
+			// with "passkeys off" instead of a failed start.
+			name:        "an IP base URL is derived",
+			baseURL:     "http://192.0.2.10:6490",
+			wantID:      "192.0.2.10",
+			wantOrigins: []string{"http://192.0.2.10:6490"},
+			wantEnabled: true,
+			wantDerived: true,
+		},
+		{
+			name:        "an explicit id with a derived origin is configured",
+			passkey:     PasskeyConfig{RPID: "photos.example.com"},
+			baseURL:     "https://photos.example.com",
 			wantID:      "photos.example.com",
 			wantOrigins: []string{"https://photos.example.com"},
 			wantEnabled: true,
@@ -65,6 +87,7 @@ func TestConfigPasskey(t *testing.T) {
 			name:        "a base URL that is not an origin derives nothing",
 			baseURL:     "not-a-url",
 			wantEnabled: false,
+			wantDerived: true,
 		},
 	}
 	for _, tt := range tests {
@@ -77,6 +100,9 @@ func TestConfigPasskey(t *testing.T) {
 			got := cfg.Passkey()
 			if got.Enabled != tt.wantEnabled {
 				t.Fatalf("Passkey().Enabled = %v, want %v (%+v)", got.Enabled, tt.wantEnabled, got)
+			}
+			if got.Derived != tt.wantDerived {
+				t.Errorf("Passkey().Derived = %v, want %v", got.Derived, tt.wantDerived)
 			}
 			if got.ID != tt.wantID {
 				t.Errorf("Passkey().ID = %q, want %q", got.ID, tt.wantID)

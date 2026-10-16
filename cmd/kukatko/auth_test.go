@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/config"
@@ -72,6 +75,85 @@ func TestBuildPasskeys(t *testing.T) {
 			}
 			if passkeys == nil {
 				t.Error("buildPasskeys() built no flow for a usable relying party")
+			}
+		})
+	}
+}
+
+// TestResolvePasskeys covers the one decision the wiring makes beside building
+// the flow: a relying party merely derived from mail.base_url that the library
+// refuses (an IP address — a LAN or staging deployment) turns passkeys off with
+// one warning and lets the server start, while the same refusal of a relying
+// party the operator configured is still a startup failure.
+func TestResolvePasskeys(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      func(*config.Config)
+		wantErr  bool
+		wantFlow bool
+		wantWarn bool
+	}{
+		{
+			name: "nothing configured is off and quiet",
+			cfg:  func(*config.Config) {},
+		},
+		{
+			name:     "a domain base URL offers passkeys",
+			cfg:      func(c *config.Config) { c.Mail.BaseURL = "https://kukatko.example.cz" },
+			wantFlow: true,
+		},
+		{
+			name:     "an IP base URL only turns passkeys off",
+			cfg:      func(c *config.Config) { c.Mail.BaseURL = "http://192.0.2.10:6490" },
+			wantWarn: true,
+		},
+		{
+			name:     "a single-label base URL only turns passkeys off",
+			cfg:      func(c *config.Config) { c.Mail.BaseURL = "http://staging:6490" },
+			wantWarn: true,
+		},
+		{
+			name: "an explicit IP rp_id still fails startup",
+			cfg: func(c *config.Config) {
+				c.Mail.BaseURL = "http://192.0.2.10:6490"
+				c.Auth.Passkey.RPID = "192.0.2.10"
+			},
+			wantErr: true,
+		},
+		{
+			name: "explicit IP origins still fail startup",
+			cfg: func(c *config.Config) {
+				c.Auth.Passkey.Origins = []string{"http://192.0.2.10:6490"}
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{}
+			tt.cfg(cfg)
+			var logs bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&logs, nil))
+
+			passkeys, err := resolvePasskeys(cfg.Passkey(), nil, logger)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("resolvePasskeys() error = nil, want a startup failure")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolvePasskeys(): %v", err)
+			}
+			if got := passkeys != nil; got != tt.wantFlow {
+				t.Errorf("resolvePasskeys() built a flow = %v, want %v", got, tt.wantFlow)
+			}
+			warned := strings.Count(logs.String(), "level=WARN")
+			if want := map[bool]int{true: 1, false: 0}[tt.wantWarn]; warned != want {
+				t.Errorf("resolvePasskeys() logged %d warnings, want %d: %s", warned, want, logs.String())
+			}
+			if tt.wantWarn && !strings.Contains(logs.String(), "auth.passkey.rp_id") {
+				t.Errorf("the warning does not say how to configure passkeys: %s", logs.String())
 			}
 		})
 	}

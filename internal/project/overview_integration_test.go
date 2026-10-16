@@ -165,6 +165,37 @@ func TestOverviews(t *testing.T) {
 	}
 }
 
+// TestOverviews_rekey verifies the storage-move summary each overview carries:
+// nil for a project that never moved, otherwise the most recent run's state and
+// progress — an older finished run does not shadow a newer one.
+func TestOverviews_rekey(t *testing.T) {
+	store, db, meta := newStore(t)
+	ctx := context.Background()
+	other := mustCreate(t, store, meta, "stehuje", "Stěhuje")
+	if _, err := db.Pool().Exec(ctx, `
+		INSERT INTO storage_rekey_runs (uid, project_uid, state, target_prefix, total_photos, done_photos, started_at)
+		VALUES ('rkover00000000000000001', $1, 'failed', 'projects/x/', 10, 3, now() - interval '1 day'),
+		       ('rkover00000000000000002', $1, 'running', 'projects/x/', 40, 10, now())`, other.UID); err != nil {
+		t.Fatalf("seeding rekey runs: %v", err)
+	}
+
+	list, err := store.Overviews(ctx)
+	if err != nil || len(list) != 2 {
+		t.Fatalf("Overviews = %+v, %v; want two projects", list, err)
+	}
+	want := project.RekeySummary{State: "running", DonePhotos: 10, TotalPhotos: 40}
+	if got := list[0].Rekey; list[0].UID != other.UID || got == nil || *got != want {
+		t.Errorf("moving project's rekey = %+v, want %+v", got, want)
+	}
+	if got := list[1].Rekey; list[1].UID != project.BootstrapUID || got != nil {
+		t.Errorf("unmoved project's rekey = %+v, want nil", got)
+	}
+	one, err := store.OverviewOf(ctx, other.UID)
+	if err != nil || one.Rekey == nil || *one.Rekey != want {
+		t.Errorf("OverviewOf rekey = %+v, %v; want %+v", one, err, want)
+	}
+}
+
 // TestAllMemberships verifies the instance-wide membership map: every account
 // with its projects in name order, none for an account without memberships.
 func TestAllMemberships(t *testing.T) {

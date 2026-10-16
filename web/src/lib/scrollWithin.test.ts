@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { revealScrollTop, revealWithin, scrollContainerOf } from './scrollWithin'
+import { revealScrollTop, revealSpan, revealWithin, scrollContainerOf } from './scrollWithin'
 
 /** jsdom has no layout: give an element the box a browser would have measured. */
 function measure(
@@ -60,6 +60,41 @@ describe('revealScrollTop', () => {
   })
 })
 
+describe('revealSpan', () => {
+  const none = { top: 0, bottom: 0 }
+
+  it('is the target itself without margin or context', () => {
+    expect(revealSpan({ top: 500, height: 40 }, none, 300)).toEqual({ top: 500, height: 40 })
+  })
+
+  it('grows the target by its scroll-margin', () => {
+    expect(revealSpan({ top: 500, height: 40 }, { top: 12, bottom: 8 }, 300)).toEqual({
+      top: 488,
+      height: 60,
+    })
+  })
+
+  it('reaches up to the context when the whole stretch fits', () => {
+    expect(revealSpan({ top: 500, height: 40 }, { top: 10, bottom: 0 }, 300, { top: 400 })).toEqual(
+      { top: 390, height: 150 },
+    )
+  })
+
+  it('keeps the target alone when the context is too far above to fit with it', () => {
+    expect(revealSpan({ top: 500, height: 40 }, none, 300, { top: 100 })).toEqual({
+      top: 500,
+      height: 40,
+    })
+  })
+
+  it('ignores a context below the target', () => {
+    expect(revealSpan({ top: 500, height: 40 }, none, 300, { top: 520 })).toEqual({
+      top: 500,
+      height: 40,
+    })
+  })
+})
+
 describe('scrollContainerOf', () => {
   it('picks the overflowing scroller, never the clipping fixed root around it', () => {
     const { body, target } = viewer()
@@ -94,6 +129,21 @@ describe('revealWithin', () => {
     expect(body.scrollTop).toBe(1340)
     expect(root.scrollTop).toBe(0)
     expect(document.documentElement.scrollTop).toBe(0)
+  })
+
+  it('brings the context into view with the target when both fit', () => {
+    const { root, body, target } = viewer()
+    const heading = document.createElement('p')
+    body.prepend(heading)
+    measure(body, { top: 100, height: 300, scrollHeight: 3000 })
+    measure(heading, { top: 1500, height: 20 })
+    measure(target, { top: 1600, height: 80 })
+
+    revealWithin(target, 'center', heading)
+
+    // Heading..target is 1400..1580 in the content (180 tall); centred in 300.
+    expect(body.scrollTop).toBe(1340)
+    expect(root.scrollTop).toBe(0)
   })
 
   it('moves nothing for "nearest" when the target is already in view', () => {

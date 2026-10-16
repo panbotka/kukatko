@@ -7480,8 +7480,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     alike — carries the project it touched as `audit.Entry.ProjectUID`** (`projectEntry`), so a
     project's own trail lists its governance.
   - `overview.go` — the system administrator's reads: `Overviews()` / `OverviewOf(uid)` return `Overview`
-    (the `Project` embedded + `MembersCount`, `PhotosCount`, `OriginalsBytes`) from one query — the member
-    count a scalar subquery, the usage a lateral sum identical to `Usage`'s; `AllMemberships()` maps every
+    (the `Project` embedded + `MembersCount`, `PhotosCount`, `OriginalsBytes`, `Rekey`) from one query — the
+    member count a scalar subquery, the usage a lateral sum identical to `Usage`'s, `Rekey` a
+    `*RekeySummary{State, DonePhotos, TotalPhotos}` of the latest `storage_rekey_runs` row (nil = never
+    moved; the table is read directly, so the package does not import `internal/rekey`); `AllMemberships()` maps every
     user uid to its `MembershipSummary` list (by project name) in one query, instead of one
     `MembershipsOf` per account, each with its linked person and that person's name (`SubjectName`,
     looked up in the membership's own project; `MembershipsOf` leaves it empty).

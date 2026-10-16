@@ -1,5 +1,6 @@
 import { ApiError, type InstanceRole, type ProjectRole } from './auth'
 import { instancePath } from './api'
+import type { RekeyState } from './rekey'
 
 /**
  * The system administrator's client of the instance-level project API
@@ -76,6 +77,19 @@ export interface AdminProject {
   originals_bytes: number
   created_at: string
   updated_at: string
+  /**
+   * The project's most recent storage move, or `null` when it never had one.
+   * Carried by the list so it needs no rekey request per project; the full run
+   * (errors, bytes, cursor) is `GET /projects/{uid}/rekey`.
+   */
+  rekey: AdminProjectRekey | null
+}
+
+/** What the project list shows of a storage move. */
+export interface AdminProjectRekey {
+  state: RekeyState
+  done_photos: number
+  total_photos: number
 }
 
 /**

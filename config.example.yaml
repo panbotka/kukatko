@@ -513,7 +513,11 @@ auth:
     # bound to, WITHOUT scheme or port (e.g. "kukatko.example.cz"). Empty takes
     # the host of the first origin below, and if there are none, of
     # mail.base_url. Changing it after anybody has registered a key makes every
-    # registered key stop working — they are bound to the old value.
+    # registered key stop working — they are bound to the old value. A key needs
+    # a domain name: when rp_id and origins are both empty and mail.base_url is
+    # an IP address or a single-label host (a LAN/staging instance), passkeys are
+    # just off with one WARN at startup; an explicit rp_id/origins the WebAuthn
+    # library refuses fails startup instead.
     rp_id: ""
     # What an authenticator shows while it asks whether to create or use a key.
     rp_display_name: "Kukátko"

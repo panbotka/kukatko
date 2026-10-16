@@ -73,9 +73,49 @@ export function revealScrollTop(
   return current
 }
 
+/** A vertical stretch of a scroller's content: where it starts and how tall it is. */
+export interface RevealSpan {
+  top: number
+  height: number
+}
+
+/**
+ * The stretch to bring into view for a target (measured like
+ * {@link revealScrollTop}'s), grown by its `scroll-margin` the way the
+ * browser's own scrolling grows it, and — when `context` is given and the whole
+ * stretch from it down to the target still fits the viewport — reaching up to
+ * include `context` as well (a section's heading above a linked row, so the
+ * reader sees what the row belongs to). When it does not fit, the target alone
+ * wins: the heading is the nicety, the row is what the link was for. Pure.
+ */
+export function revealSpan(
+  target: RevealSpan,
+  margin: { top: number; bottom: number },
+  viewport: number,
+  context: { top: number } | null = null,
+): RevealSpan {
+  const bottom = target.top + target.height + margin.bottom
+  let top = target.top - margin.top
+  if (context !== null) {
+    const contextTop = context.top - margin.top
+    if (contextTop < top && bottom - contextTop <= viewport) {
+      top = contextTop
+    }
+  }
+  return { top, height: bottom - top }
+}
+
+/** A computed length in px, 0 for anything a browser (or jsdom) leaves unset. */
+function px(value: string): number {
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 /**
  * Brings `element` into view by scrolling exactly one container — the one
- * {@link scrollContainerOf} names — and nothing else.
+ * {@link scrollContainerOf} names — and nothing else. Its `scroll-margin` is
+ * honoured, and `context` (an element above it, e.g. its section's heading)
+ * comes into view with it when both fit (see {@link revealSpan}).
  *
  * `element.scrollIntoView()` is the obvious call and the wrong one inside the
  * photo viewer: it scrolls EVERY scrollable ancestor, `overflow: hidden` ones
@@ -84,7 +124,11 @@ export function revealScrollTop(
  * screen. Setting the one scroller's `scrollTop` leaves every other ancestor
  * where it was.
  */
-export function revealWithin(element: Element, block: RevealBlock): void {
+export function revealWithin(
+  element: Element,
+  block: RevealBlock,
+  context: Element | null = null,
+): void {
   const container = scrollContainerOf(element)
   if (container === null) {
     return
@@ -95,8 +139,14 @@ export function revealWithin(element: Element, block: RevealBlock): void {
   const viewport = page ? window.innerHeight : container.clientHeight
   const rect = element.getBoundingClientRect()
   const current = container.scrollTop
-  const top = rect.top - viewportTop + current
-  const next = revealScrollTop(block, { top, height: rect.height }, viewport, current)
+  const style = window.getComputedStyle(element)
+  const span = revealSpan(
+    { top: rect.top - viewportTop + current, height: rect.height },
+    { top: px(style.scrollMarginTop), bottom: px(style.scrollMarginBottom) },
+    viewport,
+    context === null ? null : { top: context.getBoundingClientRect().top - viewportTop + current },
+  )
+  const next = revealScrollTop(block, span, viewport, current)
   if (next !== current) {
     container.scrollTop = next
   }

@@ -53,6 +53,7 @@ function project(overrides: Partial<AdminProject> = {}): AdminProject {
     originals_bytes: 300 * MB,
     created_at: '2026-10-01T08:00:00Z',
     updated_at: '2026-10-01T08:00:00Z',
+    rekey: null,
     ...overrides,
   }
 }

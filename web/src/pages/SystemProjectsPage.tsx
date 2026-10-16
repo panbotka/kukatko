@@ -18,7 +18,6 @@ import { formatLimits } from '../lib/byteLimit'
 import { formatBytes, formatCount, formatDate } from '../lib/format'
 import { rekeyInProgress, rekeyPercent } from '../lib/rekeyProgress'
 import { type AdminProject, fetchAdminProjects } from '../services/projects'
-import { fetchRekeyRun, type RekeyRun } from '../services/rekey'
 
 /** Fetch lifecycle of the project list. */
 type LoadState =
@@ -37,9 +36,8 @@ type LoadState =
  * the list is re-read behind it.
  *
  * A project whose storage move is running or paused carries a chip „přesun
- * 42 %" beside its name; the runs are read once, after the list, one request per
- * project (an instance has a handful), and a project whose run cannot be read
- * simply goes without the chip. The live progress is on the detail page.
+ * 42 %" beside its name, from the move summary every row of the list carries
+ * (`rekey`) — no request per project. The live progress is on the detail page.
  *
  * Instance-level and maintainer-only: it lists projects the administrator need
  * not belong to, so it lives outside `/p/<slug>`.
@@ -52,30 +50,15 @@ export function SystemProjectsPage() {
 
   const [load, setLoad] = useState<LoadState>({ status: 'loading' })
   const [creating, setCreating] = useState(false)
-  const [moves, setMoves] = useState<ReadonlyMap<string, RekeyRun>>(new Map())
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     setLoad({ status: 'loading' })
     try {
-      // A function, not an expression: the type checker would otherwise keep the
-      // first check's narrowing across the await below.
-      const aborted = (): boolean => signal?.aborted === true
       const projects = await fetchAdminProjects(signal)
-      if (aborted()) {
+      if (signal?.aborted === true) {
         return
       }
       setLoad({ status: 'ready', projects })
-      const runs = await Promise.allSettled(projects.map((p) => fetchRekeyRun(p.uid, signal)))
-      if (aborted()) {
-        return
-      }
-      const next = new Map<string, RekeyRun>()
-      for (const result of runs) {
-        if (result.status === 'fulfilled' && result.value !== null) {
-          next.set(result.value.project_uid, result.value)
-        }
-      }
-      setMoves(next)
     } catch (error: unknown) {
       if (!(error instanceof DOMException && error.name === 'AbortError')) {
         setLoad({ status: 'error' })
@@ -97,11 +80,11 @@ export function SystemProjectsPage() {
       key: 'name',
       header: t('systemProjects.columns.name'),
       cell: (p) => {
-        const move = moves.get(p.uid)
+        const move = p.rekey
         return (
           <>
             <Link to={systemProjectPath(p.slug)}>{p.name}</Link>
-            {move !== undefined && rekeyInProgress(move.state) && (
+            {move !== null && rekeyInProgress(move.state) && (
               <Badge
                 pill
                 bg={move.state === 'running' ? 'primary' : 'warning'}

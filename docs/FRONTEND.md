@@ -3900,7 +3900,11 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   scrolls **only the thread's own scroller** — `lib/scrollWithin` `revealWithin(element, 'center'|'nearest')`
   sets `scrollTop` on the nearest overflowing `overflow-y: auto|scroll` ancestor, stops at a `position: fixed`
   layer and falls back to the page — never `scrollIntoView`, which also scrolled the fixed viewer root and
-  pushed its toolbar off the top; the composer's focus reveal uses the same helper. The viewer root is
+  pushed its toolbar off the top; the composer's focus reveal uses the same helper. The deep link passes the
+  thread's heading as `revealWithin`'s third argument (`context`): when heading-to-comment fits the scroller,
+  that whole stretch is centred (`revealSpan`), so on a phone's short info sheet „3 komentáře" is not left cut
+  off under the sheet's header; otherwise the comment alone is. The row's `scroll-margin-block` is honoured
+  (the `:target` outline keeps its room). The viewer root is
   `overflow: clip` (not just `hidden`) so neither the browser's own fragment jump nor a focus scroll can move
   it either (`lib/scrollWithin.test.ts`, plus the deep-link case in `CommentsPanel.test.tsx`). The
   `photo.comments.submitHint` says `@` mentions somebody. Tests: `MentionTextarea.test.tsx` (lazy fetch and
@@ -9263,9 +9267,10 @@ first answer keeps the run (`status` turns `error` only for the first read → `
 **`lib/rekeyProgress.ts`**: `rekeyPollInterval`, `rekeyInProgress`, `rekeyFraction`/`rekeyPercent`
 (floored, so 100 % means all moved), `rekeyRate(prev, next)` (photos/min between two client-stamped
 samples; `null` without a pair, without elapsed time or after a count went down), `rekeyEtaSeconds`,
-`truncateMiddle`. **`SystemProjectsPage`** reads every project's run once after the list
-(`Promise.allSettled`, a failed read = no chip) and puts a pill „přesun 42 %" (`primary` running,
-`warning` paused, `title` says which) beside the name of a project whose move is running or paused.
+`truncateMiddle`. **`SystemProjectsPage`** takes each project's move from the list itself
+(`AdminProject.rekey`, `{state, done_photos, total_photos}` or `null` — no rekey request per row) and
+puts a pill „přesun 42 %" (`primary` running, `warning` paused, `title` says which) beside the name of a
+project whose move is running or paused.
 
 **`SystemUsersPage`** = `/system/users`: a `RecordTable` of every account (`GET /users`) — username
 (monospace), display name, e-mail (`components/users/UserEmail`: a `.invalid` placeholder is „Bez
