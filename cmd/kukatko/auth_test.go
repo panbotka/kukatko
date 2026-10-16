@@ -68,6 +68,7 @@ func TestBuildPasskeys(t *testing.T) {
 				if err == nil {
 					t.Fatal("buildPasskeys() error = nil, want a startup failure")
 				}
+				assertStepNamedOnce(t, err.Error())
 				return
 			}
 			if err != nil {
@@ -140,6 +141,7 @@ func TestResolvePasskeys(t *testing.T) {
 				if err == nil {
 					t.Fatal("resolvePasskeys() error = nil, want a startup failure")
 				}
+				assertStepNamedOnce(t, err.Error())
 				return
 			}
 			if err != nil {
@@ -155,6 +157,23 @@ func TestResolvePasskeys(t *testing.T) {
 			if tt.wantWarn && !strings.Contains(logs.String(), "auth.passkey.rp_id") {
 				t.Errorf("the warning does not say how to configure passkeys: %s", logs.String())
 			}
+			if tt.wantWarn {
+				assertStepNamedOnce(t, logs.String())
+			}
 		})
+	}
+}
+
+// passkeyStep is the words naming the step that builds the relying party. The
+// startup WARN once printed them twice, because the wiring re-wrapped an error
+// internal/auth had already prefixed with them.
+const passkeyStep = "building the passkey relying party"
+
+// assertStepNamedOnce fails the test unless text — an error or the logged
+// warning carrying it — names the relying-party step exactly once.
+func assertStepNamedOnce(t *testing.T, text string) {
+	t.Helper()
+	if n := strings.Count(text, passkeyStep); n != 1 {
+		t.Errorf("%q occurs %d times, want exactly once: %s", passkeyStep, n, text)
 	}
 }

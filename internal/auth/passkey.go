@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -220,7 +221,7 @@ func NewPasskeys(cfg PasskeysConfig) (*Passkeys, error) {
 		},
 	})
 	if err != nil {
-		return nil, errors.New("auth: building the passkey relying party: " + err.Error())
+		return nil, fmt.Errorf("auth: building the passkey relying party: %w", err)
 	}
 	ttl := cfg.CeremonyTTL
 	if ttl <= 0 {

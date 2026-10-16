@@ -141,16 +141,15 @@ func resolvePasskeys(rp config.RelyingParty, svc *auth.Service, logger *slog.Log
 // it, and — worse, once anybody has registered a key — at authenticators that
 // have quietly stopped working.
 func buildPasskeys(rp config.RelyingParty, svc *auth.Service) (*auth.Passkeys, error) {
-	passkeys, err := auth.NewPasskeys(auth.PasskeysConfig{
+	// The error goes back unwrapped: auth.NewPasskeys already names the step
+	// ("auth: building the passkey relying party: …"), and saying it twice is
+	// what the startup WARN used to print.
+	return auth.NewPasskeys(auth.PasskeysConfig{ //nolint:wrapcheck // the callee names the step
 		Service:       svc,
 		RPID:          rp.ID,
 		RPDisplayName: rp.DisplayName,
 		Origins:       rp.Origins,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("building the passkey relying party: %w", err)
-	}
-	return passkeys, nil
 }
 
 // signInPath is the frontend route of the sign-in screen (see web/src/App.tsx).
