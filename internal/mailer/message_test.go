@@ -21,7 +21,7 @@ func TestRenderMessage(t *testing.T) {
 		Body:    "Dobrý den,\n\nhotovo.\n",
 	}
 
-	got := string(renderMessage(from, msg, sentAt))
+	got := string(renderMessage(from, msg, sentAt, "<ABC@example.com>"))
 	head, bodyPart, found := strings.Cut(got, "\r\n\r\n")
 	if !found {
 		t.Fatalf("rendered message has no header/body separator:\n%s", got)
@@ -32,6 +32,8 @@ func TestRenderMessage(t *testing.T) {
 		"To: jan@example.com",
 		"Subject: =?utf-8?q?V=C3=A1=C5=A1_=C3=BA=C4=8Det_v_Kuk=C3=A1tku_byl_schv=C3=A1len?=",
 		"Date: Sat, 22 Aug 2026 09:30:00 +0000",
+		"Message-ID: <ABC@example.com>",
+		"Auto-Submitted: auto-generated",
 		"MIME-Version: 1.0",
 		"Content-Type: text/plain; charset=utf-8",
 		"Content-Transfer-Encoding: quoted-printable",
@@ -51,7 +53,7 @@ func TestRenderMessage_lineEndings(t *testing.T) {
 
 	from := mail.Address{Address: "kukatko@example.com"}
 	msg := Message{To: "jan@example.com", Subject: "Test", Body: "první\ndruhý\n"}
-	got := string(renderMessage(from, msg, time.Unix(0, 0).UTC()))
+	got := string(renderMessage(from, msg, time.Unix(0, 0).UTC(), NewMessageID("example.com")))
 
 	for i := range len(got) {
 		if got[i] == '\n' && (i == 0 || got[i-1] != '\r') {
@@ -72,7 +74,7 @@ func TestRenderMessage_longLineIsFolded(t *testing.T) {
 
 	from := mail.Address{Address: "kukatko@example.com"}
 	msg := Message{To: "jan@example.com", Subject: "Test", Body: strings.Repeat("a", 500) + "\n"}
-	got := string(renderMessage(from, msg, time.Unix(0, 0).UTC()))
+	got := string(renderMessage(from, msg, time.Unix(0, 0).UTC(), NewMessageID("example.com")))
 
 	for line := range strings.SplitSeq(got, "\r\n") {
 		if len(line) > 998 {

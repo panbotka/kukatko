@@ -33,6 +33,7 @@ func buildMailServiceOrNil(cfg *config.Config, db *database.DB) (*mailjob.Servic
 		Encryption:  cfg.Mail.Encryption,
 		FromAddress: cfg.Mail.FromAddress,
 		FromName:    cfg.Mail.FromName,
+		BaseURL:     cfg.Mail.BaseURL,
 		Timeout:     cfg.Mail.Timeout,
 	})
 	if err != nil {

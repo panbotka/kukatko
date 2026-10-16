@@ -2715,7 +2715,10 @@ pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 
   an *enabled* mailer with an empty `mail.host`, `mail.from_address` or `mail.base_url` fails with
   `ErrIncompleteMailConfig` listing **every** missing key at once (names only — `mail.password` never
   reaches the error or a log); a *disabled* one is never checked, so an instance that sends no mail need
-  not mention a single key. Messages are `text/plain; charset=utf-8` with RFC 2047 encoded subjects, and a
+  not mention a single key. Messages are `text/plain; charset=utf-8` with RFC 2047 encoded subjects, each
+  carries its own random `Message-ID` on the domain of `from_address` (falling back to the host of
+  `base_url`, then `kukatko.invalid`; a retried delivery gets a new one) and `Auto-Submitted: auto-generated`
+  so auto-responders stay quiet, and a
   recipient in the reserved `.invalid` domain (the placeholder addresses in the user table) is **refused,
   never dialled**. Env: `KUKATKO_MAIL_ENABLED`/`_HOST`/`_PORT`/`_USERNAME`/`_PASSWORD`/`_ENCRYPTION`/
   `_FROM_ADDRESS`/`_FROM_NAME`/`_BASE_URL`/`_TIMEOUT`.

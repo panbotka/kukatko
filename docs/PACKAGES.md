@@ -6656,7 +6656,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   caller never depends on SMTP: `SMTPSender` in production, **`Noop`** when `mail.enabled` is false (accepts
   everything, delivers nothing — an instance nobody gave a mail server to still works), and **`Fake`** in
   tests, which records what it was handed (`Sent`/`Last`/`Reset`, `FailWith` to exercise the failure path) and
-  **never opens a socket**. `Fake` lives in the package, not in a `_test.go` file, because every caller of
+  **never opens a socket**; it also records the headers the SMTP sender would have written (`SentHeaders`,
+  index-aligned with `Sent`; `NewFakeFrom(fromAddress, baseURL)` picks the sender, `NewFake` a placeholder on
+  `kukatko.invalid`), so a Message-ID is testable without a server. `Fake` lives in the package, not in a `_test.go` file, because every caller of
   `Sender` wants it. `Message` is `{To, Subject, Body}` — one recipient, plain text, no HTML alternative, no
   attachments, no copies.
   - **The address guard.** The user table holds placeholder addresses in the reserved `.invalid` domain
@@ -6667,7 +6669,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     guard; `Noop` does not, because it attempts nothing and an instance with mail off must not fail a
     registration over an address it was never going to write to.
   - **`SMTPSender`** — `NewSMTP(SMTPConfig{Host,Port,Username,Password,Encryption,FromAddress,FromName,
-    Timeout})`, **standard library only** (`net/smtp` + `crypto/tls`), so the binary keeps building with
+    BaseURL,Timeout})`, **standard library only** (`net/smtp` + `crypto/tls`), so the binary keeps building with
     `CGO_ENABLED=0`. Three modes: `EncryptionSTARTTLS` (default, port 587), `EncryptionTLS` (implicit, port
     465) and `EncryptionNone` (a local relay). Authentication is optional — an empty username skips `AUTH`
     entirely, which is what an unauthenticated relay on localhost needs. `NewSMTP` fills in the missing port
@@ -6677,11 +6679,21 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     forgotten about it), the context deadline becomes the socket deadline, and TLS is pinned to ≥ 1.2 with the
     configured host as the server name.
   - **The wire format** (`renderMessage`, pure): CRLF headers — `From` (display name encoded by `net/mail`),
-    `To`, `Subject` **RFC 2047 Q-encoded**, `Date`, `MIME-Version`, `Content-Type: text/plain; charset=utf-8`,
-    `Content-Transfer-Encoding: quoted-printable` — a blank line, then the quoted-printable body. Quoted-
-    printable rather than raw 8-bit because it needs no `8BITMIME` from the server and it folds the long lines
-    the 998-octet limit would otherwise break; the Q-encoded subject is what makes `Váš účet byl schválen`
-    survive a server that only takes ASCII headers.
+    `To`, `Subject` **RFC 2047 Q-encoded**, `Date`, `Message-ID`, `Auto-Submitted: auto-generated`,
+    `MIME-Version`, `Content-Type: text/plain; charset=utf-8`, `Content-Transfer-Encoding: quoted-printable` —
+    a blank line, then the quoted-printable body (the header list is `messageHeaders`, shared with `Fake`).
+    Quoted-printable rather than raw 8-bit because it needs no `8BITMIME` from the server and it folds the
+    long lines the 998-octet limit would otherwise break; the Q-encoded subject is what makes `Váš účet byl
+    schválen` survive a server that only takes ASCII headers.
+  - **`Message-ID` on every message** (RFC 5322 says SHOULD; Gmail and other large receivers score or reject
+    mail without one, and whether the submission server adds it is not ours to know): `NewMessageID(domain)`
+    = `<` + `crypto/rand.Text()` (26 base32 characters, **130 bits**) + `@domain>`. The domain is
+    `MessageIDDomain(fromAddress, baseURL)`: the domain of `mail.from_address`, else the host of
+    `mail.base_url` (an IP host does not count), else `FallbackMessageIDDomain` = `kukatko.invalid`. The ID
+    is minted **when the message is built for sending**, so a retried `mail_send` job carries a **new** one —
+    deliberately: the job id is a sequential number with no entropy, and a retry happens only when the
+    previous attempt was not accepted. **`Auto-Submitted: auto-generated`** (RFC 3834) keeps vacation and
+    out-of-office responders from answering mail nobody reads replies to.
   - **Eight Czech templates**, each a **pure function of its own data struct** returning
     `Rendered{Template,Subject,Body}` (`Rendered.Message(to)` addresses it), unit-tested against the exact
     expected text. **Every data struct of a project's event carries `ProjectName`**: with one, the subject

@@ -50,6 +50,9 @@ type SMTPConfig struct {
 	// display name.
 	FromAddress string
 	FromName    string
+	// BaseURL is the instance's public URL; its host names the Message-ID domain
+	// should FromAddress somehow carry none (see MessageIDDomain).
+	BaseURL string
 	// Timeout bounds one delivery; 0 means DefaultTimeout.
 	Timeout time.Duration
 }
@@ -66,6 +69,8 @@ type SMTPSender struct {
 	encryption string
 	from       mail.Address
 	timeout    time.Duration
+	// idDomain is the right-hand side of every Message-ID (MessageIDDomain).
+	idDomain string
 	// now supplies the Date header; it is a field so a test can pin it.
 	now func() time.Time
 }
@@ -98,6 +103,7 @@ func NewSMTP(cfg SMTPConfig) (*SMTPSender, error) {
 		encryption: encryption,
 		from:       mail.Address{Name: strings.TrimSpace(cfg.FromName), Address: from},
 		timeout:    cfg.Timeout,
+		idDomain:   MessageIDDomain(from, cfg.BaseURL),
 		now:        time.Now,
 	}
 	if sender.port <= 0 {
@@ -195,7 +201,8 @@ func (s *SMTPSender) negotiate(client *smtp.Client) error {
 
 // deliver runs the MAIL/RCPT/DATA exchange for one message and closes the session
 // politely with QUIT, whose error still counts: a server that refuses the QUIT
-// may not have committed the message.
+// may not have committed the message. Each call mints a fresh Message-ID, so a
+// retried delivery is a new message as far as the receiver is concerned.
 func (s *SMTPSender) deliver(client *smtp.Client, recipient string, msg Message) error {
 	if err := client.Mail(s.from.Address); err != nil {
 		return fmt.Errorf("%w: MAIL FROM %q: %w", ErrSendFailed, s.from.Address, err)
@@ -207,7 +214,7 @@ func (s *SMTPSender) deliver(client *smtp.Client, recipient string, msg Message)
 	if err != nil {
 		return fmt.Errorf("%w: DATA: %w", ErrSendFailed, err)
 	}
-	if _, err := writer.Write(renderMessage(s.from, msg, s.now())); err != nil {
+	if _, err := writer.Write(renderMessage(s.from, msg, s.now(), NewMessageID(s.idDomain))); err != nil {
 		return fmt.Errorf("%w: writing the message: %w", ErrSendFailed, err)
 	}
 	if err := writer.Close(); err != nil {
