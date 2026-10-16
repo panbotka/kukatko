@@ -154,8 +154,12 @@ describe('BulkEditControl', () => {
     // be carried into the next action, and the list is refreshed.
     expect(screen.getByTestId('count')).toHaveTextContent('0')
     expectOff(screen.getByRole('button', { name: 'Bulk edit' }))
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(onEdited).toHaveBeenCalledTimes(1)
+    // The dialog leaves through react-bootstrap's fade, whose end jsdom only
+    // emulates with a timer the click does not wait for — so wait for it here.
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
   })
 
   it("keeps the selection and shows the server's message when the apply fails", async () => {

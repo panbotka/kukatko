@@ -1,8 +1,8 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { I18nextProvider } from 'react-i18next'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
 
@@ -120,11 +120,24 @@ function Host({ initial = '' }: { initial?: string }) {
   )
 }
 
+/**
+ * Fires a Leaflet event the way the real map would reach React: inside `act`, so
+ * the state update it causes is committed and its effects (the picker's pin) have
+ * run before the test reads anything. Called bare, the pin effect can still be
+ * pending when the test ends and run only during the cleanup's unmount — after
+ * the recording below was reset, so the next test starts with a stray pin.
+ */
+function fire(handler: (() => void) | undefined) {
+  act(() => {
+    handler?.()
+  })
+}
+
+// The recording is reset BEFORE each test rather than after it: Testing Library's
+// cleanup unmounts the previous tree after this file's `afterEach` hooks, and an
+// unmount flushes whatever effects that tree still had pending.
 beforeEach(() => {
   window.sessionStorage.clear()
-})
-
-afterEach(() => {
   vi.clearAllMocks()
   leaflet.calls.mapOptions.length = 0
   leaflet.calls.markers.length = 0
@@ -145,7 +158,9 @@ describe('LocationPicker ways in', () => {
 
   it('writes a canonical coordinate when the map is clicked', async () => {
     render(<Host />)
-    leaflet.calls.mapHandlers.click?.({ latlng: BRNO })
+    fire(() => {
+      leaflet.calls.mapHandlers.click?.({ latlng: BRNO })
+    })
     await waitFor(() => {
       expect(screen.getByTestId('value')).toHaveTextContent('49.195220, 16.607960')
     })
@@ -171,7 +186,7 @@ describe('LocationPicker ways in', () => {
     })
     const marker = leaflet.calls.markers[0]
     marker.latlng = [50.08804, 14.42076]
-    marker.handlers.dragend?.()
+    fire(marker.handlers.dragend)
     await waitFor(() => {
       expect(screen.getByTestId('value')).toHaveTextContent('50.088040, 14.420760')
     })
@@ -203,7 +218,9 @@ describe('LocationPicker starting viewport', () => {
   it('opens near the place picked last, not in the ocean', async () => {
     // A first photo geotagged in this session…
     const first = render(<Host />)
-    leaflet.calls.mapHandlers.click?.({ latlng: BRNO })
+    fire(() => {
+      leaflet.calls.mapHandlers.click?.({ latlng: BRNO })
+    })
     await waitFor(() => {
       expect(screen.getByTestId('value')).toHaveTextContent('49.195220')
     })
@@ -250,7 +267,9 @@ describe('LocationPicker full screen', () => {
     await user.click(screen.getByRole('button', { name: /Mapa na celou obrazovku/ }))
     await screen.findByRole('dialog')
 
-    leaflet.calls.mapHandlers.click?.({ latlng: BRNO })
+    fire(() => {
+      leaflet.calls.mapHandlers.click?.({ latlng: BRNO })
+    })
     await waitFor(() => {
       expect(screen.getByTestId('value')).toHaveTextContent('49.195220, 16.607960')
     })
