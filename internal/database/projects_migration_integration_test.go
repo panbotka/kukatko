@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
@@ -24,6 +25,17 @@ import (
 // whole migration chain runs from scratch without touching the shared test
 // database's public schema — or racing another session's tests in it. The
 // schema is dropped on cleanup.
+//
+// The schema is created over the admin pool before the fresh pool exists. The
+// old order (pool first, schema second) left a window: a session resolves its
+// search_path as soon as it names an object — the pool's AfterConnect does,
+// registering the pgvector types — and leaves out an entry that does not exist
+// yet, so a session started before the schema puts public first until it
+// processes the CREATE SCHEMA's invalidation; and with MinConns the pool dials a
+// session in the background, concurrently with the CREATE. Once in CI a Migrate
+// ran on such a session, found public's schema_migrations and applied nothing.
+// Now no session of the pool has ever seen the path without the schema, and
+// assertSessionsInSchema checks every session before the DB is handed out.
 func freshSchemaDB(t *testing.T) *database.DB {
 	t.Helper()
 	raw := os.Getenv(dbtest.EnvTestDatabaseURL)
@@ -31,31 +43,79 @@ func freshSchemaDB(t *testing.T) *database.DB {
 		t.Skipf("%s not set; skipping integration test", dbtest.EnvTestDatabaseURL)
 	}
 	// Make sure the extensions the migrations need already exist in public.
-	_ = dbtest.New(t)
+	admin := dbtest.New(t)
 
 	suffix := make([]byte, 6)
 	if _, err := rand.Read(suffix); err != nil {
 		t.Fatalf("random schema suffix: %v", err)
 	}
 	schema := "mt_fresh_" + hex.EncodeToString(suffix)
+	ident := pgx.Identifier{schema}.Sanitize()
+	if _, err := admin.Pool().Exec(t.Context(), "CREATE SCHEMA "+ident); err != nil {
+		t.Fatalf("creating schema %s: %v", schema, err)
+	}
+	// Registered before the fresh pool's Close, so it runs after it: no session
+	// of the pool is left using the schema while it is dropped.
+	t.Cleanup(func() {
+		if _, err := admin.Pool().Exec(context.Background(), "DROP SCHEMA IF EXISTS "+ident+" CASCADE"); err != nil {
+			t.Errorf("dropping schema %s: %v", schema, err)
+		}
+	})
 
+	return openInSchema(t, raw, schema)
+}
+
+// freshPoolConns is the size of every pool opened on a fresh schema, so
+// assertSessionsInSchema can hold all of its sessions at once.
+const freshPoolConns = 2
+
+// openInSchema opens a pool whose search_path puts the existing schema first
+// (public second, for the extensions), checks that every one of its sessions
+// resolves to that schema, and closes it on cleanup.
+func openInSchema(t *testing.T, dsn, schema string) *database.DB {
+	t.Helper()
 	db, err := database.New(t.Context(), config.DatabaseConfig{
-		URL: dsnWithParam(raw, "search_path", schema+",public"), MaxOpenConns: 2, MaxIdleConns: 1,
+		URL:          dsnWithParam(dsn, "search_path", schema+",public"),
+		MaxOpenConns: freshPoolConns, MaxIdleConns: 1,
 	})
 	if err != nil {
 		t.Fatalf("connecting with a fresh search_path: %v", err)
 	}
-	ident := pgx.Identifier{schema}.Sanitize()
-	t.Cleanup(func() {
-		if _, err := db.Pool().Exec(context.Background(), "DROP SCHEMA IF EXISTS "+ident+" CASCADE"); err != nil {
-			t.Errorf("dropping schema %s: %v", schema, err)
-		}
-		db.Close()
-	})
-	if _, err := db.Pool().Exec(t.Context(), "CREATE SCHEMA "+ident); err != nil {
-		t.Fatalf("creating schema %s: %v", schema, err)
-	}
+	t.Cleanup(db.Close)
+	assertSessionsInSchema(t, db, schema)
 	return db
+}
+
+// assertSessionsInSchema holds every session the pool may open at once and fails
+// the test unless each of them creates into (current_schema()) the given schema.
+// It is what makes "the search_path isolates the test" a checked precondition
+// rather than something a later assertion can only guess went wrong.
+func assertSessionsInSchema(t *testing.T, db *database.DB, schema string) {
+	t.Helper()
+	conns := make([]*pgxpool.Conn, 0, freshPoolConns)
+	defer func() {
+		for _, conn := range conns {
+			conn.Release()
+		}
+	}()
+	for range freshPoolConns {
+		conn, err := db.Pool().Acquire(t.Context())
+		if err != nil {
+			t.Fatalf("acquiring a session of the fresh pool: %v", err)
+		}
+		conns = append(conns, conn)
+	}
+	for _, conn := range conns {
+		var current string
+		var pid int32
+		if err := conn.QueryRow(t.Context(), "SELECT current_schema(), pg_backend_pid()").
+			Scan(&current, &pid); err != nil {
+			t.Fatalf("reading a session's current schema: %v", err)
+		}
+		if current != schema {
+			t.Fatalf("session %d resolves current_schema() = %q, want the fresh %q", pid, current, schema)
+		}
+	}
 }
 
 // dsnWithParam returns dsn with one runtime parameter added, for both DSN forms

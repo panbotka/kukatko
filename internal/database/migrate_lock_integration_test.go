@@ -7,7 +7,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 )
@@ -99,13 +98,5 @@ func sameSchemaDB(t *testing.T, db *database.DB) *database.DB {
 	if err := db.Pool().QueryRow(t.Context(), "SELECT current_schema()").Scan(&schema); err != nil {
 		t.Fatalf("reading the fresh schema's name: %v", err)
 	}
-	other, err := database.New(t.Context(), config.DatabaseConfig{
-		URL:          dsnWithParam(os.Getenv(dbtest.EnvTestDatabaseURL), "search_path", schema+",public"),
-		MaxOpenConns: 2, MaxIdleConns: 1,
-	})
-	if err != nil {
-		t.Fatalf("connecting a second pool to %s: %v", schema, err)
-	}
-	t.Cleanup(other.Close)
-	return other
+	return openInSchema(t, os.Getenv(dbtest.EnvTestDatabaseURL), schema)
 }
