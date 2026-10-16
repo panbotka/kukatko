@@ -32,7 +32,7 @@ type ProjectSetupData struct {
 func RenderProjectSetup(d ProjectSetupData) Rendered {
 	return Rendered{
 		Template: TemplateProjectSetup,
-		Subject:  "Byl pro vás založen projekt „" + d.ProjectName + "“ v Kukátku",
+		Subject:  InProject(d.ProjectName, "Byl pro vás založen projekt"),
 		Body: body(
 			greeting,
 			"",
@@ -67,7 +67,7 @@ type ProjectAdminAddedData struct {
 func RenderProjectAdminAdded(d ProjectAdminAddedData) Rendered {
 	return Rendered{
 		Template: TemplateProjectAdminAdded,
-		Subject:  "Byl pro vás založen projekt „" + d.ProjectName + "“ v Kukátku",
+		Subject:  InProject(d.ProjectName, "Byl pro vás založen projekt"),
 		Body: body(
 			greeting,
 			"",

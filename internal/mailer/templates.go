@@ -76,9 +76,14 @@ type RegistrationReceivedData struct {
 // received and is waiting for an administrator to approve it. It is a pure
 // function of d.
 func RenderRegistrationReceived(d RegistrationReceivedData) Rendered {
+	subject := "Registrace do Kukátka čeká na schválení"
+	if strings.TrimSpace(d.ProjectName) != "" {
+		// The prefix names the product already; the body says it once more.
+		subject = InProject(d.ProjectName, "Registrace čeká na schválení")
+	}
 	return Rendered{
 		Template: TemplateRegistrationReceived,
-		Subject:  InProject(d.ProjectName, "Registrace do Kukátka čeká na schválení"),
+		Subject:  subject,
 		Body: body(
 			greeting,
 			"",
@@ -133,7 +138,7 @@ func RenderAccountApproved(d AccountApprovedData) Rendered {
 	}
 	return Rendered{
 		Template: TemplateAccountApproved,
-		Subject:  "Přístup do projektu „" + d.ProjectName + "“ v Kukátku byl schválen",
+		Subject:  InProject(d.ProjectName, "Přístup do projektu byl schválen"),
 		Body: body(
 			greeting,
 			"",
@@ -368,6 +373,14 @@ func taskStateWords(state string) string {
 // projects sorts the mail by the project before they open it. An empty project
 // name (a mail queued before projects) leaves the subject as it is. The
 // project's name — never its slug — is what a person knows it by.
+//
+// The one rule for every subject: a mail about one project — every mail that
+// names a project — goes through InProject and so carries the
+// "Kukátko · <project>: " prefix; an account-level mail that names no project
+// (password reset, username changed) carries none. The prefix already names
+// the product, so the subject behind it never does again — no "v Kukátku", no
+// "do Kukátka" — and the project, named in the prefix, is not repeated either.
+// TestTemplates_nameTheProductOnce holds every template to it.
 func InProject(projectName, subject string) string {
 	name := strings.TrimSpace(projectName)
 	if name == "" {

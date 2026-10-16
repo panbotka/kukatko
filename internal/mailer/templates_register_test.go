@@ -155,3 +155,48 @@ func TestMarkersIn(t *testing.T) {
 		}
 	}
 }
+
+// TestTemplates_nameTheProductOnce pins the subject of every template in
+// everyTemplate and holds each to the one subject rule (see InProject): a mail
+// naming a project carries the "Kukátko · <project>: " prefix, an account-level
+// mail none, and either way the product is named at most once — never a
+// "v Kukátku" behind the prefix that already says it.
+func TestTemplates_nameTheProductOnce(t *testing.T) {
+	t.Parallel()
+
+	want := []string{
+		"Kukátko · Rodina: Registrace čeká na schválení",
+		"Váš účet v Kukátku byl schválen",
+		"Kukátko · Rodina: Přístup do projektu byl schválen",
+		"Vaše uživatelské jméno v Kukátku je teď pavla.p",
+		"Kukátko · Rodina: Nová registrace čeká na schválení: pavla",
+		"Obnovení hesla do Kukátka",
+		"Kukátko · Rodina: Byl pro vás založen projekt",
+		"Kukátko · Rodina: Byl pro vás založen projekt",
+		"Kukátko · Rodina: Čeká na vás 7 úkolů",
+		"Kukátko · Rodina: Označili vás na fotkách",
+		"Kukátko · Rodina: Označili vás na fotkách",
+		"Kukátko · Rodina: Nové doporučené album: Pouť",
+		"Kukátko · Rodina: Eva vás přidal(a) k úkolu: Kdy to bylo?",
+		"Kukátko · Rodina: Eva vás zmínil(a) v komentáři u fotky „Pouť“",
+		"Kukátko · Rodina: Eva vás zmínil(a) v komentáři u úkolu „Kdy?“",
+		"Kukátko · Rodina: Eva vás zmínil(a) v komentáři u alba „Pouť“",
+		"Kukátko · Rodina: Nová registrace čeká na schválení",
+	}
+	mails := everyTemplate()
+	if len(mails) != len(want) {
+		t.Fatalf("everyTemplate renders %d mails, the table pins %d", len(mails), len(want))
+	}
+	for i, mail := range mails {
+		if mail.Subject != want[i] {
+			t.Errorf("%s (#%d) subject = %q, want %q", mail.Template, i, mail.Subject, want[i])
+		}
+		if n := strings.Count(mail.Subject, "Kukátk"); n > 1 {
+			t.Errorf("%s (#%d) names the product %d times: %q", mail.Template, i, n, mail.Subject)
+		}
+		if rest, prefixed := strings.CutPrefix(mail.Subject, "Kukátko · Rodina: "); prefixed &&
+			strings.Contains(rest, "Rodina") {
+			t.Errorf("%s (#%d) repeats the project behind the prefix: %q", mail.Template, i, mail.Subject)
+		}
+	}
+}

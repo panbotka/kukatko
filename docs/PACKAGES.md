@@ -6710,7 +6710,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     (`v projektu „<name>“ v Kukátku`; the generic notification mail adds a `Z projektu „<name>“ v Kukátku:`
     line, the digest keeps its `Projekt <name>` heading), all links already under `/p/<slug>/`; without one —
     a job queued before projects — the old text, byte for byte (the goldens of both live side by side,
-    `templates_project_test.go`). `RenderRegistrationReceived` (`RegistrationReceivedData{DisplayName,
+    `templates_project_test.go`). **One subject rule** (written beside `InProject`): a mail about one
+    project — every mail that names a project, `RenderAccountApproved`/`RenderProjectSetup`/
+    `RenderProjectAdminAdded` included — carries the `Kukátko · <project>: ` prefix; an account-level mail
+    that names no project (password reset, username changed, a pre-project approval) carries none. Behind the
+    prefix the subject never names the product again (`Kukátko · Veselice: Registrace čeká na schválení`, not
+    „… Registrace do Kukátka …") nor the project; `TestTemplates_nameTheProductOnce` pins every template's
+    subject and fails one with „Kukátk" twice. `RenderRegistrationReceived` (`RegistrationReceivedData{DisplayName,
     Username,ProjectName}` — your account exists and waits for an administrator), `RenderAccountApproved`
     (`AccountApprovedData{DisplayName,ProjectName,ProjectURL,SignInURL}`: with a project it names it and
     links to its `/p/<slug>/`; without one — a job queued before projects — the old sign-in text), `RenderNewRegistrationPending`
@@ -6718,8 +6724,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     copy, naming all three and linking the project's member screen),
     and `RenderPasswordReset` (`PasswordResetData{DisplayName,ResetURL,ValidFor}`). `templates_setup.go` holds
     the two mails of a project set up for somebody: `RenderProjectSetup` (`ProjectSetupData{DisplayName,
-    ProjectName,Username,SetPasswordURL,ValidFor}` — „Byl pro vás založen projekt „X" v Kukátku… Nastavte si
-    heslo:", the link, its validity, the username; not the reset text) and `RenderProjectAdminAdded`
+    ProjectName,Username,SetPasswordURL,ValidFor}` — subject `Kukátko · X: Byl pro vás založen projekt`, body
+    „byl pro vás založen projekt „X" v Kukátku… Nastavte si heslo:", the link, its validity, the username; not the reset text) and `RenderProjectAdminAdded`
     (`ProjectAdminAddedData{DisplayName,ProjectName,Username,ProjectURL}` — for an existing account: the
     project's link, no password link). The `Template*` name
     constants exist so a log or audit line can say which message went out without repeating its subject. Two

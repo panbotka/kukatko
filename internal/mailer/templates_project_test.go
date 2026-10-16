@@ -79,7 +79,7 @@ func TestTemplates_nameTheProject(t *testing.T) {
 		{
 			name:        "registration received",
 			got:         RenderRegistrationReceived(RegistrationReceivedData{Username: "petr", ProjectName: "Veselice"}),
-			wantSubject: "Kukátko · Veselice: Registrace do Kukátka čeká na schválení",
+			wantSubject: "Kukátko · Veselice: Registrace čeká na schválení",
 			wantBody: "Dobrý den,\n\nvaši registraci do projektu „Veselice“ v Kukátku jsme přijali. " +
 				"Účet „petr“ je založený,\nzatím ale není aktivní — musí ho nejdřív schválit správce.\n\n" +
 				"Až se tak stane, přijde vám další e-mail a budete se moct přihlásit.\n\nKukátko\n",

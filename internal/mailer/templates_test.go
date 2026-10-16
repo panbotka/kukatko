@@ -72,7 +72,7 @@ func TestRenderAccountApproved_namesTheProject(t *testing.T) {
 		ProjectURL:  "https://kukatko.example.com/p/hasici/",
 		SignInURL:   "https://kukatko.example.com/login",
 	})
-	if want := "Přístup do projektu „Hasiči“ v Kukátku byl schválen"; got.Subject != want {
+	if want := "Kukátko · Hasiči: Přístup do projektu byl schválen"; got.Subject != want {
 		t.Errorf("Subject = %q, want %q", got.Subject, want)
 	}
 	want := "Dobrý den,\n" +

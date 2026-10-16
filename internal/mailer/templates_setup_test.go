@@ -22,7 +22,7 @@ func TestRenderProjectSetup(t *testing.T) {
 				DisplayName: "Jana Nováková", ProjectName: "Rodina", Username: "jana",
 				SetPasswordURL: "https://k.example/password-reset/tok?project=rodina", ValidFor: 7 * 24 * time.Hour,
 			},
-			wantSubject: "Byl pro vás založen projekt „Rodina“ v Kukátku",
+			wantSubject: "Kukátko · Rodina: Byl pro vás založen projekt",
 			wantBody: "Dobrý den,\n\nbyl pro vás založen projekt „Rodina“ v Kukátku a jste jeho správce.\n" +
 				"Nastavte si heslo:\n\nhttps://k.example/password-reset/tok?project=rodina\n\n" +
 				"Odkaz platí 7 dnů. Použít se dá jen jednou.\nPřihlašovací jméno: jana\n\n" +
@@ -31,7 +31,7 @@ func TestRenderProjectSetup(t *testing.T) {
 		{
 			name:        "no name, unknown validity",
 			data:        ProjectSetupData{ProjectName: "Chata", SetPasswordURL: "/password-reset/t"},
-			wantSubject: "Byl pro vás založen projekt „Chata“ v Kukátku",
+			wantSubject: "Kukátko · Chata: Byl pro vás založen projekt",
 			wantBody: "Dobrý den,\n\nbyl pro vás založen projekt „Chata“ v Kukátku a jste jeho správce.\n" +
 				"Nastavte si heslo:\n\n/password-reset/t\n\n" +
 				"Odkaz má omezenou platnost. Použít se dá jen jednou.\nPřihlašovací jméno: —\n\n" +
@@ -66,7 +66,7 @@ func TestRenderProjectAdminAdded(t *testing.T) {
 	if got.Template != TemplateProjectAdminAdded {
 		t.Errorf("Template = %q, want %q", got.Template, TemplateProjectAdminAdded)
 	}
-	if want := "Byl pro vás založen projekt „Rodina“ v Kukátku"; got.Subject != want {
+	if want := "Kukátko · Rodina: Byl pro vás založen projekt"; got.Subject != want {
 		t.Errorf("Subject = %q, want %q", got.Subject, want)
 	}
 	want := "Dobrý den,\n\nbyl pro vás založen projekt „Rodina“ v Kukátku a jste jeho správce.\n" +
