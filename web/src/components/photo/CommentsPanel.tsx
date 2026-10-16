@@ -10,6 +10,7 @@ import { Icon } from '../Icon'
 import { type CommentFailure, useComments } from '../../hooks/useComments'
 import { type Comment, type CommentSubject, MAX_COMMENT_LENGTH } from '../../services/comments'
 import { type TaskState } from '../../services/tasks'
+import { revealWithin } from '../../lib/scrollWithin'
 
 import { CommentItem } from './CommentItem'
 import { MentionTextarea } from './MentionTextarea'
@@ -146,7 +147,9 @@ export function CommentsPanel({
     const target = document.getElementById(id)
     if (target !== null && comments.some((item) => `comment-${item.uid}` === id)) {
       scrolledTo.current = hash
-      target.scrollIntoView({ block: 'center' })
+      // Only the thread's own scroller moves: `scrollIntoView` would also scroll
+      // the photo viewer around it and push its toolbar off the screen.
+      revealWithin(target, 'center')
     }
   }, [status, comments])
 
@@ -268,7 +271,7 @@ export function CommentsPanel({
             // Inside the phone's bottom sheet the composer can start below the fold;
             // bringing it into view on focus means the reader types where they can
             // see what they are typing.
-            event.currentTarget.scrollIntoView({ block: 'nearest' })
+            revealWithin(event.currentTarget, 'nearest')
           }}
         />
         {handOver ? (

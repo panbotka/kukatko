@@ -27,7 +27,14 @@
      the screen it sits in. */
   --kk-viewer-sheet-h: 46dvh;
   background: var(--kk-viewer-backdrop);
+  /* `clip`, not just `hidden`: a hidden box is still a scroll container that
+     `scrollIntoView` and focus scrolling move, and a viewer scrolled by a few
+     pixels pushes its toolbar off the top of the screen (a comment deep link did
+     exactly that). The root never scrolls for the reader — zoom and pan are the
+     stage's transforms — so nothing is lost. `hidden` stays as the fallback for
+     an engine without `clip`. */
   overflow: hidden;
+  overflow: clip;
   color: var(--kk-text);
   /* The stage owns every touch gesture (pinch/zoom/pan/swipe), so the browser
      must not scroll the page, pinch-zoom it, or fire its edge back-swipe. */

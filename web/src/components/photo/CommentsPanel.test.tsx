@@ -392,6 +392,57 @@ describe('CommentsPanel', () => {
     )
   })
 
+  it('reveals a linked comment by scrolling only the drawer body, never the viewer', async () => {
+    // The photo viewer in miniature: a fixed, clipping root, and the drawer body
+    // inside it as the one scroller the thread lives in.
+    const root = document.createElement('div')
+    root.style.position = 'fixed'
+    root.style.overflow = 'hidden'
+    const body = document.createElement('div')
+    body.style.overflowY = 'auto'
+    root.append(body)
+    document.body.append(root)
+    Object.defineProperty(body, 'clientHeight', { configurable: true, value: 400 })
+    Object.defineProperty(body, 'scrollHeight', { configurable: true, value: 3000 })
+    // jsdom has no layout: the linked row sits far down the thread.
+    const rect = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        return this.id === 'comment-cm_2' ? new DOMRect(0, 1600, 300, 80) : new DOMRect()
+      })
+    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView')
+    window.history.replaceState(null, '', '#comment-cm_2')
+    try {
+      fetchCommentsMock.mockResolvedValue([comment(), comment({ uid: 'cm_2' })])
+      render(
+        <I18nextProvider i18n={i18n}>
+          <MemoryRouter>
+            <CommentsPanel
+              subject={PHOTO_SUBJECT}
+              currentUserUid="usr_jarmila"
+              canModerate={false}
+            />
+          </MemoryRouter>
+        </I18nextProvider>,
+        { container: body },
+      )
+
+      // Centred in the 400px body: 1600 - (400 - 80) / 2.
+      await waitFor(() => {
+        expect(body.scrollTop).toBe(1440)
+      })
+      expect(root.scrollTop).toBe(0)
+      expect(document.documentElement.scrollTop).toBe(0)
+      // `scrollIntoView` scrolls every ancestor, the viewer root included.
+      expect(scrollIntoView).not.toHaveBeenCalled()
+    } finally {
+      window.history.replaceState(null, '', window.location.pathname)
+      rect.mockRestore()
+      scrollIntoView.mockRestore()
+      root.remove()
+    }
+  })
+
   it('speaks Czech, with the plural the count needs', async () => {
     await i18n.changeLanguage('cs')
     fetchCommentsMock.mockResolvedValue([

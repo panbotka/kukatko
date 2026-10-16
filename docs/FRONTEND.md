@@ -3874,7 +3874,13 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   itself reads at 16px on a phone through app.css's small-field rule. Each `CommentItem` carries
   `id="comment-<uid>"` (`lib/mentions` `commentAnchorId`) — what the `comment_mention` notification's link
   ends in — and `.kk-comment:target` outlines it; once the thread has loaded, `CommentsPanel` scrolls the
-  comment the URL's hash names into view (the browser's own jump happens before the thread exists). The
+  comment the URL's hash names into view (the browser's own jump happens before the thread exists). It
+  scrolls **only the thread's own scroller** — `lib/scrollWithin` `revealWithin(element, 'center'|'nearest')`
+  sets `scrollTop` on the nearest overflowing `overflow-y: auto|scroll` ancestor, stops at a `position: fixed`
+  layer and falls back to the page — never `scrollIntoView`, which also scrolled the fixed viewer root and
+  pushed its toolbar off the top; the composer's focus reveal uses the same helper. The viewer root is
+  `overflow: clip` (not just `hidden`) so neither the browser's own fragment jump nor a focus scroll can move
+  it either (`lib/scrollWithin.test.ts`, plus the deep-link case in `CommentsPanel.test.tsx`). The
   `photo.comments.submitHint` says `@` mentions somebody. Tests: `MentionTextarea.test.tsx` (lazy fetch and
   filtering, mousedown selection with the caret, keyboard and Escape, keys handed on, a failed directory). **`PersonAvatar`**
   (`components/`) is what a thread actually draws: **whatever picture the author's account resolves to**
@@ -3988,7 +3994,7 @@ to no project, so a single role would be the last-visited project's, unnamed, **
   every desktop browser), `PhotoDetailPage` publishes it as `--kk-keyboard-inset` on the viewer root and the
   phone media query reads it into the sheet's `bottom`. Covered by `CommentsPanel.test.tsx` (thread, post,
   Enter vs Shift+Enter, viewer posts, edit own, delete-with-confirm, admin moderation, the icon-button
-  pair, empty state, count reported upwards, 429, Czech plural; the stylesheet half — hover-only hiding,
+  pair, empty state, count reported upwards, 429, Czech plural, the deep link scrolling only the drawer body; the stylesheet half — hover-only hiding,
   muted/danger ink, the send button's alignment — in `styles/tapTargets.test.ts`), `useKeyboardInset.test.tsx` and four badge tests in
   `PhotoDetailPage.test.tsx`. **2. Popis a místo**
   (`sections.caption`) = `MetadataPanel` = title/description/ai_note/notes/taken_at/location
