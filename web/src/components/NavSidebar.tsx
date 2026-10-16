@@ -1,4 +1,7 @@
-import { useState } from 'react'
+import { type ReactElement, useId, useState } from 'react'
+import Dropdown from 'react-bootstrap/Dropdown'
+import OverlayTrigger from 'react-bootstrap/OverlayTrigger'
+import Tooltip from 'react-bootstrap/Tooltip'
 import { useTranslation } from 'react-i18next'
 import { NavLink, useLocation } from 'react-router-dom'
 
@@ -46,6 +49,20 @@ import { UserMenu } from './UserMenu'
  * Only the middle scrolls: a maintainer's unfolded list is taller than a laptop
  * screen, and the account at the foot must stay in reach — and the menu it opens
  * must not be clipped by a scroller, which is why the foot sits outside it.
+ *
+ * **It folds to an icon rail** (`collapsed`, remembered per account by
+ * `lib/navSidebarCollapsed.ts`; {@link Layout} owns the state because the
+ * shell's lane follows it). The toggle at the foot says which way it goes
+ * („Sbalit menu" / „Rozbalit menu") and whether the sidebar is unfolded
+ * (`aria-expanded`). Folded, every row keeps its glyph, its label as the
+ * accessible name (visually hidden) and shows it as a tooltip on hover and
+ * keyboard focus; the current page keeps its pill. A group has no room to
+ * unfold under itself, so its glyph opens a flyout beside the rail instead —
+ * the group's entries with their full labels, a react-bootstrap `Dropdown`, so
+ * the arrows walk it, Escape and an outside click close it. The account menu
+ * opens beside the rail the same way, and the counts sit on the glyphs'
+ * corners, still part of each name. Nothing is reachable unfolded that is not
+ * reachable folded.
  */
 export function NavSidebar({
   nav,
@@ -54,6 +71,8 @@ export function NavSidebar({
   paletteOpen,
   onPaletteOpenChange,
   onLogout,
+  collapsed,
+  onCollapsedChange,
 }: {
   nav: DesktopNav
   /** A page outside any project: no search and no bell, as in the bar. */
@@ -63,6 +82,9 @@ export function NavSidebar({
   paletteOpen: boolean
   onPaletteOpenChange: (open: boolean) => void
   onLogout: () => void
+  /** Folded to the icon-only rail. */
+  collapsed: boolean
+  onCollapsedChange: (collapsed: boolean) => void
 }) {
   const { t } = useTranslation()
   const { pathname } = useLocation()
@@ -70,6 +92,9 @@ export function NavSidebar({
   // Which groups the reader folded or unfolded by hand; the rest follow the
   // defaults described above.
   const [toggled, setToggled] = useState<Record<string, boolean>>({})
+  // The one group whose flyout is open on the folded rail, if any.
+  const [flyout, setFlyout] = useState<string | null>(null)
+  const sidebarId = useId()
 
   /** True when any route in `items` is the current location. */
   function groupActive(items: NavEntry[]): boolean {
@@ -83,18 +108,82 @@ export function NavSidebar({
    * the root does not light up on every page.
    */
   function renderLink(entry: NavEntry, cta = false) {
+    const label = t(entry.labelKey)
+    const link = (
+      <NavLink
+        to={projectPath(entry.to)}
+        end={entry.to === LIBRARY_PATH || entry.exact === true}
+        // Folded, the tooltip says the label; a native title beside it would
+        // be a second, different bubble.
+        title={collapsed ? undefined : t(entry.titleKey)}
+        className={`kk-sidebar__link${cta ? ' kk-sidebar__link--cta' : ''}`}
+      >
+        <Icon name={entry.icon} className="kk-sidebar__icon" />
+        <span className={collapsed ? 'visually-hidden' : 'kk-sidebar__label'}>{label}</span>
+        {entry.to === TASKS_PATH && <WaitingBadge count={waitingOnMe} over={collapsed} />}
+      </NavLink>
+    )
+    return <li key={entry.to}>{collapsed ? <RailTip label={label}>{link}</RailTip> : link}</li>
+  }
+
+  /**
+   * One group on the folded rail: its glyph opens the entries in a flyout
+   * beside the rail, with their full labels. The menu is fixed-positioned so
+   * the scroller it lives in cannot clip it.
+   */
+  function renderFlyout(group: NavGroup) {
+    const active = groupActive(group.items)
+    const holdsTasks = group.items.some((item) => item.to === TASKS_PATH)
+    const label = t(group.labelKey)
+    const open = flyout === group.id
     return (
-      <li key={entry.to}>
-        <NavLink
-          to={projectPath(entry.to)}
-          end={entry.to === LIBRARY_PATH || entry.exact === true}
-          title={t(entry.titleKey)}
-          className={`kk-sidebar__link${cta ? ' kk-sidebar__link--cta' : ''}`}
+      <li key={group.id}>
+        <Dropdown
+          drop="end"
+          show={open}
+          onToggle={(next) => {
+            // Opening another group closes this one through its outside click,
+            // which lands after the other's open: close only if still ours.
+            setFlyout((current) => (next ? group.id : current === group.id ? null : current))
+          }}
         >
-          <Icon name={entry.icon} className="kk-sidebar__icon" />
-          <span className="kk-sidebar__label">{t(entry.labelKey)}</span>
-          {entry.to === TASKS_PATH && <WaitingBadge count={waitingOnMe} />}
-        </NavLink>
+          <RailTip label={label} suppress={open}>
+            <Dropdown.Toggle
+              as="button"
+              type="button"
+              id={group.id}
+              className={`kk-sidebar__link kk-sidebar__flyout-toggle${active ? ' active' : ''}`}
+            >
+              <Icon name={group.icon} className="kk-sidebar__icon" />
+              <span className="visually-hidden">{label}</span>
+              {holdsTasks && <WaitingBadge count={waitingOnMe} over />}
+            </Dropdown.Toggle>
+          </RailTip>
+          {/* Mounted up front: a menu first mounted by its own opening was
+              measured before it was laid out, and its first flyout landed at
+              the top of the window instead of beside the glyph. */}
+          <Dropdown.Menu
+            className="kk-sidebar__flyout"
+            popperConfig={{ strategy: 'fixed' }}
+            renderOnMount
+          >
+            <Dropdown.Header className="kk-menu-section">{label}</Dropdown.Header>
+            {group.items.map((item) => (
+              <Dropdown.Item
+                key={item.to}
+                as={NavLink}
+                to={projectPath(item.to)}
+                end={item.exact === true}
+                title={t(item.titleKey)}
+                className="d-flex align-items-center gap-2"
+              >
+                <Icon name={item.icon} />
+                <span className="flex-grow-1">{t(item.labelKey)}</span>
+                {item.to === TASKS_PATH && <WaitingBadge count={waitingOnMe} />}
+              </Dropdown.Item>
+            ))}
+          </Dropdown.Menu>
+        </Dropdown>
       </li>
     )
   }
@@ -132,10 +221,31 @@ export function NavSidebar({
     )
   }
 
+  const foldLabel = t(collapsed ? 'nav.sidebar.expand' : 'nav.sidebar.collapse')
+  const foldToggle = (
+    <button
+      type="button"
+      className="kk-sidebar__link kk-sidebar__fold"
+      aria-expanded={!collapsed}
+      aria-controls={sidebarId}
+      title={collapsed ? undefined : foldLabel}
+      onClick={() => {
+        setFlyout(null)
+        onCollapsedChange(!collapsed)
+      }}
+    >
+      <Icon
+        name={collapsed ? 'chevron-double-right' : 'chevron-double-left'}
+        className="kk-sidebar__icon"
+      />
+      <span className={collapsed ? 'visually-hidden' : 'kk-sidebar__label'}>{foldLabel}</span>
+    </button>
+  )
+
   return (
-    <div className="kk-sidebar">
+    <div id={sidebarId} className={`kk-sidebar${collapsed ? ' kk-sidebar--collapsed' : ''}`}>
       <div className="kk-sidebar__head">
-        <ProjectIdentity withName />
+        <ProjectIdentity withName={!collapsed} compact={collapsed} />
         <div className="kk-sidebar__tools">
           {!neutral && <SearchCommand open={paletteOpen} onOpenChange={onPaletteOpenChange} />}
           {!neutral && <NotificationBell drop="end" />}
@@ -148,7 +258,11 @@ export function NavSidebar({
             slot.kind === 'link' ? (
               renderLink(slot.entry, slot.cta === true)
             ) : slot.kind === 'group' ? (
-              renderGroup(slot.group)
+              collapsed ? (
+                renderFlyout(slot.group)
+              ) : (
+                renderGroup(slot.group)
+              )
             ) : (
               <li
                 key={`divider-${String(index)}`}
@@ -160,8 +274,36 @@ export function NavSidebar({
         </ul>
       </nav>
       <div className="kk-sidebar__foot">
-        <UserMenu nav={nav} onLogout={onLogout} placement="sidebar" />
+        {collapsed ? <RailTip label={foldLabel}>{foldToggle}</RailTip> : foldToggle}
+        <UserMenu nav={nav} onLogout={onLogout} placement={collapsed ? 'rail' : 'sidebar'} />
       </div>
     </div>
+  )
+}
+
+/**
+ * The folded rail's tooltip: `label` beside the glyph on hover and on keyboard
+ * focus. `suppress` keeps it down while the control's own flyout is open, so
+ * the bubble does not lie over the menu it names.
+ */
+function RailTip({
+  label,
+  suppress = false,
+  children,
+}: {
+  label: string
+  suppress?: boolean
+  children: ReactElement
+}) {
+  const id = useId()
+  return (
+    <OverlayTrigger
+      placement="right"
+      trigger={['hover', 'focus']}
+      show={suppress ? false : undefined}
+      overlay={<Tooltip id={id}>{label}</Tooltip>}
+    >
+      {children}
+    </OverlayTrigger>
   )
 }

@@ -130,7 +130,9 @@
     },
     "sidebar": {
       "label": "Postranní navigace",
-      "accountTitle": "Otevřít nabídku účtu a správy"
+      "accountTitle": "Otevřít nabídku účtu a správy",
+      "collapse": "Sbalit menu",
+      "expand": "Rozbalit menu"
     },
     "stats": "Statistiky",
     "versionTitle": "Verze aplikace",

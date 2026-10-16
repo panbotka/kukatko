@@ -67,6 +67,9 @@
      of the sidebar in both layouts. */
   --kk-sidebar-width: 15rem;
   --kk-sidebar-inset: 0px;
+  /* The same sidebar folded to its icon rail (`.kukatko-shell--sidebar-collapsed`):
+     one glyph column wide, enough for a 2.75rem control and its padding. */
+  --kk-sidebar-rail-width: 4rem;
 
   /* Bottom clearance a photo grid reserves while the floating batch bar is up, so
      its last row can always scroll fully clear of the bar — however many actions
@@ -144,6 +147,11 @@
 :root:has(.kukatko-shell--sidebar) {
   --kukatko-navbar-height: 0px;
   --kk-sidebar-inset: calc(var(--kk-sidebar-width) + env(safe-area-inset-left, 0px));
+}
+
+/* Folded to the rail, the lane shrinks with it and the page takes the width. */
+:root:has(.kukatko-shell--sidebar-collapsed) {
+  --kk-sidebar-inset: calc(var(--kk-sidebar-rail-width) + env(safe-area-inset-left, 0px));
 }
 
 /* ---- The dialog band ----------------------------------------------------
@@ -1430,6 +1438,7 @@ a.kk-chooser__tile:focus-visible .kk-chooser__picture {
  * and must not be clipped by the scroller, so it lives outside it). */
 .kukatko-shell--sidebar {
   padding-inline-start: var(--kk-sidebar-inset);
+  transition: padding-inline-start var(--kk-duration-base) var(--kk-ease-standard);
 }
 
 .kk-sidebar {
@@ -1445,6 +1454,17 @@ a.kk-chooser__tile:focus-visible .kk-chooser__picture {
   padding-left: env(safe-area-inset-left, 0px);
   background-color: var(--kk-surface-1);
   border-right: 1px solid var(--kk-header-border);
+  transition: width var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+/* Folding animates the sidebar's width and the lane beside it together — or
+   not at all for a reader who asked for less motion (the token durations
+   already collapse then; this says so outright). */
+@media (prefers-reduced-motion: reduce) {
+  .kukatko-shell--sidebar,
+  .kk-sidebar {
+    transition: none;
+  }
 }
 
 .kk-sidebar__head {
@@ -1642,6 +1662,65 @@ a.kk-chooser__tile:focus-visible .kk-chooser__picture {
 
 .kk-sidebar__account-menu {
   min-width: 15rem;
+}
+
+/* The fold toggle: a row like the others, quiet, above the account. */
+.kk-sidebar__fold {
+  margin-bottom: var(--kk-space-1);
+}
+
+/* ---- The folded rail (`.kk-sidebar--collapsed`) ---------------------------
+ * One column of glyphs, each centred in its row; labels are visually hidden
+ * (still the names) and come back as tooltips. The tools of the head stack
+ * under the mark, the counts move onto the glyphs' corners, and the groups and
+ * the account open their menus beside the rail. */
+.kk-sidebar--collapsed .kk-sidebar__head {
+  align-items: center;
+  padding: var(--kk-space-2);
+}
+
+.kk-sidebar--collapsed .kk-sidebar__tools {
+  flex-direction: column;
+}
+
+.kk-sidebar--collapsed .kk-sidebar__nav {
+  overflow-x: hidden;
+}
+
+.kk-sidebar--collapsed .kk-sidebar__link {
+  position: relative;
+  justify-content: center;
+  padding-inline: 0;
+}
+
+/* A flyout group has no chevron row to say "there is more": Bootstrap's
+   `dropend` caret — already a notch pointing where the menu opens — moved out
+   of the flow to the row's trailing edge, so the glyph stays centred. */
+.kk-sidebar__flyout-toggle.dropdown-toggle::after {
+  position: absolute;
+  top: 50%;
+  right: 0.25rem;
+  margin: 0;
+  transform: translateY(-50%);
+}
+
+.kk-sidebar__flyout-toggle.show:not(.active) {
+  background-color: var(--kk-surface-raised);
+  color: var(--kk-text);
+}
+
+.kk-sidebar__flyout {
+  min-width: 15rem;
+}
+
+.kk-sidebar__account-toggle--rail {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+/* The bar's caret would be a stray mark beside the lone picture. */
+.kk-sidebar__account-toggle--rail.dropdown-toggle::after {
+  display: none;
 }
 
 /* Icon-only controls (e.g. the favorite heart overlay) need a finger-friendly

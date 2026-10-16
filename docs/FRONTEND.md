@@ -8750,7 +8750,8 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
   (local — the "from whom" typed on a public upload-link page; no account to scope it to and the same person in
   every project, but a person's name, so a sign-out on a shared browser clears it with the rest).
   **User-scoped, kept across sign-out:** `kukatko.language.<uid>` (a preference, and signing back in should
-  find it), `kukatko.navPosition.<uid>` (the desktop menu's position, `top`/`left` — likewise a preference) and `kukatko.pushPrompt.answered.<uid>` (the answer is the account's on this browser; signing out drops the
+  find it), `kukatko.navPosition.<uid>` (the desktop menu's position, `top`/`left` — likewise a preference),
+  `kukatko.navSidebarCollapsed.<uid>` (the left sidebar folded to its icon rail, `collapsed`/`expanded`) and `kukatko.pushPrompt.answered.<uid>` (the answer is the account's on this browser; signing out drops the
   subscription itself, and the settings page turns it back on — forgetting the answer would only ask again). **Per device by design, never cleared:**
   `kukatko.grid.density`, `kukatko.review.density`, `kukatko.slideshow.settings`, `kukatko.viewer.chromeHintSeen`,
   `kukatko.uploadLink.batch` (the
@@ -8888,7 +8889,7 @@ vlevo" (`NavPositionSwitcher`, a button group under the language). **Top is the 
   account menu, and asserts **the two lists of `href`s are identical, order included**.
 - **`NavSidebar`** (`components/NavSidebar.tsx`) — mounted by `Layout` instead of the `Navbar` when the
   viewport is `lg`+ (`!useIsNavDrawerViewport()`), an account is signed in and it chose `left`; never both.
-  Head: `ProjectIdentity withName` (the mark and the name, the same switch as the bar's mark), then the `SearchCommand` trigger, the `NotificationBell` (`drop="end"` — its list
+  Head (unfolded): `ProjectIdentity withName` (the mark and the name, the same switch as the bar's mark), then the `SearchCommand` trigger, the `NotificationBell` (`drop="end"` — its list
   opens beside the sidebar rather than off the left edge) and `KeyboardShortcutsHelp`; in the neutral shell
   only the identity (the app title) and the shortcuts. Middle — the one scroller — `<nav aria-label=
   "Postranní navigace">` with a list of `NavLink` rows (`end` for the library root and `exact` entries, so
@@ -8920,7 +8921,36 @@ vlevo" (`NavPositionSwitcher`, a button group under the language). **Top is the 
   its backdrop cover it, `/system` with the upward account menu, the bell's list beside the sidebar; a
   probe `.kk-batch-dock` centres on the content (240–1009px at 1024), `.kukatko-sticky-toolbar` resolves
   `top: 0px`; at 390px the tab bar + drawer and no sidebar, shell padding 0. The top bar at 1440px is
-  unchanged. Not done: the optional icon-only rail.
+  unchanged. The icon-only rail came later (below).
+- **The icon-only rail** (since 2026-10-16). The sidebar folds to a glyph column; **expanded is the
+  default**. The state — `lib/navSidebarCollapsed.ts`: `readNavSidebarCollapsed(uid)` /
+  `writeNavSidebarCollapsed(uid, collapsed)` / `useNavSidebarCollapsed()` over `localStorage` key
+  `kukatko.navSidebarCollapsed.<uid>` (`collapsed`/`expanded`) — is built exactly like the position (try/catch,
+  unknown or unreadable = expanded, no account = no key, listener set + `storage` event for other tabs,
+  kept at sign-out). `Layout` reads it and passes `collapsed`/`onCollapsedChange` to `NavSidebar`; the top
+  bar never reads it, so switching to the top and back to the left brings the rail back as it was. The
+  toggle sits in the foot above the account: a row with `chevron-double-left` „Sbalit menu" /
+  `chevron-double-right` „Rozbalit menu", `aria-expanded` = unfolded, `aria-controls` = the sidebar's id.
+  Folded (`.kk-sidebar--collapsed`), `ProjectIdentity compact` (the mark alone; a `house` glyph for the
+  neutral title), the head's tools stack in a column, every row keeps its glyph and its label as a
+  `visually-hidden` accessible name, and a local `RailTip` (react-bootstrap `OverlayTrigger` + `Tooltip`,
+  `placement="right"`, hover and focus) shows the label — the native `title` is dropped there so two
+  bubbles never compete. A group becomes a `Dropdown drop="end"` flyout (controlled, one open at a time;
+  `popperConfig.strategy = 'fixed'` so the nav scroller cannot clip it, `renderOnMount` because a menu
+  first mounted by its own opening was measured unlaid-out and its first flyout landed at the window's top): a header with the group's label,
+  then its entries as `NavLink` items with full labels; arrows, Escape and outside click are the
+  Dropdown's; the tooltip is suppressed while its flyout is open. The account is `UserMenu
+  placement="rail"` — the picture alone (the name visually hidden), `drop="end"`. Counts move onto the
+  glyphs' corners (`WaitingBadge over` on Úkoly and on the „Procházet" glyph, the bell's own, the other
+  projects' pill on the avatar), still inside each control's name. CSS: `--kk-sidebar-rail-width` (4rem)
+  beside `--kk-sidebar-width`; `:root:has(.kukatko-shell--sidebar-collapsed)` sets `--kk-sidebar-inset` to
+  it, so the shell's lane, the batch dock and the PWA note follow; the sidebar's `width` and the shell's
+  `padding-inline-start` transition over `--kk-duration-base`, `transition: none` under
+  `prefers-reduced-motion`. Tests: `lib/navSidebarCollapsed.test.ts` (round-trip, per account, storage
+  throwing, sign-out, live update, another tab) and „NavSidebar folded to the rail" in
+  `NavSidebar.test.tsx` (toggle state and names in both languages, remembered, storage refusing, ignored by
+  the top bar, every destination of the bar reachable by name through the flyouts, a flyout's entries,
+  Escape and outside click, switching flyouts, the tooltip on focus, the active mark and the badges).
 
 ## Projects in the address bar
 

@@ -18,7 +18,9 @@ import { PersonAvatar } from './PersonAvatar'
  * The signed-in account's menu on a desktop, in either navigation layout: in the
  * top bar it is the dropdown at the trailing end (`placement="bar"`), in the
  * left sidebar the account row at its foot that opens upwards
- * (`placement="sidebar"`). The **content is one and the same** — "Switch
+ * (`placement="sidebar"`), and in the sidebar folded to its icon rail the
+ * picture alone, opening beside the rail (`placement="rail"`; the name stays
+ * the toggle's accessible name). The **content is one and the same** — "Switch
  * library" (only when there is somewhere else to go, wearing the other
  * projects' unread total), the account block, the "Správa" section the role
  * clears, sign-out and the build — so the two layouts cannot drift; only the
@@ -36,7 +38,7 @@ export function UserMenu({
 }: {
   nav: DesktopNav
   onLogout: () => void
-  placement: 'bar' | 'sidebar'
+  placement: 'bar' | 'sidebar' | 'rail'
 }) {
   const { t } = useTranslation()
   const { user } = useAuth()
@@ -65,8 +67,15 @@ export function UserMenu({
       </span>
       {/* In the bar: out of sight (not out of the accessible name) in the
           992–1399px band, where the row is tight; see
-          `.kk-user-menu__name`. In the sidebar there is room for it. */}
-      <span className="kk-user-menu__name">{name}</span>
+          `.kk-user-menu__name`. In the sidebar there is room for it; in
+          the folded rail there is none, so only a screen reader hears it. */}
+      <span
+        className={
+          placement === 'rail' ? 'kk-user-menu__name visually-hidden' : 'kk-user-menu__name'
+        }
+      >
+        {name}
+      </span>
     </span>
   )
 
@@ -152,12 +161,14 @@ export function UserMenu({
     )
   }
   return (
-    <Dropdown drop="up" className="kk-sidebar__account">
+    <Dropdown drop={placement === 'rail' ? 'end' : 'up'} className="kk-sidebar__account">
       <Dropdown.Toggle
         id="user-menu"
         variant="link"
         title={t('nav.sidebar.accountTitle')}
-        className="kk-sidebar__account-toggle"
+        className={`kk-sidebar__account-toggle${
+          placement === 'rail' ? ' kk-sidebar__account-toggle--rail' : ''
+        }`}
       >
         {title}
       </Dropdown.Toggle>

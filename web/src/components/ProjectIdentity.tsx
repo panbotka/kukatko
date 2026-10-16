@@ -8,6 +8,7 @@ import { ProjectContext } from '../project/ProjectContext'
 import { projectPathFor } from '../project/paths'
 import { useLeaveProject } from '../project/useLeaveProject'
 
+import { Icon } from './Icon'
 import { PROJECTS_ITEM } from './navItems'
 
 /**
@@ -28,6 +29,10 @@ import { PROJECTS_ITEM } from './navItems'
  * width in a tight row whose "Library" item already leads home — but it stays
  * the link's accessible name and tooltip (`aria-label`/`title`). The left
  * sidebar has the room, so it passes `withName` and the name follows the mark.
+ * Folded to its icon rail the sidebar passes `compact` instead: the mark alone
+ * as in the bar, and outside a project a house glyph standing in for the
+ * neutral title, which would not fit the rail's width (the title stays the
+ * link's name and tooltip).
  *
  * **Outside a project** (an instance page, or a `/p/<slug>` the account may
  * not enter — see `useNeutralChrome`) the context's project is only the entry
@@ -37,7 +42,13 @@ import { PROJECTS_ITEM } from './navItems'
  * isolated component test) and for an account with no project at all nothing
  * is rendered.
  */
-export function ProjectIdentity({ withName = false }: { withName?: boolean }) {
+export function ProjectIdentity({
+  withName = false,
+  compact = false,
+}: {
+  withName?: boolean
+  compact?: boolean
+}) {
   const { t } = useTranslation()
   const ctx = useContext(ProjectContext)
   const leave = useLeaveProject()
@@ -52,7 +63,14 @@ export function ProjectIdentity({ withName = false }: { withName?: boolean }) {
         className="kukatko-tap-target kk-project-identity"
         data-testid="project-identity"
       >
-        <span className="kk-project-identity__name">{t('projectIdentity.neutral')}</span>
+        {compact ? (
+          <>
+            <Icon name="house" />
+            <span className="visually-hidden">{t('projectIdentity.neutral')}</span>
+          </>
+        ) : (
+          <span className="kk-project-identity__name">{t('projectIdentity.neutral')}</span>
+        )}
       </Link>
     )
   }

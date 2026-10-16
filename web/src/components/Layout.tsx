@@ -13,6 +13,7 @@ import { useIsNavDrawerViewport } from '../hooks/useIsNarrowViewport'
 import { useProjectFooter } from '../hooks/useProjectFooter'
 import { LIBRARY_PATH } from '../lib/libraryView'
 import { useNavPosition } from '../lib/navPosition'
+import { useNavSidebarCollapsed } from '../lib/navSidebarCollapsed'
 import { useNeutralChrome, useProjectPath, useProjectSlug } from '../project/ProjectContext'
 import { stripProjectPrefix } from '../project/paths'
 import { useLeaveProject } from '../project/useLeaveProject'
@@ -153,9 +154,11 @@ import { WelcomeModal } from './welcome/WelcomeModal'
  * page, its sticky toolbars and the fixed chrome that centres on the content
  * keep clear of it. Both layouts render one {@link desktopNav} model, which is
  * what keeps their destinations, order and role gating identical; the user menu
- * is one {@link UserMenu} in either. Below `lg` the choice is not read at all:
- * the tab bar and the drawer are the phone's navigation whatever the desktop
- * wears.
+ * is one {@link UserMenu} in either. The sidebar folds to an icon rail
+ * (`lib/navSidebarCollapsed.ts`, per account too); the lane then shrinks to the
+ * rail (`.kukatko-shell--sidebar-collapsed`). Below `lg` the choice is not read
+ * at all: the tab bar and the drawer are the phone's navigation whatever the
+ * desktop wears.
  */
 export function Layout({ children }: { children?: ReactNode }) {
   const { t } = useTranslation()
@@ -213,6 +216,11 @@ export function Layout({ children }: { children?: ReactNode }) {
   // signed-out screen, which has no account to ask.
   const [navPosition] = useNavPosition()
   const sidebar = !drawerNav && user !== null && navPosition === 'left'
+  // Whether that sidebar is folded to its icon rail — also the account's,
+  // read only while there is a sidebar, so the top bar never sees it and the
+  // left brings it back as it was left.
+  const [sidebarCollapsed, setSidebarCollapsed] = useNavSidebarCollapsed()
+  const rail = sidebar && sidebarCollapsed
   // The tasks count belongs to the project; a neutral shell wears none.
   const waiting = neutral ? 0 : waitingOnMe
   // "Switch library" and the news waiting behind it, in the other projects.
@@ -334,7 +342,11 @@ export function Layout({ children }: { children?: ReactNode }) {
     // real height here rather than an estimate, and `.kukatko-page` takes what is
     // left (see `.kukatko-shell` in `app.css`). The fixed chrome below — the
     // drawer, the tab bar, the modal — is out of flow and unaffected.
-    <div className={`kukatko-shell${sidebar ? ' kukatko-shell--sidebar' : ''}`}>
+    <div
+      className={`kukatko-shell${sidebar ? ' kukatko-shell--sidebar' : ''}${
+        rail ? ' kukatko-shell--sidebar-collapsed' : ''
+      }`}
+    >
       {/* The account's choice of desktop layout: the left sidebar, or — the
           default, and always below `lg` — the top bar. Never both. The sidebar
           is fixed to the left edge and out of flow; the shell's start padding
@@ -350,6 +362,8 @@ export function Layout({ children }: { children?: ReactNode }) {
           onLogout={() => {
             void handleLogout()
           }}
+          collapsed={sidebarCollapsed}
+          onCollapsedChange={setSidebarCollapsed}
         />
       ) : (
         <Navbar

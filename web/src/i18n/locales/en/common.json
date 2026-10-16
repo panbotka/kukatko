@@ -122,7 +122,9 @@
     },
     "sidebar": {
       "label": "Side navigation",
-      "accountTitle": "Open the account and administration menu"
+      "accountTitle": "Open the account and administration menu",
+      "collapse": "Collapse menu",
+      "expand": "Expand menu"
     },
     "stats": "Statistics",
     "versionTitle": "App version",

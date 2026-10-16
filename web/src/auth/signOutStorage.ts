@@ -23,6 +23,9 @@ import { WHATS_NEW_DISMISSAL_PREFIX } from '../lib/whatsNewDismissal'
  *   anybody else;
  * - the per-account navigation position (`kukatko.navPosition.<uid>`): a
  *   preference, kept and never cleared for the same reasons as the language;
+ * - the per-account fold of the left sidebar
+ *   (`kukatko.navSidebarCollapsed.<uid>`): the same kind of preference as the
+ *   position it belongs to, kept for the same reasons;
  * - the per-account answer to the notification prompt
  *   (`kukatko.pushPrompt.answered.<uid>`): a browser's push subscription
  *   outlives the session, so forgetting the answer would only ask again.

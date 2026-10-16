@@ -318,6 +318,10 @@ the same way, by its slug in the URL (`/api/v1/p/<project>/…`).
   at its head, the account menu at its foot. The switch applies the moment it is clicked, it is yours
   alone (somebody else signing in on the same computer keeps their own), and it survives signing out.
   A phone keeps its bottom tab bar either way.
+- **The left sidebar folds down to icons.** *Sbalit menu* at its foot shrinks it to a narrow rail of
+  glyphs and the photos take the width; every glyph names itself in a tooltip, Procházet, Nástroje and the
+  account open beside the rail, the counts stay on the icons, and *Rozbalit menu* brings the labels back.
+  Remembered per account on that browser, like the position.
 - **The library opens onto photographs, not onto its own controls.** There is no page title repeating
   what the navigation already says, the "what's new since your last visit" summary is one line you can
   unfold, and every filter — period, album, label, person and the rest — lives behind one *Filtry*
